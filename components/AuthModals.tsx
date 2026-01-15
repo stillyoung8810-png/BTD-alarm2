@@ -83,8 +83,9 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
     setError(null);
     setInfo(null);
     try {
+      const redirectUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: window.location.origin,
+        redirectTo: `${redirectUrl}/auth/reset-password`,
       });
       if (error) throw error;
       setInfo(
@@ -104,10 +105,11 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
     setError(null);
     setInfo(null);
     try {
+      const redirectUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: window.location.origin,
+          redirectTo: `${redirectUrl}/auth/callback`,
         },
       });
       if (error) throw error;

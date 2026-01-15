@@ -493,10 +493,25 @@ const App: React.FC = () => {
               }
             }}
             onLogout={async () => { 
-              await supabase.auth.signOut();
-              setUser(null); 
-              setPortfolios([]); 
-              setAuthModal(null); 
+              try {
+                const { error } = await supabase.auth.signOut();
+                
+                if (error) {
+                  console.error('Logout error:', error);
+                  // 에러가 발생해도 상태는 초기화 (세션이 이미 만료되었을 수 있음)
+                }
+                
+                // 로그아웃 성공 또는 에러와 관계없이 상태 초기화
+                setUser(null); 
+                setPortfolios([]); 
+                setAuthModal(null);
+              } catch (err) {
+                console.error('Unexpected logout error:', err);
+                // 예상치 못한 에러가 발생해도 상태는 초기화
+                setUser(null); 
+                setPortfolios([]); 
+                setAuthModal(null);
+              }
             }}
             currentUserEmail={user?.email}
           />

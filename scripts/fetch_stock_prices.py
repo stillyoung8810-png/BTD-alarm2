@@ -2,8 +2,10 @@ import os
 import datetime as dt
 import json
 import time
-from typing import List, Dict, Any
+import random
+from typing import List, Dict, Any, Optional
 
+import yfinance as yf
 import requests
 
 
@@ -12,108 +14,116 @@ TICKERS: List[str] = [
     "SOXX", "USD", "SOXL", "STRC", "BILL", "ICSH", "SGOV",
 ]
 
-YF_ENDPOINT = "https://query1.finance.yahoo.com/v7/finance/quote"
-
-# User-Agent 헤더 (야후 파이낸스가 User-Agent 없으면 차단할 수 있음)
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "application/json",
-    "Accept-Language": "en-US,en;q=0.9",
-}
-
-# 배치 크기 (한 번에 요청할 종목 수)
-BATCH_SIZE = 5
-# 배치 사이 딜레이 (초)
-BATCH_DELAY = 2.5
+# 배치 크기 (2~3개씩 랜덤하게 묶어서 처리)
+MIN_BATCH_SIZE = 2
+MAX_BATCH_SIZE = 3
+# 배치 사이 딜레이 (랜덤 2.5~3.5초)
+MIN_DELAY = 2.5
+MAX_DELAY = 3.5
 # 최대 재시도 횟수
 MAX_RETRIES = 3
 # 재시도 간 초기 딜레이 (초)
 INITIAL_RETRY_DELAY = 5
 
 
-def fetch_quotes_batch(tickers: List[str], retry_count: int = 0) -> List[Dict[str, Any]]:
-    """한 배치의 종목을 가져오기 (재시도 로직 포함)"""
-    symbols = ",".join(tickers)
-    
+def fetch_ticker_price(ticker_symbol: str, retry_count: int = 0) -> Optional[Dict[str, Any]]:
+    """yfinance를 사용하여 단일 종목의 종가 가져오기 (재시도 로직 포함)"""
     try:
-        resp = requests.get(
-            YF_ENDPOINT,
-            params={"symbols": symbols},
-            headers=HEADERS,
-            timeout=20
-        )
+        ticker = yf.Ticker(ticker_symbol)
         
-        # 429 에러면 재시도
-        if resp.status_code == 429:
-            if retry_count < MAX_RETRIES:
-                delay = INITIAL_RETRY_DELAY * (2 ** retry_count)  # Exponential backoff
-                print(f"Rate limited (429). Retrying after {delay} seconds... (attempt {retry_count + 1}/{MAX_RETRIES})")
-                time.sleep(delay)
-                return fetch_quotes_batch(tickers, retry_count + 1)
-            else:
-                raise RuntimeError(f"Rate limit exceeded after {MAX_RETRIES} retries")
+        # 최근 1일 데이터 가져오기
+        hist = ticker.history(period="1d", interval="1d")
         
-        resp.raise_for_status()
-        data = resp.json()
-        return data.get("quoteResponse", {}).get("result", [])
-    
-    except requests.exceptions.RequestException as e:
-        if retry_count < MAX_RETRIES:
-            delay = INITIAL_RETRY_DELAY * (2 ** retry_count)
-            print(f"Request failed: {e}. Retrying after {delay} seconds... (attempt {retry_count + 1}/{MAX_RETRIES})")
-            time.sleep(delay)
-            return fetch_quotes_batch(tickers, retry_count + 1)
+        if hist.empty:
+            # 데이터가 없으면 info에서 이전 종가 가져오기
+            info = ticker.info
+            close = info.get("previousClose")
+            if close is None:
+                print(f"⚠ Warning: No data found for {ticker_symbol}")
+                return None
         else:
-            raise
+            # 가장 최근 종가 가져오기
+            close = float(hist["Close"].iloc[-1])
+        
+        return {
+            "symbol": ticker_symbol,
+            "close": close,
+        }
+    
+    except Exception as e:
+        if retry_count < MAX_RETRIES:
+            delay = INITIAL_RETRY_DELAY * (2 ** retry_count)  # Exponential backoff
+            print(f"Error fetching {ticker_symbol}: {e}. Retrying after {delay} seconds... (attempt {retry_count + 1}/{MAX_RETRIES})")
+            time.sleep(delay)
+            return fetch_ticker_price(ticker_symbol, retry_count + 1)
+        else:
+            print(f"✗ Failed to fetch {ticker_symbol} after {MAX_RETRIES} retries: {e}")
+            return None
+
+
+def fetch_quotes_batch(tickers: List[str]) -> List[Dict[str, Any]]:
+    """한 배치의 종목들을 순차적으로 가져오기"""
+    results: List[Dict[str, Any]] = []
+    
+    for ticker in tickers:
+        result = fetch_ticker_price(ticker)
+        if result:
+            results.append(result)
+        
+        # 각 종목 사이에 작은 딜레이 (0.5~1초)
+        if ticker != tickers[-1]:  # 마지막 종목이 아니면
+            time.sleep(random.uniform(0.5, 1.0))
+    
+    return results
 
 
 def fetch_all_quotes(tickers: List[str]) -> List[Dict[str, Any]]:
-    """모든 종목을 배치로 나눠서 순차적으로 가져오기"""
+    """모든 종목을 2~3개씩 랜덤하게 묶어서 순차적으로 가져오기"""
     all_quotes: List[Dict[str, Any]] = []
-    total_batches = (len(tickers) + BATCH_SIZE - 1) // BATCH_SIZE
+    i = 0
+    batch_num = 1
     
-    for i in range(0, len(tickers), BATCH_SIZE):
-        batch = tickers[i:i + BATCH_SIZE]
-        batch_num = (i // BATCH_SIZE) + 1
+    while i < len(tickers):
+        # 랜덤하게 2~3개씩 묶기
+        batch_size = random.randint(MIN_BATCH_SIZE, MAX_BATCH_SIZE)
+        batch = tickers[i:i + batch_size]
         
-        print(f"Fetching batch {batch_num}/{total_batches}: {', '.join(batch)}")
+        print(f"Fetching batch {batch_num}: {', '.join(batch)} ({len(batch)} tickers)")
         quotes = fetch_quotes_batch(batch)
         all_quotes.extend(quotes)
         
-        # 마지막 배치가 아니면 딜레이
-        if i + BATCH_SIZE < len(tickers):
-            print(f"Waiting {BATCH_DELAY} seconds before next batch...")
-            time.sleep(BATCH_DELAY)
+        i += batch_size
+        batch_num += 1
+        
+        # 마지막 배치가 아니면 랜덤 딜레이
+        if i < len(tickers):
+            delay = random.uniform(MIN_DELAY, MAX_DELAY)
+            print(f"Waiting {delay:.2f} seconds before next batch...")
+            time.sleep(delay)
     
     return all_quotes
 
 
 def build_rows(quotes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """yfinance로 가져온 데이터를 Supabase 테이블 구조에 맞게 변환"""
     now = dt.datetime.utcnow()
-    trade_date = (now.date()).isoformat()  # YYYY-MM-DD (UTC 기준)
+    trade_date = now.date().isoformat()  # YYYY-MM-DD (UTC 기준)
     fetched_at = now.isoformat() + "Z"
 
     rows: List[Dict[str, Any]] = []
-    for q in quotes:
-        symbol = q.get("symbol")
-        if not symbol:
+    for quote in quotes:
+        symbol = quote.get("symbol")
+        close = quote.get("close")
+
+        if not symbol or close is None:
             continue
 
-        price = q.get("regularMarketPrice")
-        prev_close = q.get("regularMarketPreviousClose")
-
-        close = price if price is not None else prev_close
-        if close is None:
-            continue
-
-        rows.append(
-            {
-                "symbol": symbol,
-                "trade_date": trade_date,
-                "close": float(close),
-                "fetched_at": fetched_at,
-            }
-        )
+        rows.append({
+            "symbol": symbol,
+            "trade_date": trade_date,
+            "close": float(close),
+            "fetched_at": fetched_at,
+        })
 
     return rows
 
@@ -143,9 +153,10 @@ def upsert_to_supabase(rows: List[Dict[str, Any]]) -> None:
 
 def main() -> None:
     print("=" * 60)
-    print("Starting stock price fetch from Yahoo Finance")
+    print("Starting stock price fetch using yfinance")
     print(f"Total tickers: {len(TICKERS)}")
-    print(f"Batch size: {BATCH_SIZE}, Delay: {BATCH_DELAY}s")
+    print(f"Batch size: {MIN_BATCH_SIZE}~{MAX_BATCH_SIZE} (random)")
+    print(f"Delay between batches: {MIN_DELAY}~{MAX_DELAY}s (random)")
     print("=" * 60)
     
     try:

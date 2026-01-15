@@ -74,17 +74,20 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
     }
   };
 
-  const handleResetPassword = async () => {
-    if (!email) {
+  const handleResetPassword = async (emailToUse?: string) => {
+    const targetEmail = emailToUse || email || currentUserEmail;
+    
+    if (!targetEmail) {
       setError(lang === 'ko' ? '비밀번호 재설정을 위해 이메일을 입력해주세요.' : 'Please enter your email to reset password.');
       return;
     }
+    
     setLoading(true);
     setError(null);
     setInfo(null);
     try {
       const redirectUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      const { error } = await supabase.auth.resetPasswordForEmail(targetEmail, {
         redirectTo: `${redirectUrl}/auth/reset-password`,
       });
       if (error) throw error;
@@ -151,23 +154,41 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                     {currentUserEmail || 'unknown'}
                   </p>
                </div>
+
+               {error && (
+                 <p className="text-xs font-bold text-rose-500 bg-rose-500/10 border border-rose-500/30 rounded-2xl px-4 py-3">
+                   {error}
+                 </p>
+               )}
+               {info && (
+                 <p className="text-xs font-bold text-emerald-400 bg-emerald-500/5 border border-emerald-500/30 rounded-2xl px-4 py-3">
+                   {info}
+                 </p>
+               )}
                
                <div className="space-y-3">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (currentUserEmail) {
-                        setEmail(currentUserEmail);
-                      }
-                      handleResetPassword();
-                    }}
-                    className="w-full py-5 bg-slate-800 text-white rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 border border-white/5 hover:bg-slate-700 transition-all"
+                    onClick={() => handleResetPassword(currentUserEmail || undefined)}
+                    disabled={loading}
+                    className="w-full py-5 bg-slate-800 text-white rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 border border-white/5 hover:bg-slate-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     <Key size={18} /> {t.changePassword}
                   </button>
                   <button 
-                    onClick={onLogout}
-                    className="w-full py-5 bg-rose-600/10 text-rose-500 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 border border-rose-500/20 hover:bg-rose-500 hover:text-white transition-all"
+                    type="button"
+                    onClick={async () => {
+                      setLoading(true);
+                      try {
+                        await onLogout();
+                      } catch (err) {
+                        setError(lang === 'ko' ? '로그아웃 중 오류가 발생했습니다.' : 'Error during logout');
+                      } finally {
+                        setLoading(false);
+                      }
+                    }}
+                    disabled={loading}
+                    className="w-full py-5 bg-rose-600/10 text-rose-500 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 border border-rose-500/20 hover:bg-rose-500 hover:text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     <LogOut size={18} /> {t.logout}
                   </button>

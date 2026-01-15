@@ -25,6 +25,14 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
+  // 베이스 URL과 경로를 안전하게 합쳐서 슬래시 중복/누락을 방지하는 헬퍼
+  const buildRedirectUrl = (path: string) => {
+    const rawBase = import.meta.env.VITE_SITE_URL || (typeof window !== 'undefined' ? window.location.origin : '');
+    const base = rawBase.replace(/\/+$/, ''); // 끝 슬래시 제거
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    return `${base}${normalizedPath}`;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -137,9 +145,9 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
     setError(null);
     setInfo(null);
     try {
-      const redirectUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
+      const redirectTo = buildRedirectUrl('/auth/reset-password');
       const { error } = await supabase.auth.resetPasswordForEmail(targetEmail, {
-        redirectTo: `${redirectUrl}/auth/reset-password`,
+        redirectTo,
       });
       if (error) throw error;
       setInfo(
@@ -159,13 +167,13 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
     setError(null);
     setInfo(null);
     try {
-      const redirectUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
-      console.log(`Attempting ${provider} login with redirect: ${redirectUrl}/auth/callback`);
+      const redirectTo = buildRedirectUrl('/auth/callback');
+      console.log(`Attempting ${provider} login with redirect: ${redirectTo}`);
       
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: `${redirectUrl}/auth/callback`,
+          redirectTo,
           queryParams: {
             // 카카오의 경우 추가 파라미터가 필요할 수 있음
             ...(provider === 'kakao' && {

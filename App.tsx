@@ -505,12 +505,21 @@ const App: React.FC = () => {
                 setUser(null); 
                 setPortfolios([]); 
                 setAuthModal(null);
+
+                // 배포 환경 포함 전체 상태를 확실히 초기화
+                if (typeof window !== 'undefined') {
+                  window.location.reload();
+                }
               } catch (err) {
                 console.error('Unexpected logout error:', err);
                 // 예상치 못한 에러가 발생해도 상태는 초기화
                 setUser(null); 
                 setPortfolios([]); 
                 setAuthModal(null);
+
+                if (typeof window !== 'undefined') {
+                  window.location.reload();
+                }
               }
             }}
             currentUserEmail={user?.email}

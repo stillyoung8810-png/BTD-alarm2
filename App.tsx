@@ -89,7 +89,16 @@ const App: React.FC = () => {
 
         if (!isMounted) return;
         if (!error && data) {
-          setPortfolios(data as Portfolio[]);
+          // Supabase 컬럼명이 snake_case(daily_buy_amount)일 수도 있으므로
+          // JS 객체에서는 항상 camelCase(dailyBuyAmount)로 맞춰준다.
+          const normalized = (data as any[]).map((row) => ({
+            ...row,
+            dailyBuyAmount:
+              row.dailyBuyAmount ??
+              row.daily_buy_amount ??
+              0,
+          }));
+          setPortfolios(normalized as Portfolio[]);
         }
       } catch (err) {
         if (isMounted) {
@@ -193,7 +202,14 @@ const App: React.FC = () => {
       return;
     }
 
-    const payload = { ...newP, user_id: user.id };
+    // Supabase 테이블 컬럼명이 daily_buy_amount 라는 가정 하에,
+    // JS 객체에서 사용하는 dailyBuyAmount를 snake_case로 매핑한다.
+    const { dailyBuyAmount, ...rest } = newP;
+    const payload = {
+      ...rest,
+      user_id: user.id,
+      daily_buy_amount: dailyBuyAmount,
+    };
 
     const { error, data } = await supabase
       .from('portfolios')
@@ -262,7 +278,8 @@ const App: React.FC = () => {
       .from('portfolios')
       .update({
         name: updated.name,
-        dailyBuyAmount: updated.dailyBuyAmount,
+        // DB 컬럼명이 daily_buy_amount 인 경우에 맞추어 snake_case로 전송
+        daily_buy_amount: updated.dailyBuyAmount,
         startDate: updated.startDate,
         feeRate: updated.feeRate,
         strategy: updated.strategy,
@@ -503,7 +520,14 @@ const App: React.FC = () => {
                 .order('created_at', { ascending: false });
 
               if (!error && data) {
-                setPortfolios(data as Portfolio[]);
+                const normalized = (data as any[]).map((row) => ({
+                  ...row,
+                  dailyBuyAmount:
+                    row.dailyBuyAmount ??
+                    row.daily_buy_amount ??
+                    0,
+                }));
+                setPortfolios(normalized as Portfolio[]);
               }
             }}
             onLogout={async () => { 

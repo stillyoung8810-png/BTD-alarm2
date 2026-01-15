@@ -177,6 +177,12 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
       });
       
       if (error) {
+        // AbortError는 무시 (요청이 취소된 경우)
+        if (error.name === 'AbortError') {
+          console.log(`${provider} login request was aborted`);
+          setLoading(false);
+          return;
+        }
         console.error(`${provider} login error:`, error);
         throw error;
       }
@@ -185,6 +191,13 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
       // 실제 리디렉션은 Supabase에서 처리됨
       // 에러가 없으면 리디렉션이 일어나므로 loading을 false로 설정하지 않음
     } catch (err: any) {
+      // AbortError는 무시
+      if (err?.name === 'AbortError') {
+        console.log(`${provider} login request was aborted`);
+        setLoading(false);
+        return;
+      }
+      
       console.error(`${provider} login failed:`, err);
       const errorMessage = err?.message || `${provider} login failed`;
       setError(

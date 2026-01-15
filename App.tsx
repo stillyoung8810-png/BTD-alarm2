@@ -60,31 +60,19 @@ const App: React.FC = () => {
   }, [isDarkMode]);
 
   useEffect(() => {
-    const initAuthAndData = async () => {
-      setIsLoading(true);
-      
-      // URL 해시에서 인증 정보 처리 (비밀번호 재설정, OAuth 콜백)
-      const hashParams = new URLSearchParams(window.location.hash.substring(1));
-      const accessToken = hashParams.get('access_token');
-      const refreshToken = hashParams.get('refresh_token');
-      const type = hashParams.get('type');
-      
-      // 해시 처리 후 URL 정리
-      if (accessToken || refreshToken || type) {
-        window.history.replaceState(null, '', window.location.pathname);
-      }
-      
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError) {
-        console.error('Session error:', sessionError);
-      }
+    let isMounted = true;
+    
+    // 세션 기반 유저/포트폴리오 로딩 로직을 공통 함수로 분리
+    const fetchUserData = async (sessionUser: { id: string; email?: string | null }) => {
+      if (!sessionUser?.id || !isMounted) return;
 
-      if (session?.user) {
+      try {
         const currentUser = {
-          id: session.user.id,
-          email: session.user.email || '',
+          id: sessionUser.id,
+          email: sessionUser.email || '',
         };
+
+        if (!isMounted) return;
         setUser(currentUser);
 
         const { data, error } = await supabase
@@ -93,57 +81,87 @@ const App: React.FC = () => {
           .eq('user_id', currentUser.id)
           .order('created_at', { ascending: false });
 
+        if (!isMounted) return;
         if (!error && data) {
           setPortfolios(data as Portfolio[]);
         }
-        
-        // 비밀번호 재설정 모드인 경우 비밀번호 재설정 모달 열기
-        if (type === 'recovery') {
-          setAuthModal('reset-password');
+      } catch (err) {
+        if (isMounted) {
+          console.error('Failed to fetch user data:', err);
         }
-      } else {
-        setUser(null);
-        setPortfolios([]);
       }
+    };
 
-      setIsLoading(false);
+    const initAuthAndData = async () => {
+      try {
+        if (!isMounted) return;
+        setIsLoading(true);
+
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
+
+        if (!isMounted) return;
+
+        if (sessionError) {
+          if (sessionError.name !== 'AbortError') {
+            console.error('Session error:', sessionError);
+          }
+        }
+
+        if (session?.user) {
+          await fetchUserData(session.user);
+        } else {
+          setUser(null);
+          setPortfolios([]);
+        }
+      } catch (err: any) {
+        if (err?.name !== 'AbortError' && isMounted) {
+          console.error('Init auth error:', err);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
     };
 
     initAuthAndData();
 
     const { data: listener } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('Auth state changed:', event, session?.user?.email);
-        
-        if (session?.user) {
-          const currentUser = {
-            id: session.user.id,
-            email: session.user.email || '',
-          };
-          setUser(currentUser);
+        if (!isMounted) return;
 
-          const { data, error } = await supabase
-            .from('portfolios')
-            .select('*')
-            .eq('user_id', currentUser.id)
-            .order('created_at', { ascending: false });
+        try {
+          console.log('Auth state changed:', event, session?.user?.email);
 
-          if (!error && data) {
-            setPortfolios(data as Portfolio[]);
+          if (event === 'SIGNED_IN' && typeof window !== 'undefined') {
+            // 로그인 성공 시에만 URL 해시 정리
+            window.history.replaceState(null, '', window.location.pathname + window.location.search);
           }
-          
-          // PASSWORD_RECOVERY 이벤트인 경우 비밀번호 재설정 모달 열기
-          if (event === 'PASSWORD_RECOVERY') {
-            setAuthModal('reset-password');
+
+          if (session?.user) {
+            await fetchUserData(session.user);
+
+            if (event === 'PASSWORD_RECOVERY' && isMounted) {
+              // 비밀번호 재설정 모달 열기
+              setAuthModal('reset-password');
+            }
+          } else {
+            setUser(null);
+            setPortfolios([]);
           }
-        } else {
-          setUser(null);
-          setPortfolios([]);
+        } catch (err: any) {
+          if (err?.name !== 'AbortError' && isMounted) {
+            console.error('Auth state change error:', err);
+          }
         }
       },
     );
 
     return () => {
+      isMounted = false;
       listener.subscription.unsubscribe();
     };
   }, []);

@@ -100,7 +100,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
     }
   };
 
-  const handleSocialLogin = async (provider: 'google' | 'github') => {
+  const handleSocialLogin = async (provider: 'google' | 'github' | 'kakao') => {
     setLoading(true);
     setError(null);
     setInfo(null);
@@ -240,19 +240,27 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                 <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] text-center">
                   {lang === 'ko' ? '또는 소셜 계정으로 로그인' : 'Or continue with'}
                 </p>
-                <div className="flex gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   <button
                     type="button"
                     onClick={() => handleSocialLogin('google')}
-                    className="flex-1 py-3 bg-white text-slate-900 rounded-2xl font-black text-[11px] uppercase tracking-widest border border-white/10 hover:bg-slate-100 transition-all disabled:opacity-60"
+                    className="py-3 bg-white text-slate-900 rounded-2xl font-black text-[11px] uppercase tracking-widest border border-white/10 hover:bg-slate-100 transition-all disabled:opacity-60"
                     disabled={loading}
                   >
                     Google
                   </button>
                   <button
                     type="button"
+                    onClick={() => handleSocialLogin('kakao')}
+                    className="py-3 bg-[#FEE500] text-[#000000] rounded-2xl font-black text-[11px] uppercase tracking-widest border border-[#FEE500]/20 hover:bg-[#FEE500]/90 transition-all disabled:opacity-60 shadow-sm"
+                    disabled={loading}
+                  >
+                    {lang === 'ko' ? '카카오' : 'Kakao'}
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => handleSocialLogin('github')}
-                    className="flex-1 py-3 bg-slate-900 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest border border-white/20 hover:bg-slate-800 transition-all disabled:opacity-60"
+                    className="py-3 bg-slate-900 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest border border-white/20 hover:bg-slate-800 transition-all disabled:opacity-60"
                     disabled={loading}
                   >
                     GitHub

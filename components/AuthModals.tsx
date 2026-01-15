@@ -91,16 +91,38 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
 
     try {
       if (type === 'signup') {
+        const emailRedirectTo = buildRedirectUrl('/auth/callback');
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
+          options: {
+            emailRedirectTo,
+          },
         });
 
         if (error) {
-          throw error;
+          // 에러를 사용자에게 명확하게 표시
+          const errorMessage = error.message || (lang === 'ko' ? '회원가입에 실패했습니다.' : 'Sign up failed.');
+          setError(errorMessage);
+          setLoading(false);
+          return;
         }
 
-        if (data.user) {
+        // 이메일 인증이 필요한 경우
+        if (data.user && !data.session) {
+          setInfo(
+            lang === 'ko'
+              ? '회원가입이 완료되었습니다. 이메일을 확인하여 계정을 인증해주세요. 인증 링크를 클릭하면 자동으로 로그인됩니다.'
+              : 'Sign up successful! Please check your email to verify your account. Click the verification link to automatically log in.'
+          );
+          // 이메일 인증 안내 후 로그인 화면으로 전환
+          setTimeout(() => {
+            setEmail('');
+            setPassword('');
+            onSwitchType('login');
+          }, 3000);
+        } else if (data.user && data.session) {
+          // 이메일 인증이 필요 없는 경우 (즉시 로그인)
           onLogin({
             id: data.user.id,
             email: data.user.email || email,
@@ -126,9 +148,29 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
         }
       }
     } catch (err: any) {
-      const message = err?.message || 'Authentication error';
-      setError(message);
-    } finally {
+      // AbortError는 무시
+      if (err?.name === 'AbortError') {
+        setLoading(false);
+        return;
+      }
+      
+      // 에러 메시지를 사용자 친화적으로 표시
+      let errorMessage = err?.message || (lang === 'ko' ? '인증 중 오류가 발생했습니다.' : 'Authentication error occurred.');
+      
+      // Supabase 에러 메시지를 한국어로 번역 (주요 에러들)
+      if (err?.message) {
+        if (err.message.includes('User already registered')) {
+          errorMessage = lang === 'ko' ? '이미 등록된 이메일입니다. 로그인을 시도해주세요.' : 'This email is already registered. Please try logging in.';
+        } else if (err.message.includes('Invalid email')) {
+          errorMessage = lang === 'ko' ? '유효하지 않은 이메일 주소입니다.' : 'Invalid email address.';
+        } else if (err.message.includes('Password')) {
+          errorMessage = lang === 'ko' ? '비밀번호가 너무 짧거나 약합니다.' : 'Password is too short or weak.';
+        } else if (err.message.includes('Email rate limit')) {
+          errorMessage = lang === 'ko' ? '이메일 전송 한도를 초과했습니다. 잠시 후 다시 시도해주세요.' : 'Email rate limit exceeded. Please try again later.';
+        }
+      }
+      
+      setError(errorMessage);
       setLoading(false);
     }
   };

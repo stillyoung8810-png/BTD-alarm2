@@ -61,21 +61,25 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
           password: newPassword,
         });
         
-        if (error) throw error;
-        
-        setInfo(
-          lang === 'ko'
-            ? '비밀번호가 성공적으로 변경되었습니다.'
-            : 'Password updated successfully.'
-        );
-        
-        // 성공 후 프로필 모드로 전환
-        setTimeout(() => {
+        if (error) {
+          // Supabase에서 반환된 구체적인 에러 메시지를 화면에 표시
+          setError(error.message || (lang === 'ko' ? '비밀번호 변경에 실패했습니다.' : 'Failed to update password.'));
+        } else {
+          // 소셜 로그인 사용자가 처음 비밀번호를 설정하는 경우도 동일하게 처리됨
           setNewPassword('');
           setConfirmPassword('');
-          onSwitchType('profile');
-        }, 2000);
+          setInfo(null);
+
+          if (typeof window !== 'undefined') {
+            alert(lang === 'ko' ? '비밀번호가 성공적으로 변경되었습니다. 다시 로그인해주세요.' : 'Password updated successfully. Please log in again.');
+          }
+
+          // 모달 닫기 (상위에서 authModal을 null로 설정)
+          onSwitchType('login');
+          onClose();
+        }
       } catch (err: any) {
+        // 예외 발생 시에도 구체적인 메시지 표시
         setError(err?.message || (lang === 'ko' ? '비밀번호 변경에 실패했습니다.' : 'Failed to update password.'));
       } finally {
         setLoading(false);

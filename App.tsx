@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Portfolio, Trade } from './types';
 import { I18N } from './constants';
 import Dashboard from './components/Dashboard';
@@ -32,6 +32,7 @@ const App: React.FC = () => {
   const [user, setUser] = useState<{ id: string; email: string } | null>(null);
   const [authModal, setAuthModal] = useState<'login' | 'signup' | 'profile' | 'reset-password' | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const authModalRef = useRef(authModal);
 
   const [alarmTargetId, setAlarmTargetId] = useState<string | null>(null);
   const [detailsTargetId, setDetailsTargetId] = useState<string | null>(null);
@@ -49,6 +50,11 @@ const App: React.FC = () => {
   } | null>(null);
 
   const t = I18N[lang];
+
+  // authModal의 최신 값을 ref에 동기화
+  useEffect(() => {
+    authModalRef.current = authModal;
+  }, [authModal]);
 
   // 초기 다크 모드 및 Supabase 세션/포트폴리오 로딩
   useEffect(() => {
@@ -147,6 +153,14 @@ const App: React.FC = () => {
             if (event === 'PASSWORD_RECOVERY' && isMounted) {
               // 비밀번호 재설정 모달 열기
               setAuthModal('reset-password');
+            }
+
+            if (event === 'USER_UPDATED' && isMounted) {
+              // 비밀번호 변경 등 사용자 정보 업데이트 시 모달 닫기 및 성공 메시지
+              if (authModalRef.current === 'reset-password') {
+                setAuthModal(null);
+                alert(lang === 'ko' ? '비밀번호가 성공적으로 변경되었습니다.' : 'Password updated successfully.');
+              }
             }
           } else {
             setUser(null);

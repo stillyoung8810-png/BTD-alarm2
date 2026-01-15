@@ -30,7 +30,7 @@ const App: React.FC = () => {
   const [isDarkMode, setIsDarkMode] = useState(true);
   
   const [user, setUser] = useState<{ id: string; email: string } | null>(null);
-  const [authModal, setAuthModal] = useState<'login' | 'signup' | 'profile' | null>(null);
+  const [authModal, setAuthModal] = useState<'login' | 'signup' | 'profile' | 'reset-password' | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const [alarmTargetId, setAlarmTargetId] = useState<string | null>(null);
@@ -62,7 +62,23 @@ const App: React.FC = () => {
   useEffect(() => {
     const initAuthAndData = async () => {
       setIsLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
+      
+      // URL 해시에서 인증 정보 처리 (비밀번호 재설정, OAuth 콜백)
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const accessToken = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token');
+      const type = hashParams.get('type');
+      
+      // 해시 처리 후 URL 정리
+      if (accessToken || refreshToken || type) {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+      
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        console.error('Session error:', sessionError);
+      }
 
       if (session?.user) {
         const currentUser = {
@@ -80,6 +96,11 @@ const App: React.FC = () => {
         if (!error && data) {
           setPortfolios(data as Portfolio[]);
         }
+        
+        // 비밀번호 재설정 모드인 경우 비밀번호 재설정 모달 열기
+        if (type === 'recovery') {
+          setAuthModal('reset-password');
+        }
       } else {
         setUser(null);
         setPortfolios([]);
@@ -91,7 +112,9 @@ const App: React.FC = () => {
     initAuthAndData();
 
     const { data: listener } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      async (event, session) => {
+        console.log('Auth state changed:', event, session?.user?.email);
+        
         if (session?.user) {
           const currentUser = {
             id: session.user.id,
@@ -107,6 +130,11 @@ const App: React.FC = () => {
 
           if (!error && data) {
             setPortfolios(data as Portfolio[]);
+          }
+          
+          // PASSWORD_RECOVERY 이벤트인 경우 비밀번호 재설정 모달 열기
+          if (event === 'PASSWORD_RECOVERY') {
+            setAuthModal('reset-password');
           }
         } else {
           setUser(null);
@@ -431,7 +459,7 @@ const App: React.FC = () => {
             lang={lang} 
             type={authModal} 
             onClose={() => setAuthModal(null)} 
-            onSwitchType={setAuthModal} 
+            onSwitchType={(type) => setAuthModal(type)} 
             onLogin={async (u) => { 
               setUser(u); 
               setAuthModal('profile'); 

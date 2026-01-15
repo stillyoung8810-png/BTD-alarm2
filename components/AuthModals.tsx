@@ -6,9 +6,9 @@ import { supabase } from '../services/supabase';
 
 interface AuthModalsProps {
   lang: 'ko' | 'en';
-  type: 'login' | 'signup' | 'profile';
+  type: 'login' | 'signup' | 'profile' | 'reset-password';
   onClose: () => void;
-  onSwitchType: (type: 'login' | 'signup' | 'profile') => void;
+  onSwitchType: (type: 'login' | 'signup' | 'profile' | 'reset-password') => void;
   onLogin: (user: { id: string; email: string }) => void;
   onLogout: () => void;
   currentUserEmail?: string | null;
@@ -22,8 +22,59 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (type === 'reset-password') {
+      if (!newPassword || !confirmPassword) {
+        setError(lang === 'ko' ? '새 비밀번호를 입력해주세요.' : 'Please enter new password.');
+        return;
+      }
+      
+      if (newPassword !== confirmPassword) {
+        setError(lang === 'ko' ? '비밀번호가 일치하지 않습니다.' : 'Passwords do not match.');
+        return;
+      }
+      
+      if (newPassword.length < 6) {
+        setError(lang === 'ko' ? '비밀번호는 최소 6자 이상이어야 합니다.' : 'Password must be at least 6 characters.');
+        return;
+      }
+      
+      setLoading(true);
+      setError(null);
+      setInfo(null);
+      
+      try {
+        const { error } = await supabase.auth.updateUser({
+          password: newPassword,
+        });
+        
+        if (error) throw error;
+        
+        setInfo(
+          lang === 'ko'
+            ? '비밀번호가 성공적으로 변경되었습니다.'
+            : 'Password updated successfully.'
+        );
+        
+        // 성공 후 프로필 모드로 전환
+        setTimeout(() => {
+          setNewPassword('');
+          setConfirmPassword('');
+          onSwitchType('profile');
+        }, 2000);
+      } catch (err: any) {
+        setError(err?.message || (lang === 'ko' ? '비밀번호 변경에 실패했습니다.' : 'Failed to update password.'));
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+    
     if (!email || !password) return;
 
     setLoading(true);
@@ -109,16 +160,38 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
     setInfo(null);
     try {
       const redirectUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
-      const { error } = await supabase.auth.signInWithOAuth({
+      console.log(`Attempting ${provider} login with redirect: ${redirectUrl}/auth/callback`);
+      
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
           redirectTo: `${redirectUrl}/auth/callback`,
+          queryParams: {
+            // 카카오의 경우 추가 파라미터가 필요할 수 있음
+            ...(provider === 'kakao' && {
+              access_type: 'offline',
+              prompt: 'consent',
+            }),
+          },
         },
       });
-      if (error) throw error;
-      // 실제 리디렉션은 Supabase에서 처리
+      
+      if (error) {
+        console.error(`${provider} login error:`, error);
+        throw error;
+      }
+      
+      console.log(`${provider} login initiated:`, data);
+      // 실제 리디렉션은 Supabase에서 처리됨
+      // 에러가 없으면 리디렉션이 일어나므로 loading을 false로 설정하지 않음
     } catch (err: any) {
-      setError(err?.message || 'Social login failed');
+      console.error(`${provider} login failed:`, err);
+      const errorMessage = err?.message || `${provider} login failed`;
+      setError(
+        lang === 'ko' 
+          ? `${provider === 'kakao' ? '카카오' : provider} 로그인에 실패했습니다: ${errorMessage}`
+          : `${provider} login failed: ${errorMessage}`
+      );
       setLoading(false);
     }
   };
@@ -134,14 +207,71 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                  {type === 'profile' ? <UserCheck className="text-white" size={20} /> : <ShieldCheck className="text-white" size={20} />}
               </div>
               <h2 className="text-xl font-black text-white uppercase tracking-tight">
-                {type === 'login' ? t.login : type === 'signup' ? t.signup : 'User Profile'}
+                {type === 'login' ? t.login : type === 'signup' ? t.signup : type === 'reset-password' ? (lang === 'ko' ? '비밀번호 재설정' : 'Reset Password') : 'User Profile'}
               </h2>
            </div>
            <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full text-slate-500"><X size={24} /></button>
         </div>
 
         <div className="p-10 space-y-8">
-          {type === 'profile' ? (
+          {type === 'reset-password' ? (
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">{lang === 'ko' ? '새 비밀번호' : 'New Password'}</label>
+                <div className="relative">
+                  <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                  <input 
+                    type="password" 
+                    required
+                    placeholder="••••••••"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full p-5 pl-14 bg-slate-900 border border-white/5 rounded-2xl text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/50"
+                  />
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">{lang === 'ko' ? '비밀번호 확인' : 'Confirm Password'}</label>
+                <div className="relative">
+                  <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                  <input 
+                    type="password" 
+                    required
+                    placeholder="••••••••"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full p-5 pl-14 bg-slate-900 border border-white/5 rounded-2xl text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/50"
+                  />
+                </div>
+              </div>
+
+              {error && (
+                <p className="text-xs font-bold text-rose-500 bg-rose-500/10 border border-rose-500/30 rounded-2xl px-4 py-3">
+                  {error}
+                </p>
+              )}
+              {info && (
+                <p className="text-xs font-bold text-emerald-400 bg-emerald-500/5 border border-emerald-500/30 rounded-2xl px-4 py-3">
+                  {info}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-blue-500/20 hover:scale-[1.02] active:scale-95 transition-all mt-4 disabled:opacity-60 disabled:hover:scale-100"
+                disabled={loading}
+              >
+                {loading
+                  ? lang === 'ko'
+                    ? '처리 중...'
+                    : 'Working...'
+                  : lang === 'ko'
+                    ? '비밀번호 변경'
+                    : 'Update Password'}
+              </button>
+            </form>
+          ) : type === 'profile' ? (
             <div className="space-y-6">
                <div className="bg-slate-900/60 p-6 rounded-2xl border border-white/5 text-center">
                   <div className="w-20 h-20 bg-blue-600 rounded-full mx-auto mb-4 flex items-center justify-center shadow-xl border-4 border-white/10">

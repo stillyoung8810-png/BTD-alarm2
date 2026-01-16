@@ -188,15 +188,15 @@ const PortfolioCard: React.FC<{
 
       <div 
         onClick={onOpenExecution}
-        className="bg-gradient-to-r from-blue-600 to-indigo-700 p-5 rounded-[1.5rem] flex items-center justify-between shadow-lg shadow-blue-500/20 relative overflow-hidden group/action cursor-pointer"
+        className="bg-blue-50/50 dark:bg-blue-600/15 p-5 rounded-[1.5rem] flex items-center justify-between shadow-md dark:shadow-lg dark:shadow-blue-500/20 relative overflow-hidden group/action cursor-pointer border border-blue-100 dark:border-blue-500/20"
       >
-        <div className="absolute inset-0 bg-white/10 opacity-0 group-hover/action:opacity-100 transition-opacity"></div>
+        <div className="absolute inset-0 bg-blue-100/50 dark:bg-white/10 opacity-0 group-hover/action:opacity-100 transition-opacity"></div>
         <div className="relative z-10">
           <div className="flex items-center gap-1.5 mb-1 opacity-80">
-             <span className="text-[9px] font-black text-white uppercase tracking-widest">{t.dailyExecution}</span>
-             <Info size={10} className="text-white" />
+             <span className="text-[9px] font-black text-blue-700 dark:text-blue-300 uppercase tracking-widest">{t.dailyExecution}</span>
+             <Info size={10} className="text-blue-700 dark:text-blue-300" />
           </div>
-          <div className="text-lg font-black text-white">
+          <div className="text-lg font-black text-blue-900 dark:text-white">
             {t.section} 1: {portfolio.strategy.ma1.stock} {t.buy}
           </div>
         </div>
@@ -205,15 +205,15 @@ const PortfolioCard: React.FC<{
             e.stopPropagation();
             onOpenQuickInput();
           }}
-          className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-white backdrop-blur-md hover:scale-110 active:scale-95 transition-all shadow-[0_0_15px_rgba(255,255,255,0.2)]"
+          className="w-10 h-10 rounded-xl bg-blue-600/20 dark:bg-white/20 flex items-center justify-center text-blue-700 dark:text-white backdrop-blur-md hover:scale-110 active:scale-95 transition-all shadow-sm dark:shadow-[0_0_15px_rgba(255,255,255,0.2)]"
         >
-           <Zap size={20} className="fill-white" />
+           <Zap size={20} className="fill-current" />
         </button>
       </div>
 
       <button 
         onClick={onClose}
-        className="w-full py-4 text-[10px] font-black text-slate-400 dark:text-slate-500 hover:text-rose-500 dark:hover:text-rose-400 uppercase tracking-[0.2em] border border-slate-200/80 dark:border-white/10 rounded-2xl hover:bg-rose-500/5 transition-all relative z-10"
+        className="w-full py-4 text-[10px] font-black bg-slate-50 dark:bg-transparent text-slate-500 dark:text-slate-500 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/5 uppercase tracking-[0.2em] border border-slate-200 dark:border-white/10 rounded-2xl transition-all relative z-10"
       >
         {t.terminate}
       </button>

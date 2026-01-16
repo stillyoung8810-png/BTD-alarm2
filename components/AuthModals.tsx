@@ -265,19 +265,19 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-[#0B0F19]/90 backdrop-blur-xl" onClick={onClose}></div>
-      <div className="relative w-full max-w-md bg-[#161d2a] rounded-[3rem] border border-white/10 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+      <div className="absolute inset-0 bg-slate-900/50 dark:bg-[#0B0F19]/90 backdrop-blur-xl" onClick={onClose}></div>
+      <div className="relative w-full max-w-md bg-white dark:bg-[#161d2a] rounded-[3rem] border border-slate-200 dark:border-white/10 shadow-2xl dark:shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
         
-        <div className="p-8 border-b border-white/5 flex justify-between items-center bg-slate-900/40">
+        <div className="p-8 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-slate-900/40">
            <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
                  {type === 'profile' ? <UserCheck className="text-white" size={20} /> : <ShieldCheck className="text-white" size={20} />}
               </div>
-              <h2 className="text-xl font-black text-white uppercase tracking-tight">
+              <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
                 {type === 'login' ? t.login : type === 'signup' ? t.signup : type === 'reset-password' ? (lang === 'ko' ? '비밀번호 재설정' : 'Reset Password') : 'User Profile'}
               </h2>
            </div>
-           <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full text-slate-500"><X size={24} /></button>
+           <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-white/5 rounded-full text-slate-500 dark:text-slate-400"><X size={24} /></button>
         </div>
 
         <div className="p-10 space-y-8">
@@ -293,7 +293,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                     placeholder="••••••••"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full p-5 pl-14 bg-slate-900 border border-white/5 rounded-2xl text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/50"
+                    className="w-full p-5 pl-14 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/50"
                   />
                 </div>
               </div>
@@ -308,7 +308,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                     placeholder="••••••••"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full p-5 pl-14 bg-slate-900 border border-white/5 rounded-2xl text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/50"
+                    className="w-full p-5 pl-14 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/50"
                   />
                 </div>
               </div>
@@ -340,14 +340,14 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
             </form>
           ) : type === 'profile' ? (
             <div className="space-y-6">
-               <div className="bg-slate-900/60 p-6 rounded-2xl border border-white/5 text-center">
+               <div className="bg-slate-50 dark:bg-slate-900/60 p-6 rounded-2xl border border-slate-200 dark:border-white/5 text-center">
                   <div className="w-20 h-20 bg-blue-600 rounded-full mx-auto mb-4 flex items-center justify-center shadow-xl border-4 border-white/10">
                      <UserCheck size={40} className="text-white" />
                   </div>
-                  <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-1">
+                  <p className="text-slate-600 dark:text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-1">
                     {lang === 'ko' ? '로그인 계정' : 'Logged in as'}
                   </p>
-                  <p className="text-white font-black text-lg">
+                  <p className="text-slate-900 dark:text-white font-black text-lg">
                     {currentUserEmail || 'unknown'}
                   </p>
                </div>
@@ -368,7 +368,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                     type="button"
                     onClick={() => handleResetPassword(currentUserEmail || undefined)}
                     disabled={loading}
-                    className="w-full py-5 bg-slate-800 text-white rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 border border-white/5 hover:bg-slate-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="w-full py-5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-white rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 border border-slate-200 dark:border-white/5 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     <Key size={18} /> {t.changePassword}
                   </button>
@@ -403,7 +403,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                       placeholder="name@example.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full p-5 pl-14 bg-slate-900 border border-white/5 rounded-2xl text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/50"
+                      className="w-full p-5 pl-14 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/50"
                     />
                  </div>
               </div>
@@ -417,7 +417,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                       placeholder="••••••••"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full p-5 pl-14 bg-slate-900 border border-white/5 rounded-2xl text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/50"
+                      className="w-full p-5 pl-14 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/50"
                     />
                  </div>
               </div>
@@ -454,8 +454,8 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                 {lang === 'ko' ? '비밀번호를 잊으셨나요? 재설정 메일 보내기' : 'Forgot password? Send reset email'}
               </button>
 
-              <div className="pt-4 border-t border-white/5 space-y-3">
-                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] text-center">
+              <div className="pt-4 border-t border-slate-200 dark:border-white/5 space-y-3">
+                <p className="text-[10px] text-slate-600 dark:text-slate-500 font-bold uppercase tracking-[0.2em] text-center">
                   {lang === 'ko' ? '또는 소셜 계정으로 로그인' : 'Or continue with'}
                 </p>
                 <div className="grid grid-cols-3 gap-3">
@@ -478,7 +478,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                   <button
                     type="button"
                     onClick={() => handleSocialLogin('github')}
-                    className="py-3 bg-slate-900 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest border border-white/20 hover:bg-slate-800 transition-all disabled:opacity-60"
+                    className="py-3 bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-white rounded-2xl font-black text-[11px] uppercase tracking-widest border border-slate-200 dark:border-white/20 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all disabled:opacity-60"
                     disabled={loading}
                   >
                     GitHub

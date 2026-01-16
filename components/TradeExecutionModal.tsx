@@ -74,19 +74,19 @@ const TradeExecutionModal: React.FC<TradeExecutionModalProps> = ({ lang, portfol
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onClick={onClose}></div>
-      <div className="relative w-full max-w-2xl bg-[#1a2333] rounded-[3rem] border border-white/10 shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom-12 duration-300">
+      <div className="absolute inset-0 bg-slate-900/50 dark:bg-slate-950/80 backdrop-blur-md" onClick={onClose}></div>
+      <div className="relative w-full max-w-2xl bg-white dark:bg-[#161d2a] rounded-[3rem] border border-slate-200 dark:border-white/10 shadow-2xl dark:shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom-12 duration-300">
         
-        <div className="p-8 md:p-10 border-b border-white/5 flex justify-between items-center bg-slate-900/40">
-           <h2 className="text-2xl font-black text-white tracking-tight">{t.tradeExecutionRecord}</h2>
-           <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full text-slate-500"><X size={24} /></button>
+        <div className="p-8 md:p-10 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-slate-900/40">
+           <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">{t.tradeExecutionRecord}</h2>
+           <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-white/5 rounded-full text-slate-500 dark:text-slate-400"><X size={24} /></button>
         </div>
 
         <div className="p-8 md:p-10 space-y-10 flex-1 overflow-y-auto scrollbar-hide">
           
-          <div className="flex p-1.5 bg-slate-900 rounded-[1.5rem] border border-white/5">
-            <button onClick={() => setType('buy')} className={`flex-1 py-5 rounded-2xl text-xs font-black transition-all ${type === 'buy' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500'}`}>{t.buy}</button>
-            <button onClick={() => setType('sell')} className={`flex-1 py-5 rounded-2xl text-xs font-black transition-all ${type === 'sell' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500'}`}>{t.sell}</button>
+          <div className="flex p-1.5 bg-slate-100 dark:bg-slate-900 rounded-[1.5rem] border border-slate-200 dark:border-white/5">
+            <button onClick={() => setType('buy')} className={`flex-1 py-5 rounded-2xl text-xs font-black transition-all ${type === 'buy' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-600 dark:text-slate-500'}`}>{t.buy}</button>
+            <button onClick={() => setType('sell')} className={`flex-1 py-5 rounded-2xl text-xs font-black transition-all ${type === 'sell' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-600 dark:text-slate-500'}`}>{t.sell}</button>
           </div>
 
           <div className="space-y-4">
@@ -104,7 +104,7 @@ const TradeExecutionModal: React.FC<TradeExecutionModalProps> = ({ lang, portfol
                   type="date" 
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
-                  className="w-full p-6 pl-16 bg-slate-900 border border-white/5 rounded-3xl text-white font-bold text-base outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none" 
+                  className="w-full p-6 pl-16 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-3xl text-slate-900 dark:text-white font-bold text-base outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none" 
                 />
              </div>
           </div>
@@ -119,7 +119,7 @@ const TradeExecutionModal: React.FC<TradeExecutionModalProps> = ({ lang, portfol
                    value={price || ''}
                    onChange={(e) => setPrice(Number(e.target.value))}
                    placeholder="0.00"
-                   className="w-full p-6 pl-12 bg-slate-900 border border-white/5 rounded-3xl text-white font-black text-xl outline-none" 
+                   className="w-full p-6 pl-12 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-3xl text-slate-900 dark:text-white font-black text-xl outline-none" 
                  />
                </div>
             </div>
@@ -130,7 +130,7 @@ const TradeExecutionModal: React.FC<TradeExecutionModalProps> = ({ lang, portfol
                  value={quantity || ''}
                  onChange={(e) => setQuantity(Number(e.target.value))}
                  placeholder="0"
-                 className="w-full p-6 bg-slate-900 border border-white/5 rounded-3xl text-white font-black text-xl outline-none" 
+                 className="w-full p-6 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-3xl text-slate-900 dark:text-white font-black text-xl outline-none" 
                />
             </div>
           </div>
@@ -144,24 +144,24 @@ const TradeExecutionModal: React.FC<TradeExecutionModalProps> = ({ lang, portfol
                      type="number" 
                      value={fee || ''}
                      onChange={(e) => setFee(Number(e.target.value))}
-                     className="w-full p-6 pl-12 bg-slate-900 border border-white/5 rounded-3xl text-white font-black text-xl outline-none" 
+                     className="w-full p-6 pl-12 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-3xl text-slate-900 dark:text-white font-black text-xl outline-none" 
                    />
                 </div>
              </div>
              <div className="space-y-3">
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.totalAmount}:</label>
-                <div className="w-full p-6 bg-slate-900/50 border border-white/5 rounded-3xl flex items-center justify-start">
+                <div className="w-full p-6 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/5 rounded-3xl flex items-center justify-start">
                    <span className="text-2xl font-black text-blue-500">${totalSettlement.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
              </div>
           </div>
         </div>
 
-        <div className="p-8 md:p-10 flex gap-6 bg-slate-900/30">
-           <button onClick={onClose} className="p-4 rounded-full border border-white/10 text-slate-500 hover:bg-white/5 transition-all"><X size={24} /></button>
+        <div className="p-8 md:p-10 flex gap-6 bg-slate-50 dark:bg-slate-900/30">
+           <button onClick={onClose} className="p-4 rounded-full border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 transition-all"><X size={24} /></button>
            <button 
              onClick={handleSave}
-             className="flex-1 py-6 bg-blue-600 text-white rounded-[2rem] font-black uppercase text-sm tracking-widest shadow-2xl shadow-blue-500/30 flex items-center justify-center gap-3 hover:scale-[1.02] transition-all"
+             className="flex-1 py-6 bg-blue-600 text-white rounded-[2rem] font-black uppercase text-sm tracking-widest shadow-2xl dark:shadow-2xl dark:shadow-blue-500/30 flex items-center justify-center gap-3 hover:scale-[1.02] transition-all"
            >
              {t.save} <ChevronRight size={20} />
            </button>

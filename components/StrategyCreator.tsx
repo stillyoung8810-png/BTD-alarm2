@@ -73,11 +73,11 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
         </div>
         
         <div className="space-y-4">
-          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '기준 주식 선택:' : 'Select Reference Stock:'}</label>
+          <label className="text-[10px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '기준 주식 선택:' : 'Select Reference Stock:'}</label>
           <select 
             value={ma0Stock}
             onChange={(e) => setMa0Stock(e.target.value)}
-            className="w-full p-4 bg-white/5 border border-white/10 rounded-xl text-sm font-bold dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none transition-all cursor-pointer backdrop-blur-md"
+            className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none transition-all cursor-pointer"
           >
             <option value="" className="bg-slate-900">-- {lang === 'ko' ? '선택하세요' : 'Select'} --</option>
             {AVAILABLE_STOCKS.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
@@ -89,7 +89,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
           </p>
         </div>
 
-        <div className="flex items-center justify-between pt-4 border-t border-white/5">
+        <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-white/5">
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold dark:text-slate-300 tracking-tight">{lang === 'ko' ? 'RSI 사용:' : 'Enable RSI:'}</span>
             <button 
@@ -99,7 +99,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
               {rsiEnabled ? <ToggleRight className="text-blue-500" size={32} /> : <ToggleLeft className="text-slate-600" size={32} />}
             </button>
           </div>
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">
             {lang === 'ko' ? 'RSI 기준 값 아래에서만 매수 진행' : 'Buy only below RSI threshold'}
           </span>
         </div>
@@ -110,27 +110,27 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
   const renderStep2 = () => (
     <div className="space-y-6 animate-in slide-in-from-right-8 duration-500">
       {/* Section 1 */}
-      <div className="bg-white/5 border border-white/10 p-8 rounded-[2rem] space-y-5 backdrop-blur-sm shadow-xl">
+      <div className="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 p-8 rounded-[2rem] space-y-5 shadow-md dark:shadow-xl">
         <h3 className="text-xs font-black dark:text-white uppercase tracking-widest flex items-center gap-2">
           <div className="w-6 h-6 bg-white/10 rounded flex items-center justify-center text-[10px]">1</div>
           {lang === 'ko' ? '구간 1: 특정 이동평균선 위에서 매일 매수 구간' : 'Section 1: Daily Buy Above MA'}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '기준 이동평균선 설정 (1~360일):' : 'MA Period (1-360):'}</label>
+            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '기준 이동평균선 설정 (1~360일):' : 'MA Period (1-360):'}</label>
             <input 
               type="number" 
               value={ma1Period}
               onChange={(e) => setMa1Period(Number(e.target.value))}
-              className="w-full p-4 bg-white/5 border border-white/10 rounded-xl text-sm font-black dark:text-white backdrop-blur-md outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+              className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
             />
           </div>
           <div className="space-y-2">
-            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '매수할 종목 선택:' : 'Stock to Buy:'}</label>
+            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '매수할 종목 선택:' : 'Stock to Buy:'}</label>
             <select 
               value={ma1Stock}
               onChange={(e) => setMa1Stock(e.target.value)}
-              className="w-full p-4 bg-white/5 border border-white/10 rounded-xl text-sm font-black dark:text-white appearance-none backdrop-blur-md outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+              className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white appearance-none outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
             >
               {AVAILABLE_STOCKS.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
             </select>
@@ -138,13 +138,13 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
         </div>
 
         {rsiEnabled && (
-          <div className="space-y-3 pt-4 border-t border-white/5 animate-in fade-in slide-in-from-top-2">
-            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{lang === 'ko' ? 'RSI 기준 값 (0-100):' : 'RSI Base Value (0-100):'}</label>
+          <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-white/5 animate-in fade-in slide-in-from-top-2">
+            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? 'RSI 기준 값 (0-100):' : 'RSI Base Value (0-100):'}</label>
             <input 
               type="number" 
               value={ma1Rsi}
               onChange={(e) => setMa1Rsi(Number(e.target.value))}
-              className="w-full p-4 bg-white/5 border border-white/10 rounded-xl text-sm font-black dark:text-white backdrop-blur-md outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+              className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
               min="0"
               max="100"
             />
@@ -160,7 +160,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
       </div>
 
       {/* Section 2 */}
-      <div className="bg-white/5 border border-white/10 p-8 rounded-[2rem] space-y-5 backdrop-blur-sm shadow-xl">
+      <div className="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 p-8 rounded-[2rem] space-y-5 shadow-md dark:shadow-xl">
         <h3 className="text-xs font-black dark:text-white uppercase tracking-widest flex items-center gap-2">
           <div className="w-6 h-6 bg-white/10 rounded flex items-center justify-center text-[10px]">2</div>
           {lang === 'ko' ? '구간 2: 특정 2개의 이동평균선 사이에서 매일 매수' : 'Section 2: Daily Buy Between 2 MAs'}
@@ -172,7 +172,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
               type="number" 
               value={ma2Period1}
               onChange={(e) => setMa2Period1(Number(e.target.value))}
-              className="w-full p-4 bg-white/5 border border-white/10 rounded-xl text-sm font-black dark:text-white backdrop-blur-md outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+              className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
             />
           </div>
           <div className="space-y-2">
@@ -181,17 +181,17 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
               type="number" 
               value={ma2Period2}
               onChange={(e) => setMa2Period2(Number(e.target.value))}
-              className="w-full p-4 bg-white/5 border border-white/10 rounded-xl text-sm font-black dark:text-white backdrop-blur-md outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+              className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
             />
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '매수할 종목 선택:' : 'Stock to Buy:'}</label>
+            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '매수할 종목 선택:' : 'Stock to Buy:'}</label>
             <select 
               value={ma2Stock}
               onChange={(e) => setMa2Stock(e.target.value)}
-              className="w-full p-4 bg-white/5 border border-white/10 rounded-xl text-sm font-black dark:text-white appearance-none backdrop-blur-md outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+              className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white appearance-none outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
             >
               {AVAILABLE_STOCKS.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
             </select>
@@ -202,19 +202,19 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
               type="number" 
               value={ma2Split}
               onChange={(e) => setMa2Split(Number(e.target.value))}
-              className="w-full p-4 bg-white/5 border border-white/10 rounded-xl text-sm font-black dark:text-white backdrop-blur-md outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+              className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
             />
           </div>
         </div>
 
         {rsiEnabled && (
-          <div className="space-y-3 pt-4 border-t border-white/5 animate-in fade-in slide-in-from-top-2">
-            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{lang === 'ko' ? 'RSI 기준 값 (0-100):' : 'RSI Base Value (0-100):'}</label>
+          <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-white/5 animate-in fade-in slide-in-from-top-2">
+            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? 'RSI 기준 값 (0-100):' : 'RSI Base Value (0-100):'}</label>
             <input 
               type="number" 
               value={ma2Rsi}
               onChange={(e) => setMa2Rsi(Number(e.target.value))}
-              className="w-full p-4 bg-white/5 border border-white/10 rounded-xl text-sm font-black dark:text-white backdrop-blur-md outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+              className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
               min="0"
               max="100"
             />
@@ -230,27 +230,27 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
       </div>
 
       {/* Section 3 */}
-      <div className="bg-white/5 border border-white/10 p-8 rounded-[2rem] space-y-5 backdrop-blur-sm shadow-xl">
+      <div className="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 p-8 rounded-[2rem] space-y-5 shadow-md dark:shadow-xl">
         <h3 className="text-xs font-black dark:text-white uppercase tracking-widest flex items-center gap-2">
           <div className="w-6 h-6 bg-white/10 rounded flex items-center justify-center text-[10px]">3</div>
           {lang === 'ko' ? '구간 3: 특정 이동평균선 아래에서 매일 매수 구간' : 'Section 3: Daily Buy Below MA'}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '기준 이동평균선 설정 (1~360일):' : 'MA Period (1-360):'}</label>
+            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '기준 이동평균선 설정 (1~360일):' : 'MA Period (1-360):'}</label>
             <input 
               type="number" 
               value={ma3Period}
               onChange={(e) => setMa3Period(Number(e.target.value))}
-              className="w-full p-4 bg-white/5 border border-white/10 rounded-xl text-sm font-black dark:text-white backdrop-blur-md outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+              className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
             />
           </div>
           <div className="space-y-2">
-            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '매수할 종목 선택:' : 'Stock to Buy:'}</label>
+            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '매수할 종목 선택:' : 'Stock to Buy:'}</label>
             <select 
               value={ma3Stock}
               onChange={(e) => setMa3Stock(e.target.value)}
-              className="w-full p-4 bg-white/5 border border-white/10 rounded-xl text-sm font-black dark:text-white appearance-none backdrop-blur-md outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+              className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white appearance-none outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
             >
               {AVAILABLE_STOCKS.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
             </select>
@@ -258,13 +258,13 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
         </div>
 
         {rsiEnabled && (
-          <div className="space-y-3 pt-4 border-t border-white/5 animate-in fade-in slide-in-from-top-2">
-            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{lang === 'ko' ? 'RSI 기준 값 (0-100):' : 'RSI Base Value (0-100):'}</label>
+          <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-white/5 animate-in fade-in slide-in-from-top-2">
+            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? 'RSI 기준 값 (0-100):' : 'RSI Base Value (0-100):'}</label>
             <input 
               type="number" 
               value={ma3Rsi}
               onChange={(e) => setMa3Rsi(Number(e.target.value))}
-              className="w-full p-4 bg-white/5 border border-white/10 rounded-xl text-sm font-black dark:text-white backdrop-blur-md outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+              className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
               min="0"
               max="100"
             />
@@ -290,7 +290,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
     <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
       <div className="space-y-6">
         <div className="space-y-3">
-          <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{lang === 'ko' ? '포트폴리오 이름:' : 'Portfolio Name:'}</label>
+          <label className="text-[10px] font-black text-slate-600 dark:text-slate-500 uppercase tracking-[0.2em]">{lang === 'ko' ? '포트폴리오 이름:' : 'Portfolio Name:'}</label>
           <div className="relative">
              <Settings2 className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
              <input 
@@ -298,13 +298,13 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
               placeholder={lang === 'ko' ? '포트폴리오 이름을 입력하세요' : 'Enter portfolio name'}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full p-6 pl-16 bg-white/5 dark:text-white rounded-2xl border border-white/10 focus:ring-4 focus:ring-blue-500/20 font-black text-lg outline-none transition-all backdrop-blur-md" 
+              className="w-full p-6 pl-16 bg-slate-100/50 dark:bg-slate-900 text-slate-900 dark:text-white rounded-2xl border border-slate-200 dark:border-white/10 focus:ring-4 focus:ring-blue-500/20 font-black text-lg outline-none transition-all" 
              />
           </div>
         </div>
 
         <div className="space-y-3">
-          <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{lang === 'ko' ? '매일 매수하는 금액:' : 'Daily Purchase Amount:'}</label>
+          <label className="text-[10px] font-black text-slate-600 dark:text-slate-500 uppercase tracking-[0.2em]">{lang === 'ko' ? '매일 매수하는 금액:' : 'Daily Purchase Amount:'}</label>
           <div className="relative">
              <Wallet className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
              <div className="absolute right-8 top-1/2 -translate-y-1/2 text-xl font-black text-slate-600">$</div>
@@ -312,26 +312,26 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
               type="number" 
               value={dailyBuy}
               onChange={(e) => setDailyBuy(Number(e.target.value))}
-              className="w-full p-6 pl-16 bg-white/5 dark:text-white rounded-2xl border border-white/10 focus:ring-4 focus:ring-blue-500/20 font-black text-xl outline-none transition-all backdrop-blur-md" 
+              className="w-full p-6 pl-16 bg-slate-100/50 dark:bg-slate-900 text-slate-900 dark:text-white rounded-2xl border border-slate-200 dark:border-white/10 focus:ring-4 focus:ring-blue-500/20 font-black text-xl outline-none transition-all" 
              />
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-3">
-            <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{lang === 'ko' ? '시작일:' : 'Start Date:'}</label>
+            <label className="text-[10px] font-black text-slate-600 dark:text-slate-500 uppercase tracking-[0.2em]">{lang === 'ko' ? '시작일:' : 'Start Date:'}</label>
             <div className="relative">
                <Calendar className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" size={18} />
                <input 
                 type="date" 
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="w-full p-5 pl-14 bg-white/5 dark:text-white rounded-xl border border-white/10 font-bold text-sm outline-none backdrop-blur-md focus:ring-2 focus:ring-blue-500/50 transition-all" 
+                className="w-full p-5 pl-14 bg-slate-100/50 dark:bg-slate-900 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-white/10 font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500/50 transition-all" 
                />
             </div>
           </div>
           <div className="space-y-3">
-            <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{lang === 'ko' ? '수수료율 (선택):' : 'Fee Rate (%):'}</label>
+            <label className="text-[10px] font-black text-slate-600 dark:text-slate-500 uppercase tracking-[0.2em]">{lang === 'ko' ? '수수료율 (선택):' : 'Fee Rate (%):'}</label>
             <div className="relative">
                <Percent className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" size={18} />
                <input 
@@ -339,7 +339,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
                 step="0.01"
                 value={feeRate}
                 onChange={(e) => setFeeRate(Number(e.target.value))}
-                className="w-full p-5 pl-14 bg-white/5 dark:text-white rounded-xl border border-white/10 font-bold text-sm outline-none backdrop-blur-md focus:ring-2 focus:ring-blue-500/50 transition-all" 
+                className="w-full p-5 pl-14 bg-slate-100/50 dark:bg-slate-900 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-white/10 font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500/50 transition-all" 
                />
             </div>
             <p className="text-[9px] text-slate-500 font-bold uppercase">{lang === 'ko' ? '미입력시 기본값 0.25%가 적용됩니다.' : 'Defaults to 0.25% if empty.'}</p>
@@ -351,30 +351,30 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-[#0B0F19]/95 backdrop-blur-xl" onClick={onClose}></div>
-      <div className="relative w-full max-w-2xl glass rounded-[3rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border border-white/10 premium-shadow">
+      <div className="absolute inset-0 bg-slate-900/40 dark:bg-slate-950/90 backdrop-blur-xl" onClick={onClose}></div>
+      <div className="relative w-full max-w-2xl bg-white dark:bg-[#111827] rounded-[3rem] shadow-2xl dark:shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border border-slate-200 dark:border-white/10">
         
         {/* Header */}
-        <div className="p-8 md:p-10 border-b border-white/5 flex justify-between items-center bg-slate-900/50">
+        <div className="p-8 md:p-10 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-slate-900/60">
           <div className="flex items-center gap-4">
              <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20">
                 {step === 3 ? <Sparkles className="text-white" size={24} /> : <Target className="text-white" size={24} />}
              </div>
              <div>
-                <h2 className="text-2xl font-black dark:text-white tracking-tight">
+                <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
                   {step === 3 ? (lang === 'ko' ? '포트폴리오 기타 정보 설정' : 'Portfolio Final Settings') : (lang === 'ko' ? '전략 세부 설정' : 'Strategy Detailed Settings')}
                 </h2>
                 <div className="flex items-center gap-2 mt-0.5">
                    <div className="flex gap-1">
                       {[1, 2, 3].map(i => (
-                        <div key={i} className={`h-1.5 rounded-full transition-all duration-500 ${step === i ? 'w-8 bg-blue-500' : 'w-3 bg-slate-800'}`}></div>
+                        <div key={i} className={`h-1.5 rounded-full transition-all duration-500 ${step === i ? 'w-8 bg-blue-500' : 'w-3 bg-slate-200 dark:bg-slate-800'}`}></div>
                       ))}
                    </div>
                    <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest ml-2">Step {step} of 3</span>
                 </div>
              </div>
           </div>
-          <button onClick={onClose} className="p-3 hover:bg-white/10 rounded-full transition-colors text-slate-400">
+          <button onClick={onClose} className="p-3 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full transition-colors text-slate-500 dark:text-slate-400">
             <X size={24} />
           </button>
         </div>
@@ -387,11 +387,11 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
         </div>
 
         {/* Footer */}
-        <div className="p-8 md:p-10 border-t border-white/5 flex gap-4 bg-slate-900/50">
+        <div className="p-8 md:p-10 border-t border-slate-200 dark:border-white/5 flex gap-4 bg-slate-50 dark:bg-slate-900/60">
           {step > 1 && (
             <button 
               onClick={() => setStep(step - 1)}
-              className="px-8 py-5 bg-slate-800 hover:bg-slate-700 dark:text-white rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 transition-all border border-white/10"
+              className="px-8 py-5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-white hover:bg-slate-200 dark:hover:bg-slate-700 rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 transition-all border border-slate-200 dark:border-white/10"
             >
               <ChevronLeft size={18} strokeWidth={3} /> {lang === 'ko' ? '이전' : 'Back'}
             </button>

@@ -118,16 +118,18 @@ const Markets: React.FC<{lang: 'ko' | 'en'}> = ({ lang }) => {
               {lang === 'ko' ? '전일 종가 정보' : 'Previous Close Info'}
             </h3>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <button 
               onClick={() => scroll('left')}
-              className="w-10 h-10 rounded-full glass border border-white/5 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-all"
+              className="w-10 h-10 rounded-full glass border border-white/5 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-all active:scale-95"
+              aria-label={lang === 'ko' ? '왼쪽으로 스크롤' : 'Scroll left'}
             >
               <ChevronLeft size={20} />
             </button>
             <button 
               onClick={() => scroll('right')}
-              className="w-10 h-10 rounded-full glass border border-white/5 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-all"
+              className="w-10 h-10 rounded-full glass border border-white/5 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-all active:scale-95"
+              aria-label={lang === 'ko' ? '오른쪽으로 스크롤' : 'Scroll right'}
             >
               <ChevronRight size={20} />
             </button>
@@ -136,12 +138,12 @@ const Markets: React.FC<{lang: 'ko' | 'en'}> = ({ lang }) => {
         
         <div className="relative group">
           {/* Gradient Masks for better focus on scrollable content */}
-          <div className="absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-[#06090F] to-transparent z-10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"></div>
-          <div className="absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[#06090F] to-transparent z-10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div className="absolute inset-y-0 left-0 w-12 bg-gradient-to-r from-slate-50 dark:from-[#06090F] to-transparent z-10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div className="absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-slate-50 dark:from-[#06090F] to-transparent z-10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"></div>
           
           <div 
             ref={scrollRef}
-            className="flex gap-6 overflow-x-auto pb-8 pt-4 -mx-6 px-10 md:mx-0 md:px-4 scrollbar-hide"
+            className="flex gap-6 overflow-x-auto pb-8 pt-4 -mx-6 px-10 md:mx-0 md:px-4 scrollbar-hide snap-x snap-mandatory"
           >
             {AVAILABLE_STOCKS.map((ticker) => {
               const isSelected = selectedStock === ticker;
@@ -154,7 +156,7 @@ const Markets: React.FC<{lang: 'ko' | 'en'}> = ({ lang }) => {
                 <button
                   key={ticker}
                   onClick={() => setSelectedStock(ticker)}
-                  className={`flex-shrink-0 w-48 bg-white dark:bg-[#080B15] p-6 rounded-[2rem] border transition-all duration-300 text-left group flex flex-col gap-5 ${
+                  className={`flex-shrink-0 w-48 bg-white dark:bg-[#080B15] p-6 rounded-[2rem] border transition-all duration-300 text-left group flex flex-col gap-5 snap-center cursor-grab active:cursor-grabbing ${
                     isSelected 
                       ? 'border-blue-500 ring-4 ring-blue-500/15 shadow-xl -translate-y-2' 
                       : 'border-slate-200 dark:border-white/5 shadow-md hover:border-slate-300 dark:hover:border-white/10'

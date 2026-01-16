@@ -200,61 +200,75 @@ const App: React.FC = () => {
 
   const handleAddPortfolio = async (newP: Omit<Portfolio, 'id'>) => {
     if (!user) {
-      console.error('2. 유저 정보 없음');
-      alert('로그인이 필요합니다.');
+      alert("로그인 세션이 만료되었습니다. 다시 로그인해주세요.");
       return;
     }
 
     console.log('1. 함수 호출됨', { user, newP });
 
+    // Supabase 테이블 컬럼명이 snake_case이므로 모든 필드를 매핑
+    const {
+      dailyBuyAmount,
+      startDate,
+      feeRate,
+      isClosed,
+      closedAt,
+      finalSellAmount,
+      alarmConfig,
+      ...rest
+    } = newP;
+
+    // 페이로드 생성
+    const payload = {
+      ...rest,
+      id: crypto.randomUUID(), // PK 충돌 방지
+      user_id: user.id,
+      daily_buy_amount: dailyBuyAmount,
+      start_date: startDate,
+      fee_rate: feeRate,
+      is_closed: isClosed,
+      closed_at: closedAt || null,
+      final_sell_amount: finalSellAmount || null,
+      alarm_config: alarmConfig || null,
+    };
+
+    console.log('3. 최종 페이로드 전송 시도:', payload);
+
     try {
-      // Supabase 테이블 컬럼명이 snake_case이므로 모든 필드를 매핑
-      const {
-        dailyBuyAmount,
-        startDate,
-        feeRate,
-        isClosed,
-        closedAt,
-        finalSellAmount,
-        alarmConfig,
-        ...rest
-      } = newP;
-      const payload = {
-        ...rest,
-        id: crypto.randomUUID(),
-        user_id: user.id,
-        daily_buy_amount: dailyBuyAmount,
-        start_date: startDate,
-        fee_rate: feeRate,
-        is_closed: isClosed,
-        closed_at: closedAt || null,
-        final_sell_amount: finalSellAmount || null,
-        alarm_config: alarmConfig || null,
-      };
-
-      console.log('3. 최종 페이로드:', payload);
-
-      // 실제 전송 시도
+      // [핵심] await를 반드시 확인하고, 결과값을 변수에 담습니다.
       const { data, error } = await supabase
         .from('portfolios')
         .insert([payload])
         .select();
 
       if (error) {
-        console.error('4. Supabase DB 에러:', error);
-        alert(`저장 실패: ${error.message}`);
+        console.error('4. Supabase DB 응답 에러:', error);
+        alert(`데이터베이스 에러: ${error.message}\n코드: ${error.code}`);
         return;
-      } else {
-        console.log('5. 저장 성공:', data);
-        // 성공 후 로직
-        if (data && data.length > 0) {
-          setPortfolios(prev => [data[0] as Portfolio, ...prev]);
-          setIsCreatorOpen(false);
-        }
       }
+
+      console.log('5. 저장 성공!', data);
+      if (data && data.length > 0) {
+        // Supabase 컬럼명이 snake_case이므로 모든 필드를 camelCase로 정규화
+        const normalized = (data as any[]).map((row) => ({
+          ...row,
+          dailyBuyAmount: row.dailyBuyAmount ?? row.daily_buy_amount ?? 0,
+          startDate: row.startDate ?? row.start_date ?? '',
+          feeRate: row.feeRate ?? row.fee_rate ?? 0.25,
+          isClosed: row.isClosed ?? row.is_closed ?? false,
+          closedAt: row.closedAt ?? row.closed_at ?? undefined,
+          finalSellAmount: row.finalSellAmount ?? row.final_sell_amount ?? undefined,
+          alarmConfig: row.alarmConfig ?? row.alarm_config ?? undefined,
+        }));
+        setPortfolios(prev => [...prev, ...normalized]);
+        setIsCreatorOpen(false);
+        alert('포트폴리오가 성공적으로 저장되었습니다!');
+      }
+
     } catch (err) {
+      // 네트워크 연결 자체가 안 되거나 코드가 터졌을 때
       console.error('6. 치명적 실행 에러:', err);
-      alert('시스템 에러가 발생했습니다. 콘솔을 확인하세요.');
+      alert('요청을 보내는 중 에러가 발생했습니다. 콘솔을 확인하세요.');
     }
   };
 

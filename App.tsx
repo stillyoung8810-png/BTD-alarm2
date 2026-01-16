@@ -81,6 +81,8 @@ const App: React.FC = () => {
         if (!isMounted) return;
         setUser(currentUser);
 
+        // fetchPortfolios 함수 사용 (정규화 로직 포함)
+        if (!isMounted) return;
         const { data, error } = await supabase
           .from('portfolios')
           .select('*')
@@ -190,6 +192,50 @@ const App: React.FC = () => {
       listener.subscription.unsubscribe();
     };
   }, []);
+
+  // 1. 포트폴리오 데이터를 가져오는 함수
+  const fetchPortfolios = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('portfolios')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('데이터 로드 에러:', error.message);
+        return;
+      }
+
+      if (data) {
+        // DB의 snake_case를 UI에서 사용하는 camelCase 구조로 변환하여 저장
+        // (Supabase 테이블은 snake_case, 프론트엔드는 camelCase 사용)
+        const formattedData = (data as any[]).map((item) => ({
+          ...item,
+          dailyBuyAmount: item.dailyBuyAmount ?? item.daily_buy_amount ?? 0,
+          startDate: item.startDate ?? item.start_date ?? '',
+          feeRate: item.feeRate ?? item.fee_rate ?? 0.25,
+          isClosed: item.isClosed ?? item.is_closed ?? false,
+          closedAt: item.closedAt ?? item.closed_at ?? undefined,
+          finalSellAmount: item.finalSellAmount ?? item.final_sell_amount ?? undefined,
+          alarmConfig: item.alarmConfig ?? item.alarm_config ?? undefined,
+          strategy: item.strategy, // strategy 컬럼은 이미 일치
+        }));
+        setPortfolios(formattedData as Portfolio[]);
+      }
+    } catch (err) {
+      console.error('예기치 못한 에러:', err);
+    }
+  };
+
+  // 2. 로그인 상태가 변경될 때마다 데이터를 새로 고침
+  useEffect(() => {
+    if (user) {
+      fetchPortfolios(user.id);
+    } else {
+      setPortfolios([]);
+    }
+  }, [user]);
 
   const totalValuation = useMemo(() => {
     return portfolios.reduce((sum, p) => {

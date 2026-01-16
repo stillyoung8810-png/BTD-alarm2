@@ -82,28 +82,7 @@ const App: React.FC = () => {
         setUser(currentUser);
 
         // fetchPortfolios 함수 사용 (정규화 로직 포함)
-        if (!isMounted) return;
-        const { data, error } = await supabase
-          .from('portfolios')
-          .select('*')
-          .eq('user_id', currentUser.id)
-          .order('created_at', { ascending: false });
-
-        if (!isMounted) return;
-        if (!error && data) {
-          // Supabase 컬럼명이 snake_case이므로 모든 필드를 camelCase로 정규화
-          const normalized = (data as any[]).map((row) => ({
-            ...row,
-            dailyBuyAmount: row.dailyBuyAmount ?? row.daily_buy_amount ?? 0,
-            startDate: row.startDate ?? row.start_date ?? '',
-            feeRate: row.feeRate ?? row.fee_rate ?? 0.25,
-            isClosed: row.isClosed ?? row.is_closed ?? false,
-            closedAt: row.closedAt ?? row.closed_at ?? undefined,
-            finalSellAmount: row.finalSellAmount ?? row.final_sell_amount ?? undefined,
-            alarmConfig: row.alarmConfig ?? row.alarm_config ?? undefined,
-          }));
-          setPortfolios(normalized as Portfolio[]);
-        }
+        await fetchPortfolios(currentUser.id);
       } catch (err) {
         if (isMounted) {
           console.error('Failed to fetch user data:', err);
@@ -111,15 +90,13 @@ const App: React.FC = () => {
       }
     };
 
-    const initAuthAndData = async () => {
+    // 1. 현재 세션을 직접 확인하여 user 상태를 즉시 복구 시도 (새로고침 시 중요)
+    const checkUser = async () => {
+      if (!isMounted) return;
+      
       try {
-        if (!isMounted) return;
         setIsLoading(true);
-
-        const {
-          data: { session },
-          error: sessionError,
-        } = await supabase.auth.getSession();
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
         if (!isMounted) return;
 
@@ -130,6 +107,7 @@ const App: React.FC = () => {
         }
 
         if (session?.user) {
+          // 세션이 있으면 즉시 사용자 정보와 포트폴리오 로드
           await fetchUserData(session.user);
         } else {
           setUser(null);
@@ -146,8 +124,9 @@ const App: React.FC = () => {
       }
     };
 
-    initAuthAndData();
+    checkUser();
 
+    // 2. 인증 상태 변화 감지 (로그인, 로그아웃, 토큰 갱신 등)
     const { data: listener } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!isMounted) return;
@@ -155,13 +134,15 @@ const App: React.FC = () => {
         try {
           console.log('Auth state changed:', event, session?.user?.email);
 
+          const currentUser = session?.user ?? null;
+
           if (event === 'SIGNED_IN' && typeof window !== 'undefined') {
             // 로그인 성공 시에만 URL 해시 정리
             window.history.replaceState(null, '', window.location.pathname + window.location.search);
           }
 
-          if (session?.user) {
-            await fetchUserData(session.user);
+          if (currentUser) {
+            await fetchUserData(currentUser);
 
             if (event === 'PASSWORD_RECOVERY' && isMounted) {
               // 비밀번호 재설정 모달 열기
@@ -228,14 +209,6 @@ const App: React.FC = () => {
     }
   };
 
-  // 2. 로그인 상태가 변경될 때마다 데이터를 새로 고침
-  useEffect(() => {
-    if (user) {
-      fetchPortfolios(user.id);
-    } else {
-      setPortfolios([]);
-    }
-  }, [user]);
 
   const totalValuation = useMemo(() => {
     return portfolios.reduce((sum, p) => {

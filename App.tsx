@@ -204,8 +204,6 @@ const App: React.FC = () => {
       return;
     }
 
-    console.log('1. 함수 호출됨', { user, newP });
-
     // Supabase 테이블 컬럼명이 snake_case이므로 모든 필드를 매핑
     const {
       dailyBuyAmount,
@@ -218,10 +216,10 @@ const App: React.FC = () => {
       ...rest
     } = newP;
 
-    // 페이로드 생성
+    // 1. 데이터 준비
     const payload = {
       ...rest,
-      id: crypto.randomUUID(), // PK 충돌 방지
+      id: crypto.randomUUID(),
       user_id: user.id,
       daily_buy_amount: dailyBuyAmount,
       start_date: startDate,
@@ -232,22 +230,24 @@ const App: React.FC = () => {
       alarm_config: alarmConfig || null,
     };
 
-    console.log('3. 최종 페이로드 전송 시도:', payload);
-
+    console.log('전송 직전 최종 확인:', payload);
+    
     try {
-      // [핵심] await를 반드시 확인하고, 결과값을 변수에 담습니다.
+      // 2. 여기서 브라우저가 일시정지되는지 확인하세요
+      // alert('지금부터 Supabase로 전송을 시도합니다!'); 
+
       const { data, error } = await supabase
         .from('portfolios')
         .insert([payload])
         .select();
 
       if (error) {
-        console.error('4. Supabase DB 응답 에러:', error);
-        alert(`데이터베이스 에러: ${error.message}\n코드: ${error.code}`);
+        console.error('Supabase 에러 발생:', error);
+        alert(`저장 실패: ${error.message}`);
         return;
       }
 
-      console.log('5. 저장 성공!', data);
+      console.log('서버 응답 데이터:', data);
       if (data && data.length > 0) {
         // Supabase 컬럼명이 snake_case이므로 모든 필드를 camelCase로 정규화
         const normalized = (data as any[]).map((row) => ({
@@ -262,13 +262,12 @@ const App: React.FC = () => {
         }));
         setPortfolios(prev => [...prev, ...normalized]);
         setIsCreatorOpen(false);
-        alert('포트폴리오가 성공적으로 저장되었습니다!');
+        alert('저장 성공!');
       }
 
     } catch (err) {
-      // 네트워크 연결 자체가 안 되거나 코드가 터졌을 때
-      console.error('6. 치명적 실행 에러:', err);
-      alert('요청을 보내는 중 에러가 발생했습니다. 콘솔을 확인하세요.');
+      console.error('네트워크/코드 실행 에러:', err);
+      alert('시스템 에러가 발생했습니다.');
     }
   };
 

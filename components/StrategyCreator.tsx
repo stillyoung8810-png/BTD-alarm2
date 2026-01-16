@@ -40,7 +40,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
 
   const t = I18N[lang];
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const newP: Omit<Portfolio, 'id'> = {
       name: name || (lang === 'ko' ? '커스텀 전략' : 'Custom Strategy'),
       dailyBuyAmount: dailyBuy,
@@ -55,7 +55,9 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
         ma3: { period: ma3Period, stock: ma3Stock, rsiThreshold: rsiEnabled ? ma3Rsi : undefined }
       }
     };
-    onSave(newP);
+    console.log('부모 함수 호출 시작');
+    await onSave(newP);
+    console.log('부모 함수 호출 완료');
   };
 
   const renderStep1 = () => (

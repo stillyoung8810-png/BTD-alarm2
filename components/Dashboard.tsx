@@ -7,13 +7,15 @@ import {
   Zap,
   Info,
   Bell,
-  BellOff
+  BellOff,
+  Trash2
 } from 'lucide-react';
 
 interface DashboardProps {
   lang: 'ko' | 'en';
   portfolios: Portfolio[];
   onClosePortfolio: (id: string) => void;
+  onDeletePortfolio: (id: string) => void;
   onUpdatePortfolio: (updated: Portfolio) => void;
   onOpenCreator: () => void;
   onOpenAlarm: (id: string) => void;
@@ -26,7 +28,8 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ 
   lang, 
   portfolios, 
-  onClosePortfolio, 
+  onClosePortfolio,
+  onDeletePortfolio,
   onOpenCreator, 
   onOpenAlarm,
   onOpenDetails,
@@ -87,6 +90,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               onOpenQuickInput={() => onOpenQuickInput(p.id)}
               onOpenExecution={() => onOpenExecution(p.id)}
               onClose={() => onClosePortfolio(p.id)}
+              onDelete={() => onDeletePortfolio(p.id)}
             />
           ))
         )}
@@ -97,13 +101,14 @@ const Dashboard: React.FC<DashboardProps> = ({
 
 const PortfolioCard: React.FC<{ 
   portfolio: Portfolio; 
-  onClose: () => void; 
+  onClose: () => void;
+  onDelete: () => void;
   onOpenAlarm: () => void;
   onOpenDetails: () => void;
   onOpenQuickInput: () => void;
   onOpenExecution: () => void;
   lang: 'ko' | 'en' 
-}> = ({ portfolio, onClose, onOpenAlarm, onOpenDetails, onOpenQuickInput, onOpenExecution, lang }) => {
+}> = ({ portfolio, onClose, onDelete, onOpenAlarm, onOpenDetails, onOpenQuickInput, onOpenExecution, lang }) => {
   const t = I18N[lang];
   const ma0Ticker = portfolio.strategy.ma0.stock;
   const gradientInfo = CUSTOM_GRADIENT_LOGOS[ma0Ticker] || { gradient: 'linear-gradient(135deg, #2563eb, #1e40af)', label: 'STOCK' };
@@ -115,6 +120,37 @@ const PortfolioCard: React.FC<{
       {/* Visual background layers */}
       <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-white/20 to-transparent pointer-events-none opacity-50 dark:hidden"></div>
       <div className="absolute -right-12 -top-12 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl pointer-events-none"></div>
+
+      {/* 우측 상단 버튼 그룹 */}
+      <div className="absolute top-4 right-4 flex items-center gap-2 z-20">
+        {/* 알람 버튼 */}
+        <button 
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenAlarm();
+          }}
+          className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-300 ${
+            isAlarmEnabled 
+              ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-500 border border-amber-200 dark:border-amber-500/30' 
+              : 'bg-transparent text-slate-500 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+          }`}
+          title={lang === 'ko' ? '알람 설정' : 'Alarm settings'}
+        >
+          {isAlarmEnabled ? <Bell size={16} fill="currentColor" /> : <BellOff size={16} />}
+        </button>
+
+        {/* 삭제 버튼 */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 border border-slate-200 dark:border-slate-700 bg-transparent hover:bg-red-600 hover:text-white hover:border-red-600 transition-all duration-200 active:scale-95"
+          title={lang === 'ko' ? '포트폴리오 삭제' : 'Delete portfolio'}
+        >
+          <Trash2 size={16} strokeWidth={2} />
+        </button>
+      </div>
 
       <div className="flex justify-between items-start relative z-10">
         <div className="flex items-center gap-4">
@@ -135,18 +171,6 @@ const PortfolioCard: React.FC<{
             </div>
           </div>
         </div>
-        
-        <button 
-          onClick={onOpenAlarm}
-          className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-500 group/bell relative overflow-hidden ${
-            isAlarmEnabled 
-              ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30 shadow-lg shadow-amber-500/10' 
-              : 'bg-white/50 dark:bg-white/5 text-slate-300 dark:text-slate-600 border border-slate-100 dark:border-white/5'
-          }`}
-        >
-          {isAlarmEnabled ? <Bell size={18} fill="currentColor" /> : <BellOff size={18} />}
-          {isAlarmEnabled && <div className="absolute inset-0 bg-amber-500/10 animate-pulse"></div>}
-        </button>
       </div>
 
       <div className="grid grid-cols-2 gap-4 relative z-10">

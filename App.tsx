@@ -412,6 +412,42 @@ const App: React.FC = () => {
     }));
   };
 
+  const handleDeletePortfolio = async (id: string) => {
+    // 사용자 확인
+    const confirmMessage = lang === 'ko' 
+      ? '정말로 이 포트폴리오를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.'
+      : 'Are you sure you want to delete this portfolio? This action cannot be undone.';
+    
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('portfolios')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        console.error('Failed to delete portfolio', error);
+        const errorMessage = lang === 'ko' 
+          ? `포트폴리오 삭제에 실패했습니다: ${error.message}`
+          : `Failed to delete portfolio: ${error.message}`;
+        alert(errorMessage);
+        return;
+      }
+
+      // UI에서 즉시 제거
+      setPortfolios(prev => prev.filter(p => p.id !== id));
+    } catch (err) {
+      console.error('Unexpected error while deleting portfolio', err);
+      const errorMessage = lang === 'ko' 
+        ? '포트폴리오 삭제 중 예기치 못한 오류가 발생했습니다.'
+        : 'An unexpected error occurred while deleting the portfolio.';
+      alert(errorMessage);
+    }
+  };
+
   const currentAlarmPortfolio = portfolios.find(p => p.id === alarmTargetId);
   const currentDetailsPortfolio = portfolios.find(p => p.id === detailsTargetId);
   const currentQuickInputPortfolio = portfolios.find(p => p.id === quickInputTargetId);
@@ -472,6 +508,7 @@ const App: React.FC = () => {
                 lang={lang}
                 portfolios={portfolios.filter(p => !p.isClosed)} 
                 onClosePortfolio={(id) => setTerminateTargetId(id)}
+                onDeletePortfolio={handleDeletePortfolio}
                 onUpdatePortfolio={handleUpdatePortfolio}
                 onOpenCreator={() => setIsCreatorOpen(true)}
                 onOpenAlarm={(id) => setAlarmTargetId(id)}

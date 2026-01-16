@@ -89,14 +89,16 @@ const App: React.FC = () => {
 
         if (!isMounted) return;
         if (!error && data) {
-          // Supabase 컬럼명이 snake_case(daily_buy_amount)일 수도 있으므로
-          // JS 객체에서는 항상 camelCase(dailyBuyAmount)로 맞춰준다.
+          // Supabase 컬럼명이 snake_case이므로 모든 필드를 camelCase로 정규화
           const normalized = (data as any[]).map((row) => ({
             ...row,
-            dailyBuyAmount:
-              row.dailyBuyAmount ??
-              row.daily_buy_amount ??
-              0,
+            dailyBuyAmount: row.dailyBuyAmount ?? row.daily_buy_amount ?? 0,
+            startDate: row.startDate ?? row.start_date ?? '',
+            feeRate: row.feeRate ?? row.fee_rate ?? 0.25,
+            isClosed: row.isClosed ?? row.is_closed ?? false,
+            closedAt: row.closedAt ?? row.closed_at ?? undefined,
+            finalSellAmount: row.finalSellAmount ?? row.final_sell_amount ?? undefined,
+            alarmConfig: row.alarmConfig ?? row.alarm_config ?? undefined,
           }));
           setPortfolios(normalized as Portfolio[]);
         }
@@ -197,25 +199,47 @@ const App: React.FC = () => {
   }, [portfolios]);
 
   const handleAddPortfolio = async (newP: Portfolio) => {
+    console.log('1. 함수 호출됨', { user, newP });
+
     if (!user) {
-      alert(lang === 'ko' ? '로그인이 필요합니다.' : 'Please log in first.');
+      console.error('2. 유저 정보 없음');
+      alert('로그인이 필요합니다.');
       return;
     }
 
-    // Supabase 테이블 컬럼명이 daily_buy_amount 라는 가정 하에,
-    // JS 객체에서 사용하는 dailyBuyAmount를 snake_case로 매핑한다.
-    const { dailyBuyAmount, ...rest } = newP;
+    // Supabase 테이블 컬럼명이 snake_case이므로 모든 필드를 매핑
+    const {
+      dailyBuyAmount,
+      startDate,
+      feeRate,
+      isClosed,
+      closedAt,
+      finalSellAmount,
+      alarmConfig,
+      ...rest
+    } = newP;
     const payload = {
       ...rest,
+      id: crypto.randomUUID(),
       user_id: user.id,
       daily_buy_amount: dailyBuyAmount,
+      start_date: startDate,
+      fee_rate: feeRate,
+      is_closed: isClosed,
+      closed_at: closedAt || null,
+      final_sell_amount: finalSellAmount || null,
+      alarm_config: alarmConfig || null,
     };
+
+    console.log('3. 최종 페이로드:', payload);
 
     const { error, data } = await supabase
       .from('portfolios')
       .insert(payload)
       .select()
       .single();
+
+    console.log('4. Supabase insert 결과:', { data, error });
 
     if (error) {
       console.error('Failed to create portfolio', error);
@@ -255,9 +279,9 @@ const App: React.FC = () => {
     const { error } = await supabase
       .from('portfolios')
       .update({
-        isClosed: true,
-        closedAt: updated.closedAt,
-        finalSellAmount: sellAmount,
+        is_closed: true,
+        closed_at: updated.closedAt,
+        final_sell_amount: sellAmount,
       })
       .eq('id', id);
 
@@ -278,16 +302,15 @@ const App: React.FC = () => {
       .from('portfolios')
       .update({
         name: updated.name,
-        // DB 컬럼명이 daily_buy_amount 인 경우에 맞추어 snake_case로 전송
         daily_buy_amount: updated.dailyBuyAmount,
-        startDate: updated.startDate,
-        feeRate: updated.feeRate,
+        start_date: updated.startDate,
+        fee_rate: updated.feeRate,
         strategy: updated.strategy,
         trades: updated.trades,
-        isClosed: updated.isClosed,
-        closedAt: updated.closedAt,
-        finalSellAmount: updated.finalSellAmount,
-        alarmConfig: updated.alarmConfig,
+        is_closed: updated.isClosed,
+        closed_at: updated.closedAt || null,
+        final_sell_amount: updated.finalSellAmount || null,
+        alarm_config: updated.alarmConfig || null,
       })
       .eq('id', updated.id);
 
@@ -520,12 +543,16 @@ const App: React.FC = () => {
                 .order('created_at', { ascending: false });
 
               if (!error && data) {
+                // Supabase 컬럼명이 snake_case이므로 모든 필드를 camelCase로 정규화
                 const normalized = (data as any[]).map((row) => ({
                   ...row,
-                  dailyBuyAmount:
-                    row.dailyBuyAmount ??
-                    row.daily_buy_amount ??
-                    0,
+                  dailyBuyAmount: row.dailyBuyAmount ?? row.daily_buy_amount ?? 0,
+                  startDate: row.startDate ?? row.start_date ?? '',
+                  feeRate: row.feeRate ?? row.fee_rate ?? 0.25,
+                  isClosed: row.isClosed ?? row.is_closed ?? false,
+                  closedAt: row.closedAt ?? row.closed_at ?? undefined,
+                  finalSellAmount: row.finalSellAmount ?? row.final_sell_amount ?? undefined,
+                  alarmConfig: row.alarmConfig ?? row.alarm_config ?? undefined,
                 }));
                 setPortfolios(normalized as Portfolio[]);
               }

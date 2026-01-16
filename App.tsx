@@ -198,57 +198,64 @@ const App: React.FC = () => {
     }, 0);
   }, [portfolios]);
 
-  const handleAddPortfolio = async (newP: Portfolio) => {
-    console.log('1. 함수 호출됨', { user, newP });
-
+  const handleAddPortfolio = async (newP: Omit<Portfolio, 'id'>) => {
     if (!user) {
       console.error('2. 유저 정보 없음');
       alert('로그인이 필요합니다.');
       return;
     }
 
-    // Supabase 테이블 컬럼명이 snake_case이므로 모든 필드를 매핑
-    const {
-      dailyBuyAmount,
-      startDate,
-      feeRate,
-      isClosed,
-      closedAt,
-      finalSellAmount,
-      alarmConfig,
-      ...rest
-    } = newP;
-    const payload = {
-      ...rest,
-      id: crypto.randomUUID(),
-      user_id: user.id,
-      daily_buy_amount: dailyBuyAmount,
-      start_date: startDate,
-      fee_rate: feeRate,
-      is_closed: isClosed,
-      closed_at: closedAt || null,
-      final_sell_amount: finalSellAmount || null,
-      alarm_config: alarmConfig || null,
-    };
+    console.log('1. 함수 호출됨', { user, newP });
 
-    console.log('3. 최종 페이로드:', payload);
+    try {
+      // Supabase 테이블 컬럼명이 snake_case이므로 모든 필드를 매핑
+      const {
+        dailyBuyAmount,
+        startDate,
+        feeRate,
+        isClosed,
+        closedAt,
+        finalSellAmount,
+        alarmConfig,
+        ...rest
+      } = newP;
+      const payload = {
+        ...rest,
+        id: crypto.randomUUID(),
+        user_id: user.id,
+        daily_buy_amount: dailyBuyAmount,
+        start_date: startDate,
+        fee_rate: feeRate,
+        is_closed: isClosed,
+        closed_at: closedAt || null,
+        final_sell_amount: finalSellAmount || null,
+        alarm_config: alarmConfig || null,
+      };
 
-    const { error, data } = await supabase
-      .from('portfolios')
-      .insert(payload)
-      .select()
-      .single();
+      console.log('3. 최종 페이로드:', payload);
 
-    console.log('4. Supabase insert 결과:', { data, error });
+      // 실제 전송 시도
+      const { data, error } = await supabase
+        .from('portfolios')
+        .insert([payload])
+        .select();
 
-    if (error) {
-      console.error('Failed to create portfolio', error);
-      alert(lang === 'ko' ? '포트폴리오 생성에 실패했습니다.' : 'Failed to create portfolio.');
-      return;
+      if (error) {
+        console.error('4. Supabase DB 에러:', error);
+        alert(`저장 실패: ${error.message}`);
+        return;
+      } else {
+        console.log('5. 저장 성공:', data);
+        // 성공 후 로직
+        if (data && data.length > 0) {
+          setPortfolios(prev => [data[0] as Portfolio, ...prev]);
+          setIsCreatorOpen(false);
+        }
+      }
+    } catch (err) {
+      console.error('6. 치명적 실행 에러:', err);
+      alert('시스템 에러가 발생했습니다. 콘솔을 확인하세요.');
     }
-
-    setPortfolios(prev => [data as Portfolio, ...prev]);
-    setIsCreatorOpen(false);
   };
 
   const handleClosePortfolio = async (id: string, sellAmount: number, fee: number) => {

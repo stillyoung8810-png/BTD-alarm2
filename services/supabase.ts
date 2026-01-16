@@ -1,34 +1,21 @@
-
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// 환경 변수 확인 로그
-console.log('환경 변수 확인:', {
-  VITE_SUPABASE_URL: supabaseUrl ? '존재함' : '없음',
-  VITE_SUPABASE_ANON_KEY: supabaseAnonKey ? '존재함' : '없음',
-  VITE_SUPABASE_URL_값: supabaseUrl || '(비어있음)',
-});
+// [진단 로그] 배포된 사이트 콘솔에서 이 값을 확인하세요.
+console.log('--- Supabase 설정 체크 ---');
+console.log('URL 존재여부:', !!supabaseUrl);
+console.log('Key 존재여부:', !!supabaseAnonKey);
+if (supabaseUrl) console.log('URL 시작부분:', supabaseUrl.substring(0, 10));
 
-// VITE_SUPABASE_URL이 없으면 createClient 실행하지 않음
-if (!supabaseUrl) {
-  const errorMsg = 'VITE_SUPABASE_URL이 .env 파일에 설정되지 않았습니다. Supabase 클라이언트를 생성할 수 없습니다.';
+if (!supabaseUrl || !supabaseAnonKey) {
+  const errorMsg = '환경 변수가 없습니다! Cloudflare 설정을 확인하고 다시 배포하세요.';
   console.error(errorMsg);
-  alert(errorMsg);
+  // 실행을 강제로 중단시켜 어디가 문제인지 알림
   throw new Error(errorMsg);
 }
 
-if (!supabaseAnonKey) {
-  console.error('VITE_SUPABASE_ANON_KEY가 .env 파일에 설정되지 않았습니다.');
-}
-
-export const supabase = createClient(
-  supabaseUrl,
-  supabaseAnonKey || '',
-  {
-    auth: {
-      persistSession: true
-    }
-  }
-);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: { persistSession: true }
+});

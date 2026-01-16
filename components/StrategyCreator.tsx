@@ -7,7 +7,7 @@ import { X, ChevronRight, ChevronLeft, Info, Sparkles, Target, Zap, Settings2, C
 interface StrategyCreatorProps {
   lang: 'ko' | 'en';
   onClose: () => void;
-  onSave: (p: Portfolio) => void;
+  onSave: (p: Omit<Portfolio, 'id'>) => void;
 }
 
 const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave }) => {
@@ -41,8 +41,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
   const t = I18N[lang];
 
   const handleSave = () => {
-    const newP: Portfolio = {
-      id: Math.random().toString(36).substring(7),
+    const newP: Omit<Portfolio, 'id'> = {
       name: name || (lang === 'ko' ? '커스텀 전략' : 'Custom Strategy'),
       dailyBuyAmount: dailyBuy,
       startDate: startDate,

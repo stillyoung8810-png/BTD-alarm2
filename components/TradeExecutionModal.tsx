@@ -61,7 +61,7 @@ const TradeExecutionModal: React.FC<TradeExecutionModalProps> = ({ lang, portfol
       <button 
         key={ticker}
         onClick={() => setSelectedStock(ticker)}
-        className={`w-16 h-16 rounded-2xl flex flex-col items-center justify-center text-white relative overflow-hidden transition-all ${isSelected ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-slate-900 scale-105' : 'opacity-40 grayscale hover:grayscale-0'}`}
+        className={`w-16 h-16 rounded-2xl flex flex-col items-center justify-center text-white relative overflow-hidden active:scale-95 transition-transform p-2 ${isSelected ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-slate-900 scale-105' : 'opacity-40 grayscale hover:grayscale-0'}`}
         style={{ background: info.gradient }}
       >
         <span className="text-[10px] font-black z-10">{ticker}</span>

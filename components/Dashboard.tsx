@@ -112,7 +112,7 @@ const PortfolioCard: React.FC<{
   const t = I18N[lang];
   const ma0Ticker = portfolio.strategy.ma0.stock;
   const gradientInfo = CUSTOM_GRADIENT_LOGOS[ma0Ticker] || { gradient: 'linear-gradient(135deg, #2563eb, #1e40af)', label: 'STOCK' };
-  const isAlarmEnabled = portfolio.alarmConfig?.enabled;
+  const isAlarmEnabled = portfolio.alarmconfig?.enabled;
 
   return (
     <div className="glass p-7 rounded-[2.5rem] space-y-6 group hover:-translate-y-1 transition-all duration-500 relative overflow-hidden shadow-[0_12px_40px_rgba(0,0,0,0.06)] dark:shadow-2xl">

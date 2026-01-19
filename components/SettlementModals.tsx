@@ -53,7 +53,7 @@ const TerminationInput: React.FC<TerminationInputProps> = ({ lang, onClose, onSa
         <div className="p-6 pt-2">
           <button 
             onClick={() => onSave(Number(sellAmount), Number(fee))}
-            className="w-24 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-500 active:scale-95 transition-all"
+            className="w-24 py-3.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-500 active:scale-95 transition-transform"
           >
             Save
           </button>

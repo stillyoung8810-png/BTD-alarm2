@@ -199,7 +199,7 @@ const App: React.FC = () => {
           isClosed: item.isClosed ?? item.is_closed ?? false,
           closedAt: item.closedAt ?? item.closed_at ?? undefined,
           finalSellAmount: item.finalSellAmount ?? item.final_sell_amount ?? undefined,
-          alarmConfig: item.alarmConfig ?? item.alarm_config ?? undefined,
+          alarmconfig: item.alarmconfig ?? item.alarm_config ?? undefined,
           strategy: item.strategy, // strategy 컬럼은 이미 일치
         }));
         setPortfolios(formattedData as Portfolio[]);
@@ -231,7 +231,7 @@ const App: React.FC = () => {
       isClosed,
       closedAt,
       finalSellAmount,
-      alarmConfig,
+      alarmconfig,
       ...rest
     } = newP;
 
@@ -246,7 +246,7 @@ const App: React.FC = () => {
       is_closed: isClosed,
       closed_at: closedAt || null,
       final_sell_amount: finalSellAmount || null,
-      alarm_config: alarmConfig || null,
+      alarm_config: alarmconfig || null,
     };
 
     console.log('전송 직전 최종 확인:', payload);
@@ -277,7 +277,7 @@ const App: React.FC = () => {
           isClosed: row.isClosed ?? row.is_closed ?? false,
           closedAt: row.closedAt ?? row.closed_at ?? undefined,
           finalSellAmount: row.finalSellAmount ?? row.final_sell_amount ?? undefined,
-          alarmConfig: row.alarmConfig ?? row.alarm_config ?? undefined,
+          alarmconfig: row.alarmconfig ?? row.alarm_config ?? undefined,
         }));
         setPortfolios(prev => [...prev, ...normalized]);
         setIsCreatorOpen(false);
@@ -349,7 +349,7 @@ const App: React.FC = () => {
         is_closed: updated.isClosed,
         closed_at: updated.closedAt || null,
         final_sell_amount: updated.finalSellAmount || null,
-        alarm_config: updated.alarmConfig || null,
+        alarm_config: updated.alarmconfig || null,
       })
       .eq('id', updated.id);
 
@@ -571,7 +571,7 @@ const App: React.FC = () => {
             <div className="mx-1">
               <button 
                 onClick={() => setIsCreatorOpen(true)} 
-                className="w-14 h-14 bg-gradient-to-tr from-blue-600 to-indigo-700 rounded-full flex items-center justify-center text-white shadow-xl shadow-blue-500/40 hover:scale-110 active:scale-95 transition-all border-4 border-white dark:border-slate-900"
+                className="w-14 h-14 bg-gradient-to-tr from-blue-600 to-indigo-700 rounded-full flex items-center justify-center text-white shadow-xl shadow-blue-500/40 hover:scale-110 active:scale-95 transition-transform border-4 border-white dark:border-slate-900 p-3"
               >
                 <Plus size={28} strokeWidth={3} />
               </button>
@@ -580,7 +580,7 @@ const App: React.FC = () => {
         </div>
 
         {isCreatorOpen && <StrategyCreator lang={lang} onClose={() => setIsCreatorOpen(false)} onSave={handleAddPortfolio} />}
-        {currentAlarmPortfolio && <AlarmModal lang={lang} portfolio={currentAlarmPortfolio} onClose={() => setAlarmTargetId(null)} onSave={(config) => { handleUpdatePortfolio({ ...currentAlarmPortfolio, alarmConfig: config }); setAlarmTargetId(null); }} />}
+        {currentAlarmPortfolio && <AlarmModal lang={lang} portfolio={currentAlarmPortfolio} onClose={() => setAlarmTargetId(null)} onSave={(config) => { handleUpdatePortfolio({ ...currentAlarmPortfolio, alarmconfig: config }); setAlarmTargetId(null); }} />}
         {currentDetailsPortfolio && <PortfolioDetailsModal lang={lang} portfolio={currentDetailsPortfolio} onClose={() => setDetailsTargetId(null)} onDeleteTrade={(tid) => handleDeleteTrade(currentDetailsPortfolio.id, tid)} />}
         {currentQuickInputPortfolio && <QuickInputModal lang={lang} portfolio={currentQuickInputPortfolio} onClose={() => setQuickInputTargetId(null)} onSave={(trade) => { handleAddTrade(currentQuickInputPortfolio.id, trade); setQuickInputTargetId(null); }} />}
         {currentExecutionPortfolio && <TradeExecutionModal lang={lang} portfolio={currentExecutionPortfolio} onClose={() => setExecutionTargetId(null)} onSave={(trade) => { handleAddTrade(currentExecutionPortfolio.id, trade); setExecutionTargetId(null); }} />}
@@ -628,7 +628,7 @@ const App: React.FC = () => {
                   isClosed: row.isClosed ?? row.is_closed ?? false,
                   closedAt: row.closedAt ?? row.closed_at ?? undefined,
                   finalSellAmount: row.finalSellAmount ?? row.final_sell_amount ?? undefined,
-                  alarmConfig: row.alarmConfig ?? row.alarm_config ?? undefined,
+                  alarmconfig: row.alarmconfig ?? row.alarm_config ?? undefined,
                 }));
                 setPortfolios(normalized as Portfolio[]);
               }

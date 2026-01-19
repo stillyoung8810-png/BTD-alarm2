@@ -57,7 +57,7 @@ export interface Portfolio {
   isClosed: boolean;
   closedAt?: string;
   finalSellAmount?: number;
-  alarmConfig?: AlarmConfig;
+  alarmconfig?: AlarmConfig;
 }
 
 export interface StockData {

@@ -76,7 +76,7 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, onCl
       <button 
         key={ticker}
         onClick={() => setSelectedStock(ticker)}
-        className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center text-white relative overflow-hidden transition-all ${isSelected ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-slate-900 scale-110' : 'opacity-60 grayscale hover:grayscale-0'}`}
+        className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center text-white relative overflow-hidden active:scale-95 transition-transform p-2 ${isSelected ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-slate-900 scale-110' : 'opacity-60 grayscale hover:grayscale-0'}`}
         style={{ background: info.gradient }}
       >
         <span className="text-[10px] font-black z-10">{ticker}</span>

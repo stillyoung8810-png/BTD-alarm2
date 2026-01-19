@@ -11,7 +11,7 @@ interface AlarmModalProps {
 }
 
 const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSave }) => {
-  const initialConfig = portfolio.alarmConfig || {
+  const initialConfig = portfolio.alarmconfig || {
     enabled: false,
     selectedHours: [],
     mode: 'once',

@@ -94,7 +94,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
             <span className="text-xs font-bold dark:text-slate-300 tracking-tight">{lang === 'ko' ? 'RSI 사용:' : 'Enable RSI:'}</span>
             <button 
               onClick={() => setRsiEnabled(!rsiEnabled)}
-              className="transition-colors"
+              className="transition-colors active:scale-95 transition-transform p-1"
             >
               {rsiEnabled ? <ToggleRight className="text-blue-500" size={32} /> : <ToggleLeft className="text-slate-600" size={32} />}
             </button>

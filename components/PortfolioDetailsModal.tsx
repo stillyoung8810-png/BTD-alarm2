@@ -1,17 +1,19 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Portfolio, Trade } from '../types';
 import { X, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import { CUSTOM_GRADIENT_LOGOS, I18N } from '../constants';
+import { fetchStockPrices } from '../services/stockService';
 
 interface PortfolioDetailsModalProps {
   lang: 'ko' | 'en';
   portfolio: Portfolio;
   onClose: () => void;
   onDeleteTrade: (tradeId: string) => void;
+  isHistory?: boolean;
 }
 
-const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, portfolio, onClose, onDeleteTrade }) => {
+const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, portfolio, onClose, onDeleteTrade, isHistory }) => {
   // Helper for consistent date keys (YYYY-MM-DD) based on Local Time
   const getDateKey = (date: Date) => {
     const y = date.getFullYear();
@@ -24,6 +26,9 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
   const [currentMonth, setCurrentMonth] = useState(new Date()); 
 
   const t = I18N[lang];
+
+  const [stockPrices, setStockPrices] = useState<Record<string, number>>({});
+  const isReadOnly = isHistory ?? !!portfolio.isClosed;
 
   // Group holdings by stock
   const holdingsSummary = useMemo(() => {
@@ -38,7 +43,9 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
         summary[tr.stock].totalCost += (tr.price * tr.quantity + tr.fee);
       } else {
         summary[tr.stock].quantity -= tr.quantity;
-        summary[tr.stock].totalCost -= (tr.price * tr.quantity - tr.fee);
+        // 매도 시에는 평균 단가를 유지하기 위해 비례적으로 차감
+        const avgPrice = summary[tr.stock].totalCost / (summary[tr.stock].quantity + tr.quantity);
+        summary[tr.stock].totalCost = summary[tr.stock].quantity * avgPrice;
       }
     });
 
@@ -48,8 +55,39 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
         ticker,
         quantity: data.quantity,
         avgPrice: data.totalCost / data.quantity,
-        valuation: data.quantity * 380.5 // Temporary fixed price for demo
+        valuation: data.quantity * (stockPrices[ticker] || 0)
       }));
+  }, [portfolio.trades, stockPrices]);
+
+  // 주가 데이터 가져오기
+  useEffect(() => {
+    const fetchPrices = async () => {
+      const holdingsEntries = Object.entries(
+        portfolio.trades.reduce((acc, tr) => {
+          if (tr.type === 'buy') {
+            acc[tr.stock] = (acc[tr.stock] || 0) + tr.quantity;
+          } else {
+            acc[tr.stock] = (acc[tr.stock] || 0) - tr.quantity;
+          }
+          return acc;
+        }, {} as Record<string, number>)
+      ) as [string, number][];
+
+      const holdings = holdingsEntries
+        .filter(([, qty]) => qty > 0)
+        .map(([ticker]) => ticker);
+
+      if (holdings.length > 0) {
+        const prices = await fetchStockPrices(holdings);
+        const priceMap: Record<string, number> = {};
+        Object.entries(prices).forEach(([symbol, data]) => {
+          priceMap[symbol] = data.price;
+        });
+        setStockPrices(priceMap);
+      }
+    };
+
+    fetchPrices();
   }, [portfolio.trades]);
 
   const calendarGrid = useMemo(() => {
@@ -130,7 +168,14 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
       <div className="relative w-full max-w-4xl bg-[#161d2a] rounded-[2.5rem] border border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-in zoom-in-95 duration-200">
         
         <div className="p-8 border-b border-white/5 flex justify-between items-center bg-slate-900/30">
-          <h2 className="text-2xl font-black text-white">{t.portfolioMgmt} - {t.activeStrategy}</h2>
+          <h2 className="text-2xl font-black text-white flex items-center gap-2">
+            <span>{portfolio.name}</span>
+            {isReadOnly && (
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 text-[10px] font-bold uppercase tracking-widest">
+                {lang === 'ko' ? '정산 완료' : 'Settled'}
+              </span>
+            )}
+          </h2>
           <button onClick={onClose} className="p-3 hover:bg-white/10 rounded-full transition-colors text-slate-500">
             <X size={24} />
           </button>
@@ -245,56 +290,67 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
                   <p className="text-xs font-bold text-slate-600 uppercase tracking-widest">{t.noHistory}</p>
                 </div>
               ) : (
-                selectedDayTrades.map(trade => (
-                  <div key={trade.id} className="bg-white/5 p-6 rounded-[2rem] border border-white/10 relative overflow-hidden group shadow-lg hover:bg-white/10 transition-all backdrop-blur-sm">
-                    <div className={`absolute top-0 left-0 w-1.5 h-full ${trade.type === 'buy' ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
-                    
-                    <div className="flex items-center justify-between mb-6 pr-12">
-                      <div className="flex items-center gap-4">
-                        {renderStockIcon(trade.stock, 'md')}
-                        <div>
-                           <h4 className="font-black text-white text-sm uppercase tracking-tight">{trade.stock}</h4>
-                           <p className="text-[9px] font-bold text-slate-500 tracking-wider uppercase">{trade.type === 'buy' ? t.buy : t.sell} 매매</p>
+                selectedDayTrades.map(trade => {
+                  const isFinalSell = trade.type === 'sell' && trade.id.startsWith('final-');
+                  return (
+                    <div key={trade.id} className="bg-white/5 p-6 rounded-[2rem] border border-white/10 relative overflow-hidden group shadow-lg hover:bg-white/10 transition-all backdrop-blur-sm">
+                      <div className={`absolute top-0 left-0 w-1.5 h-full ${trade.type === 'buy' ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
+                      
+                      <div className="flex items-center justify-between mb-6 pr-12">
+                        <div className="flex items-center gap-4">
+                          {renderStockIcon(trade.stock, 'md')}
+                          <div>
+                             <h4 className="font-black text-white text-sm uppercase tracking-tight">
+                               {isFinalSell ? `[${lang === 'ko' ? '최종 정산 매도' : 'Final Settlement Sell'}] ` : ''}
+                               {trade.stock}
+                             </h4>
+                             <p className="text-[9px] font-bold text-slate-500 tracking-wider uppercase">{trade.type === 'buy' ? t.buy : t.sell} 매매</p>
+                          </div>
+                        </div>
+                        <div className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest ${trade.type === 'buy' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-500 border border-rose-500/20'}`}>
+                           {trade.type === 'buy' ? t.buy : t.sell}
                         </div>
                       </div>
-                      <div className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest ${trade.type === 'buy' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-500 border border-rose-500/20'}`}>
-                         {trade.type === 'buy' ? t.buy : t.sell}
-                      </div>
-                    </div>
 
-                    <div className="grid grid-cols-4 gap-4">
-                       <div>
-                         <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">{t.executionPrice}:</span>
-                         <p className="text-sm font-black text-white">${trade.price.toLocaleString()}</p>
-                       </div>
-                       <div>
-                         <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">{t.quantity}:</span>
-                         <p className="text-sm font-black text-white">{trade.quantity}</p>
-                       </div>
-                       <div>
-                         <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">{t.fee}:</span>
-                         <p className="text-sm font-black text-white">${trade.fee.toFixed(2)}</p>
-                       </div>
-                       <div className="text-right">
-                         <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">{lang === 'ko' ? '정산금:' : 'Settlement:'}</span>
-                         <p className={`text-sm font-black ${trade.type === 'buy' ? 'text-emerald-500' : 'text-rose-500'}`}>
-                           ${(trade.type === 'buy' ? (trade.price * trade.quantity + trade.fee) : (trade.price * trade.quantity - trade.fee)).toLocaleString()}
-                         </p>
-                       </div>
+                      <div className="grid grid-cols-4 gap-4">
+                         <div>
+                           <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">{t.executionPrice}:</span>
+                           <p className="text-sm font-black text-white">${trade.price.toLocaleString()}</p>
+                         </div>
+                         <div>
+                           <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">{t.quantity}:</span>
+                           <p className="text-sm font-black text-white">{trade.quantity}</p>
+                         </div>
+                         <div>
+                           <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">{t.fee}:</span>
+                           <p className="text-sm font-black text-white">${trade.fee.toFixed(2)}</p>
+                         </div>
+                         <div className="text-right">
+                           <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">{lang === 'ko' ? '정산금:' : 'Settlement:'}</span>
+                           <p className={`text-sm font-black ${trade.type === 'buy' ? 'text-emerald-500' : 'text-rose-500'}`}>
+                             {(trade.type === 'buy'
+                               ? (trade.price * trade.quantity + trade.fee)
+                               : (trade.price * trade.quantity - trade.fee)
+                             ).toLocaleString()}
+                           </p>
+                         </div>
+                      </div>
+                      
+                      {!isReadOnly && (
+                        <button 
+                          onClick={() => {
+                            if (confirm(lang === 'ko' ? '이 거래 기록을 삭제하시겠습니까?' : 'Are you sure you want to delete this record?')) {
+                              onDeleteTrade(trade.id);
+                            }
+                          }}
+                          className="absolute top-6 right-6 p-2.5 bg-rose-500/10 text-rose-500 rounded-xl hover:bg-rose-600 transition-all hover:text-white border border-rose-500/20 shadow-sm"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      )}
                     </div>
-                    
-                    <button 
-                      onClick={() => {
-                        if(confirm(lang === 'ko' ? '이 거래 기록을 삭제하시겠습니까?' : 'Are you sure you want to delete this record?')) {
-                          onDeleteTrade(trade.id);
-                        }
-                      }}
-                      className="absolute top-6 right-6 p-2.5 bg-rose-500/10 text-rose-500 rounded-xl hover:bg-rose-600 transition-all hover:text-white border border-rose-500/20 shadow-sm"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </section>

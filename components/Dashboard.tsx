@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Portfolio } from '../types';
 import { I18N, CUSTOM_GRADIENT_LOGOS } from '../constants';
 import { 
@@ -10,6 +10,7 @@ import {
   BellOff,
   Trash2
 } from 'lucide-react';
+import { calculateInvestedAmount, calculateYield, determineActiveSection } from '../utils/portfolioCalculations';
 
 interface DashboardProps {
   lang: 'ko' | 'en';
@@ -20,9 +21,11 @@ interface DashboardProps {
   onOpenCreator: () => void;
   onOpenAlarm: (id: string) => void;
   onOpenDetails: (id: string) => void;
-  onOpenQuickInput: (id: string) => void;
+  onOpenQuickInput: (id: string, activeSection?: 1 | 2 | 3) => void;
   onOpenExecution: (id: string) => void;
   totalValuation: number;
+  totalValuationChange: number;
+  totalValuationChangePct: number;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ 
@@ -35,9 +38,13 @@ const Dashboard: React.FC<DashboardProps> = ({
   onOpenDetails,
   onOpenQuickInput,
   onOpenExecution,
-  totalValuation 
+  totalValuation,
+  totalValuationChange,
+  totalValuationChangePct,
 }) => {
   const t = I18N[lang];
+  const isPositiveChange = totalValuationChange >= 0;
+  const changeColor = totalValuationChange === 0 ? 'text-slate-400' : (isPositiveChange ? 'text-emerald-500' : 'text-rose-500');
 
   return (
     <div className="space-y-12 animate-in fade-in duration-700">
@@ -53,15 +60,27 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
         
         <div className="flex flex-col items-end gap-6 min-w-[280px]">
-          <div className="flex items-center gap-8 px-2">
+            <div className="flex items-center gap-8 px-2">
             <div className="flex flex-col items-end">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{t.totalValuation}</span>
-              <span className="text-3xl font-black dark:text-white tracking-tighter">${totalValuation.toLocaleString()}</span>
+                <span className="text-3xl font-black dark:text-white tracking-tighter">
+                  ${totalValuation.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                </span>
             </div>
             <div className="w-[1px] h-10 bg-slate-200 dark:bg-slate-800"></div>
             <div className="flex flex-col items-end">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{t.gain24h}</span>
-              <span className="text-3xl font-black text-emerald-500 tracking-tighter">+$0.00</span>
+                <span className={`text-3xl font-black tracking-tighter ${changeColor}`}>
+                  {totalValuationChange === 0
+                    ? '$0.00'
+                    : `${isPositiveChange ? '+' : '-'}$${Math.abs(totalValuationChange).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  }
+                </span>
+                <span className={`text-xs font-bold mt-0.5 ${changeColor}`}>
+                  {Number.isNaN(totalValuationChangePct)
+                    ? '-'
+                    : `${totalValuationChangePct >= 0 ? '+' : ''}${totalValuationChangePct.toFixed(2)}%`}
+                </span>
             </div>
           </div>
           
@@ -87,7 +106,10 @@ const Dashboard: React.FC<DashboardProps> = ({
               lang={lang}
               onOpenAlarm={() => onOpenAlarm(p.id)}
               onOpenDetails={() => onOpenDetails(p.id)}
-              onOpenQuickInput={() => onOpenQuickInput(p.id)}
+              onOpenQuickInput={async () => {
+                const activeSection = await determineActiveSection(p);
+                onOpenQuickInput(p.id, activeSection || undefined);
+              }}
               onOpenExecution={() => onOpenExecution(p.id)}
               onClose={() => onClosePortfolio(p.id)}
               onDelete={() => onDeletePortfolio(p.id)}
@@ -113,6 +135,31 @@ const PortfolioCard: React.FC<{
   const ma0Ticker = portfolio.strategy.ma0.stock;
   const gradientInfo = CUSTOM_GRADIENT_LOGOS[ma0Ticker] || { gradient: 'linear-gradient(135deg, #2563eb, #1e40af)', label: 'STOCK' };
   const isAlarmEnabled = portfolio.alarmconfig?.enabled;
+  
+  const [investedAmount, setInvestedAmount] = useState<number>(0);
+  const [yieldRate, setYieldRate] = useState<number>(0);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    const updateMetrics = async () => {
+      setIsLoading(true);
+      try {
+        const invested = calculateInvestedAmount(portfolio);
+        const yieldValue = await calculateYield(portfolio);
+        setInvestedAmount(invested);
+        setYieldRate(yieldValue);
+      } catch (err) {
+        console.error('Error calculating portfolio metrics:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    updateMetrics();
+    // 30초마다 업데이트
+    const interval = setInterval(updateMetrics, 30000);
+    return () => clearInterval(interval);
+  }, [portfolio]);
 
   return (
     <div className="glass p-7 rounded-[2.5rem] space-y-6 group hover:-translate-y-1 transition-all duration-500 relative overflow-hidden shadow-[0_12px_40px_rgba(0,0,0,0.06)] dark:shadow-2xl">
@@ -176,12 +223,14 @@ const PortfolioCard: React.FC<{
       <div className="grid grid-cols-2 gap-4 relative z-10">
         <div className="bg-white/40 dark:bg-black/20 p-5 rounded-[1.5rem] border border-white/20 dark:border-white/5 backdrop-blur-sm">
           <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1 block">{t.invested}</span>
-          <p className="text-xl font-black text-slate-800 dark:text-white">${portfolio.dailyBuyAmount.toLocaleString()}</p>
+          <p className="text-xl font-black text-slate-800 dark:text-white">
+            {isLoading ? '...' : `$${investedAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          </p>
         </div>
         <div className="bg-white/40 dark:bg-black/20 p-5 rounded-[1.5rem] border border-white/20 dark:border-white/5 backdrop-blur-sm">
           <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1 block">{t.yield}</span>
-          <p className="text-xl font-black text-emerald-500 flex items-center gap-1">
-             <span className="text-xs">↑</span> +0.0%
+          <p className={`text-xl font-black flex items-center gap-1 ${yieldRate >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+             <span className="text-xs">{yieldRate >= 0 ? '↑' : '↓'}</span> {isLoading ? '...' : `${yieldRate >= 0 ? '+' : ''}${yieldRate.toFixed(2)}%`}
           </p>
         </div>
       </div>

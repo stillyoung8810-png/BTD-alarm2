@@ -7,16 +7,24 @@ import { X, Zap, ChevronRight, AlertCircle } from 'lucide-react';
 interface QuickInputModalProps {
   lang: 'ko' | 'en';
   portfolio: Portfolio;
+  activeSection?: 1 | 2 | 3;
   onClose: () => void;
   onSave: (trade: Trade) => void;
 }
 
-const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, onClose, onSave }) => {
+const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, activeSection: propActiveSection, onClose, onSave }) => {
   const [type, setType] = useState<'buy' | 'sell'>('buy');
-  const [activeSection, setActiveSection] = useState<1 | 2 | 3>(1); // 1, 2, 3 sections
+  const [activeSection, setActiveSection] = useState<1 | 2 | 3>(propActiveSection || 1); // 1, 2, 3 sections
   const [price, setPrice] = useState<number>(0);
   const [quantity, setQuantity] = useState<number>(0);
   const [selectedStock, setSelectedStock] = useState<string>(portfolio.strategy.ma1.stock);
+  
+  // propActiveSection이 변경되면 내부 상태 업데이트
+  useEffect(() => {
+    if (propActiveSection) {
+      setActiveSection(propActiveSection);
+    }
+  }, [propActiveSection]);
   
   const t = I18N[lang];
   const feeRate = portfolio.feeRate || 0.25;
@@ -119,7 +127,14 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, onCl
 
           {type === 'buy' && (
             <div className="space-y-4 animate-in fade-in duration-300">
-              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.activeSection}:</span>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.activeSection}:</span>
+                {propActiveSection && (
+                  <span className="text-[9px] font-bold text-blue-500 uppercase tracking-widest">
+                    {lang === 'ko' ? '자동 선택됨' : 'Auto Selected'}
+                  </span>
+                )}
+              </div>
               <div className="flex gap-2">
                 {[1, 2, 3].map(sec => (
                   <button 

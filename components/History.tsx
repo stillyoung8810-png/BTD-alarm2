@@ -2,29 +2,39 @@
 import React from 'react';
 import { Portfolio } from '../types';
 import { I18N } from '../constants';
-import { Calendar, CheckCircle2, ChevronRight, Filter, Download } from 'lucide-react';
+import { Calendar, CheckCircle2, ChevronRight, Filter, Download, Trash2 } from 'lucide-react';
 
 interface HistoryProps {
   lang: 'ko' | 'en';
   portfolios: Portfolio[];
   onOpenDetails: (id: string) => void;
+  onDeleteHistory?: (portfolioId: string) => void;
+  onClearHistory?: () => void;
 }
 
-const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails }) => {
+const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails, onDeleteHistory, onClearHistory }) => {
   const t = I18N[lang];
 
-  // Calculate overall stats
-  const totalProfit = portfolios.reduce((sum, p) => {
+  // 종료일 기준 내림차순 정렬 (최근 종료된 포트폴리오가 맨 위로 오도록)
+  const sortedPortfolios = [...portfolios].sort((a, b) => {
+    const aDate = a.closedAt ? new Date(a.closedAt).getTime() : 0;
+    const bDate = b.closedAt ? new Date(b.closedAt).getTime() : 0;
+    return bDate - aDate;
+  });
+
+  // Calculate overall stats (using sorted list so it matches visible items)
+  const totalProfit = sortedPortfolios.reduce((sum, p) => {
     const invested = p.trades.reduce((tSum, tr) => tSum + (tr.price * tr.quantity + tr.fee), 0);
-    return sum + ((p.finalSellAmount || 0) - invested);
+    const profit = (p.finalSellAmount || 0) - invested;
+    return sum + profit;
   }, 0);
 
-  const averageYield = portfolios.length > 0 
-    ? portfolios.reduce((sum, p) => {
+  const averageYield = sortedPortfolios.length > 0 
+    ? sortedPortfolios.reduce((sum, p) => {
         const invested = p.trades.reduce((tSum, tr) => tSum + (tr.price * tr.quantity + tr.fee), 0);
         const profit = (p.finalSellAmount || 0) - invested;
         return sum + (invested > 0 ? (profit / invested) * 100 : 0);
-      }, 0) / portfolios.length
+      }, 0) / sortedPortfolios.length
     : 0;
   
   return (
@@ -34,13 +44,28 @@ const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails }) =>
            <h2 className="text-3xl font-black dark:text-white uppercase tracking-tight">{t.history}</h2>
            <p className="text-sm font-bold text-slate-500 mt-1 uppercase tracking-widest">{lang === 'ko' ? '완료된 투자 전략 성과' : 'Performance of completed strategies'}</p>
         </div>
-        <div className="flex gap-3">
-           <button className="glass px-6 py-3 rounded-full text-[11px] font-black uppercase tracking-widest dark:text-white flex items-center gap-2 hover:bg-white/10 border border-white/5">
-              <Filter size={14} /> {lang === 'ko' ? '필터' : 'Filter'}
-           </button>
-           <button className="glass px-6 py-3 rounded-full text-[11px] font-black uppercase tracking-widest dark:text-white flex items-center gap-2 hover:bg-white/10 border border-white/5">
-              <Download size={14} /> {lang === 'ko' ? '내보내기' : 'Export'}
-           </button>
+        <div className="flex gap-3 flex-wrap justify-end">
+          <button className="glass px-6 py-3 rounded-full text-[11px] font-black uppercase tracking-widest dark:text-white flex items-center gap-2 hover:bg-white/10 border border-white/5">
+            <Filter size={14} /> {lang === 'ko' ? '필터' : 'Filter'}
+          </button>
+          <button className="glass px-6 py-3 rounded-full text-[11px] font-black uppercase tracking-widest dark:text-white flex items-center gap-2 hover:bg-white/10 border border-white/5">
+            <Download size={14} /> {lang === 'ko' ? '내보내기' : 'Export'}
+          </button>
+          {onClearHistory && (
+            <button
+              onClick={() => {
+                const msg = lang === 'ko'
+                  ? '모든 종료 내역을 삭제하시겠습니까? 이 작업은 포트폴리오 자체에는 영향을 주지 않습니다.'
+                  : 'Clear all history records? This will not delete the original portfolios.';
+                if (window.confirm(msg)) {
+                  onClearHistory();
+                }
+              }}
+              className="glass px-4 py-3 rounded-full text-[11px] font-black uppercase tracking-widest text-rose-500 border border-rose-500/40 hover:bg-rose-500/10"
+            >
+              <Trash2 size={14} /> {lang === 'ko' ? '내역 초기화' : 'Clear History'}
+            </button>
+          )}
         </div>
       </header>
 
@@ -51,13 +76,13 @@ const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails }) =>
       </div>
 
       <div className="space-y-4">
-        {portfolios.length === 0 ? (
+        {sortedPortfolios.length === 0 ? (
           <div className="text-center py-32 glass rounded-[3rem] border-2 border-dashed border-white/5">
             <Calendar className="mx-auto mb-6 opacity-10" size={64} />
             <p className="text-slate-500 font-bold uppercase tracking-widest">{t.noHistory}</p>
           </div>
         ) : (
-          portfolios.map(p => {
+          sortedPortfolios.map(p => {
             const invested = p.trades.reduce((tSum, tr) => tSum + (tr.price * tr.quantity + tr.fee), 0);
             const profit = (p.finalSellAmount || 0) - invested;
             const yieldRate = invested > 0 ? (profit / invested) * 100 : 0;
@@ -79,27 +104,56 @@ const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails }) =>
 
                 <div className="flex-1 grid grid-cols-2 md:grid-cols-2 gap-8 px-8 border-l border-slate-200 dark:border-white/5">
                   <div>
-                    <span className="text-[10px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest block mb-1">{lang === 'ko' ? '총 투자금' : 'Total Invested'}</span>
-                    <p className="text-lg font-black text-slate-900 dark:text-white">${invested.toLocaleString()}</p>
+                    <span className="text-[10px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest block mb-1">
+                      {lang === 'ko' ? '총 투자금' : 'Total Invested'}
+                    </span>
+                    <p className="text-lg font-black text-slate-900 dark:text-white">
+                      ${invested.toLocaleString()}
+                    </p>
+                    <p className="text-[10px] text-slate-500 mt-0.5 font-medium">
+                      [Σ(Buy + Fee)]
+                    </p>
                   </div>
                   <div>
-                    <span className="text-[10px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest block mb-1">{lang === 'ko' ? '총 수익률' : 'Total Yield'}</span>
+                    <span className="text-[10px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest block mb-1">
+                      {lang === 'ko' ? '총 수익률' : 'Total Yield'}
+                    </span>
                     <p className={`text-lg font-black ${profit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
                       {profit >= 0 ? '+' : ''}{yieldRate.toFixed(2)}%
+                    </p>
+                    <p className="text-[10px] text-slate-500 mt-0.5 font-medium">
+                      [(Total Return / Total Invested - 1) * 100]
                     </p>
                   </div>
                 </div>
 
-                <div className="text-right min-w-[150px]">
+                <div className="text-right min-w-[150px] space-y-2">
                   <p className={`text-xl font-black ${profit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
                     {profit >= 0 ? '+' : '-'}${Math.abs(profit).toLocaleString()}
                   </p>
-                  <button 
-                    onClick={() => onOpenDetails(p.id)}
-                    className="text-[9px] font-black text-blue-500 uppercase tracking-widest hover:underline mt-2 flex items-center justify-end gap-1 ml-auto"
-                  >
-                    {t.viewSettlement} <ChevronRight size={10} />
-                  </button>
+                  <div className="flex items-center justify-end gap-2">
+                    {onDeleteHistory && (
+                      <button
+                        onClick={() => {
+                          const msg = lang === 'ko'
+                            ? '이 종료 내역을 삭제하시겠습니까? (포트폴리오 자체는 삭제되지 않습니다)'
+                            : 'Delete this history record? The original portfolio will not be deleted.';
+                          if (window.confirm(msg)) {
+                            onDeleteHistory(p.id);
+                          }
+                        }}
+                        className="flex items-center gap-1 text-[9px] font-bold text-rose-500 uppercase tracking-widest hover:text-rose-400"
+                      >
+                        <Trash2 size={10} /> {lang === 'ko' ? '기록 삭제' : 'Delete'}
+                      </button>
+                    )}
+                    <button 
+                      onClick={() => onOpenDetails(p.id)}
+                      className="text-[9px] font-black text-blue-500 uppercase tracking-widest hover:underline flex items-center gap-1"
+                    >
+                      {t.viewSettlement} <ChevronRight size={10} />
+                    </button>
+                  </div>
                 </div>
               </div>
             );

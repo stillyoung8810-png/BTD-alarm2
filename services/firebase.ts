@@ -65,50 +65,82 @@ const initializeMessaging = async (): Promise<Messaging | null> => {
  */
 export const requestForToken = async (): Promise<string | null> => {
   if (typeof window === 'undefined') {
-    console.warn('requestForToken is only available in browser environment');
+    console.warn('[FCM] requestForToken is only available in browser environment');
     return null;
   }
 
   // VAPID 키 확인
   if (!VAPID_KEY) {
-    console.error('VAPID key is not configured. Please set VITE_FIREBASE_VAPID_KEY in your environment variables.');
+    console.error('[FCM] VAPID key is not configured. Please set VITE_FIREBASE_VAPID_KEY in your environment variables.');
     return null;
   }
+
+  console.log('[FCM] requestForToken called');
 
   try {
     // Messaging 초기화
     const messagingInstance = await initializeMessaging();
     if (!messagingInstance) {
+      console.warn('[FCM] Messaging is not supported or failed to initialize');
+      return null;
+    }
+    console.log('[FCM] Messaging initialized');
+
+    // 서비스 워커 지원 여부 확인
+    if (!('serviceWorker' in navigator)) {
+      console.warn('[FCM] Service workers are not supported in this browser');
       return null;
     }
 
+    console.log('[FCM] Checking/ registering service worker...');
+
+    // 기존 등록된 서비스 워커가 있는지 확인 후, 없으면 새로 등록
+    let registration = await navigator.serviceWorker.getRegistration('/firebase-messaging-sw.js');
+
+    if (!registration) {
+      console.log('[FCM] No existing firebase-messaging-sw.js registration found. Registering now...');
+      registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
+        scope: '/',
+      });
+      console.log('[FCM] Service worker registered (installing):', registration);
+    } else {
+      console.log('[FCM] Existing service worker registration found:', registration);
+    }
+
+    // 서비스 워커가 실제로 활성(activated)될 때까지 대기
+    const readyRegistration = await navigator.serviceWorker.ready;
+    console.log('[FCM] Service worker ready (active):', readyRegistration);
+
     // 알림 권한 요청
+    console.log('[FCM] Requesting Notification permission...');
     const permission = await Notification.requestPermission();
     
     if (permission === 'granted') {
-      console.log('Notification permission granted');
+      console.log('[FCM] Notification permission granted');
       
       // FCM 토큰 가져오기
+      console.log('[FCM] Requesting FCM token with explicit service worker registration (ready)...');
       const currentToken = await getToken(messagingInstance, {
         vapidKey: VAPID_KEY,
+        serviceWorkerRegistration: readyRegistration,
       });
 
       if (currentToken) {
-        console.log('FCM token retrieved successfully:', currentToken);
+        console.log('[FCM] FCM token retrieved successfully:', currentToken);
         return currentToken;
       } else {
-        console.warn('No registration token available. Request permission to generate one.');
+        console.warn('[FCM] No registration token available. Request permission to generate one.');
         return null;
       }
     } else if (permission === 'denied') {
-      console.warn('Notification permission denied by user');
+      console.warn('[FCM] Notification permission denied by user');
       return null;
     } else {
-      console.warn('Notification permission default (not granted or denied)');
+      console.warn('[FCM] Notification permission default (not granted or denied)');
       return null;
     }
   } catch (error) {
-    console.error('An error occurred while retrieving token:', error);
+    console.error('[FCM] An error occurred while retrieving token:', error);
     return null;
   }
 };

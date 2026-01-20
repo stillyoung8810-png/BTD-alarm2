@@ -129,8 +129,9 @@ const App: React.FC = () => {
           
           // 기존 세션 복구 시에도 FCM 토큰 저장 시도 (로그인 상태 유지 중)
           if (session.user.id) {
+            console.log('[FCM] Session restore detected. Trying to save FCM token for user:', session.user.id);
             saveFCMToken(session.user.id).catch((err) => {
-              console.debug('FCM token save attempt on session restore:', err);
+              console.debug('[FCM] FCM token save attempt on session restore completed with error (can be null):', err);
             });
           }
         } else {
@@ -170,9 +171,10 @@ const App: React.FC = () => {
 
             // 로그인 성공 시 FCM 토큰 저장 (SIGNED_IN 이벤트일 때만)
             if (event === 'SIGNED_IN' && currentUser.id) {
+              console.log('[FCM] SIGNED_IN event detected. Trying to save FCM token for user:', currentUser.id);
               saveFCMToken(currentUser.id).catch((err) => {
                 // 에러는 이미 saveFCMToken 내부에서 처리되므로 여기서는 조용히 처리
-                console.debug('FCM token save attempt completed:', err);
+                console.debug('[FCM] FCM token save attempt on SIGNED_IN completed with error (can be null):', err);
               });
             }
 
@@ -265,35 +267,45 @@ const App: React.FC = () => {
     };
   };
 
-  // FCM 토큰을 Supabase에 저장하는 함수
+  // FCM 토큰을 Supabase에 저장하는 함수 (디버깅 로그 포함)
   const saveFCMToken = async (userId: string): Promise<void> => {
     if (typeof window === 'undefined') {
+      console.warn('[FCM] saveFCMToken called on non-browser environment. Skipping.');
       return;
     }
+
+    console.log('[FCM] saveFCMToken called for user:', userId);
 
     try {
       // 알림 권한이 이미 거부된 경우 조용히 처리
       const permission = getNotificationPermission();
+      console.log('[FCM] Current Notification.permission:', permission);
+
       if (permission === 'denied') {
-        console.warn('Notification permission was previously denied. Skipping FCM token request.');
+        console.warn('[FCM] Notification permission was previously denied. Skipping FCM token request.');
         return;
       }
 
       // FCM 토큰 요청
+      console.log('[FCM] Requesting FCM token via requestForToken()...');
       const token = await requestForToken();
+      console.log('[FCM] requestForToken() resolved. Token:', token);
       
       if (!token) {
         // 권한이 거부되었거나 토큰을 가져올 수 없는 경우 조용히 처리
-        if (permission === 'denied') {
-          console.warn('Notification permission denied. FCM token not saved.');
-        }
+        console.warn('[FCM] Token is null/undefined. Aborting save.');
         return;
       }
 
       // 브라우저 정보 파싱
       const deviceInfo = parseDeviceInfo();
+      console.log('[FCM] Parsed device info:', deviceInfo);
 
       // Supabase에 upsert (user_id와 fcm_token 기준)
+      console.log('[FCM] Upserting token into user_devices...', {
+        user_id: userId,
+        fcm_token: token,
+      });
       const { error } = await supabase
         .from('user_devices')
         .upsert(
@@ -313,13 +325,13 @@ const App: React.FC = () => {
         );
 
       if (error) {
-        console.error('Failed to save FCM token:', error);
+        console.error('[FCM] Failed to save FCM token:', error);
       } else {
-        console.log('FCM token saved successfully');
+        console.log('[FCM] FCM token saved successfully');
       }
     } catch (error) {
       // 에러 발생 시에도 사용자 경험을 해치지 않도록 조용히 처리
-      console.error('Error saving FCM token:', error);
+      console.error('[FCM] Error saving FCM token:', error);
     }
   };
 

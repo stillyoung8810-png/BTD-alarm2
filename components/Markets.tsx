@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   XAxis, 
   YAxis, 
@@ -7,30 +7,67 @@ import {
   Tooltip, 
   ResponsiveContainer, 
   AreaChart, 
-  Area 
+  Area,
+  Line,
+  ComposedChart
 } from 'recharts';
-import { AVAILABLE_STOCKS, MOCK_PRICES, I18N, CUSTOM_GRADIENT_LOGOS } from '../constants';
-import { TrendingUp, Activity, BarChart2, ChevronLeft, ChevronRight } from 'lucide-react';
-
-const MOCK_CHART_DATA = Array.from({ length: 90 }).map((_, i) => {
-  const date = new Date();
-  date.setDate(date.getDate() - (89 - i));
-  return {
-    name: date.toLocaleDateString('ko-KR', { month: 'short' }),
-    price: 400 + Math.random() * 100,
-    ma20: 410 + Math.random() * 50
-  };
-});
-
-const MOCK_RSI: Record<string, number> = AVAILABLE_STOCKS.reduce((acc, ticker) => {
-  acc[ticker] = Math.floor(Math.random() * 70) + 15;
-  return acc;
-}, {} as Record<string, number>);
+import { AVAILABLE_STOCKS, I18N, CUSTOM_GRADIENT_LOGOS } from '../constants';
+import { TrendingUp, TrendingDown, Activity, BarChart2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { fetchStockPrices, fetchStockPriceHistory } from '../services/stockService';
+import { StockData } from '../types';
+import { getMarketStatus } from '../utils/marketUtils';
 
 const Markets: React.FC<{lang: 'ko' | 'en'}> = ({ lang }) => {
   const [selectedStock, setSelectedStock] = useState('QQQ');
+  const [stockData, setStockData] = useState<Record<string, StockData>>({});
+  const [chartData, setChartData] = useState<Array<{ name: string; price: number; ma20: number; ma60: number }>>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const t = I18N[lang];
+
+  // 마켓 상태 계산
+  const marketStatus = useMemo(() => getMarketStatus(lang), [lang]);
+
+  // 초기 주가 데이터 로드
+  useEffect(() => {
+    const loadStockData = async () => {
+      setIsLoading(true);
+      try {
+        const data = await fetchStockPrices(AVAILABLE_STOCKS);
+        setStockData(data);
+      } catch (error) {
+        console.error('Error loading stock data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadStockData();
+  }, []);
+
+  // 선택된 종목의 차트 데이터 로드
+  useEffect(() => {
+    const loadChartData = async () => {
+      if (!selectedStock) return;
+      try {
+        const history = await fetchStockPriceHistory(selectedStock, 90);
+        // Recharts 형식으로 변환
+        const formatted = history.map(item => {
+          const date = new Date(item.date);
+          return {
+            name: date.toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-US', { month: 'short', day: 'numeric' }),
+            price: item.price,
+            ma20: item.ma20,
+            ma60: item.ma60,
+          };
+        });
+        setChartData(formatted);
+      } catch (error) {
+        console.error('Error loading chart data:', error);
+        setChartData([]);
+      }
+    };
+    loadChartData();
+  }, [selectedStock, lang]);
 
   const scroll = (direction: 'left' | 'right') => {
     if (scrollRef.current) {
@@ -40,14 +77,31 @@ const Markets: React.FC<{lang: 'ko' | 'en'}> = ({ lang }) => {
     }
   };
 
+  const selectedStockData = stockData[selectedStock];
+  const changePercent = selectedStockData?.changePercent || 0;
+  const isPositiveChange = changePercent >= 0;
+  const changeColor = isPositiveChange ? 'text-emerald-500' : 'text-rose-500';
+  const changeBg = isPositiveChange ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-rose-500/10 border-rose-500/20';
+
   return (
     <div className="space-y-12 animate-in fade-in duration-500">
       <section className="space-y-6">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-blue-600 rounded-lg shadow-lg shadow-blue-500/20">
-            <Activity className="text-white" size={20} />
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-600 rounded-lg shadow-lg shadow-blue-500/20">
+              <Activity className="text-white" size={20} />
+            </div>
+            <h2 className="text-2xl font-black dark:text-white uppercase tracking-tight">{t.globalMarkets}</h2>
           </div>
-          <h2 className="text-2xl font-black dark:text-white uppercase tracking-tight">{t.globalMarkets}</h2>
+          {/* 마켓 상태 배지 */}
+          <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase border flex items-center gap-1.5 ${
+            marketStatus.isOpen 
+              ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' 
+              : 'bg-slate-500/10 text-slate-400 border-slate-500/20'
+          }`}>
+            <Activity size={10} className={marketStatus.isOpen ? 'text-emerald-500' : 'text-slate-400'} />
+            {marketStatus.message}
+          </div>
         </div>
 
         {/* Chart View */}
@@ -55,11 +109,16 @@ const Markets: React.FC<{lang: 'ko' | 'en'}> = ({ lang }) => {
           <div className="flex justify-between items-start mb-8 relative z-10">
             <div>
               <h3 className="text-[10px] font-black text-slate-500 mb-1 uppercase tracking-[0.2em]">{selectedStock} Performance</h3>
-              <p className="text-2xl font-black dark:text-white tracking-tighter">${MOCK_PRICES[selectedStock]?.toFixed(2)}</p>
+              <p className="text-2xl font-black dark:text-white tracking-tighter">
+                ${selectedStockData?.price?.toFixed(2) || '0.00'}
+              </p>
             </div>
-            <div className="bg-emerald-500/10 px-4 py-1.5 rounded-full text-emerald-500 text-[10px] font-black uppercase border border-emerald-500/20 flex items-center gap-1.5">
-              <TrendingUp size={12} /> +1.2% Today
-            </div>
+            {selectedStockData && (
+              <div className={`${changeBg} px-4 py-1.5 rounded-full ${changeColor} text-[10px] font-black uppercase border flex items-center gap-1.5`}>
+                {isPositiveChange ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                {changePercent >= 0 ? '+' : ''}{changePercent.toFixed(2)}% Today
+              </div>
+            )}
           </div>
           
           <div className="absolute inset-x-0 bottom-0 h-64 opacity-50 pointer-events-none">
@@ -67,44 +126,70 @@ const Markets: React.FC<{lang: 'ko' | 'en'}> = ({ lang }) => {
           </div>
 
           <ResponsiveContainer width="100%" height="70%">
-            <AreaChart data={MOCK_CHART_DATA}>
-              <defs>
-                <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#2563eb" stopOpacity={0.4}/>
-                  <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" opacity={0.3} />
-              <XAxis 
-                dataKey="name" 
-                tick={{ fill: '#64748b', fontSize: 10, fontWeight: 700 }}
-                axisLine={false}
-                tickLine={false}
-                interval={30}
-              />
-              <YAxis domain={['dataMin - 20', 'dataMax + 20']} hide />
-              <Tooltip 
-                contentStyle={{ 
-                  borderRadius: '20px', 
-                  backgroundColor: '#080B15',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5)',
-                  padding: '12px 16px'
-                }} 
-                itemStyle={{ color: '#2563eb', fontWeight: '900', fontSize: '14px' }}
-                labelStyle={{ display: 'none' }}
-              />
-              <Area 
-                type="monotone" 
-                dataKey="price" 
-                stroke="#2563eb" 
-                strokeWidth={4} 
-                fillOpacity={1} 
-                fill="url(#colorPrice)" 
-                animationDuration={1500}
-                activeDot={{ r: 6, strokeWidth: 0, fill: '#2563eb' }}
-              />
-            </AreaChart>
+            {chartData.length > 0 ? (
+              <ComposedChart data={chartData}>
+                <defs>
+                  <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.4}/>
+                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" opacity={0.3} />
+                <XAxis 
+                  dataKey="name" 
+                  tick={{ fill: '#64748b', fontSize: 10, fontWeight: 700 }}
+                  axisLine={false}
+                  tickLine={false}
+                  interval={Math.floor(chartData.length / 6)}
+                />
+                <YAxis domain={['dataMin - 20', 'dataMax + 20']} hide />
+                <Tooltip 
+                  contentStyle={{ 
+                    borderRadius: '20px', 
+                    backgroundColor: '#080B15',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5)',
+                    padding: '12px 16px'
+                  }} 
+                  itemStyle={{ color: '#2563eb', fontWeight: '900', fontSize: '14px' }}
+                  labelStyle={{ display: 'none' }}
+                />
+                <Area 
+                  type="monotone" 
+                  dataKey="price" 
+                  stroke="#2563eb" 
+                  strokeWidth={4} 
+                  fillOpacity={1} 
+                  fill="url(#colorPrice)" 
+                  animationDuration={1500}
+                  activeDot={{ r: 6, strokeWidth: 0, fill: '#2563eb' }}
+                />
+                {chartData[0]?.ma20 > 0 && (
+                  <Line 
+                    type="monotone" 
+                    dataKey="ma20" 
+                    stroke="#f59e0b" 
+                    strokeWidth={2} 
+                    dot={false}
+                    strokeDasharray="5 5"
+                  />
+                )}
+                {chartData[0]?.ma60 > 0 && (
+                  <Line 
+                    type="monotone" 
+                    dataKey="ma60" 
+                    stroke="#8b5cf6" 
+                    strokeWidth={2} 
+                    dot={false}
+                    strokeDasharray="5 5"
+                  />
+                )}
+              </ComposedChart>
+            ) : (
+              <div className="flex items-center justify-center h-full text-slate-500 text-sm font-bold">
+                {isLoading ? (lang === 'ko' ? '차트 데이터 로딩 중...' : 'Loading chart data...') : (lang === 'ko' ? '차트 데이터 없음' : 'No chart data')}
+              </div>
+            )}
           </ResponsiveContainer>
         </div>
       </section>
@@ -147,7 +232,11 @@ const Markets: React.FC<{lang: 'ko' | 'en'}> = ({ lang }) => {
           >
             {AVAILABLE_STOCKS.map((ticker) => {
               const isSelected = selectedStock === ticker;
-              const rsiValue = MOCK_RSI[ticker] || 50;
+              const data = stockData[ticker];
+              const rsiValue = data?.rsi || 50;
+              const price = data?.price || 0;
+              const changePct = data?.changePercent || 0;
+              const isPositive = changePct >= 0;
               const rsiColor = rsiValue > 70 ? 'text-rose-500' : rsiValue < 30 ? 'text-emerald-500' : 'text-blue-400';
               const rsiBg = rsiValue > 70 ? 'bg-rose-500' : rsiValue < 30 ? 'bg-emerald-500' : 'bg-blue-500';
               const gradientInfo = CUSTOM_GRADIENT_LOGOS[ticker] || { gradient: 'linear-gradient(135deg, #2563eb, #1e40af)', label: 'STOCK' };
@@ -179,21 +268,22 @@ const Markets: React.FC<{lang: 'ko' | 'en'}> = ({ lang }) => {
                   <div className="space-y-4">
                     <div>
                       <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Price</span>
-                      <p className="text-lg font-black dark:text-white tracking-tighter">${MOCK_PRICES[ticker]?.toFixed(2)}</p>
-                      <p className="text-[10px] font-black text-emerald-500 mt-1 flex items-center gap-1 uppercase">
-                        <TrendingUp size={10} /> +0.45%
+                      <p className="text-lg font-black dark:text-white tracking-tighter">${price.toFixed(2)}</p>
+                      <p className={`text-[10px] font-black mt-1 flex items-center gap-1 uppercase ${isPositive ? 'text-emerald-500' : 'text-rose-500'}`}>
+                        {isPositive ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                        {isPositive ? '+' : ''}{changePct.toFixed(2)}%
                       </p>
                     </div>
 
                     <div className="pt-3 border-t border-slate-100 dark:border-white/5">
                       <div className="flex justify-between items-center mb-1.5">
                         <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">RSI (14)</span>
-                        <span className={`text-[10px] font-black ${rsiColor}`}>{rsiValue}</span>
+                        <span className={`text-[10px] font-black ${rsiColor}`}>{Math.round(rsiValue)}</span>
                       </div>
                       <div className="w-full h-1 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden">
                         <div 
                           className={`h-full rounded-full transition-all duration-1000 ${rsiBg}`} 
-                          style={{ width: `${rsiValue}%` }}
+                          style={{ width: `${Math.min(Math.max(rsiValue, 0), 100)}%` }}
                         ></div>
                       </div>
                     </div>

@@ -180,3 +180,40 @@ export const calculateTechnicalIndicators = async (
     return null;
   }
 };
+
+/**
+ * 특정 심볼의 최근 N일간 가격 데이터를 가져옵니다 (차트용)
+ */
+export const fetchStockPriceHistory = async (
+  symbol: string,
+  days: number = 90
+): Promise<Array<{ date: string; price: number; ma20: number; ma60: number }>> => {
+  try {
+    const { data, error } = await supabase
+      .from('stock_prices')
+      .select('price, date, ma20, ma60, ma_20, ma_60')
+      .eq('symbol', symbol)
+      .order('date', { ascending: true })
+      .limit(days);
+
+    if (error || !data || data.length === 0) {
+      console.error('Error fetching price history for chart:', symbol, error);
+      return [];
+    }
+
+    return data.map((row: any) => {
+      const price = row.price ?? row.close_price ?? 0;
+      const ma20 = row.ma20 ?? row.ma_20 ?? 0;
+      const ma60 = row.ma60 ?? row.ma_60 ?? 0;
+      return {
+        date: row.date || '',
+        price,
+        ma20,
+        ma60,
+      };
+    }).filter(item => item.price > 0);
+  } catch (err) {
+    console.error('Unexpected error fetching price history:', err);
+    return [];
+  }
+};

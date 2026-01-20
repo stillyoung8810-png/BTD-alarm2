@@ -15,6 +15,7 @@ import AuthModals from './components/AuthModals';
 import { supabase } from './services/supabase';
 import { calculateTotalInvested, calculateAlreadyRealized, calculateHoldings } from './utils/portfolioCalculations';
 import { fetchStockPricesWithPrev } from './services/stockService';
+import { getUSSelectionHolidays } from './utils/marketUtils';
 import { 
   LayoutDashboard, 
   BarChart3, 
@@ -51,83 +52,6 @@ const App: React.FC = () => {
   const STOCK_PRICE_CACHE_KEY = 'STOCK_PRICE_CACHE_V1';
   const KST_UPDATE_HOUR = 7;
   const KST_UPDATE_MINUTE = 20;
-
-  // 부활절 제외 주요 미국 휴장일(9개)을 계산하는 함수
-  const getUSSelectionHolidays = (year: number): string[] => {
-    const pad = (n: number) => String(n).padStart(2, '0');
-
-    const format = (y: number, m: number, d: number) =>
-      `${y}-${pad(m)}-${pad(d)}`;
-
-    // N번째 요일 (0=Sun..6=Sat)
-    const nthWeekdayOfMonth = (y: number, m: number, weekday: number, nth: number): Date => {
-      const first = new Date(Date.UTC(y, m - 1, 1));
-      const firstDow = first.getUTCDay();
-      let day = 1 + ((7 + weekday - firstDow) % 7) + (nth - 1) * 7;
-      return new Date(Date.UTC(y, m - 1, day));
-    };
-
-    // 마지막 특정 요일
-    const lastWeekdayOfMonth = (y: number, m: number, weekday: number): Date => {
-      const last = new Date(Date.UTC(y, m, 0)); // 다음달 0일 = 해당 월 마지막날
-      const lastDow = last.getUTCDay();
-      const diff = (7 + lastDow - weekday) % 7;
-      const day = last.getUTCDate() - diff;
-      return new Date(Date.UTC(y, m - 1, day));
-    };
-
-    const observed = (d: Date): string => {
-      const dow = d.getUTCDay(); // 0=Sun,6=Sat
-      let obs = new Date(d.getTime());
-      if (dow === 6) {
-        // 토요일 → 금요일로 조정
-        obs = new Date(d.getTime() - 1 * 24 * 60 * 60 * 1000);
-      } else if (dow === 0) {
-        // 일요일 → 월요일로 조정
-        obs = new Date(d.getTime() + 1 * 24 * 60 * 60 * 1000);
-      }
-      return format(obs.getUTCFullYear(), obs.getUTCMonth() + 1, obs.getUTCDate());
-    };
-
-    // 1. 신정 (1/1)
-    const newYear = observed(new Date(Date.UTC(year, 0, 1)));
-
-    // 2. 마틴 루터 킹 주니어 데이 (1월 3번째 월요일)
-    const mlk = nthWeekdayOfMonth(year, 1, 1, 3); // 1=Mon
-
-    // 3. 대통령의 날 (2월 3번째 월요일)
-    const presidents = nthWeekdayOfMonth(year, 2, 1, 3);
-
-    // 4. 메모리얼 데이 (5월 마지막 월요일)
-    const memorial = lastWeekdayOfMonth(year, 5, 1);
-
-    // 5. 준틴스 (6/19)
-    const juneteenth = observed(new Date(Date.UTC(year, 5, 19)));
-
-    // 6. 독립기념일 (7/4)
-    const independence = observed(new Date(Date.UTC(year, 6, 4)));
-
-    // 7. 노동절 (9월 1번째 월요일)
-    const labor = nthWeekdayOfMonth(year, 9, 1, 1);
-
-    // 8. 추수감사절 (11월 4번째 목요일)
-    const thanksgiving = nthWeekdayOfMonth(year, 11, 4, 4); // 4=Thu
-
-    // 9. 크리스마스 (12/25)
-    const christmas = observed(new Date(Date.UTC(year, 11, 25)));
-
-    return [
-      newYear,
-      format(mlk.getUTCFullYear(), mlk.getUTCMonth() + 1, mlk.getUTCDate()),
-      format(presidents.getUTCFullYear(), presidents.getUTCMonth() + 1, presidents.getUTCDate()),
-      format(memorial.getUTCFullYear(), memorial.getUTCMonth() + 1, memorial.getUTCDate()),
-      juneteenth,
-      independence,
-      format(labor.getUTCFullYear(), labor.getUTCMonth() + 1, labor.getUTCDate()),
-      format(thanksgiving.getUTCFullYear(), thanksgiving.getUTCMonth() + 1, thanksgiving.getUTCDate()),
-      christmas,
-    ];
-  };
   
   // States for the 2-step termination flow
   const [terminateTargetId, setTerminateTargetId] = useState<string | null>(null);

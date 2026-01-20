@@ -5,13 +5,19 @@ import { StockData } from '../types';
  * Supabase에서 주가 데이터를 가져옵니다 (최근 종가 기준)
  */
 export const fetchStockPrices = async (symbols: string[]): Promise<Record<string, StockData>> => {
-  if (!symbols.length) return {};
+  // 빈 배열이나 유효하지 않은 심볼 필터링
+  const validSymbols = symbols.filter(s => s && typeof s === 'string' && s.trim().length > 0);
+  if (!validSymbols.length) {
+    console.warn('No valid symbols provided to fetchStockPrices');
+    return {};
+  }
 
   try {
+    // Supabase 라이브러리의 .in() 메서드를 사용하여 안전하게 쿼리
     const { data, error } = await supabase
       .from('stock_prices')
       .select('*')
-      .in('symbol', symbols)
+      .in('symbol', validSymbols)
       .order('date', { ascending: false });
 
     if (error) {
@@ -65,18 +71,24 @@ export const fetchStockPrices = async (symbols: string[]): Promise<Record<string
 export const fetchStockPricesWithPrev = async (
   symbols: string[]
 ): Promise<Record<string, { current: number; previous: number }>> => {
-  if (!symbols.length) return {};
+  // 빈 배열이나 유효하지 않은 심볼 필터링
+  const validSymbols = symbols.filter(s => s && typeof s === 'string' && s.trim().length > 0);
+  if (!validSymbols.length) {
+    console.warn('No valid symbols provided to fetchStockPricesWithPrev');
+    return {};
+  }
 
   try {
+    // Supabase 라이브러리의 .in() 메서드를 사용하여 안전하게 쿼리
     const { data, error } = await supabase
       .from('stock_prices')
       .select('symbol, price, date, close_price')
-      .in('symbol', symbols)
+      .in('symbol', validSymbols)
       .order('symbol', { ascending: true })
       .order('date', { ascending: false });
 
     if (error) {
-      echoerror('Error fetching stock prices with prev:', error);
+      console.error('Error fetching stock prices with prev:', error);
       return {};
     }
 
@@ -183,15 +195,17 @@ export const calculateTechnicalIndicators = async (
 
 /**
  * 특정 심볼의 최근 N일간 가격 데이터를 가져옵니다 (차트용)
+ * 로컬에서 MA20, MA60을 계산하여 반환합니다.
  */
 export const fetchStockPriceHistory = async (
   symbol: string,
   days: number = 90
 ): Promise<Array<{ date: string; price: number; ma20: number; ma60: number }>> => {
   try {
+    // 실제 존재하는 컬럼만 select (ma20, ma60 제거)
     const { data, error } = await supabase
       .from('stock_prices')
-      .select('price, date, ma20, ma60, ma_20, ma_60')
+      .select('price, date, close_price')
       .eq('symbol', symbol)
       .order('date', { ascending: true })
       .limit(days);
@@ -201,17 +215,57 @@ export const fetchStockPriceHistory = async (
       return [];
     }
 
-    return data.map((row: any) => {
-      const price = row.price ?? row.close_price ?? 0;
-      const ma20 = row.ma20 ?? row.ma_20 ?? 0;
-      const ma60 = row.ma60 ?? row.ma_60 ?? 0;
+    // price 또는 close_price에서 가격 추출
+    const prices = data
+      .map((row: any) => {
+        const price = row.price ?? row.close_price ?? 0;
+        return {
+          date: row.date || '',
+          price,
+        };
+      })
+      .filter(item => item.price > 0 && item.date);
+
+    if (prices.length === 0) return [];
+
+    // 가격 배열 추출
+    const priceArray = prices.map(p => p.price);
+
+    // 각 데이터 포인트에 대해 MA20, MA60 계산 (rolling window 방식)
+    const result = prices.map((item, index) => {
+      // MA20 계산: 과거 20일간의 평균 (20일 미만이면 사용 가능한 데이터만)
+      let ma20 = item.price; // 기본값은 현재 가격
+      if (index >= 19) {
+        // 20일 이상 데이터가 있으면 과거 20일 평균
+        const pricesForMa20 = priceArray.slice(index - 19, index + 1);
+        ma20 = calculateMA(pricesForMa20, 20);
+      } else if (index > 0) {
+        // 20일 미만이면 지금까지의 평균
+        const pricesForMa20 = priceArray.slice(0, index + 1);
+        ma20 = calculateMA(pricesForMa20, pricesForMa20.length);
+      }
+
+      // MA60 계산: 과거 60일간의 평균 (60일 미만이면 사용 가능한 데이터만)
+      let ma60 = item.price; // 기본값은 현재 가격
+      if (index >= 59) {
+        // 60일 이상 데이터가 있으면 과거 60일 평균
+        const pricesForMa60 = priceArray.slice(index - 59, index + 1);
+        ma60 = calculateMA(pricesForMa60, 60);
+      } else if (index > 0) {
+        // 60일 미만이면 지금까지의 평균
+        const pricesForMa60 = priceArray.slice(0, index + 1);
+        ma60 = calculateMA(pricesForMa60, pricesForMa60.length);
+      }
+
       return {
-        date: row.date || '',
-        price,
+        date: item.date,
+        price: item.price,
         ma20,
         ma60,
       };
-    }).filter(item => item.price > 0);
+    });
+
+    return result;
   } catch (err) {
     console.error('Unexpected error fetching price history:', err);
     return [];

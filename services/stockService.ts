@@ -3,10 +3,14 @@ import { StockData } from '../types';
 
 /**
  * Supabase에서 주가 데이터를 가져옵니다 (최근 종가 기준)
+ * 실제 컬럼명만 select하고, 계산 지표는 로컬에서 계산합니다.
  */
 export const fetchStockPrices = async (symbols: string[]): Promise<Record<string, StockData>> => {
-  // 빈 배열이나 유효하지 않은 심볼 필터링
-  const validSymbols = symbols.filter(s => s && typeof s === 'string' && s.trim().length > 0);
+  // 빈 배열이나 유효하지 않은 심볼 필터링 및 trim() 처리
+  const validSymbols = symbols
+    .filter(s => s && typeof s === 'string')
+    .map(s => s.trim())
+    .filter(s => s.length > 0);
   if (!validSymbols.length) {
     console.warn('No valid symbols provided to fetchStockPrices');
     return {};
@@ -14,11 +18,12 @@ export const fetchStockPrices = async (symbols: string[]): Promise<Record<string
 
   try {
     // Supabase 라이브러리의 .in() 메서드를 사용하여 안전하게 쿼리
+    // 실제 컬럼명만 select: symbol, close (종가), trade_date (거래일)
     const { data, error } = await supabase
       .from('stock_prices')
-      .select('*')
+      .select('symbol, close, trade_date')
       .in('symbol', validSymbols)
-      .order('date', { ascending: false });
+      .order('trade_date', { ascending: false });
 
     if (error) {
       console.error('Error fetching stock prices:', error);
@@ -35,26 +40,54 @@ export const fetchStockPrices = async (symbols: string[]): Promise<Record<string
         seenSymbols.add(symbol);
 
         const r = row as any;
-        const price = (r.price ?? r.close_price) ?? 0;
-        const change = (r.change ?? r.change_amount) ?? 0;
-        const changePercent = (r.change_percent ?? 0) as number;
-        const rsi = (r.rsi ?? r.rsi_14) ?? 50;
-        const ma20 = (r.ma20 ?? r.ma_20) ?? 0;
-        const ma60 = (r.ma60 ?? r.ma_60) ?? 0;
-        const ma120 = (r.ma120 ?? r.ma_120) ?? 0;
+        // 실제 컬럼명: close 사용
+        const price = (r.close ?? 0) as number;
 
+        // 기본값으로 초기화 (나중에 계산 지표로 업데이트)
         latestPrices[symbol] = {
           symbol,
           price,
-          change,
-          changePercent,
-          rsi,
-          ma20,
-          ma60,
-          ma120,
+          change: 0,
+          changePercent: 0,
+          rsi: 50,
+          ma20: 0,
+          ma60: 0,
+          ma120: 0,
         };
       }
     }
+
+    // 계산 지표를 동기적으로 가져오기 위한 개선된 로직
+    // 각 심볼별로 최신 데이터와 과거 데이터를 병렬로 가져와서 계산
+    const symbolsToProcess = Object.keys(latestPrices);
+    await Promise.all(
+      symbolsToProcess.map(async (symbol) => {
+        try {
+          // 과거 데이터 가져오기 (RSI, MA 계산용)
+          const indicators = await calculateTechnicalIndicators(symbol);
+          if (indicators) {
+            latestPrices[symbol].rsi = indicators.rsi;
+            latestPrices[symbol].ma20 = indicators.ma[20] || 0;
+            latestPrices[symbol].ma60 = indicators.ma[60] || 0;
+            latestPrices[symbol].ma120 = indicators.ma[120] || 0;
+          }
+
+          // 전일 종가 가져오기 (changePercent 계산용)
+          const prevData = await fetchStockPricesWithPrev([symbol]);
+          if (prevData[symbol]) {
+            const currentPrice = latestPrices[symbol].price;
+            const previousPrice = prevData[symbol].previous;
+            if (previousPrice > 0 && currentPrice > 0 && previousPrice !== currentPrice) {
+              latestPrices[symbol].change = currentPrice - previousPrice;
+              latestPrices[symbol].changePercent = ((currentPrice - previousPrice) / previousPrice) * 100;
+            }
+          }
+        } catch (err) {
+          console.warn(`Failed to calculate indicators for ${symbol}:`, err);
+          // 기본값 유지
+        }
+      })
+    );
 
     return latestPrices;
   } catch (err) {
@@ -71,8 +104,11 @@ export const fetchStockPrices = async (symbols: string[]): Promise<Record<string
 export const fetchStockPricesWithPrev = async (
   symbols: string[]
 ): Promise<Record<string, { current: number; previous: number }>> => {
-  // 빈 배열이나 유효하지 않은 심볼 필터링
-  const validSymbols = symbols.filter(s => s && typeof s === 'string' && s.trim().length > 0);
+  // 빈 배열이나 유효하지 않은 심볼 필터링 및 trim() 처리
+  const validSymbols = symbols
+    .filter(s => s && typeof s === 'string')
+    .map(s => s.trim())
+    .filter(s => s.length > 0);
   if (!validSymbols.length) {
     console.warn('No valid symbols provided to fetchStockPricesWithPrev');
     return {};
@@ -80,12 +116,13 @@ export const fetchStockPricesWithPrev = async (
 
   try {
     // Supabase 라이브러리의 .in() 메서드를 사용하여 안전하게 쿼리
+    // 실제 컬럼명: close (종가), trade_date (거래일)
     const { data, error } = await supabase
       .from('stock_prices')
-      .select('symbol, price, date, close_price')
+      .select('symbol, close, trade_date')
       .in('symbol', validSymbols)
       .order('symbol', { ascending: true })
-      .order('date', { ascending: false });
+      .order('trade_date', { ascending: false });
 
     if (error) {
       console.error('Error fetching stock prices with prev:', error);
@@ -98,7 +135,8 @@ export const fetchStockPricesWithPrev = async (
       for (const row of data as any[]) {
         const symbol: string | undefined = row.symbol;
         if (!symbol) continue;
-        const price = (row.price ?? row.close_price) ?? 0;
+        // 실제 컬럼명: close 사용
+        const price = (row.close ?? 0) as number;
 
         if (!map[symbol]) {
           // 첫 번째 레코드 = 최신가, 이전가는 우선 같은 값으로 초기화
@@ -163,12 +201,20 @@ export const calculateTechnicalIndicators = async (
   symbol: string,
   maPeriods: number[] = [20, 60, 120]
 ): Promise<{ ma: Record<number, number>; rsi: number } | null> => {
+  // 심볼 trim 처리
+  const trimmedSymbol = symbol?.trim();
+  if (!trimmedSymbol) {
+    console.warn('Invalid symbol provided to calculateTechnicalIndicators');
+    return null;
+  }
+
   try {
+    // 실제 컬럼명: close (종가), trade_date (거래일)
     const { data, error } = await supabase
       .from('stock_prices')
-      .select('price, date')
-      .eq('symbol', symbol)
-      .order('date', { ascending: true })
+      .select('close, trade_date')
+      .eq('symbol', trimmedSymbol)
+      .order('trade_date', { ascending: true })
       .limit(200); // 최근 200일 데이터
 
     if (error || !data || data.length === 0) {
@@ -176,7 +222,8 @@ export const calculateTechnicalIndicators = async (
       return null;
     }
 
-    const prices = data.map(row => row.price).filter(p => p != null) as number[];
+    // 실제 컬럼명: close 사용
+    const prices = data.map(row => (row as any).close).filter(p => p != null && p > 0) as number[];
     if (prices.length === 0) return null;
 
     const ma: Record<number, number> = {};
@@ -201,13 +248,20 @@ export const fetchStockPriceHistory = async (
   symbol: string,
   days: number = 90
 ): Promise<Array<{ date: string; price: number; ma20: number; ma60: number }>> => {
+  // 심볼 trim 처리
+  const trimmedSymbol = symbol?.trim();
+  if (!trimmedSymbol) {
+    console.warn('Invalid symbol provided to fetchStockPriceHistory');
+    return [];
+  }
+
   try {
-    // 실제 존재하는 컬럼만 select (ma20, ma60 제거)
+    // 실제 컬럼명: close (종가), trade_date (거래일)만 select
     const { data, error } = await supabase
       .from('stock_prices')
-      .select('price, date, close_price')
-      .eq('symbol', symbol)
-      .order('date', { ascending: true })
+      .select('close, trade_date')
+      .eq('symbol', trimmedSymbol)
+      .order('trade_date', { ascending: true })
       .limit(days);
 
     if (error || !data || data.length === 0) {
@@ -215,12 +269,13 @@ export const fetchStockPriceHistory = async (
       return [];
     }
 
-    // price 또는 close_price에서 가격 추출
+    // 실제 컬럼명: close, trade_date 사용
     const prices = data
       .map((row: any) => {
-        const price = row.price ?? row.close_price ?? 0;
+        const price = row.close ?? 0;
+        const tradeDate = row.trade_date || '';
         return {
-          date: row.date || '',
+          date: tradeDate,
           price,
         };
       })

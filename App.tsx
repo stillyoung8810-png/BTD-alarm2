@@ -207,15 +207,16 @@ const App: React.FC = () => {
       if (data) {
         // DB의 snake_case를 UI에서 사용하는 camelCase 구조로 변환하여 저장
         // (Supabase 테이블은 snake_case, 프론트엔드는 camelCase 사용)
+        // DB 컬럼명(daily_buy_amount)을 우선적으로 사용
         const formattedData = (data as any[]).map((item) => ({
           ...item,
-          dailyBuyAmount: item.dailyBuyAmount ?? item.daily_buy_amount ?? 0,
-          startDate: item.startDate ?? item.start_date ?? '',
-          feeRate: item.feeRate ?? item.fee_rate ?? 0.25,
-          isClosed: item.isClosed ?? item.is_closed ?? false,
-          closedAt: item.closedAt ?? item.closed_at ?? undefined,
-          finalSellAmount: item.finalSellAmount ?? item.final_sell_amount ?? undefined,
-          alarmconfig: item.alarmconfig ?? item.alarm_config ?? undefined,
+          dailyBuyAmount: item.daily_buy_amount ?? item.dailyBuyAmount ?? 0,
+          startDate: item.start_date ?? item.startDate ?? '',
+          feeRate: item.fee_rate ?? item.feeRate ?? 0.25,
+          isClosed: item.is_closed ?? item.isClosed ?? false,
+          closedAt: item.closed_at ?? item.closedAt ?? undefined,
+          finalSellAmount: item.final_sell_amount ?? item.finalSellAmount ?? undefined,
+          alarmconfig: item.alarm_config ?? item.alarmconfig ?? undefined,
           strategy: item.strategy, // strategy 컬럼은 이미 일치
         }));
         setPortfolios(formattedData as Portfolio[]);
@@ -413,14 +414,15 @@ const App: React.FC = () => {
       console.log('서버 응답 데이터:', data);
       if (data && data.length > 0) {
         // Supabase 컬럼명이 snake_case이므로 모든 필드를 camelCase로 정규화
+        // DB 컬럼명(daily_buy_amount)을 우선적으로 사용
         const normalized = (data as any[]).map((row) => ({
           ...row,
-          dailyBuyAmount: row.dailyBuyAmount ?? row.daily_buy_amount ?? 0,
-          startDate: row.startDate ?? row.start_date ?? '',
-          feeRate: row.feeRate ?? row.fee_rate ?? 0.25,
-          isClosed: row.isClosed ?? row.is_closed ?? false,
-          closedAt: row.closedAt ?? row.closed_at ?? undefined,
-          finalSellAmount: row.finalSellAmount ?? row.final_sell_amount ?? undefined,
+          dailyBuyAmount: row.daily_buy_amount ?? row.dailyBuyAmount ?? 0,
+          startDate: row.start_date ?? row.startDate ?? '',
+          feeRate: row.fee_rate ?? row.feeRate ?? 0.25,
+          isClosed: row.is_closed ?? row.isClosed ?? false,
+          closedAt: row.closed_at ?? row.closedAt ?? undefined,
+          finalSellAmount: row.final_sell_amount ?? row.finalSellAmount ?? undefined,
           alarmconfig: row.alarmconfig ?? row.alarm_config ?? undefined,
         }));
         setPortfolios(prev => [...prev, ...normalized]);
@@ -770,7 +772,7 @@ const App: React.FC = () => {
               </div>
             )
           )}
-          {activeTab === 'markets' && <Markets lang={lang} />}
+          {activeTab === 'markets' && <Markets lang={lang} portfolios={portfolios} />}
           {activeTab === 'history' && (
             <History 
               lang={lang} 
@@ -889,15 +891,16 @@ const App: React.FC = () => {
 
               if (!error && data) {
                 // Supabase 컬럼명이 snake_case이므로 모든 필드를 camelCase로 정규화
+                // DB 컬럼명(daily_buy_amount)을 우선적으로 사용
                 const normalized = (data as any[]).map((row) => ({
                   ...row,
-                  dailyBuyAmount: row.dailyBuyAmount ?? row.daily_buy_amount ?? 0,
-                  startDate: row.startDate ?? row.start_date ?? '',
-                  feeRate: row.feeRate ?? row.fee_rate ?? 0.25,
-                  isClosed: row.isClosed ?? row.is_closed ?? false,
-                  closedAt: row.closedAt ?? row.closed_at ?? undefined,
-                  finalSellAmount: row.finalSellAmount ?? row.final_sell_amount ?? undefined,
-                  alarmconfig: row.alarmconfig ?? row.alarm_config ?? undefined,
+                  dailyBuyAmount: row.daily_buy_amount ?? row.dailyBuyAmount ?? 0,
+                  startDate: row.start_date ?? row.startDate ?? '',
+                  feeRate: row.fee_rate ?? row.feeRate ?? 0.25,
+                  isClosed: row.is_closed ?? row.isClosed ?? false,
+                  closedAt: row.closed_at ?? row.closedAt ?? undefined,
+                  finalSellAmount: row.final_sell_amount ?? row.finalSellAmount ?? undefined,
+                  alarmconfig: row.alarm_config ?? row.alarmconfig ?? undefined,
                 }));
                 setPortfolios(normalized as Portfolio[]);
               }

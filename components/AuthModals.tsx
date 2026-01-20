@@ -131,7 +131,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
             id: data.user.id,
             email: data.user.email || email,
           });
-          onSwitchType('profile');
+          onClose(); // 프로필 모달 대신 모달 닫기
         }
       } else if (type === 'login') {
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -148,7 +148,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
             id: data.user.id,
             email: data.user.email || email,
           });
-          onSwitchType('profile');
+          onClose(); // 프로필 모달 대신 모달 닫기
         }
       }
     } catch (err: any) {

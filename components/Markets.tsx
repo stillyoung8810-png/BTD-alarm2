@@ -14,19 +14,134 @@ import {
 import { AVAILABLE_STOCKS, I18N, CUSTOM_GRADIENT_LOGOS } from '../constants';
 import { TrendingUp, TrendingDown, Activity, BarChart2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { fetchStockPrices, fetchStockPriceHistory } from '../services/stockService';
-import { StockData } from '../types';
+import { StockData, Portfolio } from '../types';
 import { getMarketStatus } from '../utils/marketUtils';
+import { calculateHoldings } from '../utils/portfolioCalculations';
 
-const Markets: React.FC<{lang: 'ko' | 'en'}> = ({ lang }) => {
+// Custom Tooltip 컴포넌트
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (!active || !payload || !payload.length) return null;
+
+  // payload에서 데이터 추출
+  const priceData = payload.find((p: any) => p.dataKey === 'price');
+  
+  // 날짜 포맷팅 (payload에서 date 필드 추출 또는 label 사용)
+  let formattedDate = '';
+  if (priceData?.payload?.date) {
+    try {
+      const date = new Date(priceData.payload.date);
+      if (!isNaN(date.getTime())) {
+        formattedDate = date.toLocaleDateString('ko-KR', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        });
+      }
+    } catch {
+      // 날짜 파싱 실패 시 label 사용
+      formattedDate = label || '';
+    }
+  } else if (label) {
+    try {
+      const date = new Date(label);
+      if (!isNaN(date.getTime())) {
+        formattedDate = date.toLocaleDateString('ko-KR', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        });
+      } else {
+        formattedDate = label;
+      }
+    } catch {
+      formattedDate = label;
+    }
+  }
+  const ma20Data = payload.find((p: any) => p.dataKey === 'ma20');
+  const ma60Data = payload.find((p: any) => p.dataKey === 'ma60');
+
+  const price = priceData?.value || 0;
+  const ma20 = ma20Data?.value || 0;
+  const ma60 = ma60Data?.value || 0;
+
+  return (
+    <div className="bg-[#080B15] backdrop-blur-md opacity-90 border border-white/10 rounded-2xl p-4 shadow-2xl">
+      {formattedDate && (
+        <div className="text-white font-black text-sm mb-3 tracking-tight">
+          {formattedDate}
+        </div>
+      )}
+      <div className="space-y-2">
+        {/* PRICE */}
+        {price > 0 && (
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">PRICE</span>
+            <span className="text-sm font-black text-white ml-auto">${price.toFixed(2)}</span>
+          </div>
+        )}
+        {/* MA 20 */}
+        {ma20 > 0 && (
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-[#f59e0b]"></div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">MA 20</span>
+            <span className="text-sm font-black text-white ml-auto">${ma20.toFixed(2)}</span>
+          </div>
+        )}
+        {/* MA 60 */}
+        {ma60 > 0 && (
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-[#8b5cf6]"></div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">MA 60</span>
+            <span className="text-sm font-black text-white ml-auto">${ma60.toFixed(2)}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+interface MarketsProps {
+  lang: 'ko' | 'en';
+  portfolios?: Portfolio[];
+}
+
+const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
   const [selectedStock, setSelectedStock] = useState('QQQ');
   const [stockData, setStockData] = useState<Record<string, StockData>>({});
-  const [chartData, setChartData] = useState<Array<{ name: string; price: number; ma20: number; ma60: number }>>([]);
+  const [chartData, setChartData] = useState<Array<{ name: string; price: number; ma20: number; ma60: number; date: string }>>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showHoldingsOnly, setShowHoldingsOnly] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const t = I18N[lang];
 
   // 마켓 상태 계산
   const marketStatus = useMemo(() => getMarketStatus(lang), [lang]);
+
+  // 보유 종목 계산 (활성 포트폴리오만)
+  const holdingsSet = useMemo(() => {
+    const activePortfolios = portfolios.filter(p => !p.isClosed);
+    const holdings: Set<string> = new Set();
+    
+    activePortfolios.forEach(portfolio => {
+      const portfolioHoldings = calculateHoldings(portfolio);
+      portfolioHoldings.forEach(h => {
+        if (h.quantity > 0) {
+          holdings.add(h.stock);
+        }
+      });
+    });
+    
+    return holdings;
+  }, [portfolios]);
+
+  // 필터링된 종목 리스트
+  const displayedStocks = useMemo(() => {
+    if (showHoldingsOnly) {
+      return AVAILABLE_STOCKS.filter(ticker => holdingsSet.has(ticker));
+    }
+    return AVAILABLE_STOCKS;
+  }, [showHoldingsOnly, holdingsSet]);
 
   // 초기 주가 데이터 로드
   useEffect(() => {
@@ -50,11 +165,12 @@ const Markets: React.FC<{lang: 'ko' | 'en'}> = ({ lang }) => {
       if (!selectedStock) return;
       try {
         const history = await fetchStockPriceHistory(selectedStock, 90);
-        // Recharts 형식으로 변환
+        // Recharts 형식으로 변환 (날짜 정보 포함)
         const formatted = history.map(item => {
           const date = new Date(item.date);
           return {
             name: date.toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-US', { month: 'short', day: 'numeric' }),
+            date: item.date, // 원본 날짜 저장 (tooltip용)
             price: item.price,
             ma20: item.ma20,
             ma60: item.ma60,
@@ -144,15 +260,8 @@ const Markets: React.FC<{lang: 'ko' | 'en'}> = ({ lang }) => {
                 />
                 <YAxis domain={['dataMin - 20', 'dataMax + 20']} hide />
                 <Tooltip 
-                  contentStyle={{ 
-                    borderRadius: '20px', 
-                    backgroundColor: '#080B15',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                    boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5)',
-                    padding: '12px 16px'
-                  }} 
-                  itemStyle={{ color: '#2563eb', fontWeight: '900', fontSize: '14px' }}
-                  labelStyle={{ display: 'none' }}
+                  content={<CustomTooltip />}
+                  cursor={{ stroke: '#2563eb', strokeWidth: 1, strokeDasharray: '5 5' }}
                 />
                 <Area 
                   type="monotone" 
@@ -197,11 +306,33 @@ const Markets: React.FC<{lang: 'ko' | 'en'}> = ({ lang }) => {
       {/* Horizontal Scrolling Stock Cards with Navigation Arrows */}
       <section className="space-y-6">
         <div className="flex items-center justify-between px-2">
-          <div className="flex items-center gap-2">
-            <BarChart2 className="text-slate-500" size={16} />
-            <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest">
-              {lang === 'ko' ? '전일 종가 정보' : 'Previous Close Info'}
-            </h3>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <BarChart2 className="text-slate-500" size={16} />
+              <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest">
+                {lang === 'ko' ? '실시간 종목 정보' : 'Real-time Stock Info'}
+              </h3>
+            </div>
+            {/* 보유 종목 필터 스위치 */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                {lang === 'ko' ? '보유 종목만 보기' : 'Holdings Only'}
+              </span>
+              <button
+                onClick={() => setShowHoldingsOnly(!showHoldingsOnly)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${
+                  showHoldingsOnly 
+                    ? 'bg-blue-500 shadow-lg shadow-blue-500/50' 
+                    : 'bg-slate-600'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${
+                    showHoldingsOnly ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
           </div>
           <div className="flex items-center gap-2.5">
             <button 
@@ -230,7 +361,12 @@ const Markets: React.FC<{lang: 'ko' | 'en'}> = ({ lang }) => {
             ref={scrollRef}
             className="flex gap-6 overflow-x-auto pb-8 pt-4 -mx-6 px-10 md:mx-0 md:px-4 scrollbar-hide snap-x snap-mandatory"
           >
-            {AVAILABLE_STOCKS.map((ticker) => {
+            {displayedStocks.length === 0 ? (
+              <div className="flex items-center justify-center w-full py-12 text-slate-400 text-sm font-bold">
+                {lang === 'ko' ? '보유 중인 종목이 없습니다.' : 'No holdings available.'}
+              </div>
+            ) : (
+              displayedStocks.map((ticker) => {
               const isSelected = selectedStock === ticker;
               const data = stockData[ticker];
               const rsiValue = data?.rsi || 50;
@@ -290,7 +426,7 @@ const Markets: React.FC<{lang: 'ko' | 'en'}> = ({ lang }) => {
                   </div>
                 </button>
               );
-            })}
+            }))}
           </div>
         </div>
       </section>

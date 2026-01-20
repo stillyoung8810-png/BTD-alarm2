@@ -7,9 +7,8 @@ export enum StrategySection {
 
 export interface AlarmConfig {
   enabled: boolean;
-  selectedHours: string[]; // e.g., ["15:00", "16:00"]
-  mode: 'once' | 'repeat';
-  repeatCount: number;
+  selectedHours: string[]; // e.g., ["15:00", "16:00"] (최대 2개)
+  // mode와 repeatCount는 제거됨 (간소화)
 }
 
 export interface Strategy {

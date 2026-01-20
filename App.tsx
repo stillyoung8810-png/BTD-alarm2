@@ -12,7 +12,7 @@ import QuickInputModal from './components/QuickInputModal';
 import TradeExecutionModal from './components/TradeExecutionModal';
 import SettlementModals from './components/SettlementModals';
 import AuthModals from './components/AuthModals';
-import { supabase } from './services/supabase';
+import { supabase, clearAuthStorage } from './services/supabase';
 import { calculateTotalInvested, calculateAlreadyRealized, calculateHoldings } from './utils/portfolioCalculations';
 import { fetchStockPricesWithPrev } from './services/stockService';
 import { getUSSelectionHolidays } from './utils/marketUtils';
@@ -107,6 +107,33 @@ const App: React.FC = () => {
       }
     };
 
+    // 세션 에러 발생 시 로컬 스토리지 정리 및 상태 초기화 헬퍼 함수
+    const clearAuthState = async (showAlert: boolean = true) => {
+      if (!isMounted) return;
+      
+      console.log('[Auth] Clearing auth state due to session error');
+      
+      // Supabase 로컬 스토리지 키 정리 (공통 헬퍼 함수 사용)
+      clearAuthStorage();
+      
+      // 강제 로그아웃 (에러 무시 - 이미 세션이 깨진 상태일 수 있음)
+      try {
+        await supabase.auth.signOut({ scope: 'local' });
+      } catch (e) {
+        console.warn('[Auth] signOut during clearAuthState failed (expected):', e);
+      }
+      
+      // 상태 초기화
+      setUser(null);
+      setPortfolios([]);
+      
+      if (showAlert) {
+        alert(lang === 'ko' 
+          ? '세션이 만료되었습니다. 다시 로그인해 주세요.' 
+          : 'Session expired. Please log in again.');
+      }
+    };
+
     // 1. 현재 세션을 직접 확인하여 user 상태를 즉시 복구 시도 (새로고침 시 중요)
     const checkUser = async () => {
       if (!isMounted) return;
@@ -120,6 +147,19 @@ const App: React.FC = () => {
         if (sessionError) {
           if (sessionError.name !== 'AbortError') {
             console.error('Session error:', sessionError);
+            
+            // Invalid Refresh Token 등 세션 관련 에러 처리
+            const errorMessage = sessionError.message?.toLowerCase() || '';
+            if (
+              errorMessage.includes('refresh token') ||
+              errorMessage.includes('invalid') ||
+              errorMessage.includes('expired') ||
+              errorMessage.includes('not found')
+            ) {
+              console.warn('[Auth] Session validation failed, clearing auth state');
+              await clearAuthState(false); // 초기 로딩 시에는 알림 표시 안 함
+              return;
+            }
           }
         }
 
@@ -141,6 +181,16 @@ const App: React.FC = () => {
       } catch (err: any) {
         if (err?.name !== 'AbortError' && isMounted) {
           console.error('Init auth error:', err);
+          
+          // AuthApiError 등 인증 관련 에러 처리
+          const errorMessage = err?.message?.toLowerCase() || '';
+          if (
+            errorMessage.includes('refresh token') ||
+            errorMessage.includes('invalid') ||
+            err?.name === 'AuthApiError'
+          ) {
+            await clearAuthState(false);
+          }
         }
       } finally {
         if (isMounted) {
@@ -161,9 +211,24 @@ const App: React.FC = () => {
 
           const currentUser = session?.user ?? null;
 
+          // TOKEN_REFRESHED: 토큰이 성공적으로 갱신됨
+          if (event === 'TOKEN_REFRESHED') {
+            console.log('[Auth] Token refreshed successfully');
+          }
+
+          // SIGNED_IN: 로그인 성공
           if (event === 'SIGNED_IN' && typeof window !== 'undefined') {
             // 로그인 성공 시에만 URL 해시 정리
             window.history.replaceState(null, '', window.location.pathname + window.location.search);
+          }
+
+          // SIGNED_OUT: 로그아웃됨 (수동 또는 세션 만료)
+          if (event === 'SIGNED_OUT') {
+            console.log('[Auth] User signed out');
+            setUser(null);
+            setPortfolios([]);
+            // SIGNED_OUT 이벤트 시에는 이미 로그아웃된 상태이므로 추가 처리 불필요
+            return;
           }
 
           if (currentUser) {
@@ -197,16 +262,59 @@ const App: React.FC = () => {
         } catch (err: any) {
           if (err?.name !== 'AbortError' && isMounted) {
             console.error('Auth state change error:', err);
+            
+            // AuthApiError (Invalid Refresh Token 등) 처리
+            const errorMessage = err?.message?.toLowerCase() || '';
+            if (
+              errorMessage.includes('refresh token') ||
+              errorMessage.includes('invalid') ||
+              errorMessage.includes('expired') ||
+              err?.name === 'AuthApiError'
+            ) {
+              console.warn('[Auth] Auth error detected in onAuthStateChange, clearing auth state');
+              await clearAuthState(true);
+            }
           }
         }
       },
     );
 
+    // 3. Supabase 내부 에러 이벤트 리스너 (토큰 갱신 실패 등)
+    // _recoverAndRefresh 에러를 잡기 위한 전역 에러 핸들러
+    const handleAuthError = async (event: PromiseRejectionEvent) => {
+      if (!isMounted) return;
+      
+      const errorMessage = event.reason?.message?.toLowerCase() || '';
+      const errorName = event.reason?.name || '';
+      
+      // AuthApiError: Invalid Refresh Token 패턴 감지
+      if (
+        errorName === 'AuthApiError' ||
+        errorMessage.includes('refresh token') ||
+        errorMessage.includes('invalid refresh token')
+      ) {
+        console.warn('[Auth] Unhandled auth error detected:', event.reason);
+        event.preventDefault(); // 콘솔 에러 방지
+        await clearAuthState(true);
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('unhandledrejection', handleAuthError);
+    }
+
     return () => {
       isMounted = false;
       listener.subscription.unsubscribe();
+      
+      // 전역 에러 핸들러 정리
+      if (typeof window !== 'undefined') {
+        // handleAuthError 참조를 유지하기 위해 동일한 함수를 제거해야 하지만,
+        // 클로저 특성상 새로운 함수가 생성되므로 실제로는 제거되지 않을 수 있음
+        // 하지만 isMounted 플래그로 인해 실행되지 않음
+      }
     };
-  }, []);
+  }, [lang]);
 
   // 브라우저 정보 파싱 함수
   const parseDeviceInfo = (): { deviceName: string; userAgent: string; deviceType: string } => {

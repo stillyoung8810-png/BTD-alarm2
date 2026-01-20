@@ -14,6 +14,15 @@ VITE_SITE_URL=https://btd-alarm2.pages.dev
 
 # Gemini API (AI 어드바이저 기능용)
 GEMINI_API_KEY=your_gemini_api_key
+
+# Firebase Cloud Messaging (FCM) 설정 (푸시 알림용)
+VITE_FIREBASE_API_KEY=your_firebase_api_key
+VITE_FIREBASE_AUTH_DOMAIN=your_project_id.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your_project_id
+VITE_FIREBASE_STORAGE_BUCKET=your_project_id.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
+VITE_FIREBASE_APP_ID=your_firebase_app_id
+VITE_FIREBASE_VAPID_KEY=your_vapid_key
 ```
 
 ---
@@ -61,6 +70,24 @@ GEMINI_API_KEY=your_gemini_api_key
 - **상태**: ✅ 정상 연동
 - **용도**: OAuth 소셜 로그인 및 비밀번호 재설정 이메일의 리다이렉트 URL 설정
 - **기본값**: 환경 변수가 없으면 `window.location.origin` 사용 (로컬 개발용)
+
+### ✅ 8. services/firebase.ts
+- **사용 변수**: 
+  - `VITE_FIREBASE_API_KEY`
+  - `VITE_FIREBASE_AUTH_DOMAIN`
+  - `VITE_FIREBASE_PROJECT_ID`
+  - `VITE_FIREBASE_STORAGE_BUCKET`
+  - `VITE_FIREBASE_MESSAGING_SENDER_ID`
+  - `VITE_FIREBASE_APP_ID`
+  - `VITE_FIREBASE_VAPID_KEY`
+- **접근 방식**: `import.meta.env.VITE_FIREBASE_*`
+- **상태**: ✅ 정상 연동
+- **용도**: Firebase Cloud Messaging (FCM) 초기화 및 푸시 알림 토큰 관리
+- **주요 함수**: 
+  - `requestForToken()`: 알림 권한 요청 및 FCM 토큰 가져오기
+  - `onMessageListener()`: 포그라운드 메시지 리스너 설정
+  - `getNotificationPermission()`: 현재 알림 권한 상태 확인
+  - `isNotificationPermissionGranted()`: 알림 권한 허용 여부 확인
 
 ---
 

@@ -16,6 +16,7 @@ import { supabase } from './services/supabase';
 import { calculateTotalInvested, calculateAlreadyRealized, calculateHoldings } from './utils/portfolioCalculations';
 import { fetchStockPricesWithPrev } from './services/stockService';
 import { getUSSelectionHolidays } from './utils/marketUtils';
+import { requestForToken, getNotificationPermission } from './services/firebase';
 import { 
   LayoutDashboard, 
   BarChart3, 
@@ -125,6 +126,13 @@ const App: React.FC = () => {
         if (session?.user) {
           // 세션이 있으면 즉시 사용자 정보와 포트폴리오 로드
           await fetchUserData(session.user);
+          
+          // 기존 세션 복구 시에도 FCM 토큰 저장 시도 (로그인 상태 유지 중)
+          if (session.user.id) {
+            saveFCMToken(session.user.id).catch((err) => {
+              console.debug('FCM token save attempt on session restore:', err);
+            });
+          }
         } else {
           setUser(null);
           setPortfolios([]);
@@ -160,6 +168,14 @@ const App: React.FC = () => {
           if (currentUser) {
             await fetchUserData(currentUser);
 
+            // 로그인 성공 시 FCM 토큰 저장 (SIGNED_IN 이벤트일 때만)
+            if (event === 'SIGNED_IN' && currentUser.id) {
+              saveFCMToken(currentUser.id).catch((err) => {
+                // 에러는 이미 saveFCMToken 내부에서 처리되므로 여기서는 조용히 처리
+                console.debug('FCM token save attempt completed:', err);
+              });
+            }
+
             if (event === 'PASSWORD_RECOVERY' && isMounted) {
               // 비밀번호 재설정 모달 열기
               setAuthModal('reset-password');
@@ -189,6 +205,123 @@ const App: React.FC = () => {
       listener.subscription.unsubscribe();
     };
   }, []);
+
+  // 브라우저 정보 파싱 함수
+  const parseDeviceInfo = (): { deviceName: string; userAgent: string; deviceType: string } => {
+    if (typeof window === 'undefined' || !navigator) {
+      return {
+        deviceName: 'Unknown',
+        userAgent: '',
+        deviceType: 'web',
+      };
+    }
+
+    const ua = navigator.userAgent;
+    let browserName = 'Unknown Browser';
+    let osName = 'Unknown OS';
+
+    // 브라우저 감지
+    if (ua.includes('Chrome') && !ua.includes('Edg') && !ua.includes('OPR')) {
+      browserName = 'Chrome';
+    } else if (ua.includes('Firefox')) {
+      browserName = 'Firefox';
+    } else if (ua.includes('Safari') && !ua.includes('Chrome')) {
+      browserName = 'Safari';
+    } else if (ua.includes('Edg')) {
+      browserName = 'Edge';
+    } else if (ua.includes('OPR')) {
+      browserName = 'Opera';
+    }
+
+    // OS 감지
+    if (ua.includes('Windows')) {
+      if (ua.includes('Windows NT 10.0')) {
+        osName = 'Windows 10/11';
+      } else if (ua.includes('Windows NT 6.3')) {
+        osName = 'Windows 8.1';
+      } else if (ua.includes('Windows NT 6.2')) {
+        osName = 'Windows 8';
+      } else if (ua.includes('Windows NT 6.1')) {
+        osName = 'Windows 7';
+      } else {
+        osName = 'Windows';
+      }
+    } else if (ua.includes('Mac OS X') || ua.includes('Macintosh')) {
+      osName = 'macOS';
+    } else if (ua.includes('Linux')) {
+      osName = 'Linux';
+    } else if (ua.includes('Android')) {
+      osName = 'Android';
+    } else if (ua.includes('iOS') || (ua.includes('iPhone') || ua.includes('iPad'))) {
+      osName = 'iOS';
+    }
+
+    const deviceName = `${browserName} on ${osName}`;
+
+    return {
+      deviceName,
+      userAgent: ua,
+      deviceType: 'web',
+    };
+  };
+
+  // FCM 토큰을 Supabase에 저장하는 함수
+  const saveFCMToken = async (userId: string): Promise<void> => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      // 알림 권한이 이미 거부된 경우 조용히 처리
+      const permission = getNotificationPermission();
+      if (permission === 'denied') {
+        console.warn('Notification permission was previously denied. Skipping FCM token request.');
+        return;
+      }
+
+      // FCM 토큰 요청
+      const token = await requestForToken();
+      
+      if (!token) {
+        // 권한이 거부되었거나 토큰을 가져올 수 없는 경우 조용히 처리
+        if (permission === 'denied') {
+          console.warn('Notification permission denied. FCM token not saved.');
+        }
+        return;
+      }
+
+      // 브라우저 정보 파싱
+      const deviceInfo = parseDeviceInfo();
+
+      // Supabase에 upsert (user_id와 fcm_token 기준)
+      const { error } = await supabase
+        .from('user_devices')
+        .upsert(
+          {
+            user_id: userId,
+            fcm_token: token,
+            device_type: deviceInfo.deviceType,
+            device_name: deviceInfo.deviceName,
+            user_agent: deviceInfo.userAgent,
+            is_active: true,
+            // updated_at은 트리거에 의해 자동으로 갱신됨
+          },
+          {
+            onConflict: 'user_id,fcm_token',
+            ignoreDuplicates: false,
+          }
+        );
+
+      if (error) {
+        console.error('Failed to save FCM token:', error);
+      } else {
+        console.log('FCM token saved successfully');
+      }
+    } catch (error) {
+      // 에러 발생 시에도 사용자 경험을 해치지 않도록 조용히 처리
+      console.error('Error saving FCM token:', error);
+    }
+  };
 
   // 1. 포트폴리오 데이터를 가져오는 함수
   const fetchPortfolios = async (userId: string) => {

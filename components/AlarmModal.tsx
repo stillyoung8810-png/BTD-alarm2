@@ -120,10 +120,13 @@ const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSav
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/50 dark:bg-[#0B0F19]/90 backdrop-blur-sm" onClick={onClose}></div>
-      <div className="relative w-full max-w-lg bg-white dark:bg-[#080B15] rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-2xl dark:shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+      <div 
+        className="relative w-full max-w-lg bg-white dark:bg-[#080B15] rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-2xl dark:shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[calc(100dvh-2rem)]"
+        style={{ touchAction: 'pan-y' }}
+      >
         
-        {/* Header */}
-        <div className="p-6 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-[#080B15]">
+        {/* Header - 고정 */}
+        <div className="p-6 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-[#080B15] shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
               <Clock className="text-white" size={20} />
@@ -143,8 +146,8 @@ const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSav
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto scrollbar-hide">
+        {/* Content - 스크롤 가능 */}
+        <div className="p-6 space-y-6 flex-1 overflow-y-auto overscroll-contain scrollbar-hide">
           
           {/* Alarm Status */}
           <div className="bg-slate-50 dark:bg-white/5 p-6 rounded-2xl border border-slate-200 dark:border-white/5 backdrop-blur-sm">
@@ -321,11 +324,11 @@ const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSav
           )}
         </div>
 
-        {/* Footer */}
-        <div className="p-6 border-t border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-[#080B15]">
+        {/* Footer - 하단 고정 */}
+        <div className="p-6 border-t border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-[#080B15] shrink-0">
           <button 
             onClick={handleSave}
-            className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-500/30 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2"
+            className="w-full py-4 md:py-5 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-500/30 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2"
           >
             <Clock size={16} />
             {lang === 'ko' ? '설정 저장' : 'Save Settings'}

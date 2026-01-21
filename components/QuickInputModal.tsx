@@ -96,9 +96,13 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/50 dark:bg-slate-950/80 backdrop-blur-md" onClick={onClose}></div>
-      <div className="relative w-full max-w-md bg-white dark:bg-[#161d2a] rounded-[2.5rem] border border-slate-200 dark:border-white/10 shadow-2xl dark:shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+      <div 
+        className="relative w-full max-w-md bg-white dark:bg-[#161d2a] rounded-[2.5rem] border border-slate-200 dark:border-white/10 shadow-2xl dark:shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 max-h-[calc(100dvh-2rem)]"
+        style={{ touchAction: 'pan-y' }}
+      >
         
-        <div className="p-8 border-b border-slate-200 dark:border-white/5 flex justify-between items-center">
+        {/* 헤더 - 고정 */}
+        <div className="p-6 md:p-8 border-b border-slate-200 dark:border-white/5 flex justify-between items-center shrink-0">
           <div className="flex items-center gap-3">
              <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
                 <Zap size={20} className="text-white fill-white" />
@@ -108,7 +112,8 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
           <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-white/5 rounded-full text-slate-500 dark:text-slate-400"><X size={20} /></button>
         </div>
 
-        <div className="p-8 space-y-8">
+        {/* 스크롤 가능한 콘텐츠 영역 */}
+        <div className="p-6 md:p-8 space-y-6 md:space-y-8 flex-1 overflow-y-auto overscroll-contain">
           <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl flex gap-3">
             <AlertCircle className="text-amber-500 shrink-0" size={18} />
             <p className="text-[11px] font-bold text-amber-500 leading-snug">
@@ -208,9 +213,10 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
           </div>
         </div>
 
-        <div className="p-8 border-t border-slate-200 dark:border-white/5 flex gap-4 bg-slate-50 dark:bg-slate-900/30">
-          <button onClick={onClose} className="flex-1 py-5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-2xl font-black uppercase text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition-all">{t.cancel}</button>
-          <button onClick={handleSave} className="flex-[2] py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs shadow-xl dark:shadow-xl dark:shadow-blue-500/20 flex items-center justify-center gap-2 hover:scale-[1.02] transition-all">
+        {/* 버튼 영역 - 하단 고정 */}
+        <div className="p-6 md:p-8 border-t border-slate-200 dark:border-white/5 flex gap-4 bg-slate-50 dark:bg-slate-900/30 shrink-0">
+          <button onClick={onClose} className="flex-1 py-4 md:py-5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-2xl font-black uppercase text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition-all">{t.cancel}</button>
+          <button onClick={handleSave} className="flex-[2] py-4 md:py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs shadow-xl dark:shadow-xl dark:shadow-blue-500/20 flex items-center justify-center gap-2 hover:scale-[1.02] transition-all">
             {t.save} <ChevronRight size={16} />
           </button>
         </div>

@@ -75,14 +75,19 @@ const TradeExecutionModal: React.FC<TradeExecutionModalProps> = ({ lang, portfol
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/50 dark:bg-slate-950/80 backdrop-blur-md" onClick={onClose}></div>
-      <div className="relative w-full max-w-2xl bg-white dark:bg-[#161d2a] rounded-[3rem] border border-slate-200 dark:border-white/10 shadow-2xl dark:shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom-12 duration-300">
+      <div 
+        className="relative w-full max-w-2xl bg-white dark:bg-[#161d2a] rounded-[2.5rem] md:rounded-[3rem] border border-slate-200 dark:border-white/10 shadow-2xl dark:shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom-12 duration-300 max-h-[calc(100dvh-2rem)]"
+        style={{ touchAction: 'pan-y' }}
+      >
         
-        <div className="p-8 md:p-10 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-slate-900/40">
-           <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">{t.tradeExecutionRecord}</h2>
+        {/* 헤더 - 고정 */}
+        <div className="p-6 md:p-10 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-slate-900/40 shrink-0">
+           <h2 className="text-xl md:text-2xl font-black text-slate-900 dark:text-white tracking-tight">{t.tradeExecutionRecord}</h2>
            <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-white/5 rounded-full text-slate-500 dark:text-slate-400"><X size={24} /></button>
         </div>
 
-        <div className="p-8 md:p-10 space-y-10 flex-1 overflow-y-auto scrollbar-hide">
+        {/* 스크롤 가능한 콘텐츠 영역 */}
+        <div className="p-6 md:p-10 space-y-8 md:space-y-10 flex-1 overflow-y-auto overscroll-contain scrollbar-hide">
           
           <div className="flex p-1.5 bg-slate-100 dark:bg-slate-900 rounded-[1.5rem] border border-slate-200 dark:border-white/5">
             <button onClick={() => setType('buy')} className={`flex-1 py-5 rounded-2xl text-xs font-black transition-all ${type === 'buy' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-600 dark:text-slate-500'}`}>{t.buy}</button>
@@ -157,11 +162,12 @@ const TradeExecutionModal: React.FC<TradeExecutionModalProps> = ({ lang, portfol
           </div>
         </div>
 
-        <div className="p-8 md:p-10 flex gap-6 bg-slate-50 dark:bg-slate-900/30">
-           <button onClick={onClose} className="p-4 rounded-full border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 transition-all"><X size={24} /></button>
+        {/* 버튼 영역 - 하단 고정 */}
+        <div className="p-6 md:p-10 flex gap-4 md:gap-6 bg-slate-50 dark:bg-slate-900/30 shrink-0">
+           <button onClick={onClose} className="p-3 md:p-4 rounded-full border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 transition-all"><X size={20} /></button>
            <button 
              onClick={handleSave}
-             className="flex-1 py-6 bg-blue-600 text-white rounded-[2rem] font-black uppercase text-sm tracking-widest shadow-2xl dark:shadow-2xl dark:shadow-blue-500/30 flex items-center justify-center gap-3 hover:scale-[1.02] transition-all"
+             className="flex-1 py-5 md:py-6 bg-blue-600 text-white rounded-2xl md:rounded-[2rem] font-black uppercase text-xs md:text-sm tracking-widest shadow-2xl dark:shadow-2xl dark:shadow-blue-500/30 flex items-center justify-center gap-3 hover:scale-[1.02] transition-all"
            >
              {t.save} <ChevronRight size={20} />
            </button>

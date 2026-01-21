@@ -164,47 +164,47 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
 
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onClick={onClose}></div>
-      <div className="relative w-full max-w-4xl bg-[#161d2a] rounded-[2.5rem] border border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-in zoom-in-95 duration-200">
+      <div className="absolute inset-0 bg-slate-900/50 dark:bg-slate-950/80 backdrop-blur-md" onClick={onClose}></div>
+      <div className="relative w-full max-w-4xl bg-white dark:bg-[#161d2a] rounded-[2.5rem] border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-in zoom-in-95 duration-200">
         
-        <div className="p-8 border-b border-white/5 flex justify-between items-center bg-slate-900/30">
-          <h2 className="text-2xl font-black text-white flex items-center gap-2">
+        <div className="p-8 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-slate-900/30">
+          <h2 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
             <span>{portfolio.name}</span>
             {isReadOnly && (
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 text-[10px] font-bold uppercase tracking-widest">
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 text-[10px] font-bold uppercase tracking-widest">
                 {lang === 'ko' ? '정산 완료' : 'Settled'}
               </span>
             )}
           </h2>
-          <button onClick={onClose} className="p-3 hover:bg-white/10 rounded-full transition-colors text-slate-500">
+          <button onClick={onClose} className="p-3 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full transition-colors text-slate-500">
             <X size={24} />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-8 space-y-10 scrollbar-hide">
+        <div className="flex-1 overflow-y-auto p-8 space-y-10 scrollbar-hide bg-slate-50 dark:bg-transparent">
           
           <section className="space-y-4">
             <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{lang === 'ko' ? '보유 자산 요약' : 'Holdings Summary'}</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {holdingsSummary.length === 0 ? (
-                <div className="col-span-full p-8 bg-white/5 rounded-[2rem] border border-white/5 text-center">
-                  <p className="text-xs font-bold text-slate-600 uppercase tracking-widest">{lang === 'ko' ? '보유 자산이 없습니다.' : 'No holdings available.'}</p>
+                <div className="col-span-full p-8 bg-slate-100 dark:bg-white/5 rounded-[2rem] border border-slate-200 dark:border-white/5 text-center">
+                  <p className="text-xs font-bold text-slate-500 dark:text-slate-600 uppercase tracking-widest">{lang === 'ko' ? '보유 자산이 없습니다.' : 'No holdings available.'}</p>
                 </div>
               ) : (
                 holdingsSummary.map((item, idx) => (
-                  <div key={item.ticker} className="bg-slate-900/40 p-6 rounded-[2rem] border border-white/5 flex items-center gap-6 relative overflow-hidden group shadow-lg backdrop-blur-sm">
+                  <div key={item.ticker} className="bg-white dark:bg-slate-900/40 p-6 rounded-[2rem] border border-slate-200 dark:border-white/5 flex items-center gap-6 relative overflow-hidden group shadow-md dark:shadow-lg backdrop-blur-sm">
                     <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-600"></div>
                     {renderStockIcon(item.ticker, 'md')}
                     <div className="flex-1 grid grid-cols-2 gap-4">
                       <div>
                         <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">{t.quantity}:</span>
-                        <p className="text-sm font-black text-white">{item.quantity.toLocaleString()}</p>
+                        <p className="text-sm font-black text-slate-900 dark:text-white">{item.quantity.toLocaleString()}</p>
                       </div>
                       <div>
                         <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">{lang === 'ko' ? '평균 단가:' : 'Avg Price:'}</span>
-                        <p className="text-sm font-black text-white">${item.avgPrice.toFixed(2)}</p>
+                        <p className="text-sm font-black text-slate-900 dark:text-white">${item.avgPrice.toFixed(2)}</p>
                       </div>
-                      <div className="col-span-2 pt-2 border-t border-white/5">
+                      <div className="col-span-2 pt-2 border-t border-slate-200 dark:border-white/5">
                         <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">{t.totalValuation}:</span>
                         <p className="text-base font-black text-emerald-500">${item.valuation.toLocaleString()}</p>
                       </div>
@@ -217,14 +217,14 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
 
           <section className="space-y-4">
             <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{lang === 'ko' ? '평일 거래 달력' : 'Weekday Calendar'}</h3>
-            <div className="bg-slate-900/40 p-8 rounded-[2rem] border border-white/5 overflow-hidden shadow-inner backdrop-blur-sm">
+            <div className="bg-white dark:bg-slate-900/40 p-8 rounded-[2rem] border border-slate-200 dark:border-white/5 overflow-hidden shadow-md dark:shadow-inner backdrop-blur-sm">
               
               <div className="flex items-center justify-between mb-8">
-                <button onClick={prevMonth} className="p-2 hover:bg-white/10 rounded-full text-slate-500"><ChevronLeft size={24} /></button>
-                <h4 className="text-xl font-black text-white uppercase tracking-widest">
+                <button onClick={prevMonth} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full text-slate-500"><ChevronLeft size={24} /></button>
+                <h4 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-widest">
                   {year}{lang === 'ko' ? '년 ' : '. '}{month + 1}{lang === 'ko' ? '월' : ''}
                 </h4>
-                <button onClick={nextMonth} className="p-2 hover:bg-white/10 rounded-full text-slate-500"><ChevronRight size={24} /></button>
+                <button onClick={nextMonth} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full text-slate-500"><ChevronRight size={24} /></button>
               </div>
 
               <div className="grid grid-cols-5 mb-4">
@@ -235,7 +235,7 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
 
               <div className="grid grid-cols-5 gap-3">
                 {calendarGrid.map((date, i) => {
-                  if (!date) return <div key={`empty-${i}`} className="min-h-[120px] bg-white/5 rounded-3xl opacity-20"></div>;
+                  if (!date) return <div key={`empty-${i}`} className="min-h-[120px] bg-slate-100 dark:bg-white/5 rounded-3xl opacity-20"></div>;
 
                   const day = date.getDate();
                   const dateKey = getDateKey(date);
@@ -251,8 +251,8 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
                       onClick={() => setSelectedDate(dateKey)}
                       className={`relative min-h-[120px] rounded-3xl border transition-all flex flex-col items-center p-3 gap-3 group/day ${
                         isSelected 
-                          ? 'bg-blue-600/20 border-blue-500 shadow-xl scale-105 z-10' 
-                          : 'bg-white/5 border-white/10 hover:bg-white/10 shadow-sm'
+                          ? 'bg-blue-50 dark:bg-blue-600/20 border-blue-500 shadow-xl scale-105 z-10' 
+                          : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10 shadow-sm'
                       }`}
                     >
                       <span className={`text-[11px] font-black ${isSelected ? 'text-blue-500' : 'text-slate-500'}`}>{day}</span>
@@ -286,21 +286,21 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
             <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{lang === 'ko' ? '선택한 날짜 거래 내역' : 'Selected Date Transactions'}</h3>
             <div className="space-y-4">
               {selectedDayTrades.length === 0 ? (
-                <div className="p-10 bg-white/5 rounded-[2rem] border border-white/5 text-center backdrop-blur-sm">
-                  <p className="text-xs font-bold text-slate-600 uppercase tracking-widest">{t.noHistory}</p>
+                <div className="p-10 bg-slate-100 dark:bg-white/5 rounded-[2rem] border border-slate-200 dark:border-white/5 text-center backdrop-blur-sm">
+                  <p className="text-xs font-bold text-slate-500 dark:text-slate-600 uppercase tracking-widest">{t.noHistory}</p>
                 </div>
               ) : (
                 selectedDayTrades.map(trade => {
                   const isFinalSell = trade.type === 'sell' && trade.id.startsWith('final-');
                   return (
-                    <div key={trade.id} className="bg-white/5 p-6 rounded-[2rem] border border-white/10 relative overflow-hidden group shadow-lg hover:bg-white/10 transition-all backdrop-blur-sm">
+                    <div key={trade.id} className="bg-white dark:bg-white/5 p-6 rounded-[2rem] border border-slate-200 dark:border-white/10 relative overflow-hidden group shadow-md dark:shadow-lg hover:bg-slate-50 dark:hover:bg-white/10 transition-all backdrop-blur-sm">
                       <div className={`absolute top-0 left-0 w-1.5 h-full ${trade.type === 'buy' ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
                       
                       <div className="flex items-center justify-between mb-6 pr-12">
                         <div className="flex items-center gap-4">
                           {renderStockIcon(trade.stock, 'md')}
                           <div>
-                             <h4 className="font-black text-white text-sm uppercase tracking-tight">
+                             <h4 className="font-black text-slate-900 dark:text-white text-sm uppercase tracking-tight">
                                {isFinalSell ? `[${lang === 'ko' ? '최종 정산 매도' : 'Final Settlement Sell'}] ` : ''}
                                {trade.stock}
                              </h4>
@@ -315,15 +315,15 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
                       <div className="grid grid-cols-4 gap-4">
                          <div>
                            <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">{t.executionPrice}:</span>
-                           <p className="text-sm font-black text-white">${trade.price.toLocaleString()}</p>
+                           <p className="text-sm font-black text-slate-900 dark:text-white">${trade.price.toLocaleString()}</p>
                          </div>
                          <div>
                            <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">{t.quantity}:</span>
-                           <p className="text-sm font-black text-white">{trade.quantity}</p>
+                           <p className="text-sm font-black text-slate-900 dark:text-white">{trade.quantity}</p>
                          </div>
                          <div>
                            <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">{t.fee}:</span>
-                           <p className="text-sm font-black text-white">${trade.fee.toFixed(2)}</p>
+                           <p className="text-sm font-black text-slate-900 dark:text-white">${trade.fee.toFixed(2)}</p>
                          </div>
                          <div className="text-right">
                            <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">{lang === 'ko' ? '정산금:' : 'Settlement:'}</span>
@@ -356,10 +356,10 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
           </section>
         </div>
 
-        <div className="p-8 border-t border-white/5 bg-slate-900/30 flex gap-4">
+        <div className="p-8 border-t border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-slate-900/30 flex gap-4">
            <button 
             onClick={onClose}
-            className="w-full py-5 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl font-black text-xs uppercase tracking-widest border border-white/10 transition-all shadow-md"
+            className="w-full py-5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-white rounded-2xl font-black text-xs uppercase tracking-widest border border-slate-300 dark:border-white/10 transition-all shadow-md"
            >
              {lang === 'ko' ? '닫기' : 'Close'}
            </button>

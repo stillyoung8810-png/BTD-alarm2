@@ -56,13 +56,18 @@ const TerminationInput: React.FC<TerminationInputProps> = ({ lang, portfolio, on
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/50 dark:bg-[#06090F]/80 backdrop-blur-sm" onClick={onClose}></div>
-      <div className="relative w-full max-w-2xl bg-white dark:bg-[#161d2a] rounded-[1.5rem] shadow-2xl dark:shadow-2xl overflow-hidden border border-slate-200 dark:border-white/5 animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
-        <div className="p-6 pb-2 flex justify-between items-center border-b border-slate-200 dark:border-white/5">
+      <div 
+        className="relative w-full max-w-2xl bg-white dark:bg-[#161d2a] rounded-[1.5rem] shadow-2xl dark:shadow-2xl overflow-hidden border border-slate-200 dark:border-white/5 animate-in zoom-in-95 duration-200 flex flex-col max-h-[calc(100dvh-2rem)]"
+        style={{ touchAction: 'pan-y' }}
+      >
+        {/* Header - 고정 */}
+        <div className="p-6 pb-2 flex justify-between items-center border-b border-slate-200 dark:border-white/5 shrink-0">
           <h2 className="text-xl font-bold text-slate-900 dark:text-white">{lang === 'ko' ? '포트폴리오 종료' : 'Close Portfolio'}</h2>
           <button onClick={onClose} className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white"><X size={20} /></button>
         </div>
         
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {/* Content - 스크롤 가능 */}
+        <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-6">
           {/* 기 회수금 및 총 투자금 표시 */}
           <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-white/5 space-y-2">
             <div className="flex justify-between text-sm">
@@ -192,7 +197,8 @@ const TerminationInput: React.FC<TerminationInputProps> = ({ lang, portfolio, on
           </div>
         </div>
 
-        <div className="p-6 pt-4 border-t border-slate-200 dark:border-white/5 flex gap-3">
+        {/* Footer - 하단 고정 */}
+        <div className="p-6 pt-4 border-t border-slate-200 dark:border-white/5 flex gap-3 shrink-0">
           <button 
             onClick={onClose}
             className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-white rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
@@ -229,13 +235,18 @@ const Result: React.FC<ResultProps> = ({ lang, result, onClose }) => {
   return (
     <div className="fixed inset-0 z-[160] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/50 dark:bg-[#06090F]/90 backdrop-blur-md" onClick={onClose}></div>
-      <div className="relative w-full max-w-2xl bg-white dark:bg-[#161d2a] rounded-[2rem] shadow-2xl dark:shadow-2xl overflow-hidden border border-slate-200 dark:border-white/5 animate-in slide-in-from-bottom-4 duration-300 flex flex-col max-h-[90vh]">
-        <div className="p-8 pb-2 flex justify-between items-center border-b border-slate-200 dark:border-white/5">
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{lang === 'ko' ? '정산 결과' : 'Settlement Result'}</h2>
+      <div 
+        className="relative w-full max-w-2xl bg-white dark:bg-[#161d2a] rounded-[2rem] shadow-2xl dark:shadow-2xl overflow-hidden border border-slate-200 dark:border-white/5 animate-in slide-in-from-bottom-4 duration-300 flex flex-col max-h-[calc(100dvh-2rem)]"
+        style={{ touchAction: 'pan-y' }}
+      >
+        {/* Header - 고정 */}
+        <div className="p-6 md:p-8 pb-2 flex justify-between items-center border-b border-slate-200 dark:border-white/5 shrink-0">
+          <h2 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-white">{lang === 'ko' ? '정산 결과' : 'Settlement Result'}</h2>
           <button onClick={onClose} className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white"><X size={24} /></button>
         </div>
         
-        <div className="flex-1 overflow-y-auto p-8">
+        {/* Content - 스크롤 가능 */}
+        <div className="flex-1 overflow-y-auto overscroll-contain p-6 md:p-8">
           <div className="bg-slate-50 dark:bg-[#111827] p-8 rounded-[1.5rem] border border-slate-200 dark:border-white/5 space-y-6">
              <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-6">{lang === 'ko' ? '정산 결과' : 'Settlement Result'}</h3>
              

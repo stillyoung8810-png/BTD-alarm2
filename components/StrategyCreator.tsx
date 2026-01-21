@@ -352,10 +352,13 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/40 dark:bg-slate-950/90 backdrop-blur-xl" onClick={onClose}></div>
-      <div className="relative w-full max-w-2xl bg-white dark:bg-[#111827] rounded-[3rem] shadow-2xl dark:shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border border-slate-200 dark:border-white/10">
+      <div 
+        className="relative w-full max-w-2xl bg-white dark:bg-[#111827] rounded-[2.5rem] md:rounded-[3rem] shadow-2xl dark:shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)] border border-slate-200 dark:border-white/10"
+        style={{ touchAction: 'pan-y' }}
+      >
         
-        {/* Header */}
-        <div className="p-8 md:p-10 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-slate-900/60">
+        {/* Header - 고정 */}
+        <div className="p-6 md:p-10 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-slate-900/60 shrink-0">
           <div className="flex items-center gap-4">
              <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20">
                 {step === 3 ? <Sparkles className="text-white" size={24} /> : <Target className="text-white" size={24} />}
@@ -379,15 +382,15 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
           </button>
         </div>
 
-        {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-8 md:p-10 scrollbar-hide">
+        {/* Content Area - 스크롤 가능 */}
+        <div className="flex-1 overflow-y-auto overscroll-contain p-6 md:p-10 scrollbar-hide">
           {step === 1 && renderStep1()}
           {step === 2 && renderStep2()}
           {step === 3 && renderStep3()}
         </div>
 
-        {/* Footer */}
-        <div className="p-8 md:p-10 border-t border-slate-200 dark:border-white/5 flex gap-4 bg-slate-50 dark:bg-slate-900/60">
+        {/* Footer - 하단 고정 */}
+        <div className="p-6 md:p-10 border-t border-slate-200 dark:border-white/5 flex gap-4 bg-slate-50 dark:bg-slate-900/60 shrink-0">
           {step > 1 && (
             <button 
               onClick={() => setStep(step - 1)}

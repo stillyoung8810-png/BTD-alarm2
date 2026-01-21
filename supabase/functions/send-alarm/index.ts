@@ -1,7 +1,7 @@
 // supabase/functions/send-alarm/index.ts
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { GoogleAuth } from "https://esm.sh/google-auth-library@9";
+import { SignJWT, importPKCS8 } from "https://deno.land/x/jose@v5.2.0/index.ts";
 
 interface AlarmRequest {
   user_id: string;
@@ -10,53 +10,43 @@ interface AlarmRequest {
   data?: Record<string, string>;
 }
 
-interface FCMV1Message {
-  message: {
-    token: string;
-    notification: {
-      title: string;
-      body: string;
-    };
-    data?: Record<string, string>;
-    android?: {
-      priority: "high" | "normal";
-    };
-    webpush?: {
-      headers: {
-        Urgency: "high" | "normal";
-      };
-    };
-  };
-}
-
 /**
- * Google Service Account JSON을 파싱하고 Access Token을 생성
+ * Google Service Account JSON을 파싱하고 Access Token을 생성 (jose 라이브러리 사용)
  */
-async function getAccessToken(serviceAccountJson: string): Promise<string> {
-  try {
-    const serviceAccount = JSON.parse(serviceAccountJson);
-    
-    const auth = new GoogleAuth({
-      credentials: {
-        client_email: serviceAccount.client_email,
-        private_key: serviceAccount.private_key,
-        project_id: serviceAccount.project_id,
-      },
-      scopes: ["https://www.googleapis.com/auth/firebase.messaging"],
-    });
+async function getGoogleAccessToken(serviceAccountJson: string): Promise<string> {
+  const serviceAccount = JSON.parse(serviceAccountJson);
+  
+  const now = Math.floor(Date.now() / 1000);
+  const privateKey = await importPKCS8(serviceAccount.private_key, 'RS256');
+  
+  const jwt = await new SignJWT({
+    iss: serviceAccount.client_email,
+    sub: serviceAccount.client_email,
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: now,
+    exp: now + 3600,
+    scope: 'https://www.googleapis.com/auth/firebase.messaging',
+  })
+    .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })
+    .sign(privateKey);
 
-    const client = await auth.getClient();
-    const accessToken = await client.getAccessToken();
-    
-    if (!accessToken.token) {
-      throw new Error("Failed to get access token");
-    }
+  // JWT를 Google OAuth2 토큰으로 교환
+  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: jwt,
+    }),
+  });
 
-    return accessToken.token;
-  } catch (error) {
-    console.error("Error getting access token:", error);
-    throw error;
+  if (!tokenResponse.ok) {
+    const errorText = await tokenResponse.text();
+    throw new Error(`Failed to get access token: ${errorText}`);
   }
+
+  const tokenData = await tokenResponse.json();
+  return tokenData.access_token;
 }
 
 /**
@@ -69,10 +59,10 @@ async function sendFCMNotification(
   title: string,
   body: string,
   data?: Record<string, string>
-): Promise<boolean> {
+): Promise<{ success: boolean; shouldDeactivate: boolean }> {
   const url = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
   
-  const message: FCMV1Message = {
+  const message = {
     message: {
       token,
       notification: {
@@ -86,18 +76,15 @@ async function sendFCMNotification(
         headers: {
           Urgency: "high",
         },
+        fcm_options: {
+          link: "/",
+        },
       },
+      data: data ? Object.fromEntries(
+        Object.entries(data).map(([key, value]) => [key, String(value)])
+      ) : undefined,
     },
   };
-
-  // data가 있으면 추가 (문자열로 변환 필요)
-  if (data) {
-    const stringifiedData: Record<string, string> = {};
-    for (const [key, value] of Object.entries(data)) {
-      stringifiedData[key] = String(value);
-    }
-    message.message.data = stringifiedData;
-  }
 
   try {
     const response = await fetch(url, {
@@ -112,31 +99,36 @@ async function sendFCMNotification(
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`FCM API error (${response.status}):`, errorText);
-      return false;
+      
+      // 토큰이 유효하지 않은 경우 비활성화 플래그 설정
+      const shouldDeactivate = response.status === 404 || 
+        errorText.includes('UNREGISTERED') || 
+        errorText.includes('INVALID_ARGUMENT');
+      
+      return { success: false, shouldDeactivate };
     }
 
     const result = await response.json();
     console.log("FCM notification sent successfully:", result.name);
-    return true;
+    return { success: true, shouldDeactivate: false };
   } catch (error) {
     console.error("Error sending FCM notification:", error);
-    return false;
+    return { success: false, shouldDeactivate: false };
   }
 }
 
 serve(async (req) => {
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  };
+
+  // OPTIONS 요청 처리
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
   try {
-    // CORS 헤더 설정
-    const corsHeaders = {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-    };
-
-    // OPTIONS 요청 처리
-    if (req.method === "OPTIONS") {
-      return new Response("ok", { headers: corsHeaders });
-    }
-
     // 환경 변수 확인
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -168,6 +160,8 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    console.log(`Processing alarm for user: ${user_id}, title: ${title}`);
 
     // Supabase 클라이언트 생성
     const supabase = createClient(supabaseUrl, serviceKey);
@@ -213,10 +207,12 @@ serve(async (req) => {
     }
 
     // Access Token 획득
-    const accessToken = await getAccessToken(firebaseServiceAccount);
+    const accessToken = await getGoogleAccessToken(firebaseServiceAccount);
 
     // 모든 활성 토큰에 알림 전송
     const tokens = devices.map((d) => d.fcm_token).filter((token) => token);
+    console.log(`Sending to ${tokens.length} device(s)`);
+
     const results = await Promise.allSettled(
       tokens.map((token) =>
         sendFCMNotification(accessToken, projectId, token, title, body, data)
@@ -224,38 +220,51 @@ serve(async (req) => {
     );
 
     // 결과 집계
-    const successful = results.filter((r) => r.status === "fulfilled" && r.value === true).length;
-    const failed = results.filter((r) => r.status === "rejected" || (r.status === "fulfilled" && r.value === false)).length;
+    let successful = 0;
+    let failed = 0;
+    const tokensToDeactivate: string[] = [];
 
-    // 실패한 토큰 처리 (선택사항: is_active를 false로 업데이트)
-    const failedTokens: string[] = [];
     results.forEach((result, index) => {
-      if (result.status === "rejected" || (result.status === "fulfilled" && result.value === false)) {
-        failedTokens.push(tokens[index]);
+      if (result.status === "fulfilled") {
+        if (result.value.success) {
+          successful++;
+        } else {
+          failed++;
+          if (result.value.shouldDeactivate) {
+            tokensToDeactivate.push(tokens[index]);
+          }
+        }
+      } else {
+        failed++;
       }
     });
 
-    // 실패한 토큰이 있으면 비활성화 (선택사항)
-    if (failedTokens.length > 0) {
+    // 유효하지 않은 토큰 비활성화
+    if (tokensToDeactivate.length > 0) {
+      console.log(`Deactivating ${tokensToDeactivate.length} invalid token(s)`);
       await supabase
         .from("user_devices")
         .update({ is_active: false })
-        .in("fcm_token", failedTokens)
-        .eq("user_id", user_id);
+        .in("fcm_token", tokensToDeactivate);
     }
 
-    // 마지막 알림 전송 시간 업데이트 (성공한 경우만)
+    // 마지막 알림 전송 시간 업데이트 (성공한 경우)
     if (successful > 0) {
       const now = new Date().toISOString();
-      await supabase
-        .from("user_devices")
-        .update({ last_notification_sent_at: now })
-        .eq("user_id", user_id)
-        .in("fcm_token", tokens.filter((_, index) => {
-          const result = results[index];
-          return result.status === "fulfilled" && result.value === true;
-        }));
+      const successfulTokens = tokens.filter((_, index) => {
+        const result = results[index];
+        return result.status === "fulfilled" && result.value.success;
+      });
+
+      if (successfulTokens.length > 0) {
+        await supabase
+          .from("user_devices")
+          .update({ last_notification_sent_at: now })
+          .in("fcm_token", successfulTokens);
+      }
     }
+
+    console.log(`Alarm sent: ${successful} success, ${failed} failed`);
 
     return new Response(
       JSON.stringify({

@@ -165,9 +165,13 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/50 dark:bg-slate-950/80 backdrop-blur-md" onClick={onClose}></div>
-      <div className="relative w-full max-w-4xl bg-white dark:bg-[#161d2a] rounded-[2.5rem] border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-in zoom-in-95 duration-200">
+      <div 
+        className="relative w-full max-w-4xl bg-white dark:bg-[#161d2a] rounded-[2.5rem] border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)] animate-in zoom-in-95 duration-200"
+        style={{ touchAction: 'pan-y' }}
+      >
         
-        <div className="p-8 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-slate-900/30">
+        {/* Header - 고정 */}
+        <div className="p-6 md:p-8 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-slate-900/30 shrink-0">
           <h2 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
             <span>{portfolio.name}</span>
             {isReadOnly && (
@@ -181,7 +185,8 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-8 space-y-10 scrollbar-hide bg-slate-50 dark:bg-transparent">
+        {/* Content - 스크롤 가능 */}
+        <div className="flex-1 overflow-y-auto overscroll-contain p-6 md:p-8 space-y-8 md:space-y-10 scrollbar-hide bg-slate-50 dark:bg-transparent">
           
           <section className="space-y-4">
             <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{lang === 'ko' ? '보유 자산 요약' : 'Holdings Summary'}</h3>

@@ -317,7 +317,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-4">
           <div className="space-y-3">
             <label className="text-[10px] font-black text-slate-600 dark:text-slate-500 uppercase tracking-[0.2em]">{lang === 'ko' ? '시작일:' : 'Start Date:'}</label>
             <div className="relative">

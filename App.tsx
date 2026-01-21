@@ -35,6 +35,11 @@ const App: React.FC = () => {
   const [isDarkMode, setIsDarkMode] = useState(true);
   
   const [user, setUser] = useState<{ id: string; email: string } | null>(null);
+  const [userProfile, setUserProfile] = useState<{ 
+    subscription_tier: string; 
+    max_portfolios: number; 
+    max_alarms: number;
+  } | null>(null);
   const [authModal, setAuthModal] = useState<'login' | 'signup' | 'profile' | 'reset-password' | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const authModalRef = useRef(authModal);
@@ -99,6 +104,30 @@ const App: React.FC = () => {
         if (!isMounted) return;
         setUser(currentUser);
 
+        // 사용자 프로필 (구독 정보) 가져오기
+        const { data: profileData, error: profileError } = await supabase
+          .from('user_profiles')
+          .select('subscription_tier, max_portfolios, max_alarms')
+          .eq('id', currentUser.id)
+          .single();
+
+        if (!profileError && profileData && isMounted) {
+          setUserProfile({
+            subscription_tier: profileData.subscription_tier || 'free',
+            max_portfolios: profileData.max_portfolios ?? 3,
+            max_alarms: profileData.max_alarms ?? 2,
+          });
+        } else {
+          // 프로필이 없으면 기본값 설정 (free tier)
+          if (isMounted) {
+            setUserProfile({
+              subscription_tier: 'free',
+              max_portfolios: 3,
+              max_alarms: 2,
+            });
+          }
+        }
+
         // fetchPortfolios 함수 사용 (정규화 로직 포함)
         await fetchPortfolios(currentUser.id);
       } catch (err) {
@@ -126,6 +155,7 @@ const App: React.FC = () => {
       
       // 상태 초기화
       setUser(null);
+      setUserProfile(null);
       setPortfolios([]);
       
       if (showAlert) {
@@ -177,6 +207,7 @@ const App: React.FC = () => {
           }
         } else {
           setUser(null);
+          setUserProfile(null);
           setPortfolios([]);
         }
       } catch (err: any) {
@@ -227,6 +258,7 @@ const App: React.FC = () => {
           if (event === 'SIGNED_OUT') {
             console.log('[Auth] User signed out');
             setUser(null);
+            setUserProfile(null);
             setPortfolios([]);
             // SIGNED_OUT 이벤트 시에는 이미 로그아웃된 상태이므로 추가 처리 불필요
             return;
@@ -258,6 +290,7 @@ const App: React.FC = () => {
             }
           } else {
             setUser(null);
+            setUserProfile(null);
             setPortfolios([]);
           }
         } catch (err: any) {
@@ -619,6 +652,19 @@ const App: React.FC = () => {
   const handleAddPortfolio = async (newP: Omit<Portfolio, 'id'>) => {
     if (!user) {
       alert("로그인 세션이 만료되었습니다. 다시 로그인해주세요.");
+      return;
+    }
+
+    // 포트폴리오 개수 제한 체크 (진행 중인 포트폴리오만 카운트)
+    const activePortfolios = portfolios.filter(p => !p.isClosed);
+    const maxPortfolios = userProfile?.max_portfolios ?? 3;
+    
+    if (maxPortfolios !== -1 && activePortfolios.length >= maxPortfolios) {
+      const tierName = userProfile?.subscription_tier === 'free' ? '무료' : userProfile?.subscription_tier;
+      alert(lang === 'ko' 
+        ? `${tierName} 플랜에서는 최대 ${maxPortfolios}개의 포트폴리오만 생성할 수 있습니다.\n현재 ${activePortfolios.length}개의 진행 중인 포트폴리오가 있습니다.`
+        : `You can only create up to ${maxPortfolios} portfolios on the ${tierName} plan.\nYou currently have ${activePortfolios.length} active portfolios.`
+      );
       return;
     }
 
@@ -1144,6 +1190,7 @@ const App: React.FC = () => {
                 
                 // 로그아웃 성공 또는 에러와 관계없이 상태 초기화
                 setUser(null); 
+                setUserProfile(null);
                 setPortfolios([]); 
                 setAuthModal(null);
 
@@ -1155,6 +1202,7 @@ const App: React.FC = () => {
                 console.error('Unexpected logout error:', err);
                 // 예상치 못한 에러가 발생해도 상태는 초기화
                 setUser(null); 
+                setUserProfile(null);
                 setPortfolios([]); 
                 setAuthModal(null);
 

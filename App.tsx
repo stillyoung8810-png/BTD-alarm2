@@ -93,7 +93,11 @@ const App: React.FC = () => {
     
     // 세션 기반 유저/포트폴리오 로딩 로직을 공통 함수로 분리
     const fetchUserData = async (sessionUser: { id: string; email?: string | null }) => {
-      if (!sessionUser?.id || !isMounted) return;
+      console.log('[fetchUserData] 시작:', sessionUser?.id);
+      if (!sessionUser?.id || !isMounted) {
+        console.log('[fetchUserData] 조기 종료 - sessionUser.id:', sessionUser?.id, 'isMounted:', isMounted);
+        return;
+      }
 
       try {
         const currentUser = {
@@ -101,7 +105,11 @@ const App: React.FC = () => {
           email: sessionUser.email || '',
         };
 
-        if (!isMounted) return;
+        if (!isMounted) {
+          console.log('[fetchUserData] isMounted=false, 종료');
+          return;
+        }
+        console.log('[fetchUserData] setUser 호출');
         setUser(currentUser);
 
         // 사용자 프로필 (구독 정보) 가져오기
@@ -129,8 +137,11 @@ const App: React.FC = () => {
         }
 
         // fetchPortfolios 함수 사용 (정규화 로직 포함)
+        console.log('[fetchUserData] fetchPortfolios 호출 전');
         await fetchPortfolios(currentUser.id);
+        console.log('[fetchUserData] fetchPortfolios 완료');
       } catch (err) {
+        console.error('[fetchUserData] catch 에러:', err);
         if (isMounted) {
           console.error('Failed to fetch user data:', err);
         }
@@ -284,7 +295,9 @@ const App: React.FC = () => {
           }
 
           if (currentUser) {
+            console.log('[onAuthStateChange] currentUser 있음, fetchUserData 호출:', currentUser.id);
             await fetchUserData(currentUser);
+            console.log('[onAuthStateChange] fetchUserData 완료');
 
             // 로그인 성공 시 FCM 토큰 저장 (SIGNED_IN 이벤트일 때만)
             if (event === 'SIGNED_IN' && currentUser.id) {

@@ -2,7 +2,7 @@
 import React from 'react';
 import { Portfolio } from '../types';
 import { I18N } from '../constants';
-import { Calendar, CheckCircle2, ChevronRight, Filter, Download, Trash2 } from 'lucide-react';
+import { Calendar, CheckCircle2, ChevronRight, Trash2 } from 'lucide-react';
 
 interface HistoryProps {
   lang: 'ko' | 'en';
@@ -45,12 +45,6 @@ const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails, onDe
            <p className="text-sm font-bold text-slate-500 mt-1 uppercase tracking-widest">{lang === 'ko' ? '완료된 투자 전략 성과' : 'Performance of completed strategies'}</p>
         </div>
         <div className="flex gap-3 flex-wrap justify-end">
-          <button className="glass px-6 py-3 rounded-full text-[11px] font-black uppercase tracking-widest dark:text-white flex items-center gap-2 hover:bg-white/10 border border-white/5">
-            <Filter size={14} /> {lang === 'ko' ? '필터' : 'Filter'}
-          </button>
-          <button className="glass px-6 py-3 rounded-full text-[11px] font-black uppercase tracking-widest dark:text-white flex items-center gap-2 hover:bg-white/10 border border-white/5">
-            <Download size={14} /> {lang === 'ko' ? '내보내기' : 'Export'}
-          </button>
           {onClearHistory && (
             <button
               onClick={() => {
@@ -61,9 +55,10 @@ const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails, onDe
                   onClearHistory();
                 }
               }}
-              className="glass px-4 py-3 rounded-full text-[11px] font-black uppercase tracking-widest text-rose-500 border border-rose-500/40 hover:bg-rose-500/10"
+              className="glass px-6 py-3 rounded-full text-[11px] font-black uppercase tracking-widest text-rose-500 border border-rose-500/40 hover:bg-rose-500/10 flex flex-row items-center justify-center gap-2"
             >
-              <Trash2 size={14} /> {lang === 'ko' ? '내역 초기화' : 'Clear History'}
+              <Trash2 size={14} className="shrink-0" />
+              <span className="leading-none">{lang === 'ko' ? '내역 초기화' : 'Clear History'}</span>
             </button>
           )}
         </div>

@@ -12,6 +12,7 @@ import QuickInputModal from './components/QuickInputModal';
 import TradeExecutionModal from './components/TradeExecutionModal';
 import SettlementModals from './components/SettlementModals';
 import AuthModals from './components/AuthModals';
+import Landing from './components/Landing';
 import { supabase, clearAuthStorage } from './services/supabase';
 import { calculateTotalInvested, calculateAlreadyRealized, calculateHoldings } from './utils/portfolioCalculations';
 import { fetchStockPricesWithPrev } from './services/stockService';
@@ -992,37 +993,11 @@ const App: React.FC = () => {
                 totalValuationChangePct={totalValuationChangePct}
               />
             ) : (
-              <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-8">
-                <div className="glass max-w-xl w-full px-10 py-12 rounded-[3rem] border border-white/10 bg-slate-900/40">
-                  <p className="text-[11px] font-black text-blue-400 uppercase tracking-[0.3em] mb-3">
-                    {lang === 'ko' ? '로그인이 필요합니다' : 'Sign in required'}
-                  </p>
-                  <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight mb-4">
-                    {lang === 'ko'
-                      ? '나만의 BUY THE DIP 전략을 저장하고 관리하세요.'
-                      : 'Save and manage your own BUY THE DIP strategies.'}
-                  </h2>
-                  <p className="text-slate-400 text-sm md:text-base font-medium leading-relaxed mb-8">
-                    {lang === 'ko'
-                      ? '이메일 또는 소셜 계정으로 로그인하면, 언제 어디서든 동일한 포트폴리오를 불러올 수 있습니다.'
-                      : 'Log in with email or social accounts to access your portfolios from anywhere.'}
-                  </p>
-                  <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                    <button
-                      onClick={() => setAuthModal('signup')}
-                      className="px-8 py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-[0.25em] shadow-xl shadow-blue-500/40 hover:scale-[1.03] active:scale-95 transition-all"
-                    >
-                      {lang === 'ko' ? '무료로 시작하기' : 'Start for free'}
-                    </button>
-                    <button
-                      onClick={() => setAuthModal('login')}
-                      className="px-8 py-4 bg-transparent text-slate-200 rounded-2xl font-black text-xs uppercase tracking-[0.25em] border border-white/15 hover:bg-white/5 transition-all"
-                    >
-                      {lang === 'ko' ? '이미 계정이 있으신가요? 로그인' : 'Already have an account? Log in'}
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <Landing 
+                lang={lang}
+                onOpenSignup={() => setAuthModal('signup')}
+                onOpenLogin={() => setAuthModal('login')}
+              />
             )
           )}
           {activeTab === 'markets' && <Markets lang={lang} portfolios={portfolios} />}

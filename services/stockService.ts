@@ -257,11 +257,12 @@ export const fetchStockPriceHistory = async (
 
   try {
     // 실제 컬럼명: close (종가), trade_date (거래일)만 select
+    // 최신 데이터부터 가져온 후 날짜순으로 재정렬
     const { data, error } = await supabase
       .from('stock_prices')
       .select('close, trade_date')
       .eq('symbol', trimmedSymbol)
-      .order('trade_date', { ascending: true })
+      .order('trade_date', { ascending: false })  // 최신 날짜부터 가져옴
       .limit(days);
 
     if (error || !data || data.length === 0) {
@@ -270,6 +271,7 @@ export const fetchStockPriceHistory = async (
     }
 
     // 실제 컬럼명: close, trade_date 사용
+    // 데이터를 날짜 오름차순으로 재정렬 (차트 표시용)
     const prices = data
       .map((row: any) => {
         const price = row.close ?? 0;
@@ -279,7 +281,8 @@ export const fetchStockPriceHistory = async (
           price,
         };
       })
-      .filter(item => item.price > 0 && item.date);
+      .filter(item => item.price > 0 && item.date)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());  // 날짜 오름차순 정렬
 
     if (prices.length === 0) return [];
 

@@ -310,7 +310,7 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
             <div className="flex items-center gap-2">
               <BarChart2 className="text-slate-500" size={16} />
               <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest">
-                {lang === 'ko' ? '실시간 종목 정보' : 'Real-time Stock Info'}
+                {lang === 'ko' ? '종목 정보' : 'Stock Info'}
               </h3>
             </div>
             {/* 보유 종목 필터 스위치 */}

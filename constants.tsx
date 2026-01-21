@@ -34,8 +34,8 @@ export const MOCK_PRICES: Record<string, number> = {
 export const I18N = {
   ko: {
     dashboard: "대시보드",
-    markets: "마켓",
-    history: "투자 종료 내역",
+    markets: "시세",
+    history: "투자이력",
     portfolioMgmt: "포트폴리오 관리",
     newPortfolio: "새 포트폴리오",
     totalValuation: "총 평가 금액",

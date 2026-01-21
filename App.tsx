@@ -112,55 +112,33 @@ const App: React.FC = () => {
         console.log('[fetchUserData] setUser 호출');
         setUser(currentUser);
 
-        // 사용자 프로필 (구독 정보) 가져오기 - 실패해도 계속 진행
-        console.log('[fetchUserData] user_profiles 조회 시작');
-        try {
-          const profilePromise = supabase
-            .from('user_profiles')
-            .select('subscription_tier, max_portfolios, max_alarms')
-            .eq('id', currentUser.id)
-            .single();
-          
-          // 5초 타임아웃 설정
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('user_profiles 조회 타임아웃')), 5000)
-          );
-
-          const { data: profileData, error: profileError } = await Promise.race([
-            profilePromise,
-            timeoutPromise
-          ]) as any;
-
-          console.log('[fetchUserData] user_profiles 조회 완료:', { profileData, profileError: profileError?.message });
-
-          if (!profileError && profileData && isMounted) {
-            setUserProfile({
-              subscription_tier: profileData.subscription_tier || 'free',
-              max_portfolios: profileData.max_portfolios ?? 3,
-              max_alarms: profileData.max_alarms ?? 2,
-            });
-          } else {
-            // 프로필이 없으면 기본값 설정 (free tier)
-            console.log('[fetchUserData] 프로필 없음 또는 에러, 기본값 사용');
-            if (isMounted) {
+        // 사용자 프로필 - 일단 기본값 사용 (나중에 비동기로 업데이트)
+        console.log('[fetchUserData] 프로필 기본값 설정');
+        setUserProfile({
+          subscription_tier: 'free',
+          max_portfolios: 3,
+          max_alarms: 2,
+        });
+        
+        // user_profiles 조회는 백그라운드에서 (블로킹 없이)
+        supabase
+          .from('user_profiles')
+          .select('subscription_tier, max_portfolios, max_alarms')
+          .eq('id', currentUser.id)
+          .single()
+          .then(({ data: profileData, error: profileError }) => {
+            console.log('[fetchUserData] user_profiles 백그라운드 조회 완료:', { profileData, profileError: profileError?.message });
+            if (!profileError && profileData) {
               setUserProfile({
-                subscription_tier: 'free',
-                max_portfolios: 3,
-                max_alarms: 2,
+                subscription_tier: profileData.subscription_tier || 'free',
+                max_portfolios: profileData.max_portfolios ?? 3,
+                max_alarms: profileData.max_alarms ?? 2,
               });
             }
-          }
-        } catch (profileErr) {
-          console.warn('[fetchUserData] user_profiles 조회 실패 (무시하고 계속):', profileErr);
-          // 프로필 조회 실패해도 기본값으로 계속 진행
-          if (isMounted) {
-            setUserProfile({
-              subscription_tier: 'free',
-              max_portfolios: 3,
-              max_alarms: 2,
-            });
-          }
-        }
+          })
+          .catch((err) => {
+            console.warn('[fetchUserData] user_profiles 백그라운드 조회 실패:', err);
+          });
 
         // fetchPortfolios 함수 사용 (정규화 로직 포함)
         console.log('[fetchUserData] fetchPortfolios 호출 전');
@@ -289,25 +267,45 @@ const App: React.FC = () => {
 
     checkUser();
 
+    // 초기 세션 로드 완료 여부 플래그
+    let initialSessionLoaded = false;
+
     // 2. 인증 상태 변화 감지 (로그인, 로그아웃, 토큰 갱신 등)
     const { data: listener } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!isMounted) return;
 
         try {
-          console.log('Auth state changed:', event, session?.user?.email);
+          console.log('[onAuthStateChange] 이벤트:', event, session?.user?.email);
 
           const currentUser = session?.user ?? null;
+
+          // INITIAL_SESSION: 초기 세션 로드 완료 - checkUser에서 처리하므로 여기서는 플래그만 설정
+          if (event === 'INITIAL_SESSION') {
+            console.log('[onAuthStateChange] INITIAL_SESSION - checkUser에서 처리됨');
+            initialSessionLoaded = true;
+            return;
+          }
 
           // TOKEN_REFRESHED: 토큰이 성공적으로 갱신됨
           if (event === 'TOKEN_REFRESHED') {
             console.log('[Auth] Token refreshed successfully');
+            return; // 토큰 갱신은 데이터 리로드 불필요
           }
 
           // SIGNED_IN: 로그인 성공
-          if (event === 'SIGNED_IN' && typeof window !== 'undefined') {
-            // 로그인 성공 시에만 URL 해시 정리
-            window.history.replaceState(null, '', window.location.pathname + window.location.search);
+          if (event === 'SIGNED_IN') {
+            console.log('[onAuthStateChange] SIGNED_IN 이벤트');
+            if (typeof window !== 'undefined') {
+              // 로그인 성공 시에만 URL 해시 정리
+              window.history.replaceState(null, '', window.location.pathname + window.location.search);
+            }
+            
+            // 초기 로드 중이면 checkUser가 처리하므로 스킵
+            if (!initialSessionLoaded) {
+              console.log('[onAuthStateChange] 초기 로드 중, fetchUserData 스킵');
+              return;
+            }
           }
 
           // SIGNED_OUT: 로그아웃됨 (수동 또는 세션 만료)
@@ -320,7 +318,8 @@ const App: React.FC = () => {
             return;
           }
 
-          if (currentUser) {
+          // 초기 로드 완료 후에만 fetchUserData 호출
+          if (currentUser && initialSessionLoaded) {
             console.log('[onAuthStateChange] currentUser 있음, fetchUserData 호출:', currentUser.id);
             await fetchUserData(currentUser);
             console.log('[onAuthStateChange] fetchUserData 완료');
@@ -346,7 +345,9 @@ const App: React.FC = () => {
                 alert(lang === 'ko' ? '비밀번호가 성공적으로 변경되었습니다.' : 'Password updated successfully.');
               }
             }
-          } else {
+          } else if (initialSessionLoaded && !currentUser) {
+            // 초기 로드 완료 후 사용자가 없는 경우에만 상태 초기화
+            console.log('[onAuthStateChange] 사용자 없음, 상태 초기화');
             setUser(null);
             setUserProfile(null);
             setPortfolios([]);
@@ -537,32 +538,26 @@ const App: React.FC = () => {
 
   // 1. 포트폴리오 데이터를 가져오는 함수
   const fetchPortfolios = async (userId: string) => {
+    console.log('[fetchPortfolios] 함수 시작, userId:', userId);
     try {
-      // 세션 유효성 먼저 체크
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError || !sessionData?.session) {
-        console.error('[fetchPortfolios] 세션 없음 또는 에러:', sessionError?.message);
-        console.log('[fetchPortfolios] 세션 상태:', sessionData);
-        // 세션이 없으면 데이터를 가져오지 않음 (RLS에서 어차피 차단됨)
-        return;
-      }
+      console.log('[fetchPortfolios] Supabase 쿼리 실행 전');
 
-      // 세션의 user.id와 요청된 userId가 일치하는지 확인
-      if (sessionData.session.user.id !== userId) {
-        console.warn('[fetchPortfolios] 세션 user.id 불일치:', {
-          sessionUserId: sessionData.session.user.id,
-          requestedUserId: userId
-        });
-      }
-
-      console.log('[fetchPortfolios] 데이터 요청 시작, userId:', userId);
+      // 타임아웃을 위한 AbortController
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        console.warn('[fetchPortfolios] 10초 타임아웃, 요청 중단');
+        controller.abort();
+      }, 10000);
 
       const { data, error } = await supabase
         .from('portfolios')
         .select('*')
         .eq('user_id', userId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .abortSignal(controller.signal);
+      
+      clearTimeout(timeoutId);
+      console.log('[fetchPortfolios] Supabase 쿼리 완료');
 
       if (error) {
         console.error('[fetchPortfolios] 데이터 로드 에러:', {

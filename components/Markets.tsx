@@ -241,7 +241,7 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
              <div className="absolute inset-0 bg-gradient-to-t from-blue-600/5 to-transparent"></div>
           </div>
 
-          <ResponsiveContainer width="100%" height="70%">
+          <ResponsiveContainer width="100%" height="70%" minHeight={200}>
             {chartData.length > 0 ? (
               <ComposedChart data={chartData}>
                 <defs>

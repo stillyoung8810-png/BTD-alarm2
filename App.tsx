@@ -167,17 +167,31 @@ const App: React.FC = () => {
 
     // 1. 현재 세션을 직접 확인하여 user 상태를 즉시 복구 시도 (새로고침 시 중요)
     const checkUser = async () => {
-      if (!isMounted) return;
+      console.log('[checkUser] 시작');
+      if (!isMounted) {
+        console.log('[checkUser] isMounted=false, 종료');
+        return;
+      }
       
       try {
         setIsLoading(true);
+        console.log('[checkUser] getSession 호출 중...');
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        console.log('[checkUser] getSession 결과:', { 
+          hasSession: !!session, 
+          userId: session?.user?.id,
+          email: session?.user?.email,
+          error: sessionError?.message 
+        });
 
-        if (!isMounted) return;
+        if (!isMounted) {
+          console.log('[checkUser] isMounted=false (getSession 후), 종료');
+          return;
+        }
 
         if (sessionError) {
           if (sessionError.name !== 'AbortError') {
-            console.error('Session error:', sessionError);
+            console.error('[checkUser] Session error:', sessionError);
             
             // Invalid Refresh Token 등 세션 관련 에러 처리
             const errorMessage = sessionError.message?.toLowerCase() || '';
@@ -187,7 +201,7 @@ const App: React.FC = () => {
               errorMessage.includes('expired') ||
               errorMessage.includes('not found')
             ) {
-              console.warn('[Auth] Session validation failed, clearing auth state');
+              console.warn('[checkUser] Session validation failed, clearing auth state');
               await clearAuthState(false); // 초기 로딩 시에는 알림 표시 안 함
               return;
             }
@@ -195,8 +209,10 @@ const App: React.FC = () => {
         }
 
         if (session?.user) {
+          console.log('[checkUser] 세션 있음, fetchUserData 호출');
           // 세션이 있으면 즉시 사용자 정보와 포트폴리오 로드
           await fetchUserData(session.user);
+          console.log('[checkUser] fetchUserData 완료');
           
           // 기존 세션 복구 시에도 FCM 토큰 저장 시도 (로그인 상태 유지 중)
           if (session.user.id) {
@@ -206,13 +222,15 @@ const App: React.FC = () => {
             });
           }
         } else {
+          console.log('[checkUser] 세션 없음, 상태 초기화');
           setUser(null);
           setUserProfile(null);
           setPortfolios([]);
         }
       } catch (err: any) {
+        console.error('[checkUser] catch 블록 에러:', err);
         if (err?.name !== 'AbortError' && isMounted) {
-          console.error('Init auth error:', err);
+          console.error('[checkUser] Init auth error:', err);
           
           // AuthApiError 등 인증 관련 에러 처리
           const errorMessage = err?.message?.toLowerCase() || '';
@@ -225,6 +243,7 @@ const App: React.FC = () => {
           }
         }
       } finally {
+        console.log('[checkUser] finally 블록');
         if (isMounted) {
           setIsLoading(false);
         }
@@ -480,6 +499,26 @@ const App: React.FC = () => {
   // 1. 포트폴리오 데이터를 가져오는 함수
   const fetchPortfolios = async (userId: string) => {
     try {
+      // 세션 유효성 먼저 체크
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !sessionData?.session) {
+        console.error('[fetchPortfolios] 세션 없음 또는 에러:', sessionError?.message);
+        console.log('[fetchPortfolios] 세션 상태:', sessionData);
+        // 세션이 없으면 데이터를 가져오지 않음 (RLS에서 어차피 차단됨)
+        return;
+      }
+
+      // 세션의 user.id와 요청된 userId가 일치하는지 확인
+      if (sessionData.session.user.id !== userId) {
+        console.warn('[fetchPortfolios] 세션 user.id 불일치:', {
+          sessionUserId: sessionData.session.user.id,
+          requestedUserId: userId
+        });
+      }
+
+      console.log('[fetchPortfolios] 데이터 요청 시작, userId:', userId);
+
       const { data, error } = await supabase
         .from('portfolios')
         .select('*')
@@ -487,9 +526,16 @@ const App: React.FC = () => {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('데이터 로드 에러:', error.message);
+        console.error('[fetchPortfolios] 데이터 로드 에러:', {
+          message: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint
+        });
         return;
       }
+
+      console.log('[fetchPortfolios] 응답 데이터 개수:', data?.length ?? 0);
 
       if (data) {
         // DB의 snake_case를 UI에서 사용하는 camelCase 구조로 변환하여 저장
@@ -507,9 +553,10 @@ const App: React.FC = () => {
           strategy: item.strategy, // strategy 컬럼은 이미 일치
         }));
         setPortfolios(formattedData as Portfolio[]);
+        console.log('[fetchPortfolios] 포트폴리오 상태 업데이트 완료');
       }
     } catch (err) {
-      console.error('예기치 못한 에러:', err);
+      console.error('[fetchPortfolios] 예기치 못한 에러:', err);
     }
   };
 

@@ -112,21 +112,47 @@ const App: React.FC = () => {
         console.log('[fetchUserData] setUser 호출');
         setUser(currentUser);
 
-        // 사용자 프로필 (구독 정보) 가져오기
-        const { data: profileData, error: profileError } = await supabase
-          .from('user_profiles')
-          .select('subscription_tier, max_portfolios, max_alarms')
-          .eq('id', currentUser.id)
-          .single();
+        // 사용자 프로필 (구독 정보) 가져오기 - 실패해도 계속 진행
+        console.log('[fetchUserData] user_profiles 조회 시작');
+        try {
+          const profilePromise = supabase
+            .from('user_profiles')
+            .select('subscription_tier, max_portfolios, max_alarms')
+            .eq('id', currentUser.id)
+            .single();
+          
+          // 5초 타임아웃 설정
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('user_profiles 조회 타임아웃')), 5000)
+          );
 
-        if (!profileError && profileData && isMounted) {
-          setUserProfile({
-            subscription_tier: profileData.subscription_tier || 'free',
-            max_portfolios: profileData.max_portfolios ?? 3,
-            max_alarms: profileData.max_alarms ?? 2,
-          });
-        } else {
-          // 프로필이 없으면 기본값 설정 (free tier)
+          const { data: profileData, error: profileError } = await Promise.race([
+            profilePromise,
+            timeoutPromise
+          ]) as any;
+
+          console.log('[fetchUserData] user_profiles 조회 완료:', { profileData, profileError: profileError?.message });
+
+          if (!profileError && profileData && isMounted) {
+            setUserProfile({
+              subscription_tier: profileData.subscription_tier || 'free',
+              max_portfolios: profileData.max_portfolios ?? 3,
+              max_alarms: profileData.max_alarms ?? 2,
+            });
+          } else {
+            // 프로필이 없으면 기본값 설정 (free tier)
+            console.log('[fetchUserData] 프로필 없음 또는 에러, 기본값 사용');
+            if (isMounted) {
+              setUserProfile({
+                subscription_tier: 'free',
+                max_portfolios: 3,
+                max_alarms: 2,
+              });
+            }
+          }
+        } catch (profileErr) {
+          console.warn('[fetchUserData] user_profiles 조회 실패 (무시하고 계속):', profileErr);
+          // 프로필 조회 실패해도 기본값으로 계속 진행
           if (isMounted) {
             setUserProfile({
               subscription_tier: 'free',

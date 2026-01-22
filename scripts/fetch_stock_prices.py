@@ -4,9 +4,25 @@ import json
 import time
 import random
 from typing import List, Dict, Any, Optional
+from pathlib import Path
 
 import yfinance as yf
 import requests
+
+# .env 파일 자동 로드 (python-dotenv가 있으면)
+try:
+    from dotenv import load_dotenv
+    # 프로젝트 루트 디렉토리에서 .env 파일 찾기
+    env_path = Path(__file__).parent.parent / '.env'
+    if env_path.exists():
+        load_dotenv(env_path)
+        print(f"✓ Loaded environment variables from {env_path}")
+    else:
+        # 현재 디렉토리에서도 시도
+        load_dotenv()
+except ImportError:
+    # python-dotenv가 없어도 계속 진행 (환경 변수가 이미 설정되어 있을 수 있음)
+    pass
 
 
 TICKERS: List[str] = [
@@ -133,7 +149,17 @@ def upsert_to_supabase(rows: List[Dict[str, Any]]) -> None:
     service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
     if not supabase_url or not service_key:
-        raise RuntimeError("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment")
+        error_msg = "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment\n"
+        error_msg += "\n로컬 테스트 방법:\n"
+        error_msg += "1. PowerShell에서:\n"
+        error_msg += "   $env:SUPABASE_URL='your-url'\n"
+        error_msg += "   $env:SUPABASE_SERVICE_ROLE_KEY='your-key'\n"
+        error_msg += "   python scripts/fetch_stock_prices.py\n"
+        error_msg += "\n2. 또는 .env 파일에 추가:\n"
+        error_msg += "   SUPABASE_URL=your-url\n"
+        error_msg += "   SUPABASE_SERVICE_ROLE_KEY=your-key\n"
+        error_msg += "\n그리고: pip install python-dotenv\n"
+        raise RuntimeError(error_msg)
 
     endpoint = f"{supabase_url.rstrip('/')}/rest/v1/stock_prices"
     params = {
@@ -157,6 +183,7 @@ def cleanup_old_stock_prices() -> None:
     service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
     if not supabase_url or not service_key:
+        # cleanup 함수에서는 더 간단한 에러 메시지
         raise RuntimeError("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment")
 
     # 300일 전 날짜 계산

@@ -4,13 +4,19 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev": "granite dev",
+    "build": "granite build",
+    "preview": "vite preview",
+    "deploy": "ait deploy"
   },
   "dependencies": {
+    "@apps-in-toss/web-framework": "^1.8.0",
+    "@emotion/react": "^11.14.0",
     "@google/genai": "^1.35.0",
     "@supabase/supabase-js": "^2.90.1",
+    "@toss/tds-colors": "^0.1.0",
+    "@toss/tds-mobile": "^2.2.1",
+    "@toss/tds-mobile-ait": "^2.2.1",
     "firebase": "^12.8.0",
     "lucide-react": "^0.562.0",
     "react": "^19.2.3",

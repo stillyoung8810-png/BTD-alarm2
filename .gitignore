@@ -12,6 +12,15 @@ dist
 dist-ssr
 *.local
 
+# Python
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
 # Env files
 .env
 .env.local
@@ -27,3 +36,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+.granite

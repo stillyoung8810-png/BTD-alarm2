@@ -18,6 +18,9 @@ import { calculateTotalInvested, calculateAlreadyRealized, calculateHoldings } f
 import { fetchStockPricesWithPrev } from './services/stockService';
 import { getUSSelectionHolidays } from './utils/marketUtils';
 import { requestForToken, getNotificationPermission } from './services/firebase';
+import { initializeTossApp, isTossApp } from './services/tossAppBridge';
+import { TDSMobileAITProvider } from '@toss/tds-mobile-ait';
+import { TossAppProvider } from './contexts/TossAppContext';
 import { 
   LayoutDashboard, 
   BarChart3, 
@@ -74,6 +77,14 @@ const App: React.FC = () => {
 
   const t = I18N[lang];
 
+  // 토스 앱 환경 여부 확인
+  const [isInTossApp, setIsInTossApp] = useState<boolean>(false);
+
+  // 토스 앱 환경 확인 (마운트 시 한 번만)
+  useEffect(() => {
+    setIsInTossApp(isTossApp());
+  }, []);
+
   // authModal의 최신 값을 ref에 동기화
   useEffect(() => {
     authModalRef.current = authModal;
@@ -87,6 +98,13 @@ const App: React.FC = () => {
       document.documentElement.classList.remove('dark');
     }
   }, [isDarkMode]);
+
+  // 토스 앱 브릿지 초기화 (앱 시작 시 한 번만 실행)
+  useEffect(() => {
+    initializeTossApp().catch((error) => {
+      console.warn('[App] 토스 앱 브릿지 초기화 실패 (일반 웹 환경일 수 있음):', error);
+    });
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -121,11 +139,13 @@ const App: React.FC = () => {
         });
         
         // user_profiles 조회는 백그라운드에서 (블로킹 없이)
-        supabase
-          .from('user_profiles')
-          .select('subscription_tier, max_portfolios, max_alarms')
-          .eq('id', currentUser.id)
-          .single()
+        Promise.resolve(
+          supabase
+            .from('user_profiles')
+            .select('subscription_tier, max_portfolios, max_alarms')
+            .eq('id', currentUser.id)
+            .single()
+        )
           .then(({ data: profileData, error: profileError }) => {
             console.log('[fetchUserData] user_profiles 백그라운드 조회 완료:', { profileData, profileError: profileError?.message });
             if (!profileError && profileData) {
@@ -1051,7 +1071,8 @@ const App: React.FC = () => {
   const currentExecutionPortfolio = portfolios.find(p => p.id === executionTargetId);
   const currentTerminatePortfolio = portfolios.find(p => p.id === terminateTargetId);
 
-  return (
+  // 메인 레이아웃: 토스 앱 환경에서만 TDSMobileAITProvider로 감싸기
+  const MainContent = () => (
     <div className={`min-h-screen transition-colors duration-500 bg-slate-50 dark:bg-slate-950 dark:text-slate-200`}>
       <div className="pb-32">
         
@@ -1296,7 +1317,21 @@ const App: React.FC = () => {
           />
         )}
       </div>
-    </div>
+      </div>
+  );
+
+  // 토스 앱 환경에서만 TDSMobileAITProvider로 감싸기
+  // 일반 웹 환경에서는 기존 디자인 유지
+  return (
+    <TossAppProvider>
+      {isInTossApp ? (
+        <TDSMobileAITProvider>
+          <MainContent />
+        </TDSMobileAITProvider>
+      ) : (
+        <MainContent />
+      )}
+    </TossAppProvider>
   );
 };
 

@@ -2,7 +2,20 @@
 import React, { useState } from 'react';
 import { Portfolio, Strategy } from '../types';
 import { AVAILABLE_STOCKS, I18N } from '../constants';
-import { X, ChevronRight, ChevronLeft, Info, Sparkles, Target, Zap, Settings2, Calendar, Wallet, Percent, ToggleLeft, ToggleRight, AlertTriangle } from 'lucide-react';
+import { X, ChevronRight, ChevronLeft, Info, Sparkles, Target, Zap, Settings2, Calendar, Wallet, Percent, AlertTriangle, ChevronDown } from 'lucide-react';
+import { useTossApp } from '../contexts/TossAppContext';
+import CustomDropdown from './CustomDropdown';
+
+// 토스 앱 환경에서만 Menu 컴포넌트 import
+let Menu: any = null;
+if (typeof window !== 'undefined') {
+  try {
+    const tossMobile = require('@toss/tds-mobile');
+    Menu = tossMobile.Menu;
+  } catch (e) {
+    // @toss/tds-mobile이 없거나 로드 실패 시 무시
+  }
+}
 
 interface StrategyCreatorProps {
   lang: 'ko' | 'en';
@@ -11,26 +24,31 @@ interface StrategyCreatorProps {
 }
 
 const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave }) => {
+  const { isInTossApp } = useTossApp();
   const [step, setStep] = useState(1);
   
   // Step 1: Section 0
   const [ma0Stock, setMa0Stock] = useState('QQQ');
   const [rsiEnabled, setRsiEnabled] = useState(false);
+  const [ma0MenuOpen, setMa0MenuOpen] = useState(false);
 
   // Step 2: Sections 1, 2, 3
   const [ma1Period, setMa1Period] = useState(20);
   const [ma1Stock, setMa1Stock] = useState('TQQQ');
   const [ma1Rsi, setMa1Rsi] = useState(30);
+  const [ma1MenuOpen, setMa1MenuOpen] = useState(false);
 
   const [ma2Period1, setMa2Period1] = useState(20);
   const [ma2Period2, setMa2Period2] = useState(60);
   const [ma2Stock, setMa2Stock] = useState('QLD');
   const [ma2Split, setMa2Split] = useState(3);
   const [ma2Rsi, setMa2Rsi] = useState(30);
+  const [ma2MenuOpen, setMa2MenuOpen] = useState(false);
 
   const [ma3Period, setMa3Period] = useState(60);
   const [ma3Stock, setMa3Stock] = useState('QQQ');
   const [ma3Rsi, setMa3Rsi] = useState(30);
+  const [ma3MenuOpen, setMa3MenuOpen] = useState(false);
 
   // Step 3: Meta
   const [name, setName] = useState('');
@@ -98,14 +116,46 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
         
         <div className="space-y-4">
           <label className="text-[10px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '기준 주식 선택:' : 'Select Reference Stock:'}</label>
-          <select 
-            value={ma0Stock}
-            onChange={(e) => setMa0Stock(e.target.value)}
-            className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none transition-all cursor-pointer"
-          >
-            <option value="" className="bg-slate-900">-- {lang === 'ko' ? '선택하세요' : 'Select'} --</option>
-            {AVAILABLE_STOCKS.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
-          </select>
+          {isInTossApp && Menu ? (
+            <Menu
+              open={ma0MenuOpen}
+              onOpen={() => setMa0MenuOpen(true)}
+              onClose={() => setMa0MenuOpen(false)}
+              placement="bottom"
+            >
+              <Menu.Trigger>
+                <button className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all cursor-pointer flex items-center justify-between">
+                  <span>{ma0Stock || (lang === 'ko' ? '선택하세요' : 'Select')}</span>
+                  <ChevronDown size={16} className="text-slate-500" />
+                </button>
+              </Menu.Trigger>
+              <Menu.Dropdown>
+                <Menu.Header>{lang === 'ko' ? '종목 선택' : 'Select Stock'}</Menu.Header>
+                {AVAILABLE_STOCKS.map((stock) => (
+                  <Menu.DropdownCheckItem
+                    key={stock}
+                    checked={ma0Stock === stock}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        setMa0Stock(stock);
+                        setMa0MenuOpen(false);
+                      }
+                    }}
+                  >
+                    {stock}
+                  </Menu.DropdownCheckItem>
+                ))}
+              </Menu.Dropdown>
+            </Menu>
+          ) : (
+            <CustomDropdown
+              value={ma0Stock}
+              options={AVAILABLE_STOCKS.map(s => ({ value: s, label: s }))}
+              onChange={(value) => setMa0Stock(value)}
+              placeholder={lang === 'ko' ? '선택하세요' : 'Select'}
+              header={lang === 'ko' ? '종목 선택' : 'Select Stock'}
+            />
+          )}
           <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
             {lang === 'ko' 
               ? '구간 0에서 선택한 주식의 가격을 구간 1, 2, 3의 이동평균선 위치와 비교하여 매수 여부를 결정합니다.' 
@@ -115,12 +165,22 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
 
         <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-white/5">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold dark:text-slate-300 tracking-tight">{lang === 'ko' ? 'RSI 사용:' : 'Enable RSI:'}</span>
-            <button 
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              {lang === 'ko' ? 'RSI 사용' : 'Enable RSI'}
+            </span>
+            <button
               onClick={() => setRsiEnabled(!rsiEnabled)}
-              className="transition-colors active:scale-95 transition-transform p-1"
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${
+                rsiEnabled 
+                  ? 'bg-blue-500 shadow-lg shadow-blue-500/50' 
+                  : 'bg-slate-600'
+              }`}
             >
-              {rsiEnabled ? <ToggleRight className="text-blue-500" size={32} /> : <ToggleLeft className="text-slate-600" size={32} />}
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${
+                  rsiEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
             </button>
           </div>
           <span className="text-[10px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">
@@ -164,13 +224,45 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
           </div>
           <div className="space-y-2">
             <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '매수할 종목 선택:' : 'Stock to Buy:'}</label>
-            <select 
-              value={ma1Stock}
-              onChange={(e) => setMa1Stock(e.target.value)}
-              className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white appearance-none outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-            >
-              {AVAILABLE_STOCKS.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
-            </select>
+            {isInTossApp && Menu ? (
+              <Menu
+                open={ma1MenuOpen}
+                onOpen={() => setMa1MenuOpen(true)}
+                onClose={() => setMa1MenuOpen(false)}
+                placement="bottom"
+              >
+                <Menu.Trigger>
+                  <button className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all cursor-pointer flex items-center justify-between">
+                    <span>{ma1Stock}</span>
+                    <ChevronDown size={16} className="text-slate-500" />
+                  </button>
+                </Menu.Trigger>
+                <Menu.Dropdown>
+                  <Menu.Header>{lang === 'ko' ? '종목 선택' : 'Select Stock'}</Menu.Header>
+                  {AVAILABLE_STOCKS.map((stock) => (
+                    <Menu.DropdownCheckItem
+                      key={stock}
+                      checked={ma1Stock === stock}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setMa1Stock(stock);
+                          setMa1MenuOpen(false);
+                        }
+                      }}
+                    >
+                      {stock}
+                    </Menu.DropdownCheckItem>
+                  ))}
+                </Menu.Dropdown>
+              </Menu>
+            ) : (
+              <CustomDropdown
+                value={ma1Stock}
+                options={AVAILABLE_STOCKS.map(s => ({ value: s, label: s }))}
+                onChange={(value) => setMa1Stock(value)}
+                header={lang === 'ko' ? '종목 선택' : 'Select Stock'}
+              />
+            )}
           </div>
         </div>
 
@@ -251,13 +343,45 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '매수할 종목 선택:' : 'Stock to Buy:'}</label>
-            <select 
-              value={ma2Stock}
-              onChange={(e) => setMa2Stock(e.target.value)}
-              className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white appearance-none outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-            >
-              {AVAILABLE_STOCKS.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
-            </select>
+            {isInTossApp && Menu ? (
+              <Menu
+                open={ma2MenuOpen}
+                onOpen={() => setMa2MenuOpen(true)}
+                onClose={() => setMa2MenuOpen(false)}
+                placement="bottom"
+              >
+                <Menu.Trigger>
+                  <button className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all cursor-pointer flex items-center justify-between">
+                    <span>{ma2Stock}</span>
+                    <ChevronDown size={16} className="text-slate-500" />
+                  </button>
+                </Menu.Trigger>
+                <Menu.Dropdown>
+                  <Menu.Header>{lang === 'ko' ? '종목 선택' : 'Select Stock'}</Menu.Header>
+                  {AVAILABLE_STOCKS.map((stock) => (
+                    <Menu.DropdownCheckItem
+                      key={stock}
+                      checked={ma2Stock === stock}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setMa2Stock(stock);
+                          setMa2MenuOpen(false);
+                        }
+                      }}
+                    >
+                      {stock}
+                    </Menu.DropdownCheckItem>
+                  ))}
+                </Menu.Dropdown>
+              </Menu>
+            ) : (
+              <CustomDropdown
+                value={ma2Stock}
+                options={AVAILABLE_STOCKS.map(s => ({ value: s, label: s }))}
+                onChange={(value) => setMa2Stock(value)}
+                header={lang === 'ko' ? '종목 선택' : 'Select Stock'}
+              />
+            )}
           </div>
           <div className="space-y-2">
             <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '매수한 종목 분할 횟수:' : 'Split Count:'}</label>
@@ -323,13 +447,45 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
           </div>
           <div className="space-y-2">
             <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '매수할 종목 선택:' : 'Stock to Buy:'}</label>
-            <select 
-              value={ma3Stock}
-              onChange={(e) => setMa3Stock(e.target.value)}
-              className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white appearance-none outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-            >
-              {AVAILABLE_STOCKS.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
-            </select>
+            {isInTossApp && Menu ? (
+              <Menu
+                open={ma3MenuOpen}
+                onOpen={() => setMa3MenuOpen(true)}
+                onClose={() => setMa3MenuOpen(false)}
+                placement="bottom"
+              >
+                <Menu.Trigger>
+                  <button className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all cursor-pointer flex items-center justify-between">
+                    <span>{ma3Stock}</span>
+                    <ChevronDown size={16} className="text-slate-500" />
+                  </button>
+                </Menu.Trigger>
+                <Menu.Dropdown>
+                  <Menu.Header>{lang === 'ko' ? '종목 선택' : 'Select Stock'}</Menu.Header>
+                  {AVAILABLE_STOCKS.map((stock) => (
+                    <Menu.DropdownCheckItem
+                      key={stock}
+                      checked={ma3Stock === stock}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setMa3Stock(stock);
+                          setMa3MenuOpen(false);
+                        }
+                      }}
+                    >
+                      {stock}
+                    </Menu.DropdownCheckItem>
+                  ))}
+                </Menu.Dropdown>
+              </Menu>
+            ) : (
+              <CustomDropdown
+                value={ma3Stock}
+                options={AVAILABLE_STOCKS.map(s => ({ value: s, label: s }))}
+                onChange={(value) => setMa3Stock(value)}
+                header={lang === 'ko' ? '종목 선택' : 'Select Stock'}
+              />
+            )}
           </div>
         </div>
 

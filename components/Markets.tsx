@@ -415,11 +415,7 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
           </div>
         </div>
         
-        <div className="relative group">
-          {/* Gradient Masks for better focus on scrollable content */}
-          <div className="absolute inset-y-0 left-0 w-12 bg-gradient-to-r from-slate-50 dark:from-[#06090F] to-transparent z-10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"></div>
-          <div className="absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-slate-50 dark:from-[#06090F] to-transparent z-10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"></div>
-          
+        <div className="relative">
           <div 
             ref={scrollRef}
             className="flex gap-6 overflow-x-auto pb-8 pt-4 -mx-6 px-10 md:mx-0 md:px-4 scrollbar-hide snap-x snap-mandatory"

@@ -14,31 +14,32 @@ interface QuickInputModalProps {
 
 const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, activeSection: propActiveSection, onClose, onSave }) => {
   const [type, setType] = useState<'buy' | 'sell'>('buy');
-  const [activeSection, setActiveSection] = useState<1 | 2 | 3>(propActiveSection || 1); // 1, 2, 3 sections
   const [price, setPrice] = useState<number>(0);
   const [quantity, setQuantity] = useState<number>(0);
-  const [selectedStock, setSelectedStock] = useState<string>(portfolio.strategy.ma1.stock);
   
-  // propActiveSection이 변경되면 내부 상태 업데이트
-  useEffect(() => {
-    if (propActiveSection) {
-      setActiveSection(propActiveSection);
-    }
-  }, [propActiveSection]);
+  // 활성 구간 결정 (propActiveSection이 없으면 기본값 1)
+  const activeSection = propActiveSection || 1;
+  
+  // 활성 구간에 따른 종목 자동 선택
+  const getActiveSectionStock = (): string => {
+    if (activeSection === 1) return portfolio.strategy.ma1.stock;
+    else if (activeSection === 2) return portfolio.strategy.ma2.stock;
+    else return portfolio.strategy.ma3.stock;
+  };
+  
+  const [selectedStock, setSelectedStock] = useState<string>(getActiveSectionStock());
   
   const t = I18N[lang];
   const feeRate = portfolio.feeRate || 0.25;
 
   const holdings = Array.from(new Set(portfolio.trades.map(t => t.stock)));
 
-  // Update selected stock based on active section for buy
+  // 매수일 때 활성 구간의 종목 자동 선택
   useEffect(() => {
     if (type === 'buy') {
-      if (activeSection === 1) setSelectedStock(portfolio.strategy.ma1.stock);
-      else if (activeSection === 2) setSelectedStock(portfolio.strategy.ma2.stock);
-      else setSelectedStock(portfolio.strategy.ma3.stock);
+      setSelectedStock(getActiveSectionStock());
     }
-  }, [activeSection, type, portfolio.strategy]);
+  }, [type, activeSection, portfolio.strategy]);
 
   useEffect(() => {
     if (type === 'buy' && price > 0) {
@@ -118,7 +119,7 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
             <AlertCircle className="text-amber-500 shrink-0" size={18} />
             <p className="text-[11px] font-bold text-amber-500 leading-snug">
               {type === 'buy' 
-                ? (lang === 'ko' ? '기준주가 위치에 따른 구간별 종목을 자동 선택합니다.' : 'Automatically selects stock based on section.') 
+                ? (lang === 'ko' ? '현재 활성 구간의 종목이 자동으로 선택됩니다.' : 'Active section stock is automatically selected.') 
                 : (lang === 'ko' ? '보유 수량 내에서 지정가 매도를 진행합니다.' : 'Sells specific quantity from holdings.')}
               <br/>
               <span className="opacity-80">{lang === 'ko' ? `수수료율 ${feeRate}% 적용` : `${feeRate}% fee applied`}</span>
@@ -129,30 +130,6 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
             <button onClick={() => setType('buy')} className={`flex-1 py-4 rounded-xl text-xs font-black transition-all ${type === 'buy' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-600 dark:text-slate-500'}`}>{t.buy}</button>
             <button onClick={() => setType('sell')} className={`flex-1 py-4 rounded-xl text-xs font-black transition-all ${type === 'sell' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-600 dark:text-slate-500'}`}>{t.sell}</button>
           </div>
-
-          {type === 'buy' && (
-            <div className="space-y-4 animate-in fade-in duration-300">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.activeSection}:</span>
-                {propActiveSection && (
-                  <span className="text-[9px] font-bold text-blue-500 uppercase tracking-widest">
-                    {lang === 'ko' ? '자동 선택됨' : 'Auto Selected'}
-                  </span>
-                )}
-              </div>
-              <div className="flex gap-2">
-                {[1, 2, 3].map(sec => (
-                  <button 
-                    key={sec}
-                    onClick={() => setActiveSection(sec as 1|2|3)}
-                    className={`flex-1 py-3 rounded-xl text-xs font-black border transition-all ${activeSection === sec ? 'bg-blue-600 border-blue-500 text-white shadow-lg' : 'bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-white/5 text-slate-600 dark:text-slate-500'}`}
-                  >
-                    {t.section} {sec}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
 
           <div className="space-y-4">
             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.stock}:</span>

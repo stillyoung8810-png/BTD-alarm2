@@ -1,7 +1,20 @@
 
 import React, { useState, useEffect } from 'react';
 import { Portfolio, AlarmConfig } from '../types';
-import { X, ToggleRight, ToggleLeft, Clock, Plus, Trash2, Info } from 'lucide-react';
+import { X, ToggleRight, ToggleLeft, Clock, Plus, Trash2, Info, ChevronDown } from 'lucide-react';
+import { useTossApp } from '../contexts/TossAppContext';
+import CustomDropdown from './CustomDropdown';
+
+// 토스 앱 환경에서만 Menu 컴포넌트 import
+let Menu: any = null;
+if (typeof window !== 'undefined') {
+  try {
+    const tossMobile = require('@toss/tds-mobile');
+    Menu = tossMobile.Menu;
+  } catch (e) {
+    // @toss/tds-mobile이 없거나 로드 실패 시 무시
+  }
+}
 
 interface AlarmModalProps {
   lang: 'ko' | 'en';
@@ -15,6 +28,7 @@ const MINUTE_STEP = 10; // 무료: 10분 단위, 프리미엄: 1분 단위로 �
 const MAX_SLOTS = 2; // 무료: 2개, 프리미엄: 3개 이상으로 확장 가능
 
 const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSave }) => {
+  const { isInTossApp } = useTossApp();
   const initialConfig = portfolio.alarmconfig || {
     enabled: false,
     selectedHours: [],
@@ -33,6 +47,7 @@ const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSav
   
   // 분 선택 상태
   const [selectedMinute, setSelectedMinute] = useState<string>('00');
+  const [minuteMenuOpen, setMinuteMenuOpen] = useState(false);
 
   // Hour 옵션: 0-11
   const hours = Array.from({ length: 12 }).map((_, i) => i.toString().padStart(2, '0'));
@@ -270,22 +285,46 @@ const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSav
                     <label className="text-[9px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
                       {lang === 'ko' ? '분' : 'Minute'}
                     </label>
-                    <div className="relative">
-                      <select
-                        value={selectedMinute}
-                        onChange={(e) => setSelectedMinute(e.target.value)}
-                        className="w-full p-4 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-xl text-slate-900 dark:text-white text-sm font-black appearance-none cursor-pointer hover:bg-slate-50 dark:hover:bg-white/10 transition-colors focus:ring-2 focus:ring-blue-500/50 outline-none"
+                    {isInTossApp && Menu ? (
+                      <Menu
+                        open={minuteMenuOpen}
+                        onOpen={() => setMinuteMenuOpen(true)}
+                        onClose={() => setMinuteMenuOpen(false)}
+                        placement="bottom"
                       >
-                        {minutes.map((minute) => (
-                          <option key={minute} value={minute} className="bg-white dark:bg-[#080B15]">
-                            {minute}{lang === 'ko' ? '분' : ' min'}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                        <X size={16} className="text-slate-400 dark:text-slate-400 rotate-45" />
-                      </div>
-                    </div>
+                        <Menu.Trigger>
+                          <button className="w-full p-4 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-xl text-slate-900 dark:text-white text-sm font-black cursor-pointer hover:bg-slate-50 dark:hover:bg-white/10 transition-colors focus:ring-2 focus:ring-blue-500/50 outline-none flex items-center justify-between">
+                            <span>{selectedMinute}{lang === 'ko' ? '분' : ' min'}</span>
+                            <ChevronDown size={16} className="text-slate-400" />
+                          </button>
+                        </Menu.Trigger>
+                        <Menu.Dropdown>
+                          <Menu.Header>{lang === 'ko' ? '10분 단위 설정' : '10-minute Interval'}</Menu.Header>
+                          {minutes.map((minute) => (
+                            <Menu.DropdownCheckItem
+                              key={minute}
+                              checked={selectedMinute === minute}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setSelectedMinute(minute);
+                                  setMinuteMenuOpen(false);
+                                }
+                              }}
+                            >
+                              {minute}{lang === 'ko' ? '분' : ' min'}
+                            </Menu.DropdownCheckItem>
+                          ))}
+                        </Menu.Dropdown>
+                      </Menu>
+                    ) : (
+                      <CustomDropdown
+                        value={selectedMinute}
+                        options={minutes.map(m => ({ value: m, label: `${m}${lang === 'ko' ? '분' : ' min'}` }))}
+                        onChange={(value) => setSelectedMinute(value)}
+                        header={lang === 'ko' ? '10분 단위 설정' : '10-minute Interval'}
+                        className="w-full"
+                      />
+                    )}
                   </div>
 
                   {/* Info Message */}

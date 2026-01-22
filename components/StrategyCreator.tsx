@@ -40,6 +40,30 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
 
   const t = I18N[lang];
 
+  // 이동평균선 입력값 검증 및 정규화 함수
+  const normalizeMaPeriod = (value: string): number => {
+    // 빈 문자열이면 현재 값을 유지하기 위해 -1 반환 (호출부에서 처리)
+    if (value === '' || value === '-') {
+      return -1;
+    }
+    
+    // 앞의 0 제거 (예: "020" -> "20", "001" -> "1")
+    let numStr = value.replace(/^0+/, '') || '0';
+    let num = parseInt(numStr, 10);
+    
+    // NaN이거나 1 미만이면 1로 설정
+    if (isNaN(num) || num < 1) {
+      return 1;
+    }
+    
+    // 240 초과면 240으로 제한
+    if (num > 240) {
+      return 240;
+    }
+    
+    return num;
+  };
+
   const handleSave = async () => {
     const newP: Omit<Portfolio, 'id'> = {
       name: name || (lang === 'ko' ? '커스텀 전략' : 'Custom Strategy'),
@@ -117,11 +141,24 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '기준 이동평균선 설정 (1~360일):' : 'MA Period (1-360):'}</label>
+            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '기준 이동평균선 설정 (1~240일):' : 'MA Period (1-240):'}</label>
             <input 
               type="number" 
               value={ma1Period}
-              onChange={(e) => setMa1Period(Number(e.target.value))}
+              onChange={(e) => {
+                const normalized = normalizeMaPeriod(e.target.value);
+                if (normalized !== -1) {
+                  setMa1Period(normalized);
+                }
+              }}
+              onBlur={(e) => {
+                const normalized = normalizeMaPeriod(e.target.value);
+                if (normalized !== -1) {
+                  setMa1Period(normalized);
+                }
+              }}
+              min="1"
+              max="240"
               className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
             />
           </div>
@@ -167,20 +204,46 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
         </h3>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '기준 이동평균선 1:' : 'MA Period 1:'}</label>
+            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '기준 이동평균선 1 (1~240일):' : 'MA Period 1 (1-240):'}</label>
             <input 
               type="number" 
               value={ma2Period1}
-              onChange={(e) => setMa2Period1(Number(e.target.value))}
+              onChange={(e) => {
+                const normalized = normalizeMaPeriod(e.target.value);
+                if (normalized !== -1) {
+                  setMa2Period1(normalized);
+                }
+              }}
+              onBlur={(e) => {
+                const normalized = normalizeMaPeriod(e.target.value);
+                if (normalized !== -1) {
+                  setMa2Period1(normalized);
+                }
+              }}
+              min="1"
+              max="240"
               className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
             />
           </div>
           <div className="space-y-2">
-            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '기준 이동평균선 2:' : 'MA Period 2:'}</label>
+            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '기준 이동평균선 2 (1~240일):' : 'MA Period 2 (1-240):'}</label>
             <input 
               type="number" 
               value={ma2Period2}
-              onChange={(e) => setMa2Period2(Number(e.target.value))}
+              onChange={(e) => {
+                const normalized = normalizeMaPeriod(e.target.value);
+                if (normalized !== -1) {
+                  setMa2Period2(normalized);
+                }
+              }}
+              onBlur={(e) => {
+                const normalized = normalizeMaPeriod(e.target.value);
+                if (normalized !== -1) {
+                  setMa2Period2(normalized);
+                }
+              }}
+              min="1"
+              max="240"
               className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
             />
           </div>
@@ -237,11 +300,24 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '기준 이동평균선 설정 (1~360일):' : 'MA Period (1-360):'}</label>
+            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '기준 이동평균선 설정 (1~240일):' : 'MA Period (1-240):'}</label>
             <input 
               type="number" 
               value={ma3Period}
-              onChange={(e) => setMa3Period(Number(e.target.value))}
+              onChange={(e) => {
+                const normalized = normalizeMaPeriod(e.target.value);
+                if (normalized !== -1) {
+                  setMa3Period(normalized);
+                }
+              }}
+              onBlur={(e) => {
+                const normalized = normalizeMaPeriod(e.target.value);
+                if (normalized !== -1) {
+                  setMa3Period(normalized);
+                }
+              }}
+              min="1"
+              max="240"
               className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
             />
           </div>

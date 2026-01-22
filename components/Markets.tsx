@@ -112,8 +112,12 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
   const [chartData, setChartData] = useState<Array<{ name: string; price: number; ma20: number; ma60: number; date: string }>>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showHoldingsOnly, setShowHoldingsOnly] = useState(false);
+  const [show1xOnly, setShow1xOnly] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const t = I18N[lang];
+
+  // 1배수 종목 정의
+  const oneXStocks = ['SPY', 'QQQ', 'SOXX', 'USD', 'BILL', 'ICSH', 'SGOV'];
 
   // 마켓 상태 계산
   const marketStatus = useMemo(() => getMarketStatus(lang), [lang]);
@@ -137,11 +141,20 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
 
   // 필터링된 종목 리스트
   const displayedStocks = useMemo(() => {
+    let filtered = AVAILABLE_STOCKS;
+    
+    // 보유 종목만 보기 필터
     if (showHoldingsOnly) {
-      return AVAILABLE_STOCKS.filter(ticker => holdingsSet.has(ticker));
+      filtered = filtered.filter(ticker => holdingsSet.has(ticker));
     }
-    return AVAILABLE_STOCKS;
-  }, [showHoldingsOnly, holdingsSet]);
+    
+    // 1배수만 보기 필터
+    if (show1xOnly) {
+      filtered = filtered.filter(ticker => oneXStocks.includes(ticker));
+    }
+    
+    return filtered;
+  }, [showHoldingsOnly, show1xOnly, holdingsSet, oneXStocks]);
 
   // 초기 주가 데이터 로드
   useEffect(() => {
@@ -184,6 +197,32 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
     };
     loadChartData();
   }, [selectedStock, lang]);
+
+  // 차트 Y축 범위 계산 함수
+  const calculateYAxisDomain = () => {
+    if (chartData.length === 0) return ['auto', 'auto'];
+    
+    // 모든 가격 데이터 수집 (price, ma20, ma60)
+    const allValues: number[] = [];
+    chartData.forEach(item => {
+      if (item.price > 0) allValues.push(item.price);
+      if (item.ma20 > 0) allValues.push(item.ma20);
+      if (item.ma60 > 0) allValues.push(item.ma60);
+    });
+    
+    if (allValues.length === 0) return ['auto', 'auto'];
+    
+    const dataMin = Math.min(...allValues);
+    const dataMax = Math.max(...allValues);
+    const dataRange = dataMax - dataMin;
+    
+    // 10% 패딩 추가
+    const padding = dataRange * 0.1;
+    const min = dataMin - padding;
+    const max = dataMax + padding;
+    
+    return [min, max];
+  };
 
   const scroll = (direction: 'left' | 'right') => {
     if (scrollRef.current) {
@@ -258,7 +297,11 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
                   tickLine={false}
                   interval={Math.floor(chartData.length / 6)}
                 />
-                <YAxis domain={['dataMin - 20', 'dataMax + 20']} hide />
+                <YAxis 
+                  domain={calculateYAxisDomain()}
+                  allowDataOverflow={true}
+                  hide 
+                />
                 <Tooltip 
                   content={<CustomTooltip />}
                   cursor={{ stroke: '#2563eb', strokeWidth: 1, strokeDasharray: '5 5' }}
@@ -329,6 +372,26 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
                 <span
                   className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${
                     showHoldingsOnly ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+            {/* 1배수만 보기 필터 스위치 */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                {lang === 'ko' ? '1배수만 보기' : '1x Only'}
+              </span>
+              <button
+                onClick={() => setShow1xOnly(!show1xOnly)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${
+                  show1xOnly 
+                    ? 'bg-blue-500 shadow-lg shadow-blue-500/50' 
+                    : 'bg-slate-600'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${
+                    show1xOnly ? 'translate-x-6' : 'translate-x-1'
                   }`}
                 />
               </button>

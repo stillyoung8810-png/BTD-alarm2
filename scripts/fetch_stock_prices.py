@@ -106,9 +106,9 @@ def fetch_all_quotes(tickers: List[str]) -> List[Dict[str, Any]]:
 
 def build_rows(quotes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """yfinance로 가져온 데이터를 Supabase 테이블 구조에 맞게 변환"""
-    now = dt.datetime.utcnow()
+    now = dt.datetime.now(dt.timezone.utc)
     trade_date = now.date().isoformat()  # YYYY-MM-DD (UTC 기준)
-    fetched_at = now.isoformat() + "Z"
+    fetched_at = now.isoformat().replace('+00:00', 'Z')
 
     rows: List[Dict[str, Any]] = []
     for quote in quotes:
@@ -151,6 +151,53 @@ def upsert_to_supabase(rows: List[Dict[str, Any]]) -> None:
         raise RuntimeError(f"Supabase upsert failed: {resp.status_code} {resp.text}")
 
 
+def cleanup_old_stock_prices() -> None:
+    """300일 이상 된 stock_prices 데이터를 삭제"""
+    supabase_url = os.environ.get("SUPABASE_URL")
+    service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+
+    if not supabase_url or not service_key:
+        raise RuntimeError("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment")
+
+    # 300일 전 날짜 계산
+    cutoff_date = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=300)).date().isoformat()
+    
+    endpoint = f"{supabase_url.rstrip('/')}/rest/v1/stock_prices"
+    params = {
+        "trade_date": f"lt.{cutoff_date}",  # trade_date < cutoff_date
+    }
+    headers = {
+        "apikey": service_key,
+        "Authorization": f"Bearer {service_key}",
+        "Prefer": "return=representation",
+    }
+
+    # DELETE 요청 전에 삭제될 행 수 확인 (선택사항)
+    count_resp = requests.get(
+        endpoint,
+        params={**params, "select": "id"},
+        headers={**headers, "Range": "0-0"},
+        timeout=20
+    )
+    
+    if count_resp.status_code == 200:
+        # Content-Range 헤더에서 총 개수 추출
+        content_range = count_resp.headers.get("Content-Range", "")
+        if "/" in content_range:
+            total_count = content_range.split("/")[-1]
+            if total_count != "*" and total_count.isdigit():
+                print(f"Found {total_count} rows older than 300 days to delete")
+    
+    # DELETE 요청 실행
+    resp = requests.delete(endpoint, params=params, headers=headers, timeout=20)
+    
+    if resp.status_code >= 300:
+        raise RuntimeError(f"Supabase delete failed: {resp.status_code} {resp.text}")
+    
+    deleted_count = len(resp.json()) if resp.json() else 0
+    print(f"✓ Deleted {deleted_count} rows older than {cutoff_date} (300 days)")
+
+
 def main() -> None:
     print("=" * 60)
     print("Starting stock price fetch using yfinance")
@@ -172,6 +219,18 @@ def main() -> None:
 
         upsert_to_supabase(rows)
         print(f"\n✓ Successfully upserted {len(rows)} rows to Supabase")
+        
+        # 300일 이상 된 데이터 정리
+        print("\n" + "=" * 60)
+        print("Cleaning up old stock prices (older than 300 days)...")
+        print("=" * 60)
+        try:
+            cleanup_old_stock_prices()
+        except Exception as cleanup_error:
+            # 정리 작업 실패해도 주가 업데이트는 성공했으므로 경고만 출력
+            print(f"⚠ Warning: Failed to cleanup old data: {cleanup_error}")
+            print("(This is non-critical - stock prices were still updated)")
+        
         print("=" * 60)
         
     except Exception as e:

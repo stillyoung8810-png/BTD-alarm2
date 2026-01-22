@@ -19,7 +19,6 @@ import { fetchStockPricesWithPrev } from './services/stockService';
 import { getUSSelectionHolidays } from './utils/marketUtils';
 import { requestForToken, getNotificationPermission } from './services/firebase';
 import { initializeTossApp, isTossApp } from './services/tossAppBridge';
-import { TDSMobileAITProvider } from '@toss/tds-mobile-ait';
 import { TossAppProvider } from './contexts/TossAppContext';
 import { 
   LayoutDashboard, 
@@ -1322,12 +1321,27 @@ const App: React.FC = () => {
 
   // 토스 앱 환경에서만 TDSMobileAITProvider로 감싸기
   // 일반 웹 환경에서는 기존 디자인 유지
+  const [TDSProvider, setTDSProvider] = useState<React.ComponentType<{ children: React.ReactNode }> | null>(null);
+
+  useEffect(() => {
+    if (isInTossApp) {
+      // 토스 앱 환경에서만 동적으로 로드
+      import('@toss/tds-mobile-ait')
+        .then((module) => {
+          setTDSProvider(() => module.TDSMobileAITProvider);
+        })
+        .catch((error) => {
+          console.warn('[App] TDSMobileAITProvider 로드 실패:', error);
+        });
+    }
+  }, [isInTossApp]);
+
   return (
     <TossAppProvider>
-      {isInTossApp ? (
-        <TDSMobileAITProvider>
+      {isInTossApp && TDSProvider ? (
+        <TDSProvider>
           <MainContent />
-        </TDSMobileAITProvider>
+        </TDSProvider>
       ) : (
         <MainContent />
       )}

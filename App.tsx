@@ -59,8 +59,13 @@ const App: React.FC = () => {
 
   // 주가 캐싱 관련 상수
   const STOCK_PRICE_CACHE_KEY = 'STOCK_PRICE_CACHE_V1';
+  const PORTFOLIOS_CACHE_KEY = 'my_portfolios';
   const KST_UPDATE_HOUR = 7;
   const KST_UPDATE_MINUTE = 20;
+
+  // 중복 요청 방지를 위한 ref
+  const fetchingPortfoliosRef = useRef<Set<string>>(new Set());
+  const fetchPortfoliosAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
   
   // States for the 2-step termination flow
   const [terminateTargetId, setTerminateTargetId] = useState<string | null>(null);
@@ -159,10 +164,10 @@ const App: React.FC = () => {
             console.warn('[fetchUserData] user_profiles 백그라운드 조회 실패:', err);
           });
 
-        // fetchPortfolios 함수 사용 (정규화 로직 포함)
-        console.log('[fetchUserData] fetchPortfolios 호출 전');
-        await fetchPortfolios(currentUser.id);
-        console.log('[fetchUserData] fetchPortfolios 완료');
+        // fetchPortfolios 함수 사용 (로컬 우선, 백그라운드 업데이트)
+        // await 없이 호출 - 로컬 데이터는 즉시 표시되고, Supabase 요청은 백그라운드에서 처리
+        console.log('[fetchUserData] fetchPortfolios 호출 (로컬 우선, 백그라운드 업데이트)');
+        fetchPortfolios(currentUser.id);
       } catch (err) {
         console.error('[fetchUserData] catch 에러:', err);
         if (isMounted) {
@@ -555,62 +560,153 @@ const App: React.FC = () => {
     }
   };
 
-  // 1. 포트폴리오 데이터를 가져오는 함수
-  const fetchPortfolios = async (userId: string) => {
-    console.log('[fetchPortfolios] 함수 시작, userId:', userId);
-    try {
-      console.log('[fetchPortfolios] Supabase 쿼리 실행 전');
+  // 포트폴리오 데이터 정규화 함수
+  const normalizePortfolioData = (data: any[]): Portfolio[] => {
+    return (data as any[]).map((item) => ({
+      ...item,
+      dailyBuyAmount: item.daily_buy_amount ?? item.dailyBuyAmount ?? 0,
+      startDate: item.start_date ?? item.startDate ?? '',
+      feeRate: item.fee_rate ?? item.feeRate ?? 0.25,
+      isClosed: item.is_closed ?? item.isClosed ?? false,
+      closedAt: item.closed_at ?? item.closedAt ?? undefined,
+      finalSellAmount: item.final_sell_amount ?? item.finalSellAmount ?? undefined,
+      alarmconfig: item.alarm_config ?? item.alarmconfig ?? undefined,
+      strategy: item.strategy, // strategy 컬럼은 이미 일치
+    })) as Portfolio[];
+  };
 
-      // 타임아웃을 위한 AbortController
-      const controller = new AbortController();
+  // 로컬 저장소에서 포트폴리오 데이터 로드 (동기적, 즉시 실행)
+  const loadPortfoliosFromCache = (userId: string): boolean => {
+    const cacheKey = `${PORTFOLIOS_CACHE_KEY}_${userId}`;
+    try {
+      const cachedData = localStorage.getItem(cacheKey);
+      if (cachedData) {
+        try {
+          const parsedData = JSON.parse(cachedData);
+          const normalizedData = normalizePortfolioData(parsedData);
+          console.log('[loadPortfoliosFromCache] 로컬 저장소에서 데이터 로드:', normalizedData.length, '개');
+          setPortfolios(normalizedData);
+          return true; // 로컬 데이터가 있음
+        } catch (parseError) {
+          console.warn('[loadPortfoliosFromCache] 로컬 저장소 데이터 파싱 실패:', parseError);
+        }
+      }
+    } catch (cacheError) {
+      console.warn('[loadPortfoliosFromCache] 로컬 저장소 접근 실패:', cacheError);
+    }
+    return false; // 로컬 데이터가 없음
+  };
+
+  // Supabase에서 포트폴리오 데이터 가져오기 (백그라운드, 비동기, 중복 요청 방지)
+  const fetchPortfoliosFromSupabase = async (userId: string): Promise<void> => {
+    const cacheKey = `${PORTFOLIOS_CACHE_KEY}_${userId}`;
+    
+    // 중복 요청 방지: 이미 진행 중인 요청이 있으면 취소하고 새로 시작
+    if (fetchingPortfoliosRef.current.has(userId)) {
+      console.log('[fetchPortfoliosFromSupabase] 이미 진행 중인 요청이 있음, 이전 요청 취소:', userId);
+      const existingController = fetchPortfoliosAbortControllersRef.current.get(userId);
+      if (existingController) {
+        existingController.abort();
+      }
+    }
+
+    // 진행 중인 요청으로 표시
+    fetchingPortfoliosRef.current.add(userId);
+    
+    // 타임아웃을 위한 AbortController
+    const controller = new AbortController();
+    fetchPortfoliosAbortControllersRef.current.set(userId, controller);
+    
+    try {
+      console.log('[fetchPortfoliosFromSupabase] Supabase 쿼리 실행 (백그라운드), userId:', userId);
+
+      // 타임아웃 설정 (10초)
       const timeoutId = setTimeout(() => {
-        console.warn('[fetchPortfolios] 10초 타임아웃, 요청 중단');
+        console.warn('[fetchPortfoliosFromSupabase] 10초 타임아웃, 요청 중단 (로컬 데이터 사용)');
         controller.abort();
       }, 10000);
 
+      // 쿼리 최적화: 필요한 컬럼만 선택 (SELECT * 대신)
       const { data, error } = await supabase
         .from('portfolios')
-        .select('*')
+        .select('id, created_at, name, daily_buy_amount, start_date, fee_rate, is_closed, closed_at, final_sell_amount, trades, strategy, alarm_config, user_id')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .abortSignal(controller.signal);
       
       clearTimeout(timeoutId);
-      console.log('[fetchPortfolios] Supabase 쿼리 완료');
+      console.log('[fetchPortfoliosFromSupabase] Supabase 쿼리 완료, userId:', userId);
 
       if (error) {
-        console.error('[fetchPortfolios] 데이터 로드 에러:', {
+        // AbortError는 정상적인 취소이므로 에러로 처리하지 않음
+        if (error.name === 'AbortError' || error.message?.includes('aborted')) {
+          console.log('[fetchPortfoliosFromSupabase] 요청 취소됨 (정상):', userId);
+          return;
+        }
+        
+        console.error('[fetchPortfoliosFromSupabase] 데이터 로드 에러:', {
+          userId,
           message: error.message,
           code: error.code,
           details: error.details,
           hint: error.hint
         });
+        // 에러가 나도 로컬 데이터가 있으면 화면은 유지됨
         return;
       }
 
-      console.log('[fetchPortfolios] 응답 데이터 개수:', data?.length ?? 0);
+      console.log('[fetchPortfoliosFromSupabase] 응답 데이터 개수:', data?.length ?? 0, 'userId:', userId);
 
       if (data) {
-        // DB의 snake_case를 UI에서 사용하는 camelCase 구조로 변환하여 저장
-        // (Supabase 테이블은 snake_case, 프론트엔드는 camelCase 사용)
-        // DB 컬럼명(daily_buy_amount)을 우선적으로 사용
-        const formattedData = (data as any[]).map((item) => ({
-          ...item,
-          dailyBuyAmount: item.daily_buy_amount ?? item.dailyBuyAmount ?? 0,
-          startDate: item.start_date ?? item.startDate ?? '',
-          feeRate: item.fee_rate ?? item.feeRate ?? 0.25,
-          isClosed: item.is_closed ?? item.isClosed ?? false,
-          closedAt: item.closed_at ?? item.closedAt ?? undefined,
-          finalSellAmount: item.final_sell_amount ?? item.finalSellAmount ?? undefined,
-          alarmconfig: item.alarm_config ?? item.alarmconfig ?? undefined,
-          strategy: item.strategy, // strategy 컬럼은 이미 일치
-        }));
-        setPortfolios(formattedData as Portfolio[]);
-        console.log('[fetchPortfolios] 포트폴리오 상태 업데이트 완료');
+        // DB의 snake_case를 UI에서 사용하는 camelCase 구조로 변환
+        const formattedData = normalizePortfolioData(data);
+        
+        // 로컬 저장소에 저장 (다음 로드 시 사용)
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify(data));
+          console.log('[fetchPortfoliosFromSupabase] 로컬 저장소에 데이터 저장 완료, userId:', userId);
+        } catch (saveError) {
+          console.warn('[fetchPortfoliosFromSupabase] 로컬 저장소 저장 실패:', saveError);
+        }
+
+        // 화면 업데이트 (최신 데이터로)
+        setPortfolios(formattedData);
+        console.log('[fetchPortfoliosFromSupabase] 포트폴리오 상태 업데이트 완료, userId:', userId);
       }
-    } catch (err) {
-      console.error('[fetchPortfolios] 예기치 못한 에러:', err);
+    } catch (err: any) {
+      // AbortError는 정상적인 취소이므로 에러로 처리하지 않음
+      if (err?.name === 'AbortError' || err?.message?.includes('aborted')) {
+        console.log('[fetchPortfoliosFromSupabase] 요청 취소됨 (정상):', userId);
+        return;
+      }
+      
+      console.error('[fetchPortfoliosFromSupabase] 예기치 못한 에러:', {
+        userId,
+        error: err,
+        message: err?.message,
+        name: err?.name
+      });
+      // 에러가 나도 로컬 데이터가 있으면 화면은 유지됨
+    } finally {
+      // 진행 중인 요청 표시 제거
+      fetchingPortfoliosRef.current.delete(userId);
+      fetchPortfoliosAbortControllersRef.current.delete(userId);
     }
+  };
+
+  // 포트폴리오 데이터 가져오기 (로컬 우선, 백그라운드 업데이트)
+  const fetchPortfolios = (userId: string): void => {
+    console.log('[fetchPortfolios] 함수 시작, userId:', userId);
+    
+    // 1단계: 로컬 저장소에서 즉시 데이터 로드 (동기적)
+    const hasCachedData = loadPortfoliosFromCache(userId);
+    
+    // 2단계: 백그라운드에서 Supabase 데이터 가져오기 (비동기, await 없음)
+    // 로컬 데이터가 있든 없든 최신 데이터를 가져와서 업데이트
+    fetchPortfoliosFromSupabase(userId).catch((err) => {
+      console.error('[fetchPortfolios] 백그라운드 업데이트 실패:', err);
+      // 에러가 나도 로컬 데이터가 있으면 화면은 유지됨
+    });
   };
 
 

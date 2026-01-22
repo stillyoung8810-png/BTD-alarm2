@@ -257,6 +257,7 @@ serve(async (req) => {
       });
 
       if (successfulTokens.length > 0) {
+        // user_devices 테이블 업데이트
         await supabase
           .from("user_devices")
           .update({ last_notification_sent_at: now })

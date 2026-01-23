@@ -15,7 +15,7 @@ import AuthModals from './components/AuthModals';
 import Landing from './components/Landing';
 import { supabase, clearAuthStorage } from './services/supabase';
 import { calculateTotalInvested, calculateAlreadyRealized, calculateHoldings } from './utils/portfolioCalculations';
-import { fetchStockPricesWithPrev } from './services/stockService';
+import { fetchStockPricesWithPrev, loadInitialStockData } from './services/stockService';
 import { getUSSelectionHolidays } from './utils/marketUtils';
 import { requestForToken, getNotificationPermission } from './services/firebase';
 import { initializeTossApp, isTossApp } from './services/tossAppBridge';
@@ -41,6 +41,8 @@ const App: React.FC = () => {
     subscription_tier: string; 
     max_portfolios: number; 
     max_alarms: number;
+    subscription_status?: string | null;
+    subscription_expires_at?: string | null;
   } | null>(null);
   const [authModal, setAuthModal] = useState<'login' | 'signup' | 'profile' | 'reset-password' | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -110,6 +112,29 @@ const App: React.FC = () => {
     });
   }, []);
 
+  // IndexedDB 초기 데이터 로딩 (앱 시작 시 한 번만 실행)
+  useEffect(() => {
+    let isMounted = true;
+    
+    const loadData = async () => {
+      try {
+        console.log('[App] IndexedDB 초기 데이터 로딩 시작');
+        await loadInitialStockData();
+        if (isMounted) {
+          console.log('[App] IndexedDB 초기 데이터 로딩 완료');
+        }
+      } catch (error) {
+        console.error('[App] IndexedDB 초기 데이터 로딩 실패:', error);
+      }
+    };
+    
+    loadData();
+    
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
     
@@ -143,10 +168,11 @@ const App: React.FC = () => {
         });
         
         // user_profiles 조회는 백그라운드에서 (블로킹 없이)
+        // subscription_status, subscription_expires_at도 함께 조회 (광고 표시 여부 판단용)
         Promise.resolve(
           supabase
             .from('user_profiles')
-            .select('subscription_tier, max_portfolios, max_alarms')
+            .select('subscription_tier, max_portfolios, max_alarms, subscription_status, subscription_expires_at')
             .eq('id', currentUser.id)
             .single()
         )
@@ -157,6 +183,8 @@ const App: React.FC = () => {
                 subscription_tier: profileData.subscription_tier || 'free',
                 max_portfolios: profileData.max_portfolios ?? 3,
                 max_alarms: profileData.max_alarms ?? 2,
+                subscription_status: profileData.subscription_status ?? null,
+                subscription_expires_at: profileData.subscription_expires_at ?? null,
               });
             }
           })

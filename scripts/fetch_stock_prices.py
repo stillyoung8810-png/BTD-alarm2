@@ -27,7 +27,7 @@ except ImportError:
 
 TICKERS: List[str] = [
     "SPY", "SSO", "UPRO", "QQQ", "QLD", "TQQQ",
-    "SOXX", "USD", "SOXL", "STRC", "BILL", "ICSH", "SGOV",
+    "SOXX", "USD", "SOXL", "STRC", "BIL", "ICSH", "SGOV",
 ]
 
 # 배치 크기 (2~3개씩 랜덤하게 묶어서 처리)

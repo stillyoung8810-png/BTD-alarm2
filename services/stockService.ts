@@ -211,25 +211,80 @@ export const calculateMA = (prices: number[], period: number): number => {
 };
 
 /**
- * RSI 계산
+ * RSI 계산 (Wilder's Smoothing 방식)
+ * 금융 사이트 수준의 정확도를 위한 표준 RSI 계산 방법
+ * 
+ * Wilder's Smoothing 알고리즘:
+ * 1. 첫 번째 평균은 period 기간의 단순 평균
+ * 2. 이후는 Wilder's Smoothing 공식 사용:
+ *    - Average Gain = (Previous Avg Gain × (period - 1) + Current Gain) / period
+ *    - Average Loss = (Previous Avg Loss × (period - 1) + Current Loss) / period
+ * 3. RS = Average Gain / Average Loss
+ * 4. RSI = 100 - (100 / (1 + RS))
+ * 
+ * @param prices 가격 배열 (가장 오래된 것부터 순서대로, 날짜 오름차순)
+ * @param period RSI 기간 (기본값: 14일)
+ * @returns RSI 값 (0-100)
  */
 export const calculateRSI = (prices: number[], period: number = 14): number => {
-  if (prices.length < period + 1) return 50;
-
-  const changes: number[] = [];
-  for (let i = 1; i < prices.length; i++) {
-    changes.push(prices[i] - prices[i - 1]);
+  // 최소 period + 1개의 데이터가 필요 (변화량 계산을 위해)
+  if (prices.length < period + 1) {
+    return 50; // 데이터 부족 시 중립값 반환
   }
 
-  const gains = changes.filter(c => c > 0);
-  const losses = changes.filter(c => c < 0).map(c => Math.abs(c));
+  // 가격 변화량 계산 (가장 오래된 것부터 순서대로)
+  const changes: number[] = [];
+  for (let i = 1; i < prices.length; i++) {
+    const change = prices[i] - prices[i - 1];
+    changes.push(change);
+  }
 
-  const avgGain = gains.length > 0 ? gains.reduce((sum, g) => sum + g, 0) / period : 0;
-  const avgLoss = losses.length > 0 ? losses.reduce((sum, l) => sum + l, 0) / period : 0;
+  // 첫 번째 평균 계산 (period 기간의 단순 평균)
+  let avgGain = 0;
+  let avgLoss = 0;
+  
+  // 첫 period 개의 변화량으로 초기 평균 계산
+  for (let i = 0; i < period; i++) {
+    if (changes[i] > 0) {
+      avgGain += changes[i];
+    } else {
+      avgLoss += Math.abs(changes[i]);
+    }
+  }
+  
+  avgGain = avgGain / period;
+  avgLoss = avgLoss / period;
 
-  if (avgLoss === 0) return 100;
+  // Wilder's Smoothing으로 나머지 데이터 처리
+  // period + 1번째부터 마지막까지 순차적으로 계산
+  for (let i = period; i < changes.length; i++) {
+    const currentChange = changes[i];
+    let currentGain = 0;
+    let currentLoss = 0;
+
+    if (currentChange > 0) {
+      currentGain = currentChange;
+    } else {
+      currentLoss = Math.abs(currentChange);
+    }
+
+    // Wilder's Smoothing 공식
+    // Average = (Previous Average × (period - 1) + Current Value) / period
+    avgGain = (avgGain * (period - 1) + currentGain) / period;
+    avgLoss = (avgLoss * (period - 1) + currentLoss) / period;
+  }
+
+  // RS 및 RSI 계산
+  if (avgLoss === 0) {
+    // 손실이 없으면 RSI = 100 (과매수 상태)
+    return 100;
+  }
+
   const rs = avgGain / avgLoss;
-  return 100 - (100 / (1 + rs));
+  const rsi = 100 - (100 / (1 + rs));
+
+  // RSI 값 범위 제한 (0-100)
+  return Math.max(0, Math.min(100, rsi));
 };
 
 /**

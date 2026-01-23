@@ -26,7 +26,10 @@ import {
   History as HistoryIcon, 
   Plus, 
   UserCircle,
-  Languages
+  Languages,
+  Sparkles,
+  Star,
+  Zap
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -58,6 +61,33 @@ const App: React.FC = () => {
   const [totalValuationPrev, setTotalValuationPrev] = useState<number>(0);
   const [totalValuationChange, setTotalValuationChange] = useState<number>(0);
   const [totalValuationChangePct, setTotalValuationChangePct] = useState<number>(0);
+
+  // 현재 유저의 구독 티어 (default: free)
+  const currentTier = (userProfile?.subscription_tier || 'free').toLowerCase();
+
+  const tierLabel =
+    currentTier === 'premium'
+      ? 'PREMIUM'
+      : currentTier === 'pro'
+      ? 'PRO'
+      : 'FREE';
+
+  const tierClassName =
+    currentTier === 'premium'
+      ? 'shimmer-text-premium'
+      : currentTier === 'pro'
+      ? 'shimmer-text-pro'
+      : 'text-free-matte';
+
+  const TierIcon =
+    currentTier === 'premium' ? Sparkles : currentTier === 'pro' ? Star : Zap;
+
+  const tierIconClassName =
+    currentTier === 'premium'
+      ? 'premium-icon-breath'
+      : currentTier === 'pro'
+      ? 'pro-icon-twinkle'
+      : 'free-icon-zap';
 
   // 주가 캐싱 관련 상수
   const STOCK_PRICE_CACHE_KEY = 'STOCK_PRICE_CACHE_V1';
@@ -1210,8 +1240,16 @@ const App: React.FC = () => {
                </div>
             </div>
             <div className="hidden sm:block">
-              <h1 className="text-lg font-black tracking-tight dark:text-white uppercase leading-none mb-1">BUY THE DIP</h1>
-              <span className="text-[9px] font-black text-blue-500 tracking-[0.3em] uppercase block opacity-80">Premium Pro</span>
+              <h1 className="text-lg font-black tracking-tight dark:text-white uppercase leading-none mb-1">
+                BUY THE DIP
+              </h1>
+              <span className={`${tierClassName} mt-0.5`}>
+                <TierIcon
+                  size={11}
+                  className={tierIconClassName}
+                />
+                {tierLabel}
+              </span>
             </div>
           </div>
           

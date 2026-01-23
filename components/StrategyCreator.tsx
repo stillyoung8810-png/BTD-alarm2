@@ -268,7 +268,9 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
 
         {rsiEnabled && (
           <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-white/5 animate-in fade-in slide-in-from-top-2">
-            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? 'RSI 기준 값 (0-100):' : 'RSI Base Value (0-100):'}</label>
+            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">
+              {lang === 'ko' ? 'RSI 기준 값 (0-100):' : 'RSI Base Value (0-100):'}
+            </label>
             <input 
               type="number" 
               value={ma1Rsi}
@@ -278,7 +280,14 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
               max="100"
             />
             <p className="text-[10px] text-slate-500 font-medium">
-              {lang === 'ko' ? 'RSI가 이 값 이하일 때만 매수합니다.' : 'Buy only when RSI is below this value.'}
+              {lang === 'ko'
+                ? 'RSI가 이 값 이하일 때만 매수합니다.'
+                : 'Buy only when RSI is below this value.'}
+            </p>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+              {lang === 'ko'
+                ? '채권형 ETF는 가격 변동폭이 극히 작아 RSI 지표의 신뢰도가 낮습니다.'
+                : 'For bond ETFs, very small price movements can make RSI less reliable.'}
             </p>
           </div>
         )}
@@ -396,7 +405,9 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
 
         {rsiEnabled && (
           <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-white/5 animate-in fade-in slide-in-from-top-2">
-            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? 'RSI 기준 값 (0-100):' : 'RSI Base Value (0-100):'}</label>
+            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">
+              {lang === 'ko' ? 'RSI 기준 값 (0-100):' : 'RSI Base Value (0-100):'}
+            </label>
             <input 
               type="number" 
               value={ma2Rsi}
@@ -406,7 +417,14 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
               max="100"
             />
             <p className="text-[10px] text-slate-500 font-medium">
-              {lang === 'ko' ? 'RSI가 이 값 이하일 때만 매수합니다.' : 'Buy only when RSI is below this value.'}
+              {lang === 'ko'
+                ? 'RSI가 이 값 이하일 때만 매수합니다.'
+                : 'Buy only when RSI is below this value.'}
+            </p>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+              {lang === 'ko'
+                ? '채권형 ETF는 가격 변동폭이 극히 작아 RSI 지표의 신뢰도가 낮습니다.'
+                : 'For bond ETFs, very small price movements can make RSI less reliable.'}
             </p>
           </div>
         )}
@@ -491,7 +509,9 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
 
         {rsiEnabled && (
           <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-white/5 animate-in fade-in slide-in-from-top-2">
-            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? 'RSI 기준 값 (0-100):' : 'RSI Base Value (0-100):'}</label>
+            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">
+              {lang === 'ko' ? 'RSI 기준 값 (0-100):' : 'RSI Base Value (0-100):'}
+            </label>
             <input 
               type="number" 
               value={ma3Rsi}
@@ -501,7 +521,14 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
               max="100"
             />
             <p className="text-[10px] text-slate-500 font-medium">
-              {lang === 'ko' ? 'RSI가 이 값 이하일 때만 매수합니다.' : 'Buy only when RSI is below this value.'}
+              {lang === 'ko'
+                ? 'RSI가 이 값 이하일 때만 매수합니다.'
+                : 'Buy only when RSI is below this value.'}
+            </p>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+              {lang === 'ko'
+                ? '채권형 ETF는 가격 변동폭이 극히 작아 RSI 지표의 신뢰도가 낮습니다.'
+                : 'For bond ETFs, very small price movements can make RSI less reliable.'}
             </p>
           </div>
         )}

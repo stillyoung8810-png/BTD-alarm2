@@ -82,6 +82,182 @@
             transform: translateX(-50%);
             z-index: 100;
         }
+
+        /* ============================
+         * Tier Badge Styles
+         * ============================ */
+
+        /* PREMIUM: 24K Gold, embossed, shimmer */
+        .shimmer-text-premium {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.3rem;
+          text-transform: uppercase;
+          font-weight: 900;
+          letter-spacing: 0.5em; /* Wide & Luxurious */
+          font-size: 0.55rem;
+          padding-left: 0.25rem;
+          background-image:
+            linear-gradient(
+              120deg,
+              #BF953F,
+              #FCF6BA,
+              #B38728,
+              #FBF5B7,
+              #AA771C
+            );
+          background-size: 200% 200%;
+          -webkit-background-clip: text;
+          background-clip: text;
+          color: transparent;
+          /* Embossed effect on glass */
+          text-shadow:
+            0.5px 0.5px 0 rgba(255, 255, 255, 0.6),
+            -1px -1px 1.5px rgba(0, 0, 0, 0.5);
+          filter:
+            drop-shadow(0 -0.5px 0 rgba(255, 255, 255, 0.7))
+            drop-shadow(0 2px 2px rgba(0, 0, 0, 0.4));
+          animation: premium-shimmer 15s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+          -webkit-font-smoothing: antialiased;
+        }
+
+        @keyframes premium-shimmer {
+          0% {
+            background-position: -200% 50%;
+          }
+          50% {
+            background-position: 200% 50%;
+          }
+          100% {
+            background-position: 200% 50%;
+          }
+        }
+
+        .premium-icon-breath {
+          transform-origin: center;
+          animation: premium-breath 2.4s ease-in-out infinite;
+        }
+
+        @keyframes premium-breath {
+          0% {
+            transform: scale(1);
+            opacity: 0.7;
+          }
+          50% {
+            transform: scale(1.2);
+            opacity: 1;
+          }
+          100% {
+            transform: scale(1);
+            opacity: 0.8;
+          }
+        }
+
+        /* PRO: Platinum Silver, faster shimmer, star twinkle */
+        .shimmer-text-pro {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.25rem;
+          text-transform: uppercase;
+          font-weight: 900;
+          letter-spacing: 0.3em; /* Slightly tighter than premium */
+          font-size: 0.55rem;
+          padding-left: 0.15rem;
+          background-image:
+            linear-gradient(
+              120deg,
+              #757575,
+              #E0E0E0,
+              #BDBDBD,
+              #EEEEEE,
+              #757575
+            );
+          background-size: 220% 220%;
+          -webkit-background-clip: text;
+          background-clip: text;
+          color: transparent;
+          text-shadow:
+            0.4px 0.4px 0 rgba(255, 255, 255, 0.5),
+            -0.8px -0.8px 1px rgba(0, 0, 0, 0.5);
+          animation: pro-shimmer 10s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+          -webkit-font-smoothing: antialiased;
+        }
+
+        @keyframes pro-shimmer {
+          0% {
+            background-position: -220% 50%;
+          }
+          50% {
+            background-position: 220% 50%;
+          }
+          100% {
+            background-position: 220% 50%;
+          }
+        }
+
+        .pro-icon-twinkle {
+          animation: pro-twinkle 1.4s ease-in-out infinite;
+        }
+
+        @keyframes pro-twinkle {
+          0%,
+          100% {
+            opacity: 0.5;
+            transform: scale(1);
+          }
+          40% {
+            opacity: 1;
+            transform: scale(1.08);
+          }
+          70% {
+            opacity: 0.7;
+            transform: scale(0.98);
+          }
+        }
+
+        /* FREE: Matte Tech Slate, no shimmer */
+        .text-free-matte {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.2rem;
+          text-transform: uppercase;
+          font-weight: 800;
+          letter-spacing: 0.1em;
+          font-size: 0.55rem;
+          padding-left: 0.1rem;
+          background-image: linear-gradient(120deg, #475569, #64748b, #94a3b8);
+          -webkit-background-clip: text;
+          background-clip: text;
+          color: transparent;
+          opacity: 0.8; /* 약간 잠겨있는 느낌 */
+          text-shadow: none;
+          filter: none;
+          animation: none;
+        }
+
+        .text-free-matte *,
+        .text-free-matte svg {
+          text-shadow: none !important;
+          filter: none !important;
+        }
+
+        .free-icon-zap {
+          /* 거의 정적, 아주 약한 펄스 (옵션) */
+          transform-origin: center;
+          animation: free-zap-pulse 4s ease-in-out infinite;
+        }
+
+        @keyframes free-zap-pulse {
+          0%,
+          100% {
+            transform: scale(1);
+            opacity: 0.9;
+          }
+          50% {
+            transform: scale(1.02);
+            opacity: 1;
+          }
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900 transition-colors duration-500 dark:bg-[#06090F]">

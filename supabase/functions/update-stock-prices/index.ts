@@ -5,7 +5,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // AVAILABLE_STOCKS와 동일한 13개 종목
 const TICKERS = [
   "SPY", "SSO", "UPRO", "QQQ", "QLD", "TQQQ",
-  "SOXX", "USD", "SOXL", "STRC", "BILL", "ICSH", "SGOV",
+  "SOXX", "USD", "SOXL", "STRC", "BIL", "ICSH", "SGOV",
 ];
 
 // Yahoo Finance quote API

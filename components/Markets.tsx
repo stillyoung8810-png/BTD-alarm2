@@ -117,7 +117,7 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
   const t = I18N[lang];
 
   // 1배수 종목 정의
-  const oneXStocks = ['SPY', 'QQQ', 'SOXX', 'USD', 'BILL', 'ICSH', 'SGOV'];
+  const oneXStocks = ['SPY', 'QQQ', 'SOXX', 'USD', 'BIL', 'ICSH', 'SGOV'];
 
   // 마켓 상태 계산
   const marketStatus = useMemo(() => getMarketStatus(lang), [lang]);
@@ -426,66 +426,113 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
               </div>
             ) : (
               displayedStocks.map((ticker) => {
-              const isSelected = selectedStock === ticker;
-              const data = stockData[ticker];
-              const rsiValue = data?.rsi || 50;
-              const price = data?.price || 0;
-              const changePct = data?.changePercent || 0;
-              const isPositive = changePct >= 0;
-              const rsiColor = rsiValue > 70 ? 'text-rose-500' : rsiValue < 30 ? 'text-emerald-500' : 'text-blue-400';
-              const rsiBg = rsiValue > 70 ? 'bg-rose-500' : rsiValue < 30 ? 'bg-emerald-500' : 'bg-blue-500';
-              const gradientInfo = CUSTOM_GRADIENT_LOGOS[ticker] || { gradient: 'linear-gradient(135deg, #2563eb, #1e40af)', label: 'STOCK' };
+                const isSelected = selectedStock === ticker;
+                const data = stockData[ticker];
+                const rsiValue = data?.rsi || 50;
+                const price = data?.price || 0;
+                const changePct = data?.changePercent || 0;
+                const isPositive = changePct >= 0;
+                const isBondEtf = ['STRC', 'SGOV', 'BIL', 'ICSH'].includes(ticker);
+                const baseRsiColor =
+                  rsiValue > 70 ? 'text-rose-500' : rsiValue < 30 ? 'text-emerald-500' : 'text-blue-400';
+                const rsiColor = isBondEtf ? 'text-slate-400' : baseRsiColor;
+                const baseRsiBg =
+                  rsiValue > 70 ? 'bg-rose-500' : rsiValue < 30 ? 'bg-emerald-500' : 'bg-blue-500';
+                const rsiBg = isBondEtf ? 'bg-slate-500/50' : baseRsiBg;
+                const gradientInfo =
+                  CUSTOM_GRADIENT_LOGOS[ticker] || { gradient: 'linear-gradient(135deg, #2563eb, #1e40af)', label: 'STOCK' };
 
-              return (
-                <button
-                  key={ticker}
-                  onClick={() => setSelectedStock(ticker)}
-                  className={`flex-shrink-0 w-48 bg-white dark:bg-[#080B15] p-6 rounded-[2rem] border transition-all duration-300 text-left group flex flex-col gap-5 snap-center cursor-grab active:cursor-grabbing ${
-                    isSelected 
-                      ? 'border-blue-500 ring-4 ring-blue-500/15 shadow-xl -translate-y-2' 
-                      : 'border-slate-200 dark:border-white/5 shadow-md hover:border-slate-300 dark:hover:border-white/10'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div 
-                      className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center text-white shadow-lg overflow-hidden relative transition-all ${isSelected ? 'scale-110' : 'opacity-80'}`}
-                      style={{ background: gradientInfo.gradient }}
-                    >
-                      <span className="text-[10px] font-black z-10 leading-none">{ticker}</span>
-                      <span className="text-[5px] font-bold opacity-80 z-10 uppercase tracking-tighter mt-0.5">{gradientInfo.label.split(' ')[0]}</span>
-                      <div className="absolute inset-0 bg-black/5"></div>
-                    </div>
-                    <span className={`font-black text-sm transition-colors ${isSelected ? 'text-blue-500' : 'dark:text-white'}`}>
-                      {ticker}
-                    </span>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div>
-                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Price</span>
-                      <p className="text-lg font-black dark:text-white tracking-tighter">${price.toFixed(2)}</p>
-                      <p className={`text-[10px] font-black mt-1 flex items-center gap-1 uppercase ${isPositive ? 'text-emerald-500' : 'text-rose-500'}`}>
-                        {isPositive ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                        {isPositive ? '+' : ''}{changePct.toFixed(2)}%
-                      </p>
-                    </div>
-
-                    <div className="pt-3 border-t border-slate-100 dark:border-white/5">
-                      <div className="flex justify-between items-center mb-1.5">
-                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">RSI (14)</span>
-                        <span className={`text-[10px] font-black ${rsiColor}`}>{Math.round(rsiValue)}</span>
+                return (
+                  <button
+                    key={ticker}
+                    onClick={() => setSelectedStock(ticker)}
+                    className={`flex-shrink-0 w-48 bg-white dark:bg-[#080B15] p-6 rounded-[2rem] border transition-all duration-300 text-left group flex flex-col gap-5 snap-center cursor-grab active:cursor-grabbing ${
+                      isSelected
+                        ? 'border-blue-500 ring-4 ring-blue-500/15 shadow-xl -translate-y-2'
+                        : 'border-slate-200 dark:border-white/5 shadow-md hover:border-slate-300 dark:hover:border-white/10'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center text-white shadow-lg overflow-hidden relative transition-all ${
+                          isSelected ? 'scale-110' : 'opacity-80'
+                        }`}
+                        style={{ background: gradientInfo.gradient }}
+                      >
+                        <span className="text-[10px] font-black z-10 leading-none">{ticker}</span>
+                        <span className="text-[5px] font-bold opacity-80 z-10 uppercase tracking-tighter mt-0.5">
+                          {gradientInfo.label.split(' ')[0]}
+                        </span>
+                        <div className="absolute inset-0 bg-black/5"></div>
                       </div>
-                      <div className="w-full h-1 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden">
-                        <div 
-                          className={`h-full rounded-full transition-all duration-1000 ${rsiBg}`} 
-                          style={{ width: `${Math.min(Math.max(rsiValue, 0), 100)}%` }}
-                        ></div>
+                      <span
+                        className={`font-black text-sm transition-colors ${
+                          isSelected ? 'text-blue-500' : 'dark:text-white'
+                        }`}
+                      >
+                        {ticker}
+                      </span>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div>
+                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">
+                          Price
+                        </span>
+                        <p className="text-lg font-black dark:text-white tracking-tighter">
+                          ${price.toFixed(2)}
+                        </p>
+                        <p
+                          className={`text-[10px] font-black mt-1 flex items-center gap-1 uppercase ${
+                            isPositive ? 'text-emerald-500' : 'text-rose-500'
+                          }`}
+                        >
+                          {isPositive ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                          {isPositive ? '+' : ''}
+                          {changePct.toFixed(2)}%
+                        </p>
+                      </div>
+
+                      <div className="pt-3 border-t border-slate-100 dark:border-white/5">
+                        <div className="flex justify-between items-center mb-1.5">
+                          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                            <span>RSI (14)</span>
+                            {isBondEtf && (
+                              <span
+                                className="inline-flex items-center justify-center rounded-full bg-amber-500/10 border border-amber-400/40 px-1.5 py-0.5 text-[8px] font-bold text-amber-400"
+                                title={
+                                  lang === 'ko'
+                                    ? '해당 종목은 초단기/채권형 ETF로, 가격 변동폭이 작아 RSI 지표의 신뢰도가 낮을 수 있습니다.'
+                                    : 'This is a short-duration/bond ETF; very small price moves can make RSI less reliable.'
+                                }
+                              >
+                                ⚠︎ {lang === 'ko' ? '주의' : 'Info'}
+                              </span>
+                            )}
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <span className={`text-[10px] font-black ${rsiColor}`}>
+                              {Math.round(rsiValue)}
+                            </span>
+                            {isBondEtf && (
+                              <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">
+                                {lang === 'ko' ? '참고용' : 'Info Only'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="w-full h-1 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-1000 ${rsiBg}`}
+                            style={{ width: `${Math.min(Math.max(rsiValue, 0), 100)}%` }}
+                          ></div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </button>
-              );
-            }))}
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
       </section>

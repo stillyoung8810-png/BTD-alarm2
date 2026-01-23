@@ -1,12 +1,12 @@
 
 export const AVAILABLE_STOCKS = [
-  'SPY', 'SSO', 'UPRO', 'QQQ', 'QLD', 'TQQQ', 'SOXX', 'USD', 'SOXL', 'STRC', 'BILL', 'ICSH', 'SGOV'
+  'SPY', 'SSO', 'UPRO', 'QQQ', 'QLD', 'TQQQ', 'SOXX', 'USD', 'SOXL', 'STRC', 'BIL', 'ICSH', 'SGOV'
 ];
 
 export const STOCK_COLORS: Record<string, string> = {
   'SPY': '#4285F4', 'SSO': '#EA4335', 'UPRO': '#FBBC04', 'QQQ': '#34A853',
   'QLD': '#FF6D01', 'TQQQ': '#9C27B0', 'SOXX': '#00BCD4', 'USD': '#607D8B',
-  'SOXL': '#E91E63', 'STRC': '#795548', 'BILL': '#3F51B5', 'ICSH': '#009688', 'SGOV': '#FF9800'
+  'SOXL': '#E91E63', 'STRC': '#795548', 'BIL': '#3F51B5', 'ICSH': '#009688', 'SGOV': '#FF9800'
 };
 
 export const CUSTOM_GRADIENT_LOGOS: Record<string, { gradient: string; label: string }> = {
@@ -22,11 +22,11 @@ export const CUSTOM_GRADIENT_LOGOS: Record<string, { gradient: string; label: st
     'STRC': { gradient: 'linear-gradient(180deg, #FF6B35 0%, #FFB347 100%)', label: 'STRATEGIC INCOME' },
     'ICSH': { gradient: 'linear-gradient(180deg, #0057B7 0%, #FFD700 100%)', label: 'SHORT TERM CORP' },
     'SGOV': { gradient: 'linear-gradient(180deg, #2E7D32 0%, #9CCC65 100%)', label: 'SHORT-TERM GOVT' },
-    'BILL': { gradient: 'linear-gradient(180deg, #008B8B 0%, #D4AF37 100%)', label: 'SHORT-TERM TREAS' }
+    'BIL': { gradient: 'linear-gradient(180deg, #008B8B 0%, #D4AF37 100%)', label: 'SHORT-TERM TREAS' }
 };
 
 export const MOCK_PRICES: Record<string, number> = {
-  SGOV: 100.5, ICSH: 50.2, BILL: 95.8, STRC: 25.3, QQQ: 380.5,
+  SGOV: 100.5, ICSH: 50.2, BIL: 95.8, STRC: 25.3, QQQ: 380.5,
   QLD: 45.2, TQQQ: 35.8, SOXX: 520.3, USD: 1.0, SOXL: 28.5,
   SPY: 450.2, SSO: 65.3, UPRO: 42.8
 };

@@ -49,7 +49,7 @@ const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails, onDe
             <button
               onClick={() => {
                 const msg = lang === 'ko'
-                  ? '모든 종료 내역을 삭제하시겠습니까? 이 작업은 포트폴리오 자체에는 영향을 주지 않습니다.'
+                  ? '삭제되면 되돌릴 수 없습니다. 삭제하시겠습니까?'
                   : 'Clear all history records? This will not delete the original portfolios.';
                 if (window.confirm(msg)) {
                   onClearHistory();
@@ -131,8 +131,8 @@ const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails, onDe
                       <button
                         onClick={() => {
                           const msg = lang === 'ko'
-                            ? '이 종료 내역을 삭제하시겠습니까? (포트폴리오 자체는 삭제되지 않습니다)'
-                            : 'Delete this history record? The original portfolio will not be deleted.';
+                            ? '삭제되면 되돌릴 수 없습니다. 삭제하시겠습니까?'
+                            : 'Delete this history record? (This will also delete it from Supabase and cannot be undone.)';
                           if (window.confirm(msg)) {
                             onDeleteHistory(p.id);
                           }

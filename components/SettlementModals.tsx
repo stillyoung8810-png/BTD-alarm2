@@ -154,12 +154,14 @@ const TerminationInput: React.FC<TerminationInputProps> = ({ lang, portfolio, on
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest block mb-1">
-                        {lang === 'ko' ? '수수료' : 'Fee'}
-                      </label>
-                      <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mb-1">
-                        {lang === 'ko' ? `수수료율 ${feeRate}% 적용` : `${feeRate}% fee applied`}
-                      </p>
+                      <div className="flex items-end justify-between gap-2 mb-1">
+                        <label className="text-[10px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">
+                          {lang === 'ko' ? '수수료' : 'Fee'}
+                        </label>
+                        <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest whitespace-nowrap">
+                          {lang === 'ko' ? `수수료율 ${feeRate}% 적용` : `${feeRate}% fee applied`}
+                        </span>
+                      </div>
                       <div className="relative">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xs">$</span>
                         <input 

@@ -15,7 +15,7 @@ import AuthModals from './components/AuthModals';
 import Landing from './components/Landing';
 import { supabase, clearAuthStorage } from './services/supabase';
 import { calculateTotalInvested, calculateAlreadyRealized, calculateHoldings } from './utils/portfolioCalculations';
-import { fetchStockPricesWithPrev, loadInitialStockData } from './services/stockService';
+import { fetchStockPricesWithPrev, loadInitialStockData, loadPaidStockData } from './services/stockService';
 import { getUSSelectionHolidays } from './utils/marketUtils';
 import { requestForToken, getNotificationPermission } from './services/firebase';
 import { initializeTossApp, isTossApp } from './services/tossAppBridge';
@@ -64,6 +64,20 @@ const App: React.FC = () => {
 
   // 현재 유저의 구독 티어 (default: free)
   const currentTier = (userProfile?.subscription_tier || 'free').toLowerCase();
+
+  // PRO/PREMIUM만 유료 종목 접근 허용 (만료/비활성 상태면 차단)
+  const canAccessPaidStocks = useMemo(() => {
+    const tierOk = currentTier === 'pro' || currentTier === 'premium';
+    if (!tierOk) return false;
+
+    const status = userProfile?.subscription_status;
+    const isActive = status === 'active' || status === 'trial' || status == null;
+
+    const expiresAt = userProfile?.subscription_expires_at;
+    const notExpired = !expiresAt || new Date(expiresAt) > new Date();
+
+    return isActive && notExpired;
+  }, [currentTier, userProfile?.subscription_status, userProfile?.subscription_expires_at]);
 
   const tierLabel =
     currentTier === 'premium'
@@ -120,6 +134,19 @@ const App: React.FC = () => {
   useEffect(() => {
     setIsInTossApp(isTossApp());
   }, []);
+
+  // 유료 로그인 시: 유료 종목만 추가로 IndexedDB에 저장 (중복 호출 방지)
+  const paidStocksLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!canAccessPaidStocks) return;
+    if (paidStocksLoadedRef.current) return;
+    paidStocksLoadedRef.current = true;
+
+    const run = async () => {
+      await loadPaidStockData();
+    };
+    run();
+  }, [canAccessPaidStocks]);
 
   // authModal의 최신 값을 ref에 동기화
   useEffect(() => {
@@ -1314,7 +1341,7 @@ const App: React.FC = () => {
               />
             )
           )}
-          {activeTab === 'markets' && <Markets lang={lang} portfolios={portfolios} />}
+          {activeTab === 'markets' && <Markets lang={lang} portfolios={portfolios} canAccessPaidStocks={canAccessPaidStocks} />}
           {activeTab === 'history' && (
             <History 
               lang={lang} 
@@ -1407,7 +1434,7 @@ const App: React.FC = () => {
           </nav>
         </div>
 
-        {isCreatorOpen && <StrategyCreator lang={lang} onClose={() => setIsCreatorOpen(false)} onSave={handleAddPortfolio} />}
+        {isCreatorOpen && <StrategyCreator lang={lang} onClose={() => setIsCreatorOpen(false)} onSave={handleAddPortfolio} canAccessPaidStocks={canAccessPaidStocks} />}
         {currentAlarmPortfolio && <AlarmModal lang={lang} portfolio={currentAlarmPortfolio} onClose={() => setAlarmTargetId(null)} onSave={(config) => { handleUpdatePortfolio({ ...currentAlarmPortfolio, alarmconfig: config }); setAlarmTargetId(null); }} />}
         {currentDetailsPortfolio && (
           <PortfolioDetailsModal 

@@ -2,10 +2,11 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// AVAILABLE_STOCKS와 동일한 13개 종목
+// 무료 13개 + PRO/PREMIUM 전용 13개 종목
 const TICKERS = [
   "SPY", "SSO", "UPRO", "QQQ", "QLD", "TQQQ",
   "SOXX", "USD", "SOXL", "STRC", "BIL", "ICSH", "SGOV",
+  "TSLA", "TSLL", "NVDA", "NVDL", "GOOGL", "GGLL", "PLTR", "PTIR", "COIN", "CONL", "MSTR", "MSTX", "BMNR",
 ];
 
 // Yahoo Finance quote API
@@ -32,7 +33,7 @@ serve(async (_req) => {
 
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Yahoo Finance는 여러 심볼을 한 번에 받을 수 있으므로 13개를 한 번에 요청
+    // Yahoo Finance는 여러 심볼을 한 번에 받을 수 있으므로 한 번에 요청
     const url = `${YF_ENDPOINT}${encodeURIComponent(TICKERS.join(","))}`;
     const yfRes = await fetch(url);
 

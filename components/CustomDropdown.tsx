@@ -4,11 +4,11 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Lock } from 'lucide-react';
 
 interface CustomDropdownProps {
   value: string;
-  options: Array<{ value: string; label: string }>;
+  options: Array<{ value: string; label: string; disabled?: boolean; badge?: string; tooltip?: string }>;
   onChange: (value: string) => void;
   placeholder?: string;
   header?: string;
@@ -82,31 +82,51 @@ const CustomDropdown: React.FC<CustomDropdownProps> = ({
           <div className="max-h-64 overflow-y-auto">
             {options.map((option) => {
               const isSelected = value === option.value;
+              const isDisabled = !!option.disabled;
               return (
                 <button
                   key={option.value}
                   type="button"
-                  onClick={() => handleSelect(option.value)}
+                  onClick={() => {
+                    if (isDisabled) return;
+                    handleSelect(option.value);
+                  }}
+                  title={option.tooltip}
+                  disabled={isDisabled}
                   className={`w-full px-4 py-3 text-left text-sm font-bold transition-colors flex items-center justify-between ${
                     isSelected
                       ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                      : isDisabled
+                      ? 'text-slate-400 dark:text-slate-600 bg-transparent cursor-not-allowed opacity-60'
                       : 'text-slate-900 dark:text-white hover:bg-slate-50 dark:hover:bg-white/5'
                   }`}
                 >
-                  <span>{option.label}</span>
-                  {isSelected && (
-                    <svg
-                      className="w-5 h-5 text-blue-600 dark:text-blue-400"
-                      fill="none"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path d="M5 13l4 4L19 7"></path>
-                    </svg>
-                  )}
+                  <span className="flex items-center gap-2">
+                    <span>{option.label}</span>
+                  </span>
+                  <span className="flex items-center gap-2">
+                    {isDisabled && (
+                      <Lock size={14} className="text-slate-400 dark:text-slate-600" />
+                    )}
+                    {option.badge && (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-slate-200/60 dark:bg-white/10 text-slate-600 dark:text-slate-400 border border-slate-300/40 dark:border-white/10">
+                        {option.badge}
+                      </span>
+                    )}
+                    {isSelected && (
+                      <svg
+                        className="w-5 h-5 text-blue-600 dark:text-blue-400"
+                        fill="none"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path d="M5 13l4 4L19 7"></path>
+                      </svg>
+                    )}
+                  </span>
                 </button>
               );
             })}

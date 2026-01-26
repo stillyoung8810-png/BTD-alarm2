@@ -1,8 +1,8 @@
 
 import React, { useState } from 'react';
 import { Portfolio, Strategy } from '../types';
-import { AVAILABLE_STOCKS, I18N } from '../constants';
-import { X, ChevronRight, ChevronLeft, Info, Sparkles, Target, Zap, Settings2, Calendar, Wallet, Percent, AlertTriangle, ChevronDown } from 'lucide-react';
+import { AVAILABLE_STOCKS, ALL_STOCKS, PAID_STOCKS, I18N } from '../constants';
+import { X, ChevronRight, ChevronLeft, Info, Sparkles, Target, Zap, Settings2, Calendar, Wallet, Percent, AlertTriangle, ChevronDown, Lock } from 'lucide-react';
 import { useTossApp } from '../contexts/TossAppContext';
 import CustomDropdown from './CustomDropdown';
 
@@ -21,9 +21,10 @@ interface StrategyCreatorProps {
   lang: 'ko' | 'en';
   onClose: () => void;
   onSave: (p: Omit<Portfolio, 'id'>) => void;
+  canAccessPaidStocks?: boolean;
 }
 
-const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave }) => {
+const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave, canAccessPaidStocks = false }) => {
   const { isInTossApp } = useTossApp();
   const [step, setStep] = useState(1);
   
@@ -57,6 +58,18 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
   const [feeRate, setFeeRate] = useState(0.25);
 
   const t = I18N[lang];
+
+  const isLockedTicker = (ticker: string) => PAID_STOCKS.includes(ticker) && !canAccessPaidStocks;
+  const lockedTooltip =
+    lang === 'ko' ? 'PRO/PREMIUM 전용 종목입니다.' : 'This ticker is PRO/PREMIUM only.';
+
+  const stockOptions = ALL_STOCKS.map((s) => ({
+    value: s,
+    label: s,
+    disabled: isLockedTicker(s),
+    badge: PAID_STOCKS.includes(s) ? 'PRO+' : undefined,
+    tooltip: PAID_STOCKS.includes(s) ? lockedTooltip : undefined,
+  }));
 
   // 이동평균선 입력값 검증 및 정규화 함수
   const normalizeMaPeriod = (value: string): number => {
@@ -131,26 +144,46 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
               </Menu.Trigger>
               <Menu.Dropdown>
                 <Menu.Header>{lang === 'ko' ? '종목 선택' : 'Select Stock'}</Menu.Header>
-                {AVAILABLE_STOCKS.map((stock) => (
-                  <Menu.DropdownCheckItem
-                    key={stock}
-                    checked={ma0Stock === stock}
-                    onCheckedChange={(checked) => {
-                      if (checked) {
-                        setMa0Stock(stock);
-                        setMa0MenuOpen(false);
-                      }
-                    }}
-                  >
-                    {stock}
-                  </Menu.DropdownCheckItem>
-                ))}
+                {ALL_STOCKS.map((stock) => {
+                  const locked = isLockedTicker(stock);
+                  if (locked) {
+                    return (
+                      <div
+                        key={stock}
+                        title={lockedTooltip}
+                        className="px-4 py-3 text-sm font-bold text-slate-400 dark:text-slate-600 flex items-center justify-between opacity-70 cursor-not-allowed"
+                      >
+                        <span className="flex items-center gap-2">
+                          <span>{stock}</span>
+                          <Lock size={14} className="text-slate-400 dark:text-slate-600" />
+                        </span>
+                        <span className="text-[9px] font-black uppercase tracking-widest bg-white/10 border border-white/10 px-2 py-0.5 rounded-full">
+                          PRO+
+                        </span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <Menu.DropdownCheckItem
+                      key={stock}
+                      checked={ma0Stock === stock}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setMa0Stock(stock);
+                          setMa0MenuOpen(false);
+                        }
+                      }}
+                    >
+                      {stock}
+                    </Menu.DropdownCheckItem>
+                  );
+                })}
               </Menu.Dropdown>
             </Menu>
           ) : (
             <CustomDropdown
               value={ma0Stock}
-              options={AVAILABLE_STOCKS.map(s => ({ value: s, label: s }))}
+              options={stockOptions}
               onChange={(value) => setMa0Stock(value)}
               placeholder={lang === 'ko' ? '선택하세요' : 'Select'}
               header={lang === 'ko' ? '종목 선택' : 'Select Stock'}
@@ -239,26 +272,46 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
                 </Menu.Trigger>
                 <Menu.Dropdown>
                   <Menu.Header>{lang === 'ko' ? '종목 선택' : 'Select Stock'}</Menu.Header>
-                  {AVAILABLE_STOCKS.map((stock) => (
-                    <Menu.DropdownCheckItem
-                      key={stock}
-                      checked={ma1Stock === stock}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          setMa1Stock(stock);
-                          setMa1MenuOpen(false);
-                        }
-                      }}
-                    >
-                      {stock}
-                    </Menu.DropdownCheckItem>
-                  ))}
+                  {ALL_STOCKS.map((stock) => {
+                    const locked = isLockedTicker(stock);
+                    if (locked) {
+                      return (
+                        <div
+                          key={stock}
+                          title={lockedTooltip}
+                          className="px-4 py-3 text-sm font-bold text-slate-400 dark:text-slate-600 flex items-center justify-between opacity-70 cursor-not-allowed"
+                        >
+                          <span className="flex items-center gap-2">
+                            <span>{stock}</span>
+                            <Lock size={14} className="text-slate-400 dark:text-slate-600" />
+                          </span>
+                          <span className="text-[9px] font-black uppercase tracking-widest bg-white/10 border border-white/10 px-2 py-0.5 rounded-full">
+                            PRO+
+                          </span>
+                        </div>
+                      );
+                    }
+                    return (
+                      <Menu.DropdownCheckItem
+                        key={stock}
+                        checked={ma1Stock === stock}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setMa1Stock(stock);
+                            setMa1MenuOpen(false);
+                          }
+                        }}
+                      >
+                        {stock}
+                      </Menu.DropdownCheckItem>
+                    );
+                  })}
                 </Menu.Dropdown>
               </Menu>
             ) : (
               <CustomDropdown
                 value={ma1Stock}
-                options={AVAILABLE_STOCKS.map(s => ({ value: s, label: s }))}
+                options={stockOptions}
                 onChange={(value) => setMa1Stock(value)}
                 header={lang === 'ko' ? '종목 선택' : 'Select Stock'}
               />
@@ -367,26 +420,46 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
                 </Menu.Trigger>
                 <Menu.Dropdown>
                   <Menu.Header>{lang === 'ko' ? '종목 선택' : 'Select Stock'}</Menu.Header>
-                  {AVAILABLE_STOCKS.map((stock) => (
-                    <Menu.DropdownCheckItem
-                      key={stock}
-                      checked={ma2Stock === stock}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          setMa2Stock(stock);
-                          setMa2MenuOpen(false);
-                        }
-                      }}
-                    >
-                      {stock}
-                    </Menu.DropdownCheckItem>
-                  ))}
+                  {ALL_STOCKS.map((stock) => {
+                    const locked = isLockedTicker(stock);
+                    if (locked) {
+                      return (
+                        <div
+                          key={stock}
+                          title={lockedTooltip}
+                          className="px-4 py-3 text-sm font-bold text-slate-400 dark:text-slate-600 flex items-center justify-between opacity-70 cursor-not-allowed"
+                        >
+                          <span className="flex items-center gap-2">
+                            <span>{stock}</span>
+                            <Lock size={14} className="text-slate-400 dark:text-slate-600" />
+                          </span>
+                          <span className="text-[9px] font-black uppercase tracking-widest bg-white/10 border border-white/10 px-2 py-0.5 rounded-full">
+                            PRO+
+                          </span>
+                        </div>
+                      );
+                    }
+                    return (
+                      <Menu.DropdownCheckItem
+                        key={stock}
+                        checked={ma2Stock === stock}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setMa2Stock(stock);
+                            setMa2MenuOpen(false);
+                          }
+                        }}
+                      >
+                        {stock}
+                      </Menu.DropdownCheckItem>
+                    );
+                  })}
                 </Menu.Dropdown>
               </Menu>
             ) : (
               <CustomDropdown
                 value={ma2Stock}
-                options={AVAILABLE_STOCKS.map(s => ({ value: s, label: s }))}
+                options={stockOptions}
                 onChange={(value) => setMa2Stock(value)}
                 header={lang === 'ko' ? '종목 선택' : 'Select Stock'}
               />
@@ -480,26 +553,46 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
                 </Menu.Trigger>
                 <Menu.Dropdown>
                   <Menu.Header>{lang === 'ko' ? '종목 선택' : 'Select Stock'}</Menu.Header>
-                  {AVAILABLE_STOCKS.map((stock) => (
-                    <Menu.DropdownCheckItem
-                      key={stock}
-                      checked={ma3Stock === stock}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          setMa3Stock(stock);
-                          setMa3MenuOpen(false);
-                        }
-                      }}
-                    >
-                      {stock}
-                    </Menu.DropdownCheckItem>
-                  ))}
+                  {ALL_STOCKS.map((stock) => {
+                    const locked = isLockedTicker(stock);
+                    if (locked) {
+                      return (
+                        <div
+                          key={stock}
+                          title={lockedTooltip}
+                          className="px-4 py-3 text-sm font-bold text-slate-400 dark:text-slate-600 flex items-center justify-between opacity-70 cursor-not-allowed"
+                        >
+                          <span className="flex items-center gap-2">
+                            <span>{stock}</span>
+                            <Lock size={14} className="text-slate-400 dark:text-slate-600" />
+                          </span>
+                          <span className="text-[9px] font-black uppercase tracking-widest bg-white/10 border border-white/10 px-2 py-0.5 rounded-full">
+                            PRO+
+                          </span>
+                        </div>
+                      );
+                    }
+                    return (
+                      <Menu.DropdownCheckItem
+                        key={stock}
+                        checked={ma3Stock === stock}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setMa3Stock(stock);
+                            setMa3MenuOpen(false);
+                          }
+                        }}
+                      >
+                        {stock}
+                      </Menu.DropdownCheckItem>
+                    );
+                  })}
                 </Menu.Dropdown>
               </Menu>
             ) : (
               <CustomDropdown
                 value={ma3Stock}
-                options={AVAILABLE_STOCKS.map(s => ({ value: s, label: s }))}
+                options={stockOptions}
                 onChange={(value) => setMa3Stock(value)}
                 header={lang === 'ko' ? '종목 선택' : 'Select Stock'}
               />

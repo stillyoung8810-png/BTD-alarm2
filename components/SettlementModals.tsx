@@ -3,7 +3,8 @@ import React, { useState, useMemo } from 'react';
 import { Portfolio } from '../types';
 import { X } from 'lucide-react';
 import { calculateHoldings, calculateTotalInvested, calculateAlreadyRealized } from '../utils/portfolioCalculations';
-import { CUSTOM_GRADIENT_LOGOS } from '../constants';
+import { CUSTOM_GRADIENT_LOGOS, PAID_STOCKS } from '../constants';
+import StockLogo from './StockLogo';
 
 export interface FinalSellInput {
   stock: string;
@@ -106,19 +107,20 @@ const TerminationInput: React.FC<TerminationInputProps> = ({ lang, portfolio, on
             </h3>
             {finalSells.map((fs, index) => {
               const holding = holdings.find(h => h.stock === fs.stock);
-              const gradientInfo = CUSTOM_GRADIENT_LOGOS[fs.stock] || { gradient: 'linear-gradient(135deg, #2563eb, #1e40af)', label: 'STOCK' };
               const sellAmount = fs.price * fs.quantity;
               const netAmount = sellAmount - fs.fee;
 
               return (
                 <div key={fs.stock} className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-white/5 space-y-3">
                   <div className="flex items-center gap-3 mb-3">
-                    <div 
-                      className="w-10 h-10 rounded-xl flex flex-col items-center justify-center text-white text-xs font-black"
-                      style={{ background: gradientInfo.gradient }}
-                    >
-                      {fs.stock}
-                    </div>
+                    <StockLogo
+                      ticker={fs.stock}
+                      size="md"
+                      shape="squircle"
+                      paidAccent={PAID_STOCKS.includes(fs.stock)}
+                      showFallbackText={false}
+                      className="w-10 h-10"
+                    />
                     <div>
                       <p className="font-bold text-slate-900 dark:text-white">{fs.stock}</p>
                       <p className="text-xs text-slate-500">{lang === 'ko' ? `보유 수량: ${holding?.quantity || 0}` : `Holding: ${holding?.quantity || 0}`}</p>

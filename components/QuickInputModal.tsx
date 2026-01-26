@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { Portfolio, Trade } from '../types';
-import { I18N, CUSTOM_GRADIENT_LOGOS } from '../constants';
+import { I18N, CUSTOM_GRADIENT_LOGOS, PAID_STOCKS } from '../constants';
 import { X, Zap, ChevronRight, AlertCircle } from 'lucide-react';
+import StockLogo from './StockLogo';
 
 interface QuickInputModalProps {
   lang: 'ko' | 'en';
@@ -88,6 +89,13 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
         className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center text-white relative overflow-hidden active:scale-95 transition-transform p-2 ${isSelected ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-slate-900 scale-110' : 'opacity-60 grayscale hover:grayscale-0'}`}
         style={{ background: info.gradient }}
       >
+        <StockLogo
+          ticker={ticker}
+          size="full"
+          shape="squircle2"
+          paidAccent={PAID_STOCKS.includes(ticker)}
+          className="absolute inset-0"
+        />
         <span className="text-[10px] font-black z-10">{ticker}</span>
         <span className="text-[5px] font-bold z-10 uppercase tracking-tighter opacity-80">{info.label.split(' ')[0]}</span>
       </button>

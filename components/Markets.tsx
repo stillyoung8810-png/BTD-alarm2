@@ -11,12 +11,13 @@ import {
   Line,
   ComposedChart
 } from 'recharts';
-import { AVAILABLE_STOCKS, I18N, CUSTOM_GRADIENT_LOGOS } from '../constants';
-import { TrendingUp, TrendingDown, Activity, BarChart2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { AVAILABLE_STOCKS, ALL_STOCKS, PAID_STOCKS, I18N } from '../constants';
+import { TrendingUp, TrendingDown, Activity, BarChart2, ChevronLeft, ChevronRight, Lock } from 'lucide-react';
 import { fetchStockPrices, fetchStockPriceHistory } from '../services/stockService';
 import { StockData, Portfolio } from '../types';
 import { getMarketStatus } from '../utils/marketUtils';
 import { calculateHoldings } from '../utils/portfolioCalculations';
+import StockLogo from './StockLogo';
 
 // Custom Tooltip 컴포넌트
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -104,9 +105,10 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 interface MarketsProps {
   lang: 'ko' | 'en';
   portfolios?: Portfolio[];
+  canAccessPaidStocks?: boolean;
 }
 
-const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
+const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidStocks = false }) => {
   const [selectedStock, setSelectedStock] = useState('QQQ');
   const [stockData, setStockData] = useState<Record<string, StockData>>({});
   const [chartData, setChartData] = useState<Array<{ name: string; price: number; ma20: number; ma60: number; date: string }>>([]);
@@ -141,7 +143,7 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
 
   // 필터링된 종목 리스트
   const displayedStocks = useMemo(() => {
-    let filtered = AVAILABLE_STOCKS;
+    let filtered = ALL_STOCKS;
     
     // 보유 종목만 보기 필터
     if (showHoldingsOnly) {
@@ -161,7 +163,8 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
     const loadStockData = async () => {
       setIsLoading(true);
       try {
-        const data = await fetchStockPrices(AVAILABLE_STOCKS);
+        const symbolsToFetch = canAccessPaidStocks ? ALL_STOCKS : AVAILABLE_STOCKS;
+        const data = await fetchStockPrices(symbolsToFetch);
         setStockData(data);
       } catch (error) {
         console.error('Error loading stock data:', error);
@@ -170,12 +173,22 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
       }
     };
     loadStockData();
-  }, []);
+  }, [canAccessPaidStocks]);
+
+  // 무료 티어에서 유료 종목이 선택된 상태가 되지 않도록 보정
+  useEffect(() => {
+    if (canAccessPaidStocks) return;
+    if (PAID_STOCKS.includes(selectedStock)) {
+      setSelectedStock('QQQ');
+      setChartData([]);
+    }
+  }, [canAccessPaidStocks, selectedStock]);
 
   // 선택된 종목의 차트 데이터 로드
   useEffect(() => {
     const loadChartData = async () => {
       if (!selectedStock) return;
+      if (!canAccessPaidStocks && PAID_STOCKS.includes(selectedStock)) return;
       try {
         const history = await fetchStockPriceHistory(selectedStock, 90);
         // Recharts 형식으로 변환 (날짜 정보 포함)
@@ -196,7 +209,7 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
       }
     };
     loadChartData();
-  }, [selectedStock, lang]);
+  }, [selectedStock, lang, canAccessPaidStocks]);
 
   // 차트 Y축 범위 계산 함수
   const calculateYAxisDomain = () => {
@@ -427,8 +440,13 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
             ) : (
               displayedStocks.map((ticker) => {
                 const isSelected = selectedStock === ticker;
+                const isPaidOnly = PAID_STOCKS.includes(ticker);
+                const isLocked = isPaidOnly && !canAccessPaidStocks;
+                const lockedTooltip =
+                  lang === 'ko' ? 'PRO/PREMIUM 전용 종목입니다.' : 'This ticker is PRO/PREMIUM only.';
                 const data = stockData[ticker];
                 const rsiValue = data?.rsi || 50;
+                const rsiBarValue = isLocked ? 0 : rsiValue;
                 const price = data?.price || 0;
                 const changePct = data?.changePercent || 0;
                 const isPositive = changePct >= 0;
@@ -438,40 +456,68 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
                 const rsiColor = isBondEtf ? 'text-slate-400' : baseRsiColor;
                 const baseRsiBg =
                   rsiValue > 70 ? 'bg-rose-500' : rsiValue < 30 ? 'bg-emerald-500' : 'bg-blue-500';
-                const rsiBg = isBondEtf ? 'bg-slate-500/50' : baseRsiBg;
-                const gradientInfo =
-                  CUSTOM_GRADIENT_LOGOS[ticker] || { gradient: 'linear-gradient(135deg, #2563eb, #1e40af)', label: 'STOCK' };
+                const rsiBg = isLocked ? 'bg-slate-500/30' : isBondEtf ? 'bg-slate-500/50' : baseRsiBg;
+                const paidAccent = isPaidOnly && !isLocked;
 
                 return (
                   <button
                     key={ticker}
-                    onClick={() => setSelectedStock(ticker)}
-                  className={`flex-shrink-0 w-48 bg-white light-card-depth dark:bg-[#080B15] p-6 rounded-[2rem] border transition-all duration-300 text-left group flex flex-col gap-5 snap-center cursor-grab active:cursor-grabbing ${
-                      isSelected
+                    onClick={() => {
+                      if (isLocked) return;
+                      setSelectedStock(ticker);
+                    }}
+                    disabled={isLocked}
+                    title={isLocked ? lockedTooltip : undefined}
+                    className={`flex-shrink-0 w-48 bg-white light-card-depth dark:bg-[#080B15] p-6 rounded-[2rem] border transition-all duration-300 text-left group flex flex-col gap-5 snap-center ${
+                      isLocked
+                        ? 'border-slate-200 dark:border-white/5 opacity-55 grayscale cursor-not-allowed'
+                        : 'cursor-grab active:cursor-grabbing'
+                    } ${
+                      isSelected && !isLocked
                         ? 'border-blue-500 ring-4 ring-blue-500/15 shadow-xl -translate-y-2'
                         : 'border-slate-200 dark:border-white/5 shadow-md hover:border-slate-300 dark:hover:border-white/10'
                     }`}
                   >
+                    {isLocked && (
+                      <div
+                        className="absolute top-4 right-4 inline-flex items-center gap-1 rounded-full bg-slate-200/60 dark:bg-white/10 border border-slate-300/40 dark:border-white/10 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400"
+                        title={lockedTooltip}
+                      >
+                        <Lock size={12} />
+                        <span>PRO+</span>
+                      </div>
+                    )}
                     <div className="flex items-center gap-3">
                       <div
-                        className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center text-white shadow-lg overflow-hidden relative transition-all ${
-                          isSelected ? 'scale-110' : 'opacity-80'
-                        }`}
-                        style={{ background: gradientInfo.gradient }}
+                        className={`transition-all ${isSelected ? 'scale-110' : 'opacity-80'}`}
                       >
-                        <span className="text-[10px] font-black z-10 leading-none">{ticker}</span>
-                        <span className="text-[5px] font-bold opacity-80 z-10 uppercase tracking-tighter mt-0.5">
-                          {gradientInfo.label.split(' ')[0]}
-                        </span>
-                        <div className="absolute inset-0 bg-black/5"></div>
+                        <StockLogo
+                          ticker={ticker}
+                          size="md"
+                          shape="squircle"
+                          paidAccent={paidAccent}
+                          dimmed={isLocked}
+                          className="w-10 h-10 shadow-lg"
+                        />
                       </div>
-                      <span
-                        className={`font-black text-sm transition-colors ${
-                          isSelected ? 'text-blue-500' : 'dark:text-white'
-                        }`}
-                      >
-                        {ticker}
-                      </span>
+                      <div className="flex flex-col">
+                        <span
+                          className={`font-black text-sm transition-colors ${
+                            isSelected && !isLocked ? 'text-blue-500' : 'text-slate-900 dark:text-white'
+                          }`}
+                        >
+                          {ticker}
+                        </span>
+                        {isLocked && (
+                          <span
+                            className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-600"
+                            title={lockedTooltip}
+                          >
+                            <Lock size={12} />
+                            PRO/PREMIUM 전용
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <div className="space-y-4">
@@ -479,18 +525,26 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
                         <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">
                           Price
                         </span>
-                        <p className="text-lg font-black dark:text-white tracking-tighter">
-                          ${price.toFixed(2)}
-                        </p>
-                        <p
-                          className={`text-[10px] font-black mt-1 flex items-center gap-1 uppercase ${
-                            isPositive ? 'text-emerald-500' : 'text-rose-500'
-                          }`}
-                        >
-                          {isPositive ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                          {isPositive ? '+' : ''}
-                          {changePct.toFixed(2)}%
-                        </p>
+                        {isLocked ? (
+                          <p className="text-lg font-black text-slate-400 dark:text-slate-600 tracking-tighter">
+                            —
+                          </p>
+                        ) : (
+                          <>
+                            <p className="text-lg font-black dark:text-white tracking-tighter">
+                              ${price.toFixed(2)}
+                            </p>
+                            <p
+                              className={`text-[10px] font-black mt-1 flex items-center gap-1 uppercase ${
+                                isPositive ? 'text-emerald-500' : 'text-rose-500'
+                              }`}
+                            >
+                              {isPositive ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                              {isPositive ? '+' : ''}
+                              {changePct.toFixed(2)}%
+                            </p>
+                          </>
+                        )}
                       </div>
 
                       <div className="pt-3 border-t border-slate-100 dark:border-white/5">
@@ -511,9 +565,13 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
                             )}
                           </span>
                           <div className="flex items-center gap-1">
-                            <span className={`text-[10px] font-black ${rsiColor}`}>
-                              {Math.round(rsiValue)}
-                            </span>
+                            {isLocked ? (
+                              <span className="text-[10px] font-black text-slate-400 dark:text-slate-600">—</span>
+                            ) : (
+                              <span className={`text-[10px] font-black ${rsiColor}`}>
+                                {Math.round(rsiValue)}
+                              </span>
+                            )}
                             {isBondEtf && (
                               <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">
                                 {lang === 'ko' ? '참고용' : 'Info Only'}
@@ -524,7 +582,7 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
                         <div className="w-full h-1 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden">
                           <div
                             className={`h-full rounded-full transition-all duration-1000 ${rsiBg}`}
-                            style={{ width: `${Math.min(Math.max(rsiValue, 0), 100)}%` }}
+                            style={{ width: `${Math.min(Math.max(rsiBarValue, 0), 100)}%` }}
                           ></div>
                         </div>
                       </div>

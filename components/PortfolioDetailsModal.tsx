@@ -2,8 +2,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Portfolio, Trade } from '../types';
 import { X, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
-import { CUSTOM_GRADIENT_LOGOS, I18N } from '../constants';
+import { PAID_STOCKS, CUSTOM_GRADIENT_LOGOS, I18N } from '../constants';
 import { fetchStockPrices } from '../services/stockService';
+import StockLogo from './StockLogo';
 
 interface PortfolioDetailsModalProps {
   lang: 'ko' | 'en';
@@ -175,12 +176,17 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
     return (
       <div 
         key={`${ticker}-${index}`}
-        className={`${sizeClasses} rounded-full flex flex-col items-center justify-center text-white shadow-lg relative overflow-hidden flex-shrink-0 border border-white/20`}
-        style={{ ...stackStyle, background: info.gradient }}
+        className={`relative ${sizeClasses} flex-shrink-0`}
+        style={{ ...stackStyle }}
       >
-        <span className={`${textClasses} font-black leading-none z-10`}>{ticker}</span>
-        <span className={`${labelClasses} font-bold opacity-80 mt-0.5 uppercase text-center px-0.5 z-10`}>{info.label.split(' ')[0]}</span>
-        <div className="absolute inset-0 bg-white/5"></div>
+        <StockLogo
+          ticker={ticker}
+          size={size === 'sm' ? 'sm' : 'md'}
+          shape="circle"
+          paidAccent={PAID_STOCKS.includes(ticker)}
+          showFallbackText
+          className={`${sizeClasses} shadow-lg border border-white/20`}
+        />
       </div>
     );
   };

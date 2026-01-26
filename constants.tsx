@@ -3,10 +3,26 @@ export const AVAILABLE_STOCKS = [
   'SPY', 'SSO', 'UPRO', 'QQQ', 'QLD', 'TQQQ', 'SOXX', 'USD', 'SOXL', 'STRC', 'BIL', 'ICSH', 'SGOV'
 ];
 
+// PRO/PREMIUM 전용 추가 종목
+export const PAID_STOCKS = [
+  'TSLA', 'TSLL', 'NVDA', 'NVDL', 'GOOGL', 'GGLL', 'PLTR', 'PTIR', 'COIN', 'CONL', 'MSTR', 'MSTX', 'BMNR'
+];
+
+// UI 리스트/필터링용 전체 종목
+export const ALL_STOCKS = [...AVAILABLE_STOCKS, ...PAID_STOCKS];
+
 export const STOCK_COLORS: Record<string, string> = {
   'SPY': '#4285F4', 'SSO': '#EA4335', 'UPRO': '#FBBC04', 'QQQ': '#34A853',
   'QLD': '#FF6D01', 'TQQQ': '#9C27B0', 'SOXX': '#00BCD4', 'USD': '#607D8B',
-  'SOXL': '#E91E63', 'STRC': '#795548', 'BIL': '#3F51B5', 'ICSH': '#009688', 'SGOV': '#FF9800'
+  'SOXL': '#E91E63', 'STRC': '#795548', 'BIL': '#3F51B5', 'ICSH': '#009688', 'SGOV': '#FF9800',
+  // paid tickers (fallback 컬러)
+  'TSLA': '#e11d48', 'TSLL': '#fb7185',
+  'NVDA': '#22c55e', 'NVDL': '#4ade80',
+  'GOOGL': '#3b82f6', 'GGLL': '#60a5fa',
+  'PLTR': '#a855f7', 'PTIR': '#c084fc',
+  'COIN': '#f59e0b', 'CONL': '#fbbf24',
+  'MSTR': '#06b6d4', 'MSTX': '#22d3ee',
+  'BMNR': '#64748b'
 };
 
 export const CUSTOM_GRADIENT_LOGOS: Record<string, { gradient: string; label: string }> = {
@@ -22,7 +38,22 @@ export const CUSTOM_GRADIENT_LOGOS: Record<string, { gradient: string; label: st
     'STRC': { gradient: 'linear-gradient(180deg, #FF6B35 0%, #FFB347 100%)', label: 'STRATEGIC INCOME' },
     'ICSH': { gradient: 'linear-gradient(180deg, #0057B7 0%, #FFD700 100%)', label: 'SHORT TERM CORP' },
     'SGOV': { gradient: 'linear-gradient(180deg, #2E7D32 0%, #9CCC65 100%)', label: 'SHORT-TERM GOVT' },
-    'BIL': { gradient: 'linear-gradient(180deg, #008B8B 0%, #D4AF37 100%)', label: 'SHORT-TERM TREAS' }
+    'BIL': { gradient: 'linear-gradient(180deg, #008B8B 0%, #D4AF37 100%)', label: 'SHORT-TERM TREAS' },
+
+    // Paid tickers (간단한 그라데이션 배지, 실제 로고 도입 전까지)
+    'TSLA': { gradient: 'linear-gradient(135deg, #ef4444 0%, #7f1d1d 100%)', label: 'TESLA' },
+    'TSLL': { gradient: 'linear-gradient(135deg, #fb7185 0%, #be123c 100%)', label: '2X TSLA' },
+    'NVDA': { gradient: 'linear-gradient(135deg, #22c55e 0%, #14532d 100%)', label: 'NVIDIA' },
+    'NVDL': { gradient: 'linear-gradient(135deg, #4ade80 0%, #166534 100%)', label: '2X NVDA' },
+    'GOOGL': { gradient: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', label: 'ALPHABET' },
+    'GGLL': { gradient: 'linear-gradient(135deg, #60a5fa 0%, #2563eb 100%)', label: '2X GOOG' },
+    'PLTR': { gradient: 'linear-gradient(135deg, #a855f7 0%, #581c87 100%)', label: 'PALANTIR' },
+    'PTIR': { gradient: 'linear-gradient(135deg, #c084fc 0%, #6d28d9 100%)', label: '2X PLTR' },
+    'COIN': { gradient: 'linear-gradient(135deg, #f59e0b 0%, #92400e 100%)', label: 'COINBASE' },
+    'CONL': { gradient: 'linear-gradient(135deg, #fbbf24 0%, #b45309 100%)', label: '2X COIN' },
+    'MSTR': { gradient: 'linear-gradient(135deg, #06b6d4 0%, #164e63 100%)', label: 'MICROSTRAT' },
+    'MSTX': { gradient: 'linear-gradient(135deg, #22d3ee 0%, #0e7490 100%)', label: '2X MSTR' },
+    'BMNR': { gradient: 'linear-gradient(135deg, #64748b 0%, #0f172a 100%)', label: 'BMNR' }
 };
 
 export const MOCK_PRICES: Record<string, number> = {

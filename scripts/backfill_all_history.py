@@ -37,6 +37,19 @@ TICKERS: List[str] = [
     "BIL",
     "ICSH",
     "SGOV",
+    "TSLA",
+    "TSLL",
+    "NVDA",
+    "NVDL",
+    "GOOGL",
+    "GGLL",
+    "PLTR",
+    "PTIR",
+    "COIN",
+    "CONL",
+    "MSTR",
+    "MSTX",
+    "BMNR",
 ]
 
 

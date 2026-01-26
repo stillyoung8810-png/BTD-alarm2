@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Portfolio } from '../types';
-import { I18N, CUSTOM_GRADIENT_LOGOS } from '../constants';
+import { I18N, CUSTOM_GRADIENT_LOGOS, PAID_STOCKS } from '../constants';
+import StockLogo from './StockLogo';
 import { 
   Plus, 
   Zap,
@@ -203,12 +204,16 @@ const PortfolioCard: React.FC<{
         <div className="flex items-center gap-4">
           <div 
             onClick={onOpenDetails}
-            className="w-16 h-16 rounded-full flex flex-col items-center justify-center text-white shadow-xl overflow-hidden relative cursor-pointer active:scale-95 transition-transform border border-white/20"
-            style={{ background: gradientInfo.gradient }}
+            className="w-16 h-16 rounded-full overflow-hidden relative cursor-pointer active:scale-95 transition-transform"
           >
-            <span className="text-[14px] font-black leading-none z-10">{ma0Ticker}</span>
-            <span className="text-[6px] font-bold opacity-80 tracking-tighter mt-1 z-10 uppercase text-center px-1">{gradientInfo.label}</span>
-            <div className="absolute inset-0 bg-white/10 group-hover:bg-transparent transition-colors"></div>
+            <StockLogo
+              ticker={ma0Ticker}
+              size="xl"
+              shape="circle"
+              paidAccent={PAID_STOCKS.includes(ma0Ticker)}
+              showFallbackText
+              className="w-16 h-16 border border-white/20 shadow-xl"
+            />
           </div>
           <div>
             <h3 className="text-xl font-black text-slate-800 dark:text-white leading-tight mb-1">{portfolio.name}</h3>

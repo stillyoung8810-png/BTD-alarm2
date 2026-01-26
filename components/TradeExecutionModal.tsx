@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { Portfolio, Trade } from '../types';
-import { I18N, CUSTOM_GRADIENT_LOGOS } from '../constants';
+import { I18N, CUSTOM_GRADIENT_LOGOS, PAID_STOCKS } from '../constants';
 import { X, Calendar, ChevronRight } from 'lucide-react';
+import StockLogo from './StockLogo';
 
 interface TradeExecutionModalProps {
   lang: 'ko' | 'en';
@@ -64,6 +65,13 @@ const TradeExecutionModal: React.FC<TradeExecutionModalProps> = ({ lang, portfol
         className={`w-16 h-16 rounded-2xl flex flex-col items-center justify-center text-white relative overflow-hidden active:scale-95 transition-transform p-2 ${isSelected ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-slate-900 scale-105' : 'opacity-40 grayscale hover:grayscale-0'}`}
         style={{ background: info.gradient }}
       >
+        <StockLogo
+          ticker={ticker}
+          size="full"
+          shape="squircle2"
+          paidAccent={PAID_STOCKS.includes(ticker)}
+          className="absolute inset-0"
+        />
         <span className="text-[10px] font-black z-10">{ticker}</span>
         <span className="text-[5px] font-bold z-10 uppercase tracking-tighter opacity-80">{info.label.split(' ')[0]}</span>
       </button>

@@ -9,7 +9,7 @@ import {
   updateStockMetadata,
   StockPriceRecord 
 } from './db';
-import { AVAILABLE_STOCKS } from '../constants';
+import { AVAILABLE_STOCKS, PAID_STOCKS } from '../constants';
 
 /**
  * 주가 데이터를 가져옵니다 (IndexedDB 우선 사용)
@@ -310,7 +310,7 @@ export const loadInitialStockData = async (): Promise<void> => {
     const today = getTodayDateString();
     console.log('[loadInitialStockData] 초기 데이터 로딩 시작:', today);
     
-    // 모든 종목에 대해 병렬로 처리
+    // 무료 종목에 대해 병렬로 처리
     await Promise.all(
       AVAILABLE_STOCKS.map(async (symbol) => {
         try {
@@ -364,6 +364,66 @@ export const loadInitialStockData = async (): Promise<void> => {
     console.log('[loadInitialStockData] 초기 데이터 로딩 완료');
   } catch (err) {
     console.error('[loadInitialStockData] 초기 데이터 로딩 실패:', err);
+  }
+};
+
+/**
+ * 유료 종목 데이터 로딩: PRO/PREMIUM 로그인 이후에만 호출
+ * Supabase에서 240일치 데이터를 가져와 IndexedDB에 추가 저장
+ */
+export const loadPaidStockData = async (): Promise<void> => {
+  try {
+    await initDatabase();
+    const today = getTodayDateString();
+    console.log('[loadPaidStockData] 유료 종목 데이터 로딩 시작:', today);
+
+    await Promise.all(
+      PAID_STOCKS.map(async (symbol) => {
+        try {
+          const metadata = await getStockMetadata(symbol);
+          // 이미 오늘 날짜의 데이터가 있고 충분하면 스킵
+          if (metadata && metadata.lastUpdated === today && metadata.dataCount >= 200) {
+            console.log(`[loadPaidStockData] ${symbol}: 이미 최신 데이터 있음 (${metadata.dataCount}일)`);
+            return;
+          }
+
+          console.log(`[loadPaidStockData] ${symbol}: Supabase에서 데이터 가져오는 중...`);
+          const { data, error } = await supabase
+            .from('stock_prices')
+            .select('close, trade_date')
+            .eq('symbol', symbol)
+            .order('trade_date', { ascending: true })
+            .limit(240);
+
+          if (error || !data || data.length === 0) {
+            console.warn(`[loadPaidStockData] ${symbol}: 데이터 없음`, error);
+            return;
+          }
+
+          const records: StockPriceRecord[] = data
+            .map((row: any) => ({
+              symbol,
+              date: row.trade_date || '',
+              close: row.close ?? 0,
+              updatedAt: Date.now(),
+            }))
+            .filter((r: StockPriceRecord) => r.date && r.close > 0);
+
+          if (records.length === 0) return;
+
+          await calculateAndSaveIndicators(symbol, records);
+          const latestDate = records[records.length - 1].date;
+          await updateStockMetadata(symbol, latestDate, records.length);
+          console.log(`[loadPaidStockData] ${symbol}: ${records.length}일치 데이터 저장 완료`);
+        } catch (err) {
+          console.error(`[loadPaidStockData] ${symbol} 처리 실패:`, err);
+        }
+      })
+    );
+
+    console.log('[loadPaidStockData] 유료 종목 데이터 로딩 완료');
+  } catch (err) {
+    console.error('[loadPaidStockData] 유료 종목 데이터 로딩 실패:', err);
   }
 };
 

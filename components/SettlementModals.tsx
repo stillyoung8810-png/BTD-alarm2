@@ -21,6 +21,13 @@ interface TerminationInputProps {
 
 const TerminationInput: React.FC<TerminationInputProps> = ({ lang, portfolio, onClose, onSave }) => {
   const holdings = useMemo(() => calculateHoldings(portfolio), [portfolio]);
+  const feeRate = portfolio.feeRate || 0.25; // %
+
+  const calculateCommission = (price: number, quantity: number) => {
+    const commission = price * quantity * (feeRate / 100);
+    // 센트 단위로 반올림 (UI/정산 값 일치)
+    return Math.round(commission * 100) / 100;
+  };
   const [finalSells, setFinalSells] = useState<FinalSellInput[]>(
     holdings.map(h => ({
       stock: h.stock,
@@ -33,10 +40,18 @@ const TerminationInput: React.FC<TerminationInputProps> = ({ lang, portfolio, on
 
   const updateFinalSell = (index: number, field: keyof FinalSellInput, value: number | string) => {
     const updated = [...finalSells];
-    updated[index] = {
+    const parsed = typeof value === 'string' ? parseFloat(value) || 0 : value;
+    const next = {
       ...updated[index],
-      [field]: typeof value === 'string' ? parseFloat(value) || 0 : value
-    };
+      [field]: parsed
+    } as FinalSellInput;
+
+    // 매도 단가/수량 변경 시: 수수료(달러)를 수수료율로 자동 계산
+    if (field === 'price' || field === 'quantity') {
+      next.fee = calculateCommission(next.price, next.quantity);
+    }
+
+    updated[index] = next;
     setFinalSells(updated);
   };
 
@@ -142,14 +157,17 @@ const TerminationInput: React.FC<TerminationInputProps> = ({ lang, portfolio, on
                       <label className="text-[10px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest block mb-1">
                         {lang === 'ko' ? '수수료' : 'Fee'}
                       </label>
+                      <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mb-1">
+                        {lang === 'ko' ? `수수료율 ${feeRate}% 적용` : `${feeRate}% fee applied`}
+                      </p>
                       <div className="relative">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xs">$</span>
                         <input 
                           type="number"
                           value={fs.fee || ''}
-                          onChange={(e) => updateFinalSell(index, 'fee', e.target.value)}
                           placeholder="0.00"
-                          className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/5 rounded-lg p-2 pl-7 text-sm text-slate-900 dark:text-white focus:ring-1 focus:ring-blue-500 outline-none"
+                          readOnly
+                          className="w-full bg-slate-100/70 dark:bg-slate-800/70 border border-slate-200 dark:border-white/5 rounded-lg p-2 pl-7 text-sm text-slate-900 dark:text-white outline-none cursor-not-allowed"
                         />
                       </div>
                     </div>

@@ -1243,13 +1243,18 @@ const App: React.FC = () => {
               <h1 className="text-lg font-black tracking-tight dark:text-white uppercase leading-none mb-1">
                 BUY THE DIP
               </h1>
-              <span className={`${tierClassName} mt-0.5`}>
-                <TierIcon
-                  size={11}
-                  className={tierIconClassName}
-                />
-                {tierLabel}
-              </span>
+              <div style={{ marginTop: 2 }}>
+                <span className={tierClassName}>
+                  <TierIcon
+                    size={11}
+                    className={tierIconClassName}
+                    {...(currentTier === 'pro'
+                      ? { fill: 'currentColor', stroke: 'currentColor' }
+                      : {})}
+                  />
+                  {tierLabel}
+                </span>
+              </div>
             </div>
           </div>
           

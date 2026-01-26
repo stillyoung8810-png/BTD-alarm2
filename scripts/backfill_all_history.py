@@ -1,3 +1,5 @@
+## 모든 supabase 240일 데이터 소실시 채우는 .py####
+
 import os
 import datetime as dt
 import json

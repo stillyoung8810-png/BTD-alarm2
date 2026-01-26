@@ -97,15 +97,15 @@
           letter-spacing: 0.5em; /* Wide & Luxurious */
           font-size: 0.55rem;
           padding-left: 0.25rem;
-          background-image:
-            linear-gradient(
-              120deg,
-              #BF953F,
-              #FCF6BA,
-              #B38728,
-              #FBF5B7,
-              #AA771C
-            );
+          /* 5-stop 24K/Champagne Gold + center highlight 느낌 */
+          background-image: linear-gradient(
+            120deg,
+            #AA771C 0%,
+            #B38728 32%,
+            #FCF6BA 50%,
+            #FBF5B7 68%,
+            #BF953F 100%
+          );
           background-size: 200% 200%;
           -webkit-background-clip: text;
           background-clip: text;
@@ -119,6 +119,14 @@
             drop-shadow(0 2px 2px rgba(0, 0, 0, 0.4));
           animation: premium-shimmer 15s cubic-bezier(0.4, 0, 0.2, 1) infinite;
           -webkit-font-smoothing: antialiased;
+        }
+
+        /* 아이콘은 텍스트 clip 영향받지 않게 별도 색 지정 */
+        .shimmer-text-premium svg {
+          color: #FCF6BA;
+          filter:
+            drop-shadow(0 -0.5px 0 rgba(255, 255, 255, 0.55))
+            drop-shadow(0 1.5px 1.5px rgba(0, 0, 0, 0.35));
         }
 
         @keyframes premium-shimmer {
@@ -163,15 +171,15 @@
           letter-spacing: 0.3em; /* Slightly tighter than premium */
           font-size: 0.55rem;
           padding-left: 0.15rem;
-          background-image:
-            linear-gradient(
-              120deg,
-              #757575,
-              #E0E0E0,
-              #BDBDBD,
-              #EEEEEE,
-              #757575
-            );
+          /* 플래티넘 실버 + sharper highlight */
+          background-image: linear-gradient(
+            120deg,
+            #757575 0%,
+            #BDBDBD 35%,
+            #FFFFFF 50%,
+            #EEEEEE 60%,
+            #757575 100%
+          );
           background-size: 220% 220%;
           -webkit-background-clip: text;
           background-clip: text;
@@ -179,8 +187,14 @@
           text-shadow:
             0.4px 0.4px 0 rgba(255, 255, 255, 0.5),
             -0.8px -0.8px 1px rgba(0, 0, 0, 0.5);
-          animation: pro-shimmer 10s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+          /* 캡처 기준: 13초 */
+          animation: pro-shimmer 13s cubic-bezier(0.4, 0, 0.2, 1) infinite;
           -webkit-font-smoothing: antialiased;
+        }
+
+        .shimmer-text-pro svg {
+          color: #E0E0E0;
+          filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.25));
         }
 
         @keyframes pro-shimmer {
@@ -241,10 +255,14 @@
           filter: none !important;
         }
 
+        .text-free-matte svg {
+          color: #94A3B8; /* 아이콘은 고정 색 */
+          opacity: 0.85;
+        }
+
         .free-icon-zap {
-          /* 거의 정적, 아주 약한 펄스 (옵션) */
-          transform-origin: center;
-          animation: free-zap-pulse 4s ease-in-out infinite;
+          /* 캡처 기준: 고정(무애니메이션) */
+          animation: none !important;
         }
 
         @keyframes free-zap-pulse {

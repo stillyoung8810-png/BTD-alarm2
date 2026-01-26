@@ -1230,7 +1230,7 @@ const App: React.FC = () => {
       <div className="pb-32">
         
         {/* Header */}
-        <header className="sticky top-0 z-40 w-full glass px-6 md:px-12 py-5 flex items-center justify-between border-b border-slate-200/50 dark:border-white/10">
+        <header className="sticky top-0 z-40 w-full glass glass-header px-6 md:px-12 py-5 flex items-center justify-between border-b border-slate-200/50 dark:border-white/10">
           <div className="flex items-center gap-4 cursor-pointer group" onClick={() => setActiveTab('dashboard')}>
             <div className="w-11 h-11 relative flex items-center justify-center group-hover:scale-110 transition-all duration-300">
                <div className="absolute inset-0 bg-gradient-to-br from-blue-700 via-indigo-600 to-purple-500 rounded-xl shadow-lg shadow-blue-500/20 transform -rotate-3 group-hover:rotate-0 transition-transform"></div>

@@ -36,16 +36,21 @@
             font-family: 'Pretendard', 'Inter', sans-serif;
             -webkit-tap-highlight-color: transparent;
             overflow-x: hidden;
-            background-color: #F8FAFC;
+            /* Light mode: slightly slate-tinted background (better separation) */
+            background-color: #F1F5F9;
         }
         .dark body {
             background-color: #06090F;
         }
         .glass {
-            background: rgba(255, 255, 255, 0.7);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.3);
+            /* Light mode glass: slightly denser + tactile shadow */
+            background: rgba(255, 255, 255, 0.82);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            box-shadow:
+              0 18px 48px rgba(15, 23, 42, 0.08),
+              0 2px 8px rgba(15, 23, 42, 0.05);
         }
         .dark .glass {
             background: rgba(15, 23, 42, 0.7);
@@ -83,6 +88,35 @@
             z-index: 100;
         }
 
+        /* Header: subtle bottom gradient separator (light mode) */
+        header.glass-header {
+          position: relative;
+        }
+        header.glass-header::after {
+          content: '';
+          position: absolute;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          height: 1px;
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(59, 130, 246, 0.22),
+            rgba(99, 102, 241, 0.18),
+            transparent
+          );
+          opacity: 0.9;
+          pointer-events: none;
+        }
+
+        /* Light mode card depth utility */
+        :root:not(.dark) .light-card-depth {
+          box-shadow:
+            0 18px 48px rgba(15, 23, 42, 0.10),
+            0 3px 10px rgba(15, 23, 42, 0.06);
+        }
+
         /* ============================
          * Tier Badge Styles
          * ============================ */
@@ -110,23 +144,29 @@
           -webkit-background-clip: text;
           background-clip: text;
           color: transparent;
-          /* Embossed effect on glass */
-          text-shadow:
-            0.5px 0.5px 0 rgba(255, 255, 255, 0.6),
-            -1px -1px 1.5px rgba(0, 0, 0, 0.5);
-          filter:
-            drop-shadow(0 -0.5px 0 rgba(255, 255, 255, 0.7))
-            drop-shadow(0 2px 2px rgba(0, 0, 0, 0.4));
+          /* 에러3처럼: 과한 양각/겹침 제거 (기본은 깔끔하게) */
+          text-shadow: none;
+          filter: none;
           animation: premium-shimmer 15s cubic-bezier(0.4, 0, 0.2, 1) infinite;
           -webkit-font-smoothing: antialiased;
+        }
+
+        /* Light mode: 가독성 확보용 미세 다크 골드 외곽(그림자) */
+        :root:not(.dark) .shimmer-text-premium {
+          text-shadow:
+            0 0.6px 0 rgba(0, 0, 0, 0.45),
+            0 1.6px 3.5px rgba(0, 0, 0, 0.18);
+        }
+
+        /* Dark mode: 약한 음각 느낌만 */
+        .dark .shimmer-text-premium {
+          text-shadow: 0 0.6px 0 rgba(0, 0, 0, 0.65);
         }
 
         /* 아이콘은 텍스트 clip 영향받지 않게 별도 색 지정 */
         .shimmer-text-premium svg {
           color: #FCF6BA;
-          filter:
-            drop-shadow(0 -0.5px 0 rgba(255, 255, 255, 0.55))
-            drop-shadow(0 1.5px 1.5px rgba(0, 0, 0, 0.35));
+          filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.25));
         }
 
         @keyframes premium-shimmer {
@@ -184,12 +224,29 @@
           -webkit-background-clip: text;
           background-clip: text;
           color: transparent;
-          text-shadow:
-            0.4px 0.4px 0 rgba(255, 255, 255, 0.5),
-            -0.8px -0.8px 1px rgba(0, 0, 0, 0.5);
+          text-shadow: none;
           /* 캡처 기준: 13초 */
           animation: pro-shimmer 13s cubic-bezier(0.4, 0, 0.2, 1) infinite;
           -webkit-font-smoothing: antialiased;
+        }
+
+        /* Light mode: blue-tinted chrome 느낌 + 가독성 */
+        :root:not(.dark) .shimmer-text-pro {
+          background-image: linear-gradient(
+            120deg,
+            #475569 0%,
+            #CBD5E1 35%,
+            #F8FAFC 50%,
+            #E2E8F0 62%,
+            #475569 100%
+          );
+          text-shadow:
+            0 0.6px 0 rgba(0, 0, 0, 0.35),
+            0 1.6px 3.5px rgba(0, 0, 0, 0.14);
+        }
+
+        .dark .shimmer-text-pro {
+          text-shadow: 0 0.6px 0 rgba(0, 0, 0, 0.65);
         }
 
         .shimmer-text-pro svg {
@@ -249,6 +306,12 @@
           animation: none;
         }
 
+        /* Light mode: 'ink' 같은 더 묵직한 다크 슬레이트 */
+        :root:not(.dark) .text-free-matte {
+          background-image: linear-gradient(120deg, #0F172A, #334155);
+          opacity: 0.88;
+        }
+
         .text-free-matte *,
         .text-free-matte svg {
           text-shadow: none !important;
@@ -256,8 +319,8 @@
         }
 
         .text-free-matte svg {
-          color: #94A3B8; /* 아이콘은 고정 색 */
-          opacity: 0.85;
+          color: #64748B; /* 아이콘은 고정 색 (ink 느낌) */
+          opacity: 0.9;
         }
 
         .free-icon-zap {
@@ -278,7 +341,7 @@
         }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-900 transition-colors duration-500 dark:bg-[#06090F]">
+<body class="bg-[#F1F5F9] text-slate-900 transition-colors duration-500 dark:bg-[#06090F]">
     <div id="root"></div>
     <script type="module" src="./index.tsx"></script>
 </body>

@@ -22,6 +22,12 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
     return `${y}-${m}-${d}`;
   };
 
+  // Parse YYYY-MM-DD into a local Date (avoid UTC parsing quirks)
+  const dateKeyToLocalDate = (dateKey: string): Date => {
+    const [y, m, d] = dateKey.split('-').map(Number);
+    return new Date(y, (m || 1) - 1, d || 1);
+  };
+
   const [selectedDate, setSelectedDate] = useState<string>(getDateKey(new Date()));
   const [currentMonth, setCurrentMonth] = useState(new Date()); 
 
@@ -30,8 +36,24 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
   const [stockPrices, setStockPrices] = useState<Record<string, number>>({});
   const isReadOnly = isHistory ?? !!portfolio.isClosed;
 
-  // Group holdings by stock
+  // History/closed portfolio: 기본 선택 날짜를 "마지막 거래일"로 맞춰서
+  // 최종 정산 매도(있다면)가 바로 보이도록 함.
+  const latestTradeDate = useMemo(() => {
+    const dates = portfolio.trades.map(t => t.date).filter(Boolean);
+    if (dates.length === 0) return null;
+    // YYYY-MM-DD는 문자열 비교로도 정렬 가능하지만, 안전하게 Date로 비교
+    return dates.reduce((max, cur) => (cur > max ? cur : max), dates[0]);
+  }, [portfolio.trades]);
+
+  useEffect(() => {
+    if (!isReadOnly || !latestTradeDate) return;
+    setSelectedDate(latestTradeDate);
+    setCurrentMonth(dateKeyToLocalDate(latestTradeDate));
+  }, [isReadOnly, latestTradeDate]);
+
+  // Group holdings by stock (진행 중인 포트폴리오에서만 표시)
   const holdingsSummary = useMemo(() => {
+    if (isReadOnly) return [];
     const summary: Record<string, { quantity: number; totalCost: number }> = {};
     
     portfolio.trades.forEach(tr => {
@@ -57,10 +79,11 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
         avgPrice: data.totalCost / data.quantity,
         valuation: data.quantity * (stockPrices[ticker] || 0)
       }));
-  }, [portfolio.trades, stockPrices]);
+  }, [portfolio.trades, stockPrices, isReadOnly]);
 
-  // 주가 데이터 가져오기
+  // 주가 데이터 가져오기 (진행 중인 포트폴리오의 보유 자산 요약용)
   useEffect(() => {
+    if (isReadOnly) return;
     const fetchPrices = async () => {
       const holdingsEntries = Object.entries(
         portfolio.trades.reduce((acc, tr) => {
@@ -88,7 +111,7 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
     };
 
     fetchPrices();
-  }, [portfolio.trades]);
+  }, [portfolio.trades, isReadOnly]);
 
   const calendarGrid = useMemo(() => {
     const year = currentMonth.getFullYear();
@@ -188,37 +211,39 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
         {/* Content - 스크롤 가능 */}
         <div className="flex-1 overflow-y-auto overscroll-contain p-6 md:p-8 space-y-8 md:space-y-10 scrollbar-hide bg-slate-50 dark:bg-transparent">
           
-          <section className="space-y-4">
-            <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{lang === 'ko' ? '보유 자산 요약' : 'Holdings Summary'}</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {holdingsSummary.length === 0 ? (
-                <div className="col-span-full p-8 bg-slate-100 dark:bg-white/5 rounded-[2rem] border border-slate-200 dark:border-white/5 text-center">
-                  <p className="text-xs font-bold text-slate-500 dark:text-slate-600 uppercase tracking-widest">{lang === 'ko' ? '보유 자산이 없습니다.' : 'No holdings available.'}</p>
-                </div>
-              ) : (
-                holdingsSummary.map((item, idx) => (
-                  <div key={item.ticker} className="bg-white dark:bg-slate-900/40 p-6 rounded-[2rem] border border-slate-200 dark:border-white/5 flex items-center gap-6 relative overflow-hidden group shadow-md dark:shadow-lg backdrop-blur-sm">
-                    <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-600"></div>
-                    {renderStockIcon(item.ticker, 'md')}
-                    <div className="flex-1 grid grid-cols-2 gap-4">
-                      <div>
-                        <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">{t.quantity}:</span>
-                        <p className="text-sm font-black text-slate-900 dark:text-white">{item.quantity.toLocaleString()}</p>
-                      </div>
-                      <div>
-                        <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">{lang === 'ko' ? '평균 단가:' : 'Avg Price:'}</span>
-                        <p className="text-sm font-black text-slate-900 dark:text-white">${item.avgPrice.toFixed(2)}</p>
-                      </div>
-                      <div className="col-span-2 pt-2 border-t border-slate-200 dark:border-white/5">
-                        <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">{t.totalValuation}:</span>
-                        <p className="text-base font-black text-emerald-500">${item.valuation.toLocaleString()}</p>
+          {!isReadOnly && (
+            <section className="space-y-4">
+              <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{lang === 'ko' ? '보유 자산 요약' : 'Holdings Summary'}</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {holdingsSummary.length === 0 ? (
+                  <div className="col-span-full p-8 bg-slate-100 dark:bg-white/5 rounded-[2rem] border border-slate-200 dark:border-white/5 text-center">
+                    <p className="text-xs font-bold text-slate-500 dark:text-slate-600 uppercase tracking-widest">{lang === 'ko' ? '보유 자산이 없습니다.' : 'No holdings available.'}</p>
+                  </div>
+                ) : (
+                  holdingsSummary.map((item, idx) => (
+                    <div key={item.ticker} className="bg-white dark:bg-slate-900/40 p-6 rounded-[2rem] border border-slate-200 dark:border-white/5 flex items-center gap-6 relative overflow-hidden group shadow-md dark:shadow-lg backdrop-blur-sm">
+                      <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-600"></div>
+                      {renderStockIcon(item.ticker, 'md')}
+                      <div className="flex-1 grid grid-cols-2 gap-4">
+                        <div>
+                          <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">{t.quantity}:</span>
+                          <p className="text-sm font-black text-slate-900 dark:text-white">{item.quantity.toLocaleString()}</p>
+                        </div>
+                        <div>
+                          <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">{lang === 'ko' ? '평균 단가:' : 'Avg Price:'}</span>
+                          <p className="text-sm font-black text-slate-900 dark:text-white">${item.avgPrice.toFixed(2)}</p>
+                        </div>
+                        <div className="col-span-2 pt-2 border-t border-slate-200 dark:border-white/5">
+                          <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">{t.totalValuation}:</span>
+                          <p className="text-base font-black text-emerald-500">${item.valuation.toLocaleString()}</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
+                  ))
+                )}
+              </div>
+            </section>
+          )}
 
           <section className="space-y-4">
             <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{lang === 'ko' ? '평일 거래 달력' : 'Weekday Calendar'}</h3>

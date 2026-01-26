@@ -2,8 +2,9 @@ name: Fetch daily stock prices
 
 on:
   schedule:
-    # 매일 22:10 UTC == 한국 시간(KST, UTC+9) 기준 다음날 새벽 7:10
-    - cron: "10 22 * * *"
+    # 평일(월-금) 22:10 UTC == 한국 시간(KST, UTC+9) 기준 다음날 새벽 7:10
+    # NOTE: 미국장 공휴일은 cron으로 판별 불가하므로, 스크립트에서 "실제 거래일"을 사용해 중복 저장을 방지합니다.
+    - cron: "10 22 * * 1-5"
   workflow_dispatch: {}
 
 jobs:

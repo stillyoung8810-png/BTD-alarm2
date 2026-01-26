@@ -162,7 +162,7 @@ const PortfolioCard: React.FC<{
   }, [portfolio]);
 
   return (
-    <div className="glass p-7 rounded-[2.5rem] space-y-6 group hover:-translate-y-1 transition-all duration-500 relative overflow-hidden shadow-[0_12px_40px_rgba(0,0,0,0.06)] dark:shadow-2xl">
+    <div className="glass light-card-depth p-7 rounded-[2.5rem] space-y-6 group hover:-translate-y-1 transition-all duration-500 relative overflow-hidden shadow-[0_12px_40px_rgba(0,0,0,0.06)] dark:shadow-2xl">
       
       {/* Visual background layers */}
       <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-white/20 to-transparent pointer-events-none opacity-50 dark:hidden"></div>

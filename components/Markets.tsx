@@ -260,7 +260,7 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
         </div>
 
         {/* Chart View */}
-        <div className="bg-white dark:bg-[#080B15] p-8 rounded-[2.5rem] overflow-hidden h-96 border border-slate-200 dark:border-white/5 shadow-xl relative">
+        <div className="bg-white light-card-depth dark:bg-[#080B15] p-8 rounded-[2.5rem] overflow-hidden h-96 border border-slate-200 dark:border-white/5 shadow-xl relative">
           <div className="flex justify-between items-start mb-8 relative z-10">
             <div>
               <h3 className="text-[10px] font-black text-slate-500 mb-1 uppercase tracking-[0.2em]">{selectedStock} Performance</h3>
@@ -446,7 +446,7 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [] }) => {
                   <button
                     key={ticker}
                     onClick={() => setSelectedStock(ticker)}
-                    className={`flex-shrink-0 w-48 bg-white dark:bg-[#080B15] p-6 rounded-[2rem] border transition-all duration-300 text-left group flex flex-col gap-5 snap-center cursor-grab active:cursor-grabbing ${
+                  className={`flex-shrink-0 w-48 bg-white light-card-depth dark:bg-[#080B15] p-6 rounded-[2rem] border transition-all duration-300 text-left group flex flex-col gap-5 snap-center cursor-grab active:cursor-grabbing ${
                       isSelected
                         ? 'border-blue-500 ring-4 ring-blue-500/15 shadow-xl -translate-y-2'
                         : 'border-slate-200 dark:border-white/5 shadow-md hover:border-slate-300 dark:hover:border-white/10'

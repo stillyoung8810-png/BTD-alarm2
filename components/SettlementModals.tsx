@@ -118,7 +118,7 @@ const TerminationInput: React.FC<TerminationInputProps> = ({ lang, portfolio, on
                       size="md"
                       shape="squircle"
                       paidAccent={PAID_STOCKS.includes(fs.stock)}
-                      showFallbackText={false}
+                      showFallbackText
                       className="w-10 h-10"
                     />
                     <div>

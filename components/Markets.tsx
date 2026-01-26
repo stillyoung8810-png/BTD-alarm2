@@ -18,6 +18,8 @@ import { StockData, Portfolio } from '../types';
 import { getMarketStatus } from '../utils/marketUtils';
 import { calculateHoldings } from '../utils/portfolioCalculations';
 import StockLogo from './StockLogo';
+import HoverTip from './HoverTip';
+import InfoModal from './InfoModal';
 
 // Custom Tooltip 컴포넌트
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -116,10 +118,28 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
   const [showHoldingsOnly, setShowHoldingsOnly] = useState(false);
   const [show1xOnly, setShow1xOnly] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollRafRef = useRef<number | null>(null);
   const t = I18N[lang];
+  const [proInfoOpen, setProInfoOpen] = useState(false);
+
+  const lockedTooltip =
+    lang === 'ko' ? 'PRO/PREMIUM 전용 종목입니다.' : 'This ticker is PRO/PREMIUM only.';
+
+  const isTouch = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      (window.matchMedia && window.matchMedia('(hover: none)').matches) ||
+      (navigator && (navigator.maxTouchPoints || 0) > 0)
+    );
+  }, []);
 
   // 1배수 종목 정의
-  const oneXStocks = ['SPY', 'QQQ', 'SOXX', 'USD', 'BIL', 'ICSH', 'SGOV'];
+  // - 기존: 인덱스/채권/현금성 위주
+  // - 추가: 1배수 토글에서도 개별 주식(유료 종목) 표시 요청 반영
+  const oneXStocks = useMemo(
+    () => ['SPY', 'QQQ', 'SOXX', 'USD', 'STRC', 'BIL', 'ICSH', 'SGOV', 'TSLA', 'NVDA', 'GOOGL', 'PLTR', 'COIN', 'MSTR', 'BMNR'],
+    []
+  );
 
   // 마켓 상태 계산
   const marketStatus = useMemo(() => getMarketStatus(lang), [lang]);
@@ -141,8 +161,8 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
     return holdings;
   }, [portfolios]);
 
-  // 필터링된 종목 리스트
-  const displayedStocks = useMemo(() => {
+  // 필터링된 종목 리스트 (기본 리스트)
+  const filteredStocks = useMemo(() => {
     let filtered = ALL_STOCKS;
     
     // 보유 종목만 보기 필터
@@ -157,6 +177,42 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
     
     return filtered;
   }, [showHoldingsOnly, show1xOnly, holdingsSet, oneXStocks]);
+
+  // 무한 루프용 3중 리스트 (끝/처음 자연 연결)
+  const loopEnabled = filteredStocks.length >= 2;
+  const loopedStocks = useMemo(() => {
+    if (!loopEnabled) return filteredStocks;
+    return [...filteredStocks, ...filteredStocks, ...filteredStocks];
+  }, [filteredStocks, loopEnabled]);
+
+  const getCardStep = (): { step: number; startOffset: number } => {
+    const el = scrollRef.current;
+    if (!el) return { step: 200, startOffset: 0 };
+    const children = el.children as unknown as HTMLElement[];
+    const first = children?.[0];
+    const second = children?.[1];
+    if (!first) return { step: 200, startOffset: 0 };
+    const startOffset = first.offsetLeft || 0;
+    const step = second ? second.offsetLeft - first.offsetLeft : first.offsetWidth || 200;
+    return { step: step > 0 ? step : 200, startOffset };
+  };
+
+  // 무한 루프 초기 위치: 가운데(2번째) 리스트로 점프
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (!loopEnabled) {
+      el.scrollTo({ left: 0 });
+      return;
+    }
+    const baseLen = filteredStocks.length;
+    const raf = window.requestAnimationFrame(() => {
+      const children = el.children as unknown as HTMLElement[];
+      const target = children?.[baseLen]; // 가운데 리스트의 첫 카드
+      if (target) el.scrollLeft = target.offsetLeft;
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [loopEnabled, filteredStocks]);
 
   // 초기 주가 데이터 로드
   useEffect(() => {
@@ -239,10 +295,36 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
 
   const scroll = (direction: 'left' | 'right') => {
     if (scrollRef.current) {
-      const { scrollLeft, clientWidth } = scrollRef.current;
-      const scrollTo = direction === 'left' ? scrollLeft - 200 : scrollLeft + 200;
-      scrollRef.current.scrollTo({ left: scrollTo, behavior: 'smooth' });
+      const { step } = getCardStep();
+      scrollRef.current.scrollBy({ left: direction === 'left' ? -step : step, behavior: 'smooth' });
     }
+  };
+
+  const handleLoopScroll = () => {
+    if (!loopEnabled) return;
+    if (scrollRafRef.current != null) return;
+    scrollRafRef.current = window.requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      const el = scrollRef.current;
+      if (!el) return;
+      const baseLen = filteredStocks.length;
+      if (baseLen < 2) return;
+
+      const children = el.children as unknown as HTMLElement[];
+      if (!children || children.length < baseLen * 3) return;
+
+      const { step } = getCardStep();
+      const middleStart = children?.[baseLen]?.offsetLeft ?? 0; // 가운데 리스트 시작
+      const thirdStart = children?.[baseLen * 2]?.offsetLeft ?? 0; // 3번째 리스트 시작
+      const threshold = step * 0.5; // 살짝 넘어갔을 때만 점프 (튀는 느낌 최소화)
+
+      // 가운데 범위를 벗어나면 같은 카드 위치를 유지한 채 가운데로 되돌림
+      if (el.scrollLeft < middleStart - threshold) {
+        el.scrollLeft += baseLen * step;
+      } else if (el.scrollLeft >= thirdStart + threshold) {
+        el.scrollLeft -= baseLen * step;
+      }
+    });
   };
 
   const selectedStockData = stockData[selectedStock];
@@ -431,19 +513,18 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
         <div className="relative">
           <div 
             ref={scrollRef}
+            onScroll={loopEnabled ? handleLoopScroll : undefined}
             className="flex gap-6 overflow-x-auto pb-8 pt-4 -mx-6 px-10 md:mx-0 md:px-4 scrollbar-hide snap-x snap-mandatory"
           >
-            {displayedStocks.length === 0 ? (
+            {filteredStocks.length === 0 ? (
               <div className="flex items-center justify-center w-full py-12 text-slate-400 text-sm font-bold">
                 {lang === 'ko' ? '보유 중인 종목이 없습니다.' : 'No holdings available.'}
               </div>
             ) : (
-              displayedStocks.map((ticker) => {
+              loopedStocks.map((ticker, idx) => {
                 const isSelected = selectedStock === ticker;
                 const isPaidOnly = PAID_STOCKS.includes(ticker);
                 const isLocked = isPaidOnly && !canAccessPaidStocks;
-                const lockedTooltip =
-                  lang === 'ko' ? 'PRO/PREMIUM 전용 종목입니다.' : 'This ticker is PRO/PREMIUM only.';
                 const data = stockData[ticker];
                 const rsiValue = data?.rsi || 50;
                 const rsiBarValue = isLocked ? 0 : rsiValue;
@@ -461,14 +542,15 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
 
                 return (
                   <button
-                    key={ticker}
+                    key={`${ticker}-${idx}`}
                     onClick={() => {
-                      if (isLocked) return;
+                      if (isLocked) {
+                        if (isTouch) setProInfoOpen(true);
+                        return;
+                      }
                       setSelectedStock(ticker);
                     }}
-                    disabled={isLocked}
-                    title={isLocked ? lockedTooltip : undefined}
-                    className={`flex-shrink-0 w-48 bg-white light-card-depth dark:bg-[#080B15] p-6 rounded-[2rem] border transition-all duration-300 text-left group flex flex-col gap-5 snap-center ${
+                    className={`relative flex-shrink-0 w-48 bg-white light-card-depth dark:bg-[#080B15] p-6 rounded-[2rem] border transition-all duration-300 text-left group flex flex-col gap-5 snap-center ${
                       isLocked
                         ? 'border-slate-200 dark:border-white/5 opacity-55 grayscale cursor-not-allowed'
                         : 'cursor-grab active:cursor-grabbing'
@@ -479,12 +561,13 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
                     }`}
                   >
                     {isLocked && (
-                      <div
-                        className="absolute top-4 right-4 inline-flex items-center gap-1 rounded-full bg-slate-200/60 dark:bg-white/10 border border-slate-300/40 dark:border-white/10 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400"
-                        title={lockedTooltip}
-                      >
-                        <Lock size={12} />
-                        <span>PRO+</span>
+                      <div className="absolute top-4 right-4">
+                        <HoverTip text={lockedTooltip}>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-slate-200/60 dark:bg-white/10 border border-slate-300/40 dark:border-white/10 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">
+                            <Lock size={12} />
+                            <span>PRO+</span>
+                          </span>
+                        </HoverTip>
                       </div>
                     )}
                     <div className="flex items-center gap-3">
@@ -509,10 +592,7 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
                           {ticker}
                         </span>
                         {isLocked && (
-                          <span
-                            className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-600"
-                            title={lockedTooltip}
-                          >
+                          <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-600">
                             <Lock size={12} />
                             PRO/PREMIUM 전용
                           </span>
@@ -594,6 +674,13 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
           </div>
         </div>
       </section>
+
+      <InfoModal
+        open={proInfoOpen}
+        title="PRO/PREMIUM 전용"
+        message={lockedTooltip}
+        onClose={() => setProInfoOpen(false)}
+      />
     </div>
   );
 };

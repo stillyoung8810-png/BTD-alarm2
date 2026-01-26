@@ -3,8 +3,10 @@
  * 토스 TDS Menu와 유사한 디자인을 일반 웹 환경에서 제공합니다.
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { ChevronDown, Lock } from 'lucide-react';
+import HoverTip from './HoverTip';
+import InfoModal from './InfoModal';
 
 interface CustomDropdownProps {
   value: string;
@@ -25,6 +27,16 @@ const CustomDropdown: React.FC<CustomDropdownProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [infoText, setInfoText] = useState<string>('');
+
+  const isTouch = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      (window.matchMedia && window.matchMedia('(hover: none)').matches) ||
+      (navigator && (navigator.maxTouchPoints || 0) > 0)
+    );
+  }, []);
 
   // 외부 클릭 시 드롭다운 닫기
   useEffect(() => {
@@ -88,11 +100,16 @@ const CustomDropdown: React.FC<CustomDropdownProps> = ({
                   key={option.value}
                   type="button"
                   onClick={() => {
-                    if (isDisabled) return;
+                    if (isDisabled) {
+                      if (isTouch) {
+                        setInfoText(option.tooltip || 'PRO/PREMIUM 전용 종목입니다.');
+                        setInfoOpen(true);
+                      }
+                      return;
+                    }
                     handleSelect(option.value);
                   }}
-                  title={option.tooltip}
-                  disabled={isDisabled}
+                  aria-disabled={isDisabled}
                   className={`w-full px-4 py-3 text-left text-sm font-bold transition-colors flex items-center justify-between ${
                     isSelected
                       ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400'
@@ -105,9 +122,15 @@ const CustomDropdown: React.FC<CustomDropdownProps> = ({
                     <span>{option.label}</span>
                   </span>
                   <span className="flex items-center gap-2">
-                    {isDisabled && (
+                    {isDisabled && option.tooltip ? (
+                      <HoverTip text={option.tooltip}>
+                        <span className="inline-flex items-center gap-1">
+                          <Lock size={14} className="text-slate-400 dark:text-slate-600" />
+                        </span>
+                      </HoverTip>
+                    ) : isDisabled ? (
                       <Lock size={14} className="text-slate-400 dark:text-slate-600" />
-                    )}
+                    ) : null}
                     {option.badge && (
                       <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-slate-200/60 dark:bg-white/10 text-slate-600 dark:text-slate-400 border border-slate-300/40 dark:border-white/10">
                         {option.badge}
@@ -133,6 +156,13 @@ const CustomDropdown: React.FC<CustomDropdownProps> = ({
           </div>
         </div>
       )}
+
+      <InfoModal
+        open={infoOpen}
+        title="PRO/PREMIUM 전용"
+        message={infoText || 'PRO/PREMIUM 전용 종목입니다.'}
+        onClose={() => setInfoOpen(false)}
+      />
     </div>
   );
 };

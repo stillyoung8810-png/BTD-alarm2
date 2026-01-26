@@ -5,6 +5,8 @@ import { AVAILABLE_STOCKS, ALL_STOCKS, PAID_STOCKS, I18N } from '../constants';
 import { X, ChevronRight, ChevronLeft, Info, Sparkles, Target, Zap, Settings2, Calendar, Wallet, Percent, AlertTriangle, ChevronDown, Lock } from 'lucide-react';
 import { useTossApp } from '../contexts/TossAppContext';
 import CustomDropdown from './CustomDropdown';
+import HoverTip from './HoverTip';
+import InfoModal from './InfoModal';
 
 // 토스 앱 환경에서만 Menu 컴포넌트 import
 let Menu: any = null;
@@ -27,6 +29,7 @@ interface StrategyCreatorProps {
 const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave, canAccessPaidStocks = false }) => {
   const { isInTossApp } = useTossApp();
   const [step, setStep] = useState(1);
+  const [proInfoOpen, setProInfoOpen] = useState(false);
   
   // Step 1: Section 0
   const [ma0Stock, setMa0Stock] = useState('QQQ');
@@ -150,12 +153,16 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
                     return (
                       <div
                         key={stock}
-                        title={lockedTooltip}
+                        onClick={() => setProInfoOpen(true)}
                         className="px-4 py-3 text-sm font-bold text-slate-400 dark:text-slate-600 flex items-center justify-between opacity-70 cursor-not-allowed"
                       >
                         <span className="flex items-center gap-2">
                           <span>{stock}</span>
-                          <Lock size={14} className="text-slate-400 dark:text-slate-600" />
+                          <HoverTip text={lockedTooltip}>
+                            <span className="inline-flex items-center">
+                              <Lock size={14} className="text-slate-400 dark:text-slate-600" />
+                            </span>
+                          </HoverTip>
                         </span>
                         <span className="text-[9px] font-black uppercase tracking-widest bg-white/10 border border-white/10 px-2 py-0.5 rounded-full">
                           PRO+
@@ -278,12 +285,16 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
                       return (
                         <div
                           key={stock}
-                          title={lockedTooltip}
+                          onClick={() => setProInfoOpen(true)}
                           className="px-4 py-3 text-sm font-bold text-slate-400 dark:text-slate-600 flex items-center justify-between opacity-70 cursor-not-allowed"
                         >
                           <span className="flex items-center gap-2">
                             <span>{stock}</span>
-                            <Lock size={14} className="text-slate-400 dark:text-slate-600" />
+                            <HoverTip text={lockedTooltip}>
+                              <span className="inline-flex items-center">
+                                <Lock size={14} className="text-slate-400 dark:text-slate-600" />
+                              </span>
+                            </HoverTip>
                           </span>
                           <span className="text-[9px] font-black uppercase tracking-widest bg-white/10 border border-white/10 px-2 py-0.5 rounded-full">
                             PRO+
@@ -426,12 +437,16 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
                       return (
                         <div
                           key={stock}
-                          title={lockedTooltip}
+                          onClick={() => setProInfoOpen(true)}
                           className="px-4 py-3 text-sm font-bold text-slate-400 dark:text-slate-600 flex items-center justify-between opacity-70 cursor-not-allowed"
                         >
                           <span className="flex items-center gap-2">
                             <span>{stock}</span>
-                            <Lock size={14} className="text-slate-400 dark:text-slate-600" />
+                            <HoverTip text={lockedTooltip}>
+                              <span className="inline-flex items-center">
+                                <Lock size={14} className="text-slate-400 dark:text-slate-600" />
+                              </span>
+                            </HoverTip>
                           </span>
                           <span className="text-[9px] font-black uppercase tracking-widest bg-white/10 border border-white/10 px-2 py-0.5 rounded-full">
                             PRO+
@@ -559,12 +574,16 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
                       return (
                         <div
                           key={stock}
-                          title={lockedTooltip}
+                          onClick={() => setProInfoOpen(true)}
                           className="px-4 py-3 text-sm font-bold text-slate-400 dark:text-slate-600 flex items-center justify-between opacity-70 cursor-not-allowed"
                         >
                           <span className="flex items-center gap-2">
                             <span>{stock}</span>
-                            <Lock size={14} className="text-slate-400 dark:text-slate-600" />
+                            <HoverTip text={lockedTooltip}>
+                              <span className="inline-flex items-center">
+                                <Lock size={14} className="text-slate-400 dark:text-slate-600" />
+                              </span>
+                            </HoverTip>
                           </span>
                           <span className="text-[9px] font-black uppercase tracking-widest bg-white/10 border border-white/10 px-2 py-0.5 rounded-full">
                             PRO+
@@ -760,6 +779,13 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
           </button>
         </div>
       </div>
+
+      <InfoModal
+        open={proInfoOpen}
+        title="PRO/PREMIUM 전용"
+        message={lockedTooltip}
+        onClose={() => setProInfoOpen(false)}
+      />
     </div>
   );
 };

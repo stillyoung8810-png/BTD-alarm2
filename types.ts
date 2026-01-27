@@ -33,6 +33,12 @@ export interface Strategy {
     stock: string;
     rsiThreshold?: number;
   };
+  // 다분할 매매법 전용 필드
+  multiSplit?: {
+    targetStock: string;
+    targetReturnRate: number; // A: 목표 수익률 (5-30)
+    totalSplitCount: number; // a: 총 분할 횟수 (20-80)
+  };
 }
 
 export interface Trade {

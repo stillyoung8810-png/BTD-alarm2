@@ -9,9 +9,12 @@ import {
   Info,
   Bell,
   BellOff,
-  Trash2
+  Trash2,
+  TrendingUp,
+  Layers
 } from 'lucide-react';
-import { calculateInvestedAmount, calculateYield, determineActiveSection } from '../utils/portfolioCalculations';
+import { calculateInvestedAmount, calculateYield, determineActiveSection, calculateAlreadyRealized, calculateHoldings } from '../utils/portfolioCalculations';
+import { fetchStockPrices } from '../services/stockService';
 
 interface DashboardProps {
   lang: 'ko' | 'en';
@@ -133,13 +136,208 @@ const PortfolioCard: React.FC<{
   lang: 'ko' | 'en' 
 }> = ({ portfolio, onClose, onDelete, onOpenAlarm, onOpenDetails, onOpenQuickInput, onOpenExecution, lang }) => {
   const t = I18N[lang];
-  const ma0Ticker = portfolio.strategy.ma0.stock;
+  // 다분할 매매법일 때는 multiSplit.targetStock을 사용, 아니면 ma0.stock 사용
+  const ma0Ticker = portfolio.strategy.multiSplit?.targetStock || portfolio.strategy.ma0.stock;
   const gradientInfo = CUSTOM_GRADIENT_LOGOS[ma0Ticker] || { gradient: 'linear-gradient(135deg, #2563eb, #1e40af)', label: 'STOCK' };
   const isAlarmEnabled = portfolio.alarmconfig?.enabled;
   
   const [investedAmount, setInvestedAmount] = useState<number>(0);
   const [yieldRate, setYieldRate] = useState<number>(0);
+  const [realizedProfit, setRealizedProfit] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  // 전략 이름 및 아이콘 결정
+  const getStrategyInfo = () => {
+    if (portfolio.strategy.multiSplit) {
+      return {
+        name: lang === 'ko' ? '다분할 매매법' : 'Multi-Split Trading',
+        icon: <Layers size={14} className="text-emerald-500" />
+      };
+    } else {
+      return {
+        name: lang === 'ko' ? '이평선 구간매수' : 'MA Interval Buying',
+        icon: <TrendingUp size={14} className="text-blue-500" />
+      };
+    }
+  };
+
+  const strategyInfo = getStrategyInfo();
+
+  // 다분할 매매법의 현재 시행 회차(T) 계산
+  const calculateCurrentRound = (): number => {
+    if (!portfolio.strategy.multiSplit) return 0;
+    
+    const totalInvested = portfolio.trades
+      .filter(t => t.type === 'buy')
+      .reduce((sum, t) => sum + (t.price * t.quantity + t.fee), 0);
+    
+    const oneTimeAmount = portfolio.dailyBuyAmount;
+    if (oneTimeAmount === 0) return 0;
+    
+    // T = 현재 매수누적액 / 1회 매수액, 소수점 둘째 자리 올림
+    const T = Math.ceil((totalInvested / oneTimeAmount) * 100) / 100;
+    return T;
+  };
+
+  // 다분할 매매법의 현재 구간 판별
+  const getMultiSplitPhase = (): 'first' | 'second' | 'quarter' | null => {
+    if (!portfolio.strategy.multiSplit) return null;
+    
+    const T = calculateCurrentRound();
+    const a = portfolio.strategy.multiSplit.totalSplitCount;
+    
+    if (T >= 1 && T < a / 2) return 'first';
+    if (T >= a / 2 && T < a - 1) return 'second';
+    if (T >= a - 1 && T <= a) return 'quarter';
+    
+    return null;
+  };
+
+  const multiSplitPhase = getMultiSplitPhase();
+
+  // 다분할 매매법의 일별 매매 실행 계산
+  const [multiSplitExecutionData, setMultiSplitExecutionData] = useState<{
+    phase: 'first' | 'second' | 'quarter' | null;
+    locBuy1?: { price: number; quantity: number };
+    locBuy2?: { price: number; quantity: number };
+    locSell?: { price: number; quantity: number };
+    limitSell?: { price: number; quantity: number };
+    mocSell?: { quantity: number };
+  } | null>(null);
+
+  useEffect(() => {
+    const calculateMultiSplitExecution = async () => {
+      if (!portfolio.strategy.multiSplit || !multiSplitPhase) {
+        setMultiSplitExecutionData(null);
+        return;
+      }
+
+      try {
+        // multiSplit 파라미터 매핑
+        const { targetReturnRate, totalSplitCount, targetStock } = portfolio.strategy.multiSplit;
+        const A = targetReturnRate;      // 목표 수익률 (%)
+        const a = totalSplitCount;      // 총 분할 횟수
+        const T = calculateCurrentRound();
+        
+        // LOC 계산 전 유효성 검사
+        if (A <= 0 || a <= 0 || T <= 0) {
+          setMultiSplitExecutionData(null);
+          return;
+        }
+
+        // 현재 보유 내역 및 평단가 계산
+        const holdings = calculateHoldings(portfolio);
+        let targetHolding = holdings.find(h => h.stock === targetStock);
+        
+        // targetStock이 없으면 첫 번째 보유 종목 사용 (fallback)
+        if (!targetHolding && holdings.length > 0) {
+          targetHolding = holdings[0];
+          console.warn(`[Multi-Split] Target stock "${targetStock}" not found in holdings. Using first holding: ${targetHolding.stock}`);
+        }
+        
+        const avgPrice = targetHolding?.avgPrice || 0;
+        const currentQuantity = targetHolding?.quantity || 0;
+        
+        // 디버깅 로그
+        console.log('[Multi-Split] Holdings Debug:', {
+          targetStock,
+          allHoldings: holdings.map(h => ({ stock: h.stock, quantity: h.quantity })),
+          targetHolding: targetHolding ? { stock: targetHolding.stock, quantity: targetHolding.quantity, avgPrice: targetHolding.avgPrice } : null,
+          currentQuantity,
+          trades: portfolio.trades.filter(t => t.type === 'buy').map(t => ({ stock: t.stock, quantity: t.quantity }))
+        });
+        
+        // 현재 주가 가져오기
+        const stockPrices = await fetchStockPrices([targetStock]);
+        const currentPrice = stockPrices[targetStock]?.price || 0;
+        
+        // 평단가가 없으면 현재 주가 사용, 그것도 없으면 계산 불가
+        const basePrice = avgPrice > 0 ? avgPrice : (currentPrice > 0 ? currentPrice : 0);
+        if (basePrice <= 0) {
+          setMultiSplitExecutionData(null);
+          return;
+        }
+        
+        const oneTimeAmount = portfolio.dailyBuyAmount;
+        const feeRate = portfolio.feeRate || 0.25;
+        
+        // LOC 기준점 공통 계산
+        // LOC 매도 가격 = 평단가 × ( 1 + A × (1 - 2T/a) / 100 )
+        // LOC 매수 가격 = LOC 매도 가격 - 0.01
+        const locFactor = 1 + (A * (1 - (2 * T) / a)) / 100;
+        const rawLocSellPrice = basePrice * locFactor;
+        const locSellBasePrice = Math.max(0.01, rawLocSellPrice);
+        const locBuyBasePrice = Math.max(0.01, locSellBasePrice - 0.01);
+
+        // 유효성 검사 헬퍼 함수 (수량이 0이어도 가격은 계산 가능하도록 수정)
+        const safeCalculate = (price: number, qty: number) => {
+          if (isNaN(price) || isNaN(qty) || price <= 0) return null;
+          // 수량이 0이어도 가격은 반환 (매수는 가능, 매도는 수량이 0이면 null)
+          const finalQty = Math.max(0, Math.floor(qty));
+          if (finalQty <= 0) return null; // 수량이 0 이하면 null 반환
+          return { price: Number(price.toFixed(2)), quantity: finalQty };
+        };
+        
+        const result: typeof multiSplitExecutionData = {
+          phase: multiSplitPhase,
+        };
+
+        if (multiSplitPhase === 'first') {
+          // 전반전
+          // LOC 매수 1: 현재 평단가(0% LOC)에 0.5회분
+          const locBuy1Price = basePrice;
+          const locBuy1Qty = oneTimeAmount > 0 && locBuy1Price > 0 
+            ? (oneTimeAmount * 0.5) / (locBuy1Price * (1 + feeRate / 100))
+            : 0;
+          result.locBuy1 = safeCalculate(locBuy1Price, locBuy1Qty) || undefined;
+
+          // LOC 매수 2: LOC 매수 공식 적용가 (LOC 매도 기준 -0.01$), 0.5회분
+          const locBuy2Price = locBuyBasePrice;
+          const locBuy2Qty = oneTimeAmount > 0 && locBuy2Price > 0
+            ? (oneTimeAmount * 0.5) / (locBuy2Price * (1 + feeRate / 100))
+            : 0;
+          result.locBuy2 = safeCalculate(locBuy2Price, locBuy2Qty) || undefined;
+
+          // LOC 매도: 현재 보유 물량의 25%
+          const locSellPrice = locSellBasePrice;
+          const locSellQty = currentQuantity * 0.25;
+          result.locSell = safeCalculate(locSellPrice, locSellQty) || undefined;
+
+          // 지정가 매도: 현재 보유 물량의 75%, 평단가 기준 A% 상방
+          const limitSellPrice = basePrice * (1 + A / 100);
+          const limitSellQty = currentQuantity * 0.75;
+          result.limitSell = safeCalculate(limitSellPrice, limitSellQty) || undefined;
+        } else if (multiSplitPhase === 'second') {
+          // 후반전
+          // LOC 매수: LOC 매수 공식 적용가 (LOC 매도 기준 -0.01$), 1회분
+          const locBuyPrice = locBuyBasePrice;
+          const locBuyQty = oneTimeAmount > 0 && locBuyPrice > 0
+            ? oneTimeAmount / (locBuyPrice * (1 + feeRate / 100))
+            : 0;
+          result.locBuy2 = safeCalculate(locBuyPrice, locBuyQty) || undefined;
+
+          // LOC 매도: 현재 보유 물량의 25%
+          const locSellPrice = locSellBasePrice;
+          const locSellQty = currentQuantity * 0.25;
+          result.locSell = safeCalculate(locSellPrice, locSellQty) || undefined;
+
+          // 지정가 매도: 현재 보유 물량의 75%, 평단가 기준 A% 상방
+          const limitSellPrice = basePrice * (1 + A / 100);
+          const limitSellQty = currentQuantity * 0.75;
+          result.limitSell = safeCalculate(limitSellPrice, limitSellQty) || undefined;
+        }
+
+        setMultiSplitExecutionData(result);
+      } catch (err) {
+        console.error('Error calculating multi-split execution:', err);
+        setMultiSplitExecutionData(null);
+      }
+    };
+
+    if (portfolio.strategy.multiSplit) {
+      calculateMultiSplitExecution();
+    }
+  }, [portfolio, multiSplitPhase]);
 
   useEffect(() => {
     const updateMetrics = async () => {
@@ -147,8 +345,10 @@ const PortfolioCard: React.FC<{
       try {
         const invested = calculateInvestedAmount(portfolio);
         const yieldValue = await calculateYield(portfolio);
+        const realized = calculateAlreadyRealized(portfolio);
         setInvestedAmount(invested);
         setYieldRate(yieldValue);
+        setRealizedProfit(realized);
       } catch (err) {
         console.error('Error calculating portfolio metrics:', err);
       } finally {
@@ -163,7 +363,11 @@ const PortfolioCard: React.FC<{
   }, [portfolio]);
 
   return (
-    <div className="glass light-card-depth p-7 rounded-[2.5rem] space-y-6 group hover:-translate-y-1 transition-all duration-500 relative overflow-hidden shadow-[0_12px_40px_rgba(0,0,0,0.06)] dark:shadow-2xl">
+    <div
+      className={`glass light-card-depth ${
+        portfolio.strategy.multiSplit ? 'px-4' : 'px-7'
+      } pt-3.5 pb-7 rounded-[2.5rem] space-y-5 group hover:-translate-y-1 transition-all duration-500 relative overflow-hidden shadow-[0_12px_40px_rgba(0,0,0,0.06)] dark:shadow-2xl`}
+    >
       
       {/* Visual background layers */}
       <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-white/20 to-transparent pointer-events-none opacity-50 dark:hidden"></div>
@@ -204,8 +408,22 @@ const PortfolioCard: React.FC<{
         <div className="flex items-center gap-4">
           <div 
             onClick={onOpenDetails}
-            className="w-16 h-16 rounded-full overflow-hidden relative cursor-pointer active:scale-95 transition-transform"
+            className="w-16 h-16 rounded-full overflow-visible relative cursor-pointer active:scale-95 transition-transform"
           >
+            {/* 플로팅 ROI 배지 */}
+            <div className={`absolute -top-2 left-1/2 -translate-x-1/2 z-20 px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-lg ${
+              yieldRate >= 0 
+                ? 'bg-emerald-500 text-white' 
+                : 'bg-rose-500 text-white'
+            }`}>
+              <TrendingUp 
+                size={10} 
+                className={yieldRate < 0 ? 'rotate-180' : ''}
+              />
+              <span className="text-[10px] font-black">
+                {isLoading ? '...' : `${yieldRate >= 0 ? '+' : ''}${yieldRate.toFixed(1)}%`}
+              </span>
+            </div>
             <StockLogo
               ticker={ma0Ticker}
               size="xl"
@@ -218,48 +436,181 @@ const PortfolioCard: React.FC<{
           <div>
             <h3 className="text-xl font-black text-slate-800 dark:text-white leading-tight mb-1">{portfolio.name}</h3>
             <div className="flex items-center gap-2">
-               <div className={`w-1.5 h-1.5 rounded-full ${isAlarmEnabled ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]' : 'bg-emerald-500'}`}></div>
-               <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">{t.activeStrategy}</span>
+              {strategyInfo.icon}
+              <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                {strategyInfo.name}
+              </span>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 relative z-10">
-        <div className="bg-white/40 dark:bg-black/20 p-5 rounded-[1.5rem] border border-white/20 dark:border-white/5 backdrop-blur-sm">
-          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1 block">{t.invested}</span>
-          <p className="text-xl font-black text-slate-800 dark:text-white">
+      <div className={`grid grid-cols-2 gap-4 relative z-10 ${portfolio.strategy.multiSplit ? 'gap-3 mt-3' : ''}`}>
+        <div className={`bg-white/40 dark:bg-black/20 rounded-[1.5rem] border border-white/20 dark:border-white/5 backdrop-blur-sm ${portfolio.strategy.multiSplit ? 'px-4 py-4.5' : 'px-5 py-6'}`}>
+          <span className={`font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block ${portfolio.strategy.multiSplit ? 'text-[9px] mb-1' : 'text-[11px] mb-1.5'}`}>{t.invested}</span>
+          <p className={`font-black text-slate-800 dark:text-white ${portfolio.strategy.multiSplit ? 'text-lg leading-tight' : 'text-2xl leading-tight'}`}>
             {isLoading ? '...' : `$${investedAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           </p>
         </div>
-        <div className="bg-white/40 dark:bg-black/20 p-5 rounded-[1.5rem] border border-white/20 dark:border-white/5 backdrop-blur-sm">
-          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1 block">{t.yield}</span>
-          <p className={`text-xl font-black flex items-center gap-1 ${yieldRate >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-             <span className="text-xs">{yieldRate >= 0 ? '↑' : '↓'}</span> {isLoading ? '...' : `${yieldRate >= 0 ? '+' : ''}${yieldRate.toFixed(2)}%`}
+        <div className={`bg-white/40 dark:bg-black/20 rounded-[1.5rem] border border-white/20 dark:border-white/5 backdrop-blur-sm ${portfolio.strategy.multiSplit ? 'px-4 py-4.5' : 'px-5 py-6'}`}>
+          <span className={`font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block ${portfolio.strategy.multiSplit ? 'text-[9px] mb-1' : 'text-[11px] mb-1.5'}`}>
+            {lang === 'ko' ? '실현손익' : 'Realized P/L'}
+          </span>
+          <p className={`font-black flex items-center gap-1 ${realizedProfit >= 0 ? 'text-emerald-500' : 'text-rose-500'} ${portfolio.strategy.multiSplit ? 'text-lg leading-tight' : 'text-2xl leading-tight'}`}>
+             <span className="text-[11px]">{realizedProfit >= 0 ? '↑' : '↓'}</span> 
+             {isLoading ? '...' : `${realizedProfit >= 0 ? '+' : ''}$${realizedProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           </p>
         </div>
       </div>
 
       <div 
         onClick={onOpenExecution}
-        className="bg-blue-50/50 dark:bg-blue-600/15 p-5 rounded-[1.5rem] flex items-center justify-between shadow-md dark:shadow-lg dark:shadow-blue-500/20 relative overflow-hidden group/action cursor-pointer border border-blue-100 dark:border-blue-500/20"
+        className={`bg-blue-50/50 dark:bg-blue-600/15 rounded-[1.5rem] flex items-center justify-between shadow-md dark:shadow-lg dark:shadow-blue-500/20 relative overflow-hidden group/action cursor-pointer border border-blue-100 dark:border-blue-500/20 min-h-[80px] ${portfolio.strategy.multiSplit ? 'p-4 mt-3' : 'p-5'}`}
       >
         <div className="absolute inset-0 bg-blue-100/50 dark:bg-white/10 opacity-0 group-hover/action:opacity-100 transition-opacity"></div>
-        <div className="relative z-10">
-          <div className="flex items-center gap-1.5 mb-1 opacity-80">
+        <div className="relative z-10 flex-1">
+          <div className="flex items-center gap-1.5 mb-1.5 opacity-80">
              <span className="text-[9px] font-black text-blue-700 dark:text-blue-300 uppercase tracking-widest">{t.dailyExecution}</span>
              <Info size={10} className="text-blue-700 dark:text-blue-300" />
+             {portfolio.strategy.multiSplit && multiSplitPhase && (
+               <span className={`text-[9px] font-bold px-2 py-0.5 rounded-md ${
+                 multiSplitPhase === 'first' 
+                   ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-100/50 dark:bg-emerald-500/20' 
+                   : multiSplitPhase === 'second'
+                   ? 'text-blue-600 dark:text-blue-400 bg-blue-100/50 dark:bg-blue-500/20'
+                   : 'text-amber-600 dark:text-amber-400 bg-amber-100/50 dark:bg-amber-500/20'
+               }`}>
+                 {multiSplitPhase === 'first' 
+                   ? (lang === 'ko' ? '전반전' : 'First Half')
+                   : multiSplitPhase === 'second'
+                   ? (lang === 'ko' ? '후반전' : 'Second Half')
+                   : (lang === 'ko' ? '쿼터 손절' : 'Quarter Stop-Loss')
+                 }
+               </span>
+             )}
           </div>
-          <div className="text-lg font-black text-blue-900 dark:text-white">
-            {t.section} 1: {portfolio.strategy.ma1.stock} {t.buy}
-          </div>
+          {portfolio.strategy.multiSplit ? (
+            <div className="text-sm font-black text-blue-900 dark:text-white space-y-2">
+              {multiSplitPhase === 'first' && multiSplitExecutionData && (
+                <>
+                  {/* LOC 매수 1, 2를 좌우로 배치 */}
+                  <div className="grid grid-cols-2 gap-2 text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium">
+                    {multiSplitExecutionData.locBuy1 ? (
+                      <div>
+                        <span className="font-black">{lang === 'ko' ? 'LOC매수1:' : 'LOC Buy1:'}</span>{' '}
+                        ${multiSplitExecutionData.locBuy1.price.toFixed(2)} / {multiSplitExecutionData.locBuy1.quantity}
+                      </div>
+                    ) : (
+                      <div className="text-slate-400 dark:text-slate-500 text-[10px]">
+                        {lang === 'ko' ? 'LOC매수1: 계산 중...' : 'LOC Buy1: Calculating...'}
+                      </div>
+                    )}
+                    {multiSplitExecutionData.locBuy2 ? (
+                      <div>
+                        <span className="font-black">{lang === 'ko' ? 'LOC매수2:' : 'LOC Buy2:'}</span>{' '}
+                        ${multiSplitExecutionData.locBuy2.price.toFixed(2)} / {multiSplitExecutionData.locBuy2.quantity}
+                      </div>
+                    ) : (
+                      <div className="text-slate-400 dark:text-slate-500 text-[10px]">
+                        {lang === 'ko' ? 'LOC매수2: 계산 중...' : 'LOC Buy2: Calculating...'}
+                      </div>
+                    )}
+                  </div>
+                  {/* LOC 매도, 지정가를 좌우로 배치 */}
+                  <div className="grid grid-cols-2 gap-2 text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium">
+                    {multiSplitExecutionData.locSell ? (
+                      <div>
+                        <span className="font-black">{lang === 'ko' ? 'LOC매도:' : 'LOC Sell:'}</span>{' '}
+                        ${multiSplitExecutionData.locSell.price.toFixed(2)} / {multiSplitExecutionData.locSell.quantity}
+                      </div>
+                    ) : (
+                      <div className="text-slate-400 dark:text-slate-500 text-[10px]">
+                        {lang === 'ko' ? 'LOC매도: 보유 없음' : 'LOC Sell: No holdings'}
+                      </div>
+                    )}
+                    {multiSplitExecutionData.limitSell ? (
+                      <div>
+                        <span className="font-black">{lang === 'ko' ? '지정가:' : 'Limit:'}</span>{' '}
+                        ${multiSplitExecutionData.limitSell.price.toFixed(2)} / {multiSplitExecutionData.limitSell.quantity}
+                      </div>
+                    ) : (
+                      <div className="text-slate-400 dark:text-slate-500 text-[10px]">
+                        {lang === 'ko' ? '지정가: 보유 없음' : 'Limit: No holdings'}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+              {multiSplitPhase === 'second' && multiSplitExecutionData && (
+                <>
+                  {/* LOC 매수 (후반전은 1개만) */}
+                  <div className="text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium mb-2">
+                    {multiSplitExecutionData.locBuy2 ? (
+                      <div>
+                        <span className="font-black">{lang === 'ko' ? 'LOC매수:' : 'LOC Buy:'}</span>{' '}
+                        ${multiSplitExecutionData.locBuy2.price.toFixed(2)} / {multiSplitExecutionData.locBuy2.quantity}
+                      </div>
+                    ) : (
+                      <div className="text-slate-400 dark:text-slate-500 text-[10px]">
+                        {lang === 'ko' ? 'LOC매수: 계산 중...' : 'LOC Buy: Calculating...'}
+                      </div>
+                    )}
+                  </div>
+                  {/* LOC 매도, 지정가를 좌우로 배치 */}
+                  <div className="grid grid-cols-2 gap-2 text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium">
+                    {multiSplitExecutionData.locSell ? (
+                      <div>
+                        <span className="font-black">{lang === 'ko' ? 'LOC매도:' : 'LOC Sell:'}</span>{' '}
+                        ${multiSplitExecutionData.locSell.price.toFixed(2)} / {multiSplitExecutionData.locSell.quantity}
+                      </div>
+                    ) : (
+                      <div className="text-slate-400 dark:text-slate-500 text-[10px]">
+                        {lang === 'ko' ? 'LOC매도: 보유 없음' : 'LOC Sell: No holdings'}
+                      </div>
+                    )}
+                    {multiSplitExecutionData.limitSell ? (
+                      <div>
+                        <span className="font-black">{lang === 'ko' ? '지정가:' : 'Limit:'}</span>{' '}
+                        ${multiSplitExecutionData.limitSell.price.toFixed(2)} / {multiSplitExecutionData.limitSell.quantity}
+                      </div>
+                    ) : (
+                      <div className="text-slate-400 dark:text-slate-500 text-[10px]">
+                        {lang === 'ko' ? '지정가: 보유 없음' : 'Limit: No holdings'}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+              {multiSplitPhase === 'quarter' && (
+                <>
+                  <div className="text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium space-y-2">
+                    <div className="font-black">{lang === 'ko' ? 'MOC 매도' : 'MOC Sell'}</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>{lang === 'ko' ? 'LOC 매수 -10%' : 'LOC Buy -10%'}</div>
+                      <div>{lang === 'ko' ? 'LOC 매도 -10%' : 'LOC Sell -10%'}</div>
+                    </div>
+                    <div>{lang === 'ko' ? '지정가 +A%' : 'Limit +A%'}</div>
+                  </div>
+                </>
+              )}
+              {!multiSplitPhase && (
+                <div className="text-[9px] text-blue-600/70 dark:text-blue-400/70 font-medium">
+                  {lang === 'ko' ? '전략 준비 중' : 'Strategy preparing'}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-lg font-black text-blue-900 dark:text-white leading-tight">
+              {t.section} 1: {portfolio.strategy.ma1.stock} {t.buy}
+            </div>
+          )}
         </div>
         <button 
           onClick={(e) => {
             e.stopPropagation();
             onOpenQuickInput();
           }}
-          className="w-10 h-10 rounded-xl bg-blue-600/20 dark:bg-white/20 flex items-center justify-center text-blue-700 dark:text-white backdrop-blur-md hover:scale-110 active:scale-95 transition-all shadow-sm dark:shadow-[0_0_15px_rgba(255,255,255,0.2)]"
+          className="w-10 h-10 rounded-xl bg-blue-600/20 dark:bg-white/20 flex items-center justify-center text-blue-700 dark:text-white backdrop-blur-md hover:scale-110 active:scale-95 transition-all shadow-sm dark:shadow-[0_0_15px_rgba(255,255,255,0.2)] shrink-0"
         >
            <Zap size={20} className="fill-current" />
         </button>

@@ -9,7 +9,15 @@ export const PAID_STOCKS = [
 ];
 
 // UI 리스트/필터링용 전체 종목
-export const ALL_STOCKS = [...AVAILABLE_STOCKS, ...PAID_STOCKS];
+// 시세탭 종목 정보 순서를 제어하기 위해, 채권/현금성 ETF(BIL, ICSH, SGOV)를 가장 마지막으로 배치
+export const ALL_STOCKS = [
+  // 기본 인덱스/레버리지/기타
+  'SPY', 'SSO', 'UPRO', 'QQQ', 'QLD', 'TQQQ', 'SOXX', 'USD', 'SOXL', 'STRC',
+  // 유료 PRO/PREMIUM 전용 종목
+  ...PAID_STOCKS,
+  // 채권/현금성 ETF - 시세탭 종목 정보의 맨 마지막에 오도록
+  'BIL', 'ICSH', 'SGOV',
+];
 
 export const STOCK_COLORS: Record<string, string> = {
   'SPY': '#4285F4', 'SSO': '#EA4335', 'UPRO': '#FBBC04', 'QQQ': '#34A853',
@@ -81,7 +89,7 @@ export const I18N = {
     globalMarkets: "글로벌 마켓",
     searchTicker: "티커 검색...",
     launchStrategy: "전략 시작",
-    systematicAccumulation: "퀀트 전략을 통한 체계적인 분할 매수 자산 관리 시스템입니다.",
+    systematicAccumulation: "일별 종가를 바탕으로 체계적인 중/장기 분할 매수 관리 시스템입니다.",
     pulseTitle: "시스템 상태",
     pulseStatus: "정상",
     quickInput: "빠른 매매 입력",

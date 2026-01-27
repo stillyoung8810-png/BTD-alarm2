@@ -4,6 +4,8 @@ import { Portfolio, Trade } from '../types';
 import { I18N, CUSTOM_GRADIENT_LOGOS, PAID_STOCKS } from '../constants';
 import { X, Zap, ChevronRight, AlertCircle } from 'lucide-react';
 import StockLogo from './StockLogo';
+import { fetchStockPrices } from '../services/stockService';
+import { getStockPrices } from '../services/db';
 
 interface QuickInputModalProps {
   lang: 'ko' | 'en';
@@ -17,6 +19,7 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
   const [type, setType] = useState<'buy' | 'sell'>('buy');
   const [price, setPrice] = useState<number>(0);
   const [quantity, setQuantity] = useState<number>(0);
+  const [latestTradeDate, setLatestTradeDate] = useState<string>('');
   
   // 활성 구간 결정 (propActiveSection이 없으면 기본값 1)
   const activeSection = propActiveSection || 1;
@@ -34,6 +37,44 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
   const feeRate = portfolio.feeRate || 0.25;
 
   const holdings = Array.from(new Set(portfolio.trades.map(t => t.stock)));
+
+  // 최신 종가 거래일 가져오기
+  useEffect(() => {
+    const fetchLatestDate = async () => {
+      try {
+        const targetStock = portfolio.strategy.multiSplit 
+          ? portfolio.strategy.multiSplit.targetStock 
+          : portfolio.strategy.ma0.stock;
+        
+        // IndexedDB에서 최신 데이터 가져오기
+        const { getStockPrices, initDatabase } = await import('../services/db');
+        await initDatabase();
+        const records = await getStockPrices(targetStock, 1);
+        
+        if (records.length > 0) {
+          const latestDate = records[records.length - 1].date;
+          setLatestTradeDate(latestDate);
+        } else {
+          // IndexedDB에 없으면 오늘 날짜 사용
+          const today = new Date();
+          const year = today.getFullYear();
+          const month = String(today.getMonth() + 1).padStart(2, '0');
+          const day = String(today.getDate()).padStart(2, '0');
+          setLatestTradeDate(`${year}-${month}-${day}`);
+        }
+      } catch (err) {
+        console.error('Error fetching latest trade date:', err);
+        // 에러 시 오늘 날짜 사용
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        setLatestTradeDate(`${year}-${month}-${day}`);
+      }
+    };
+    
+    fetchLatestDate();
+  }, [portfolio]);
 
   // 매수일 때 활성 구간의 종목 자동 선택
   useEffect(() => {
@@ -61,11 +102,16 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
 
   const handleSave = () => {
     if (price <= 0 || quantity <= 0) return;
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    const dateStr = `${y}-${m}-${d}`;
+    
+    // 마지막 종가 데이터 날짜 사용 (없으면 현재 날짜)
+    let dateStr = latestTradeDate;
+    if (!dateStr) {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const d = String(now.getDate()).padStart(2, '0');
+      dateStr = `${y}-${m}-${d}`;
+    }
 
     const newTrade: Trade = {
       id: Math.random().toString(36).substring(7),
@@ -112,11 +158,20 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
         
         {/* 헤더 - 고정 */}
         <div className="p-6 md:p-8 border-b border-slate-200 dark:border-white/5 flex justify-between items-center shrink-0">
-          <div className="flex items-center gap-3">
-             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
+          <div className="flex-1">
+            <div className="flex items-center gap-3 mb-1">
+              <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
                 <Zap size={20} className="text-white fill-white" />
-             </div>
-             <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">{t.quickInput}</h2>
+              </div>
+              <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">{t.quickInput}</h2>
+            </div>
+            {latestTradeDate && (
+              <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 ml-13 mt-1">
+                {lang === 'ko' 
+                  ? `${new Date(latestTradeDate).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })} 매매 내역 입력입니다.`
+                  : `Entering trade data for ${new Date(latestTradeDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}.`}
+              </p>
+            )}
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-white/5 rounded-full text-slate-500 dark:text-slate-400"><X size={20} /></button>
         </div>

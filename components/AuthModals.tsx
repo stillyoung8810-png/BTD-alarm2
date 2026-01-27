@@ -1,20 +1,21 @@
 
 import React, { useState } from 'react';
 import { I18N } from '../constants';
-import { X, Mail, Lock, LogOut, Key, UserCheck, ShieldCheck } from 'lucide-react';
+import { X, Mail, Lock, LogOut, Key, UserCheck, ShieldCheck, Sparkles } from 'lucide-react';
 import { supabase } from '../services/supabase';
 
 interface AuthModalsProps {
   lang: 'ko' | 'en';
-  type: 'login' | 'signup' | 'profile' | 'reset-password';
+  type: 'login' | 'signup' | 'profile' | 'reset-password' | 'change-password';
   onClose: () => void;
-  onSwitchType: (type: 'login' | 'signup' | 'profile' | 'reset-password') => void;
+  onSwitchType: (type: 'login' | 'signup' | 'profile' | 'reset-password' | 'change-password') => void;
   onLogin: (user: { id: string; email: string }) => void;
   onLogout: () => void;
   currentUserEmail?: string | null;
+  currentTier?: 'free' | 'pro' | 'premium' | null;
 }
 
-const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchType, onLogin, onLogout, currentUserEmail }) => {
+const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchType, onLogin, onLogout, currentUserEmail, currentTier = 'free' }) => {
   const t = I18N[lang];
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -24,6 +25,14 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
 
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+
+  const tierLabel =
+    currentTier === 'premium'
+      ? 'PREMIUM'
+      : currentTier === 'pro'
+      ? 'PRO'
+      : 'FREE';
 
   // 베이스 URL과 경로를 안전하게 합쳐서 슬래시 중복/누락을 방지하는 헬퍼
   const buildRedirectUrl = (path: string) => {
@@ -36,6 +45,69 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (type === 'change-password') {
+      // 프로필 내에서 사용하는 비밀번호 변경 (현재 비밀번호 + 새 비밀번호)
+      if (!currentPassword || !newPassword || !confirmPassword) {
+        setError(lang === 'ko' ? '모든 비밀번호 입력란을 채워주세요.' : 'Please fill in all password fields.');
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        setError(lang === 'ko' ? '새 비밀번호가 일치하지 않습니다.' : 'New passwords do not match.');
+        return;
+      }
+      if (newPassword.length < 6) {
+        setError(lang === 'ko' ? '비밀번호는 최소 6자 이상이어야 합니다.' : 'Password must be at least 6 characters.');
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+      setInfo(null);
+
+      try {
+        const emailToUse = currentUserEmail || email;
+        if (!emailToUse) {
+          setError(lang === 'ko' ? '이메일 정보를 불러오지 못했습니다. 다시 로그인 후 시도해주세요.' : 'Email not available. Please log in again and retry.');
+          setLoading(false);
+          return;
+        }
+
+        // 현재 비밀번호 확인을 위해 재로그인 시도
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: emailToUse,
+          password: currentPassword,
+        });
+        if (signInError) {
+          setError(lang === 'ko' ? '현재 비밀번호가 올바르지 않습니다.' : 'Current password is incorrect.');
+          setLoading(false);
+          return;
+        }
+
+        const { error: updateError } = await supabase.auth.updateUser({
+          password: newPassword,
+        });
+
+        if (updateError) {
+          setError(updateError.message || (lang === 'ko' ? '비밀번호 변경에 실패했습니다.' : 'Failed to update password.'));
+        } else {
+          setCurrentPassword('');
+          setNewPassword('');
+          setConfirmPassword('');
+          setInfo(null);
+
+          if (typeof window !== 'undefined') {
+            alert(lang === '코' ? '비밀번호가 성공적으로 변경되었습니다.' : 'Password updated successfully.');
+          }
+          onSwitchType('profile');
+        }
+      } catch (err: any) {
+        setError(err?.message || (lang === 'ko' ? '비밀번호 변경에 실패했습니다.' : 'Failed to update password.'));
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     if (type === 'reset-password') {
       if (!newPassword || !confirmPassword) {
         setError(lang === 'ko' ? '새 비밀번호를 입력해주세요.' : 'Please enter new password.');
@@ -278,7 +350,15 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                  {type === 'profile' ? <UserCheck className="text-white" size={20} /> : <ShieldCheck className="text-white" size={20} />}
               </div>
               <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
-                {type === 'login' ? t.login : type === 'signup' ? t.signup : type === 'reset-password' ? (lang === 'ko' ? '비밀번호 재설정' : 'Reset Password') : 'User Profile'}
+                {type === 'login'
+                  ? t.login
+                  : type === 'signup'
+                  ? t.signup
+                  : type === 'reset-password'
+                  ? (lang === 'ko' ? '비밀번호 재설정' : 'Reset Password')
+                  : type === 'change-password'
+                  ? (lang === 'ko' ? '비밀번호 변경' : 'Change Password')
+                  : 'User Profile'}
               </h2>
            </div>
            <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-white/5 rounded-full text-slate-500 dark:text-slate-400"><X size={24} /></button>
@@ -343,17 +423,112 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                     : 'Update Password'}
               </button>
             </form>
+          ) : type === 'change-password' ? (
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                  {lang === 'ko' ? '현재 비밀번호' : 'Current Password'}
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="w-full p-5 pl-14 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/50"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                  {lang === 'ko' ? '새 비밀번호' : 'New Password'}
+                </label>
+                <div className="relative">
+                  <Key className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full p-5 pl-14 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/50"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                  {lang === 'ko' ? '새 비밀번호 확인' : 'Confirm New Password'}
+                </label>
+                <div className="relative">
+                  <Key className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full p-5 pl-14 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/50"
+                  />
+                </div>
+              </div>
+
+              {error && (
+                <p className="text-xs font-bold text-rose-500 bg-rose-500/10 border border-rose-500/30 rounded-2xl px-4 py-3">
+                  {error}
+                </p>
+              )}
+              {info && (
+                <p className="text-xs font-bold text-emerald-400 bg-emerald-500/5 border border-emerald-500/30 rounded-2xl px-4 py-3">
+                  {info}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-blue-500/20 hover:scale-[1.02] active:scale-95 transition-all mt-4 disabled:opacity-60 disabled:hover:scale-100"
+                disabled={loading}
+              >
+                {loading
+                  ? lang === 'ko'
+                    ? '처리 중...'
+                    : 'Working...'
+                  : lang === 'ko'
+                  ? '비밀번호 업데이트'
+                  : 'Update Password'}
+              </button>
+            </form>
           ) : type === 'profile' ? (
             <div className="space-y-6">
                <div className="bg-slate-50 dark:bg-slate-900/60 p-6 rounded-2xl border border-slate-200 dark:border-white/5 text-center">
-                  <div className="w-20 h-20 bg-blue-600 rounded-full mx-auto mb-4 flex items-center justify-center shadow-xl border-4 border-white/10">
-                     <UserCheck size={40} className="text-white" />
+                  <div className="relative w-24 h-24 mx-auto mb-4 rounded-3xl bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 flex items-center justify-center shadow-xl border border-white/10">
+                     <UserCheck size={40} className="text-slate-100" />
+                     {currentTier !== 'free' && (
+                       <div className={`absolute -bottom-2 right-3 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1 ${
+                         currentTier === 'premium'
+                           ? 'bg-amber-400 text-slate-900 shadow-[0_0_20px_rgba(251,191,36,0.55)]'
+                           : 'bg-sky-400 text-slate-900 shadow-[0_0_16px_rgba(56,189,248,0.45)]'
+                       }`}>
+                         <Sparkles size={10} className="hidden" />
+                         {tierLabel}
+                       </div>
+                     )}
                   </div>
-                  <p className="text-slate-600 dark:text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-1">
-                    {lang === 'ko' ? '로그인 계정' : 'Logged in as'}
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.25em] mb-1">
+                    {lang === 'ko' ? 'ACCOUNT CONNECTED' : 'ACCOUNT CONNECTED'}
                   </p>
-                  <p className="text-slate-900 dark:text-white font-black text-lg">
+                  <p className="text-slate-900 dark:text-white font-black text-lg mb-1">
                     {currentUserEmail || 'unknown'}
+                  </p>
+                  <p className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-slate-900/80 text-slate-100 border border-white/10">
+                    {tierLabel === 'FREE'
+                      ? (lang === 'ko' ? 'FREE 회원' : 'FREE MEMBER')
+                      : tierLabel === 'PRO'
+                      ? (lang === 'ko' ? 'PRO 회원' : 'PRO MEMBER')
+                      : (lang === 'ko' ? 'PREMIUM 회원' : 'PREMIUM MEMBER')}
                   </p>
                </div>
 
@@ -371,7 +546,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                <div className="space-y-3">
                   <button
                     type="button"
-                    onClick={() => handleResetPassword(currentUserEmail || undefined)}
+                    onClick={() => onSwitchType('change-password')}
                     disabled={loading}
                     className="w-full py-5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-white rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 border border-slate-200 dark:border-white/5 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                   >

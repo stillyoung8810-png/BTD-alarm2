@@ -26,6 +26,9 @@ export interface StockMetadata {
   lastUpdated: string; // YYYY-MM-DD 형식
   dataCount: number; // 저장된 데이터 개수
   updatedAt: number; // timestamp
+  // 서버(Supabase)에 최신 데이터를 확인하러 간 마지막 기록 (UTC 기준)
+  lastCheckedDate?: string; // YYYY-MM-DD 형식 (UTC 날짜)
+  lastCheckedAt?: number; // timestamp (UTC 기준 now.getTime())
 }
 
 /**
@@ -149,6 +152,28 @@ export const updateStockMetadata = async (
     });
   } catch (error) {
     console.error(`[IndexedDB] 메타데이터 업데이트 실패 (${symbol}):`, error);
+    throw error;
+  }
+};
+
+/**
+ * 종목별 "서버 확인 시간" 메타데이터 업데이트
+ * - 실제로 Supabase에 접속해서 최신 데이터를 확인한 시점을 기록
+ * - 주말/공휴일처럼 데이터가 바뀌지 않은 경우에도 호출되어야 함
+ */
+export const updateLastCheckedMetadata = async (
+  symbol: string,
+  lastCheckedDate: string,
+  lastCheckedAt: number
+): Promise<void> => {
+  try {
+    await db.stockMetadata.update(symbol, {
+      lastCheckedDate,
+      lastCheckedAt,
+      updatedAt: Date.now(),
+    });
+  } catch (error) {
+    console.error(`[IndexedDB] lastChecked 메타데이터 업데이트 실패 (${symbol}):`, error);
     throw error;
   }
 };

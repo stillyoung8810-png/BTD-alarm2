@@ -7,7 +7,9 @@ import {
   getStockPrices, 
   saveStockPrices, 
   updateStockMetadata,
-  StockPriceRecord 
+  updateLastCheckedMetadata,
+  StockPriceRecord,
+  StockMetadata,
 } from './db';
 import { AVAILABLE_STOCKS, PAID_STOCKS } from '../constants';
 
@@ -289,6 +291,7 @@ export const calculateRSI = (prices: number[], period: number = 14): number => {
 
 /**
  * 오늘 날짜 문자열 반환 (YYYY-MM-DD, KST 기준)
+ * - Supabase stock_prices.trade_date(KST 기반 스케줄링)와 비교용
  */
 const getTodayDateString = (): string => {
   const nowUtc = new Date();
@@ -300,6 +303,62 @@ const getTodayDateString = (): string => {
 };
 
 /**
+ * UTC 기준 오늘 날짜 문자열 반환 (YYYY-MM-DD)
+ * - lastCheckedDate 기록용
+ */
+const getTodayUtcDateString = (nowUtc: Date = new Date()): string => {
+  return nowUtc.toISOString().slice(0, 10);
+};
+
+/**
+ * 오늘 기준 UTC 22:15 (서버 데이터 최종 업데이트 가정 시각)
+ */
+const getTodayUtcCutoff = (nowUtc: Date): Date => {
+  return new Date(
+    Date.UTC(
+      nowUtc.getUTCFullYear(),
+      nowUtc.getUTCMonth(),
+      nowUtc.getUTCDate(),
+      22,
+      15,
+      0,
+    ),
+  );
+};
+
+const MS_24H = 24 * 60 * 60 * 1000;
+
+/**
+ * Supabase에 "최신 데이터 확인"을 할지 여부 판단
+ *
+ * 조건 (OR):
+ * 1. 현재 시각이 UTC 22:15 이후이고, 아직 오늘 날짜(UTC)로 서버 확인을 하지 않은 경우
+ * 2. 마지막 서버 확인 시점(lastCheckedAt)으로부터 24시간 이상 경과한 경우
+ *
+ * metadata가 없는 경우(최초 실행)에는 항상 true 반환
+ */
+const shouldCheckServerForSymbol = (
+  metadata: StockMetadata | null,
+  nowUtc: Date,
+): boolean => {
+  if (!metadata) return true;
+
+  const nowTs = nowUtc.getTime();
+  const todayUtc = getTodayUtcDateString(nowUtc);
+  const cutoffUtc = getTodayUtcCutoff(nowUtc);
+  const isAfterCutoff = nowUtc >= cutoffUtc;
+
+  const lastCheckedAt = metadata.lastCheckedAt ?? 0;
+  const msSinceLastCheck =
+    lastCheckedAt > 0 ? nowTs - lastCheckedAt : MS_24H + 1;
+
+  const cond1 = isAfterCutoff && metadata.lastCheckedDate !== todayUtc;
+  const cond2 = msSinceLastCheck >= MS_24H;
+
+  return cond1 || cond2;
+};
+
+/**
  * 초기 데이터 로딩: 모든 종목의 240일치 데이터를 Supabase에서 가져와서 IndexedDB에 저장
  */
 export const loadInitialStockData = async (): Promise<void> => {
@@ -307,22 +366,39 @@ export const loadInitialStockData = async (): Promise<void> => {
     // IndexedDB 초기화
     await initDatabase();
     
-    const today = getTodayDateString();
-    console.log('[loadInitialStockData] 초기 데이터 로딩 시작:', today);
+    const todayKst = getTodayDateString();
+    const nowUtc = new Date();
+    const todayUtc = getTodayUtcDateString(nowUtc);
+    console.log('[loadInitialStockData] 초기 데이터 로딩 시작:', todayKst, '(UTC:', todayUtc, ')');
     
     // 무료 종목에 대해 병렬로 처리
     await Promise.all(
       AVAILABLE_STOCKS.map(async (symbol) => {
         try {
           const metadata = await getStockMetadata(symbol);
-          
-          // 이미 오늘 날짜의 데이터가 있으면 스킵
-          if (metadata && metadata.lastUpdated === today && metadata.dataCount >= 200) {
-            console.log(`[loadInitialStockData] ${symbol}: 이미 최신 데이터 있음 (${metadata.dataCount}일)`);
+          const shouldCheck = shouldCheckServerForSymbol(metadata, nowUtc);
+
+          // 1) 데이터가 충분(200일 이상)이고, 오늘/24시간 이내에 이미 확인했다면 서버에 다시 묻지 않고 캐시 사용
+          if (metadata && metadata.dataCount >= 200 && !shouldCheck) {
+            console.log(
+              `[loadInitialStockData] ${symbol}: 캐시 데이터 사용 (dataCount=${metadata.dataCount}, lastUpdated=${metadata.lastUpdated}, lastCheckedDate=${metadata.lastCheckedDate})`,
+            );
             return;
           }
-          
-          console.log(`[loadInitialStockData] ${symbol}: Supabase에서 데이터 가져오는 중...`);
+
+          // 2) 데이터가 충분(200일 이상)이고, 서버 확인 조건을 충족한다면 최신 1일치만 부분 업데이트
+          if (metadata && metadata.dataCount >= 200 && shouldCheck) {
+            console.log(
+              `[loadInitialStockData] ${symbol}: 부분 업데이트 조건 충족 → 최신 1일치 업데이트 시도`,
+            );
+            await updateLatestStockData(symbol);
+            return;
+          }
+
+          // 3) 그 외(메타데이터가 없거나, 데이터가 부족한 경우): 전체 240일 데이터 로딩
+          console.log(
+            `[loadInitialStockData] ${symbol}: 메타데이터 없음 또는 데이터 부족 → Supabase에서 전체 240일 데이터 가져오는 중...`,
+          );
           
           // Supabase에서 240일치 데이터 가져오기
           const { data, error } = await supabase
@@ -353,6 +429,12 @@ export const loadInitialStockData = async (): Promise<void> => {
           // 메타데이터 업데이트
           const latestDate = records[records.length - 1].date;
           await updateStockMetadata(symbol, latestDate, records.length);
+          await updateLastCheckedMetadata(symbol, todayUtc, nowUtc.getTime());
+
+          // QQQ는 글로벌 기준일로 활용 (마지막 거래일 저장)
+          if (typeof window !== 'undefined' && symbol === 'QQQ') {
+            window.localStorage.setItem('LATEST_TRADE_DATE', latestDate);
+          }
           
           console.log(`[loadInitialStockData] ${symbol}: ${records.length}일치 데이터 저장 완료`);
         } catch (err) {
@@ -374,20 +456,37 @@ export const loadInitialStockData = async (): Promise<void> => {
 export const loadPaidStockData = async (): Promise<void> => {
   try {
     await initDatabase();
-    const today = getTodayDateString();
-    console.log('[loadPaidStockData] 유료 종목 데이터 로딩 시작:', today);
+    const todayKst = getTodayDateString();
+    const nowUtc = new Date();
+    const todayUtc = getTodayUtcDateString(nowUtc);
+    console.log('[loadPaidStockData] 유료 종목 데이터 로딩 시작:', todayKst, '(UTC:', todayUtc, ')');
 
     await Promise.all(
       PAID_STOCKS.map(async (symbol) => {
         try {
           const metadata = await getStockMetadata(symbol);
-          // 이미 오늘 날짜의 데이터가 있고 충분하면 스킵
-          if (metadata && metadata.lastUpdated === today && metadata.dataCount >= 200) {
-            console.log(`[loadPaidStockData] ${symbol}: 이미 최신 데이터 있음 (${metadata.dataCount}일)`);
+          const shouldCheck = shouldCheckServerForSymbol(metadata, nowUtc);
+
+          // 1) 데이터가 충분(200일 이상)이고, 오늘/24시간 이내에 이미 확인했다면 서버에 다시 묻지 않고 캐시 사용
+          if (metadata && metadata.dataCount >= 200 && !shouldCheck) {
+            console.log(
+              `[loadPaidStockData] ${symbol}: 캐시 데이터 사용 (dataCount=${metadata.dataCount}, lastUpdated=${metadata.lastUpdated}, lastCheckedDate=${metadata.lastCheckedDate})`,
+            );
             return;
           }
 
-          console.log(`[loadPaidStockData] ${symbol}: Supabase에서 데이터 가져오는 중...`);
+          // 2) 데이터가 충분(200일 이상)이고, 서버 확인 조건을 충족한다면 최신 1일치만 부분 업데이트
+          if (metadata && metadata.dataCount >= 200 && shouldCheck) {
+            console.log(
+              `[loadPaidStockData] ${symbol}: 부분 업데이트 조건 충족 → 최신 1일치 업데이트 시도`,
+            );
+            await updateLatestStockData(symbol);
+            return;
+          }
+
+          console.log(
+            `[loadPaidStockData] ${symbol}: 메타데이터 없음 또는 데이터 부족 → Supabase에서 전체 240일 데이터 가져오는 중...`,
+          );
           const { data, error } = await supabase
             .from('stock_prices')
             .select('close, trade_date')
@@ -414,6 +513,12 @@ export const loadPaidStockData = async (): Promise<void> => {
           await calculateAndSaveIndicators(symbol, records);
           const latestDate = records[records.length - 1].date;
           await updateStockMetadata(symbol, latestDate, records.length);
+          await updateLastCheckedMetadata(symbol, todayUtc, nowUtc.getTime());
+
+          // QQQ는 글로벌 기준일로 활용 (마지막 거래일 저장)
+          if (typeof window !== 'undefined' && symbol === 'QQQ') {
+            window.localStorage.setItem('LATEST_TRADE_DATE', latestDate);
+          }
           console.log(`[loadPaidStockData] ${symbol}: ${records.length}일치 데이터 저장 완료`);
         } catch (err) {
           console.error(`[loadPaidStockData] ${symbol} 처리 실패:`, err);
@@ -490,17 +595,14 @@ const calculateAndSaveIndicators = async (
  */
 export const updateLatestStockData = async (symbol: string): Promise<void> => {
   try {
+    const nowUtc = new Date();
+    const todayUtc = getTodayUtcDateString(nowUtc);
+    const nowTs = nowUtc.getTime();
+
     const metadata = await getStockMetadata(symbol);
     if (!metadata) {
-      // 메타데이터가 없으면 전체 로딩
-      await loadInitialStockData();
-      return;
-    }
-    
-    const today = getTodayDateString();
-    
-    // 이미 오늘 데이터가 있으면 스킵
-    if (metadata.lastUpdated === today) {
+      // 메타데이터가 없으면 상위 로직에서 전체 로딩을 수행하도록 위임
+      console.warn(`[updateLatestStockData] ${symbol}: 메타데이터 없음, 상위 로직에서 전체 로딩 필요`);
       return;
     }
     
@@ -523,7 +625,11 @@ export const updateLatestStockData = async (symbol: string): Promise<void> => {
     // 이미 해당 날짜 데이터가 있는지 확인
     const existingData = await getStockPrices(symbol, 1);
     if (existingData.length > 0 && existingData[existingData.length - 1].date === latestDate) {
-      return; // 이미 있음
+      // 이미 최신 거래일 데이터가 있는 경우:
+      // - 주말/공휴일/미국장 휴장일일 수 있음
+      // - 데이터는 그대로 두되, "오늘 확인 완료" 기록만 갱신
+      await updateLastCheckedMetadata(symbol, todayUtc, nowTs);
+      return;
     }
     
     // 새 레코드 생성
@@ -543,6 +649,12 @@ export const updateLatestStockData = async (symbol: string): Promise<void> => {
     
     // 메타데이터 업데이트
     await updateStockMetadata(symbol, latestDate, updatedRecords.length);
+    await updateLastCheckedMetadata(symbol, todayUtc, nowTs);
+    
+    // QQQ는 글로벌 기준일로 활용 (마지막 거래일 저장)
+    if (typeof window !== 'undefined' && symbol === 'QQQ') {
+      window.localStorage.setItem('LATEST_TRADE_DATE', latestDate);
+    }
     
     console.log(`[updateLatestStockData] ${symbol}: 최신 데이터 추가 완료`);
   } catch (err) {

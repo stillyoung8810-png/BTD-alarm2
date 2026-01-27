@@ -47,7 +47,7 @@ const App: React.FC = () => {
     subscription_status?: string | null;
     subscription_expires_at?: string | null;
   } | null>(null);
-  const [authModal, setAuthModal] = useState<'login' | 'signup' | 'profile' | 'reset-password' | null>(null);
+  const [authModal, setAuthModal] = useState<'login' | 'signup' | 'profile' | 'reset-password' | 'change-password' | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const authModalRef = useRef(authModal);
 
@@ -1530,6 +1530,7 @@ const App: React.FC = () => {
               }
             }}
             currentUserEmail={user?.email}
+            currentTier={currentTier === 'premium' || currentTier === 'pro' ? currentTier : 'free'}
           />
         )}
       </div>

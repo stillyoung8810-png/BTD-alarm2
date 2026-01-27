@@ -120,13 +120,41 @@ export const getMarketStatus = (lang: 'ko' | 'en' = 'ko'): { isOpen: boolean; me
     };
   }
 
-  // 화~토요일 07:20 이후면 데이터 업데이트 완료
+  // 화~토요일 07:20 이후면 데이터는 전일 미국장 종가 기준으로 반영된 상태
   if (kstDayOfWeek >= 2 && kstDayOfWeek <= 6 && isAfterUpdateTime) {
+    // LATEST_TRADE_DATE (예: 2026-01-26)가 localStorage에 저장되어 있으면 해당 날짜를 표시
+    let latestLabel = '';
+    if (typeof window !== 'undefined') {
+      const latest = window.localStorage.getItem('LATEST_TRADE_DATE');
+      if (latest) {
+        try {
+          const d = new Date(`${latest}T00:00:00Z`);
+          if (!isNaN(d.getTime())) {
+            if (lang === 'ko') {
+              const m = d.getUTCMonth() + 1;
+              const dd = d.getUTCDate();
+              latestLabel = `${m}월 ${dd}일 종가`;
+            } else {
+              const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+              latestLabel = d.toLocaleDateString('en-US', opts) + ' close';
+            }
+          }
+        } catch {
+          // 파싱 실패 시 latestLabel은 비워두고 기본 문구 사용
+        }
+      }
+    }
+
     return {
       isOpen: true,
-      message: lang === 'ko'
-        ? `데이터 업데이트 완료: 오늘 ${KST_UPDATE_HOUR}:${String(KST_UPDATE_MINUTE).padStart(2, '0')}`
-        : `Data Updated: Today ${KST_UPDATE_HOUR}:${String(KST_UPDATE_MINUTE).padStart(2, '0')}`
+      message:
+        lang === 'ko'
+          ? latestLabel
+            ? `데이터 기준: ${latestLabel}`
+            : '데이터 기준: 미국장 전일 종가'
+          : latestLabel
+          ? `Data as of: ${latestLabel}`
+          : 'Data as of: previous US close',
     };
   }
 

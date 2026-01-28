@@ -49,6 +49,7 @@ export interface Trade {
   price: number;
   quantity: number;
   fee: number;
+  isMOC?: boolean; // MOC 매도 여부 (매도일 때만 사용)
 }
 
 export interface Portfolio {

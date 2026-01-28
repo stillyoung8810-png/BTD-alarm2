@@ -1041,9 +1041,22 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
               <li>• {lang === 'ko' ? 'LOC 기준점 = A - (T/B × 40/a)' : 'LOC Point = A - (T/B × 40/a)'}</li>
               <li>• {lang === 'ko' ? '전반전: 1 ≤ T < a/2 (전체 회차의 절반 미만)' : 'First Half: 1 ≤ T < a/2 (Less than half of total rounds)'}</li>
               <li>• {lang === 'ko' ? '후반전: a/2 ≤ T < a-1 (절반 이후부터 마지막 직전까지)' : 'Second Half: a/2 ≤ T < a-1 (After half until one before last)'}</li>
-              <li>• {lang === 'ko' ? '쿼터 손절 모드: a-1 ≤ T ≤ a (자금이 1회치 남았거나 모두 소진된 상태)' : 'Quarter Stop-Loss Mode: a-1 ≤ T ≤ a (Funds left for 1 round or exhausted)'}</li>
+              <li>• {lang === 'ko' ? '쿼터 손절 모드: a-1 < T ≤ a (자금이 1회치 남았거나 모두 소진된 상태)' : 'Quarter Stop-Loss Mode: a-1 < T ≤ a (Funds left for 1 round or exhausted)'}</li>
               <li>• {lang === 'ko' ? '매도: 1/4은 LOC 지점, 3/4은 +A% 지정가' : 'Sell: 1/4 at LOC, 3/4 at +A% limit'}</li>
             </ul>
+            <div className="mt-3 pt-3 border-t border-slate-700/30 dark:border-slate-600/30">
+              <p className="text-[9px] text-slate-400 dark:text-slate-500">
+                {lang === 'ko' ? '출처 : ' : 'Source : '}
+                <a 
+                  href="https://www.youtube.com/@laofus" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-emerald-400 hover:text-emerald-300 underline"
+                >
+                  https://www.youtube.com/@laofus
+                </a>
+              </p>
+            </div>
           </div>
         </div>
       </div>

@@ -153,6 +153,17 @@ const App: React.FC = () => {
     authModalRef.current = authModal;
   }, [authModal]);
 
+  // 비밀번호 재설정 링크(/auth/reset-password)로 진입했을 때 초기 진입 시점에 모달 자동 오픈
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const path = window.location.pathname;
+
+    // 메일에서 넘어온 링크: https://btd-alarm2.pages.dev/auth/reset-password...
+    if (path.startsWith('/auth/reset-password')) {
+      setAuthModal('reset-password');
+    }
+  }, []);
+
   // 초기 다크 모드 및 Supabase 세션/포트폴리오 로딩
   useEffect(() => {
     if (isDarkMode) {

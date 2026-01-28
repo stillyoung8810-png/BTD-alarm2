@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { calculateInvestedAmount, calculateYield, determineActiveSection, calculateAlreadyRealized, calculateHoldings } from '../utils/portfolioCalculations';
 import { fetchStockPrices } from '../services/stockService';
+import HoverTip from './HoverTip';
+import { getStockPrices, initDatabase } from '../services/db';
 
 interface DashboardProps {
   lang: 'ko' | 'en';
@@ -145,6 +147,7 @@ const PortfolioCard: React.FC<{
   const [yieldRate, setYieldRate] = useState<number>(0);
   const [realizedProfit, setRealizedProfit] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isQuarterStopLossActive, setIsQuarterStopLossActive] = useState<boolean>(false);
 
   // 전략 이름 및 아이콘 결정
   const getStrategyInfo = () => {
@@ -167,14 +170,14 @@ const PortfolioCard: React.FC<{
   const calculateCurrentRound = (): number => {
     if (!portfolio.strategy.multiSplit) return 0;
     
-    const totalInvested = portfolio.trades
-      .filter(t => t.type === 'buy')
-      .reduce((sum, t) => sum + (t.price * t.quantity + t.fee), 0);
+    // 현재 보유 중인 종목의 매수금액만 계산 (매도된 부분은 제외)
+    const holdings = calculateHoldings(portfolio);
+    const totalInvested = holdings.reduce((sum, h) => sum + h.totalCost, 0);
     
     const oneTimeAmount = portfolio.dailyBuyAmount;
     if (oneTimeAmount === 0) return 0;
     
-    // T = 현재 매수누적액 / 1회 매수액, 소수점 둘째 자리 올림
+    // T = 현재 보유 중인 매수금액 / 1회 매수액, 소수점 둘째 자리 올림
     const T = Math.ceil((totalInvested / oneTimeAmount) * 100) / 100;
     return T;
   };
@@ -188,12 +191,193 @@ const PortfolioCard: React.FC<{
     
     if (T >= 1 && T < a / 2) return 'first';
     if (T >= a / 2 && T < a - 1) return 'second';
-    if (T >= a - 1 && T <= a) return 'quarter';
+    if (T > a - 1 && T <= a) return 'quarter';
     
     return null;
   };
 
   const multiSplitPhase = getMultiSplitPhase();
+
+  // IndexedDB에서 최근 N 영업일 가져오기 (실제 거래가 있었던 날짜만)
+  const getRecentTradingDays = async (days: number): Promise<string[]> => {
+    if (!portfolio.strategy.multiSplit) return [];
+    
+    try {
+      await initDatabase();
+      const targetStock = portfolio.strategy.multiSplit.targetStock;
+      
+      // IndexedDB에서 최근 데이터 가져오기 (충분히 많은 날짜를 가져와서 필터링)
+      const records = await getStockPrices(targetStock, days * 2); // 여유있게 가져오기
+      
+      if (records.length === 0) return [];
+      
+      // 날짜 기준으로 정렬 (최신순)
+      const sortedRecords = records.sort((a, b) => b.date.localeCompare(a.date));
+      
+      // 최근 N개 날짜만 반환
+      return sortedRecords.slice(0, days).map(r => r.date);
+    } catch (error) {
+      console.error('Error fetching recent trading days from IndexedDB:', error);
+      return [];
+    }
+  };
+
+  // 최근 11 영업일 동안 MOC 매도 기록 확인
+  const [recentTradingDays, setRecentTradingDays] = useState<string[]>([]);
+  
+  useEffect(() => {
+    if (!portfolio.strategy.multiSplit) return;
+    
+    const fetchTradingDays = async () => {
+      const days = await getRecentTradingDays(11);
+      setRecentTradingDays(days);
+    };
+    
+    fetchTradingDays();
+  }, [portfolio]);
+
+  const checkRecentMOCSell = (): { hasMOC: boolean; mocDate?: string } => {
+    if (!portfolio.strategy.multiSplit || recentTradingDays.length === 0) return { hasMOC: false };
+    
+    const mocSells = portfolio.trades.filter(t => 
+      t.type === 'sell' && 
+      t.isMOC === true && 
+      recentTradingDays.includes(t.date)
+    );
+
+    if (mocSells.length > 0) {
+      // 가장 최근 MOC 매도 날짜 반환
+      const sortedMOCSells = mocSells.sort((a, b) => b.date.localeCompare(a.date));
+      return { hasMOC: true, mocDate: sortedMOCSells[0].date };
+    }
+
+    return { hasMOC: false };
+  };
+
+  // 쿼터 손절 모드 활성화 시 새로운 1회 매수금 계산
+  const calculateNewOneTimeAmount = (mocDate: string): number => {
+    if (!portfolio.strategy.multiSplit) return portfolio.dailyBuyAmount;
+
+    const a = portfolio.strategy.multiSplit.totalSplitCount;
+    
+    // MOC 매도가 이루어진 시점의 T 계산
+    const tradesBeforeMOC = portfolio.trades.filter(t => t.date <= mocDate);
+    const portfolioBeforeMOC = { ...portfolio, trades: tradesBeforeMOC };
+    const holdingsBeforeMOC = calculateHoldings(portfolioBeforeMOC);
+    const totalInvestedBeforeMOC = holdingsBeforeMOC.reduce((sum, h) => sum + h.totalCost, 0);
+    const T_atMOC = portfolio.dailyBuyAmount > 0 
+      ? Math.ceil((totalInvestedBeforeMOC / portfolio.dailyBuyAmount) * 100) / 100 
+      : 0;
+
+    // 남은 회차
+    const remainingRounds = a - T_atMOC;
+
+    // 중간 수익금 계산 (MOC 매도 이후의 모든 매도 거래)
+    // MOC 매도 시점까지의 거래로 포트폴리오 상태 재구성
+    const tradesUpToMOC = portfolio.trades.filter(t => t.date <= mocDate);
+    const portfolioUpToMOC = { ...portfolio, trades: tradesUpToMOC };
+    
+    // MOC 매도 이후의 매도 거래들
+    const tradesAfterMOC = portfolio.trades.filter(t => t.date > mocDate && t.type === 'sell');
+    
+    // 각 매도 거래의 수익/손실 계산
+    let intermediateProfit = 0;
+    const tempPortfolio = { ...portfolio, trades: [...tradesUpToMOC] };
+    
+    tradesAfterMOC.forEach(sellTrade => {
+      // 매도 시점의 평단가 계산
+      const holdingsAtSell = calculateHoldings(tempPortfolio);
+      const holdingAtSell = holdingsAtSell.find(h => h.stock === sellTrade.stock);
+      const avgPriceAtSell = holdingAtSell?.avgPrice || 0;
+      
+      if (avgPriceAtSell > 0) {
+        // 수익/손실 = (매도가 - 평단가) * 수량 - 수수료
+        const profit = (sellTrade.price - avgPriceAtSell) * sellTrade.quantity - sellTrade.fee;
+        intermediateProfit += profit;
+      }
+      
+      // 임시 포트폴리오에 매도 거래 추가 (다음 계산을 위해)
+      tempPortfolio.trades.push(sellTrade);
+    });
+
+    // 잔금 계산
+    const remainingFunds = portfolio.dailyBuyAmount * remainingRounds;
+
+    // 새로운 1회 매수금 = (잔금 + 중간 수익금) / 10
+    const newOneTimeAmount = (remainingFunds + intermediateProfit) / 10;
+
+    return Math.max(0, newOneTimeAmount);
+  };
+
+  // 쿼터 손절 모드 활성화 시 계산 데이터
+  const [quarterStopLossData, setQuarterStopLossData] = useState<{
+    hasMOC: boolean;
+    mocQuantity?: number;
+    newOneTimeAmount?: number;
+    locBuy?: { price: number; quantity: number };
+    locSell?: { price: number; quantity: number };
+    limitSell?: { price: number; quantity: number };
+  } | null>(null);
+
+  // 쿼터 손절 모드 계산
+  useEffect(() => {
+    if (!portfolio.strategy.multiSplit || !isQuarterStopLossActive || recentTradingDays.length === 0) {
+      setQuarterStopLossData(null);
+      return;
+    }
+
+    const calculateQuarterStopLoss = async () => {
+      const mocCheck = checkRecentMOCSell();
+      const holdings = calculateHoldings(portfolio);
+      const targetStock = portfolio.strategy.multiSplit.targetStock;
+      const targetHolding = holdings.find(h => h.stock === targetStock);
+      const avgPrice = targetHolding?.avgPrice || 0;
+      const currentQuantity = targetHolding?.quantity || 0;
+      const feeRate = portfolio.feeRate || 0.25;
+
+      if (!mocCheck.hasMOC) {
+        // MOC 매도 기록 없음
+        const mocQuantity = currentQuantity * 0.25;
+        setQuarterStopLossData({
+          hasMOC: false,
+          mocQuantity: Math.round(mocQuantity * 100) / 100 // 소수점 2자리
+        });
+      } else {
+        // MOC 매도 기록 있음
+        if (!mocCheck.mocDate || avgPrice <= 0 || currentQuantity <= 0) {
+          setQuarterStopLossData(null);
+          return;
+        }
+
+        const newOneTimeAmount = calculateNewOneTimeAmount(mocCheck.mocDate);
+        const A = portfolio.strategy.multiSplit.targetReturnRate;
+
+        // LOC 매수: 현재 평균 단가 * 0.9 - 0.01
+        const locBuyPrice = Math.max(0.01, avgPrice * 0.9 - 0.01);
+        const locBuyQty = newOneTimeAmount > 0 && locBuyPrice > 0
+          ? Math.floor(newOneTimeAmount / (locBuyPrice * (1 + feeRate / 100)))
+          : 0;
+
+        // LOC 매도: 현재 평균 단가 * 0.9, 보유 수량의 25%
+        const locSellPrice = avgPrice * 0.9;
+        const locSellQty = Math.floor(currentQuantity * 0.25);
+
+        // 지정가 매도: 현재 평균 단가 * (1 + A/100), 보유 수량의 75%
+        const limitSellPrice = avgPrice * (1 + A / 100);
+        const limitSellQty = Math.floor(currentQuantity * 0.75);
+
+        setQuarterStopLossData({
+          hasMOC: true,
+          newOneTimeAmount,
+          locBuy: locBuyQty > 0 ? { price: Math.round(locBuyPrice * 100) / 100, quantity: locBuyQty } : undefined,
+          locSell: locSellQty > 0 ? { price: Math.round(locSellPrice * 100) / 100, quantity: locSellQty } : undefined,
+          limitSell: limitSellQty > 0 ? { price: Math.round(limitSellPrice * 100) / 100, quantity: limitSellQty } : undefined
+        });
+      }
+    };
+
+    calculateQuarterStopLoss();
+  }, [portfolio, isQuarterStopLossActive, recentTradingDays]);
 
   // 다분할 매매법의 일별 매매 실행 계산
   const [multiSplitExecutionData, setMultiSplitExecutionData] = useState<{
@@ -446,17 +630,27 @@ const PortfolioCard: React.FC<{
       </div>
 
       <div className={`grid grid-cols-2 gap-4 relative z-10 ${portfolio.strategy.multiSplit ? 'gap-3 mt-3' : ''}`}>
-        <div className={`bg-white/40 dark:bg-black/20 rounded-[1.5rem] border border-white/20 dark:border-white/5 backdrop-blur-sm ${portfolio.strategy.multiSplit ? 'px-4 py-4.5' : 'px-5 py-6'}`}>
-          <span className={`font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block ${portfolio.strategy.multiSplit ? 'text-[9px] mb-1' : 'text-[11px] mb-1.5'}`}>{t.invested}</span>
-          <p className={`font-black text-slate-800 dark:text-white ${portfolio.strategy.multiSplit ? 'text-lg leading-tight' : 'text-2xl leading-tight'}`}>
+        <div className={`bg-white/40 dark:bg-black/20 rounded-[1.5rem] border border-white/20 dark:border-white/5 backdrop-blur-sm ${portfolio.strategy.multiSplit ? 'px-4 py-[20px]' : 'px-5 py-6'}`}>
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <span className={`font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest ${portfolio.strategy.multiSplit ? 'text-[11px]' : 'text-[11px]'}`}>{t.invested}</span>
+            <span className={`text-[9px] text-slate-400 dark:text-slate-500 ${portfolio.strategy.multiSplit ? '' : ''}`}>
+              {lang === 'ko' ? '(수수료 포함)' : '(Fee included)'}
+            </span>
+          </div>
+          <p className={`font-black text-slate-800 dark:text-white ${portfolio.strategy.multiSplit ? 'text-2xl leading-tight' : 'text-2xl leading-tight'}`}>
             {isLoading ? '...' : `$${investedAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           </p>
         </div>
-        <div className={`bg-white/40 dark:bg-black/20 rounded-[1.5rem] border border-white/20 dark:border-white/5 backdrop-blur-sm ${portfolio.strategy.multiSplit ? 'px-4 py-4.5' : 'px-5 py-6'}`}>
-          <span className={`font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block ${portfolio.strategy.multiSplit ? 'text-[9px] mb-1' : 'text-[11px] mb-1.5'}`}>
-            {lang === 'ko' ? '실현손익' : 'Realized P/L'}
-          </span>
-          <p className={`font-black flex items-center gap-1 ${realizedProfit >= 0 ? 'text-emerald-500' : 'text-rose-500'} ${portfolio.strategy.multiSplit ? 'text-lg leading-tight' : 'text-2xl leading-tight'}`}>
+        <div className={`bg-white/40 dark:bg-black/20 rounded-[1.5rem] border border-white/20 dark:border-white/5 backdrop-blur-sm ${portfolio.strategy.multiSplit ? 'px-4 py-[20px]' : 'px-5 py-6'}`}>
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <span className={`font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest ${portfolio.strategy.multiSplit ? 'text-[11px]' : 'text-[11px]'}`}>
+              {lang === 'ko' ? '실현손익' : 'Realized P/L'}
+            </span>
+            <span className={`text-[9px] text-slate-400 dark:text-slate-500 ${portfolio.strategy.multiSplit ? '' : ''}`}>
+              {lang === 'ko' ? '(제비용 반영)' : '(After fees)'}
+            </span>
+          </div>
+          <p className={`font-black flex items-center gap-1 ${realizedProfit >= 0 ? 'text-emerald-500' : 'text-rose-500'} ${portfolio.strategy.multiSplit ? 'text-2xl leading-tight' : 'text-2xl leading-tight'}`}>
              <span className="text-[11px]">{realizedProfit >= 0 ? '↑' : '↓'}</span> 
              {isLoading ? '...' : `${realizedProfit >= 0 ? '+' : ''}$${realizedProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           </p>
@@ -465,10 +659,10 @@ const PortfolioCard: React.FC<{
 
       <div 
         onClick={onOpenExecution}
-        className={`bg-blue-50/50 dark:bg-blue-600/15 rounded-[1.5rem] flex items-center justify-between shadow-md dark:shadow-lg dark:shadow-blue-500/20 relative overflow-hidden group/action cursor-pointer border border-blue-100 dark:border-blue-500/20 min-h-[80px] ${portfolio.strategy.multiSplit ? 'p-4 mt-3' : 'p-5'}`}
+        className={`bg-blue-50/50 dark:bg-blue-600/15 rounded-[1.5rem] flex items-center justify-between shadow-md dark:shadow-lg dark:shadow-blue-500/20 relative overflow-visible group/action cursor-pointer border border-blue-100 dark:border-blue-500/20 min-h-[80px] ${portfolio.strategy.multiSplit ? 'p-4 mt-3' : 'p-5'}`}
       >
-        <div className="absolute inset-0 bg-blue-100/50 dark:bg-white/10 opacity-0 group-hover/action:opacity-100 transition-opacity"></div>
-        <div className="relative z-10 flex-1">
+        <div className="absolute inset-0 bg-blue-100/50 dark:bg-white/10 opacity-0 group-hover/action:opacity-100 transition-opacity rounded-[1.5rem]"></div>
+        <div className="relative z-10 flex-1 overflow-visible">
           <div className="flex items-center gap-1.5 mb-1.5 opacity-80">
              <span className="text-[9px] font-black text-blue-700 dark:text-blue-300 uppercase tracking-widest">{t.dailyExecution}</span>
              <Info size={10} className="text-blue-700 dark:text-blue-300" />
@@ -488,9 +682,101 @@ const PortfolioCard: React.FC<{
                  }
                </span>
              )}
+             {portfolio.strategy.multiSplit && (
+               <HoverTip
+                 text={isQuarterStopLossActive 
+                   ? (lang === 'ko' ? '쿼터손절 → 복귀 : LOC 매도 또는 지정가 매도가 체결될 때.' : 'Quarter Stop-Loss → Return: When LOC sell or limit sell is executed.')
+                   : (lang === 'ko' ? '정규 → 쿼터손절 : 남은 예수금이 1회분 미만일 때.' : 'Normal → Quarter Stop-Loss: When remaining funds are less than 1 round.')
+                 }
+                 className="ml-auto"
+               >
+                 <div 
+                   className="flex items-center gap-2 cursor-pointer"
+                   onClick={(e) => {
+                     e.stopPropagation();
+                     setIsQuarterStopLossActive(!isQuarterStopLossActive);
+                   }}
+                 >
+                   <span className="text-[9px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">
+                     {lang === 'ko' ? '쿼터 손절' : 'Quarter Stop-Loss'}
+                   </span>
+                   <button
+                     className={`relative w-10 h-5 rounded-full transition-colors duration-200 ${
+                       isQuarterStopLossActive ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
+                     }`}
+                   >
+                     <span
+                       className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 ${
+                         isQuarterStopLossActive ? 'translate-x-5' : 'translate-x-0'
+                       }`}
+                     />
+                   </button>
+                 </div>
+               </HoverTip>
+             )}
           </div>
           {portfolio.strategy.multiSplit ? (
             <div className="text-sm font-black text-blue-900 dark:text-white space-y-2">
+              {isQuarterStopLossActive ? (
+                // 쿼터 손절 모드 활성화 시
+                quarterStopLossData ? (
+                  !quarterStopLossData.hasMOC ? (
+                    // MOC 매도 기록 없음
+                    <>
+                      <div className="text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium">
+                        <span className="font-black">{lang === 'ko' ? 'MOC 매도:' : 'MOC Sell:'}</span>{' '}
+                        {quarterStopLossData.mocQuantity?.toFixed(2) || '0.00'} {lang === 'ko' ? '주' : 'shares'}
+                      </div>
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                        {lang === 'ko' ? 'MOC 매도 하여 쿼터 손절 모드 시작하세요' : 'Start quarter stop-loss mode by executing MOC sell'}
+                      </div>
+                    </>
+                  ) : (
+                    // MOC 매도 기록 있음
+                    <>
+                      <div className="text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium mb-2">
+                        <span className="font-black">{lang === 'ko' ? '1회 매수금:' : '1st Buy Amount:'}</span>{' '}
+                        ${quarterStopLossData.newOneTimeAmount?.toFixed(2) || '0.00'}
+                      </div>
+                      {quarterStopLossData.locBuy && (
+                        <div className="text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium">
+                          <span className="font-black">{lang === 'ko' ? 'LOC 매수:' : 'LOC Buy:'}</span>{' '}
+                          ${quarterStopLossData.locBuy.price.toFixed(2)} / {quarterStopLossData.locBuy.quantity}
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 ml-2">
+                            ({lang === 'ko' ? '현재 평균 단가 × 0.9 - 0.01' : 'Avg Price × 0.9 - 0.01'})
+                          </span>
+                        </div>
+                      )}
+                      <div className="grid grid-cols-2 gap-2 text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium">
+                        {quarterStopLossData.locSell && (
+                          <div>
+                            <span className="font-black">{lang === 'ko' ? 'LOC 매도:' : 'LOC Sell:'}</span>{' '}
+                            ${quarterStopLossData.locSell.price.toFixed(2)} / {quarterStopLossData.locSell.quantity}
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                              ({lang === 'ko' ? '현재 평균 단가 × 0.9' : 'Avg Price × 0.9'})
+                            </div>
+                          </div>
+                        )}
+                        {quarterStopLossData.limitSell && (
+                          <div>
+                            <span className="font-black">{lang === 'ko' ? '지정가:' : 'Limit:'}</span>{' '}
+                            ${quarterStopLossData.limitSell.price.toFixed(2)} / {quarterStopLossData.limitSell.quantity}
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                              ({lang === 'ko' ? `현재 평균 단가 × (1 + ${portfolio.strategy.multiSplit?.targetReturnRate || 0}/100)` : `Avg Price × (1 + ${portfolio.strategy.multiSplit?.targetReturnRate || 0}/100)`})
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )
+                ) : (
+                  <div className="text-[9px] text-blue-600/70 dark:text-blue-400/70 font-medium">
+                    {lang === 'ko' ? '계산 중...' : 'Calculating...'}
+                  </div>
+                )
+              ) : (
+                // 쿼터 손절 모드 비활성화 시 (기존 로직)
+                <>
               {multiSplitPhase === 'first' && multiSplitExecutionData && (
                 <>
                   {/* LOC 매수 1, 2를 좌우로 배치 */}
@@ -597,6 +883,8 @@ const PortfolioCard: React.FC<{
                 <div className="text-[9px] text-blue-600/70 dark:text-blue-400/70 font-medium">
                   {lang === 'ko' ? '전략 준비 중' : 'Strategy preparing'}
                 </div>
+              )}
+                </>
               )}
             </div>
           ) : (

@@ -6,6 +6,7 @@ import { X, Zap, ChevronRight, AlertCircle } from 'lucide-react';
 import StockLogo from './StockLogo';
 import { fetchStockPrices } from '../services/stockService';
 import { getStockPrices } from '../services/db';
+import { calculateHoldings } from '../utils/portfolioCalculations';
 
 interface QuickInputModalProps {
   lang: 'ko' | 'en';
@@ -20,6 +21,7 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
   const [price, setPrice] = useState<number>(0);
   const [quantity, setQuantity] = useState<number>(0);
   const [latestTradeDate, setLatestTradeDate] = useState<string>('');
+  const [isMOC, setIsMOC] = useState<boolean>(false);
   
   // 활성 구간 결정 (propActiveSection이 없으면 기본값 1)
   const activeSection = propActiveSection || 1;
@@ -80,8 +82,21 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
   useEffect(() => {
     if (type === 'buy') {
       setSelectedStock(getActiveSectionStock());
+      setIsMOC(false); // 매수일 때는 MOC 비활성화
     }
   }, [type, activeSection, portfolio.strategy]);
+
+  // MOC 활성화 시 체결 단가 입력하면 전체 보유 수량의 25% 자동 계산
+  useEffect(() => {
+    if (type === 'sell' && isMOC && price > 0 && selectedStock) {
+      const holdings = calculateHoldings(portfolio);
+      const holding = holdings.find(h => h.stock === selectedStock);
+      if (holding && holding.quantity > 0) {
+        const mocQuantity = Math.round((holding.quantity * 0.25) * 10) / 10; // 소숫점 1자리에서 반올림
+        setQuantity(mocQuantity);
+      }
+    }
+  }, [type, isMOC, price, selectedStock, portfolio]);
 
   useEffect(() => {
     if (type === 'buy' && price > 0) {
@@ -120,7 +135,8 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
       date: dateStr,
       price,
       quantity,
-      fee: commission + secFee
+      fee: commission + secFee,
+      isMOC: type === 'sell' ? isMOC : undefined
     };
     onSave(newTrade);
   };
@@ -193,6 +209,31 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
             <button onClick={() => setType('buy')} className={`flex-1 py-4 rounded-xl text-xs font-black transition-all ${type === 'buy' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-600 dark:text-slate-500'}`}>{t.buy}</button>
             <button onClick={() => setType('sell')} className={`flex-1 py-4 rounded-xl text-xs font-black transition-all ${type === 'sell' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-600 dark:text-slate-500'}`}>{t.sell}</button>
           </div>
+
+          {type === 'sell' && (
+            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-white/5 gap-4">
+              <div className="flex-1">
+                <div className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-1">MOC 매도</div>
+                <div className="text-[9px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                  {lang === 'ko' 
+                    ? '쿼터 손절 모드를 시작하는 보유량 25% 종가 매도입니다.' 
+                    : 'Quarter stop-loss mode: 25% of holdings at closing price.'}
+                </div>
+              </div>
+              <button
+                onClick={() => setIsMOC(!isMOC)}
+                className={`relative w-12 h-6 rounded-full transition-colors duration-200 shrink-0 ${
+                  isMOC ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
+                }`}
+              >
+                <span
+                  className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform duration-200 ${
+                    isMOC ? 'translate-x-6' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+          )}
 
           <div className="space-y-4">
             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.stock}:</span>

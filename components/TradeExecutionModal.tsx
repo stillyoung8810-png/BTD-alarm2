@@ -19,6 +19,7 @@ const TradeExecutionModal: React.FC<TradeExecutionModalProps> = ({ lang, portfol
   const [price, setPrice] = useState<number>(0);
   const [quantity, setQuantity] = useState<number>(0);
   const [fee, setFee] = useState<number>(0);
+  const [isMOC, setIsMOC] = useState<boolean>(false);
 
   const t = I18N[lang];
   const feeRate = portfolio.feeRate || 0.25;
@@ -37,8 +38,12 @@ const TradeExecutionModal: React.FC<TradeExecutionModalProps> = ({ lang, portfol
   }, [price, quantity, feeRate, type]);
 
   useEffect(() => {
-    if (type === 'buy') setSelectedStock(strategyStocks[0]);
-    else setSelectedStock(holdings[0] || '');
+    if (type === 'buy') {
+      setSelectedStock(strategyStocks[0]);
+      setIsMOC(false); // 매수일 때는 MOC 비활성화
+    } else {
+      setSelectedStock(holdings[0] || '');
+    }
   }, [type]);
 
   const handleSave = () => {
@@ -50,7 +55,8 @@ const TradeExecutionModal: React.FC<TradeExecutionModalProps> = ({ lang, portfol
       date,
       price,
       quantity,
-      fee
+      fee,
+      isMOC: type === 'sell' ? isMOC : undefined
     };
     onSave(trade);
   };
@@ -101,6 +107,31 @@ const TradeExecutionModal: React.FC<TradeExecutionModalProps> = ({ lang, portfol
             <button onClick={() => setType('buy')} className={`flex-1 py-5 rounded-2xl text-xs font-black transition-all ${type === 'buy' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-600 dark:text-slate-500'}`}>{t.buy}</button>
             <button onClick={() => setType('sell')} className={`flex-1 py-5 rounded-2xl text-xs font-black transition-all ${type === 'sell' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-600 dark:text-slate-500'}`}>{t.sell}</button>
           </div>
+
+          {type === 'sell' && (
+            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-white/5 gap-4">
+              <div className="flex-1">
+                <div className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-1">MOC 매도</div>
+                <div className="text-[9px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                  {lang === 'ko' 
+                    ? '쿼터 손절 모드를 시작하는 보유량 25% 종가 매도입니다.' 
+                    : 'Quarter stop-loss mode: 25% of holdings at closing price.'}
+                </div>
+              </div>
+              <button
+                onClick={() => setIsMOC(!isMOC)}
+                className={`relative w-12 h-6 rounded-full transition-colors duration-200 shrink-0 ${
+                  isMOC ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
+                }`}
+              >
+                <span
+                  className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform duration-200 ${
+                    isMOC ? 'translate-x-6' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+          )}
 
           <div className="space-y-4">
              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.stock}:</label>

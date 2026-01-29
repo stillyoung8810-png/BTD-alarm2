@@ -142,7 +142,16 @@ const Dashboard: React.FC<DashboardProps> = ({
               onClose={() => onClosePortfolio(p.id)}
               onDelete={() => onDeletePortfolio(p.id)}
               onUpdatePortfolio={onUpdatePortfolio}
-              onDailyExecutionBlock={onDailyExecutionSummaryChange ? (block) => setDailyExecutionBlocks(prev => ({ ...prev, [p.id]: block ?? '' })) : undefined}
+              onDailyExecutionBlock={
+                onDailyExecutionSummaryChange
+                  ? (block) =>
+                      setDailyExecutionBlocks((prev) => {
+                        const nextValue = block ?? '';
+                        if (prev[p.id] === nextValue) return prev;
+                        return { ...prev, [p.id]: nextValue };
+                      })
+                  : undefined
+              }
             />
           ))
         )}

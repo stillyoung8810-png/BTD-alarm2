@@ -89,7 +89,7 @@ serve(async (_req) => {
       return new Response("No data", { status: 200 });
     }
 
-    // upsert: symbol + trade_date 기준으로 덮어쓰기 되도록 (유니크 인덱스 필요)
+    // 배치 upsert: 종목별 한 번씩이 아니라 rows 배열을 한 번에 upsert (쿼리 1회)
     const { error } = await supabase
       .from("stock_prices")
       .upsert(rows, { onConflict: "symbol,trade_date" });

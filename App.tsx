@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Portfolio, Trade } from './types';
 import { I18N } from './constants';
 import Dashboard from './components/Dashboard';
@@ -119,7 +119,46 @@ const App: React.FC = () => {
   // 중복 요청 방지를 위한 ref
   const fetchingPortfoliosRef = useRef<Set<string>>(new Set());
   const fetchPortfoliosAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
-  
+  /** 모달 로그인 직후 onAuthStateChange에서 fetchUserData 중복 호출 방지 */
+  const justLoggedInRef = useRef(false);
+
+  // daily execution 요약 텍스트 (DB 저장용) – 실제 계산은 portfolios/lang/대시보드 요약이 바뀔 때만 수행
+  const summaryToSave = useMemo(() => {
+    const fromDashboard = dailyExecutionSummaryFromDashboard;
+    const base =
+      fromDashboard != null && fromDashboard.trim() !== ''
+        ? fromDashboard
+        : buildDailyExecutionSummary(portfolios, lang);
+    return base && base.trim().length > 0 ? base : '';
+  }, [portfolios, lang, dailyExecutionSummaryFromDashboard]);
+
+  // user_profiles만 조회해 setUserProfile 갱신 (fetchUserData / onLogin 공용)
+  const fetchUserProfile = useCallback(async (userId: string): Promise<void> => {
+    if (!userId) return;
+    try {
+      const { data: profileData, error: profileError } = await supabase
+        .from('user_profiles')
+        .select('subscription_tier, max_portfolios, max_alarms, subscription_status, subscription_expires_at, telegram_enabled, telegram_connected_at, telegram_last_error, preferred_language')
+        .eq('id', userId)
+        .single();
+      if (!profileError && profileData) {
+        setUserProfile({
+          subscription_tier: profileData.subscription_tier || 'free',
+          max_portfolios: profileData.max_portfolios ?? 3,
+          max_alarms: profileData.max_alarms ?? 2,
+          subscription_status: profileData.subscription_status ?? null,
+          subscription_expires_at: profileData.subscription_expires_at ?? null,
+          telegram_enabled: profileData.telegram_enabled ?? false,
+          telegram_connected_at: profileData.telegram_connected_at ?? null,
+          telegram_last_error: profileData.telegram_last_error ?? null,
+          preferred_language: profileData.preferred_language ?? 'ko',
+        });
+      }
+    } catch (err) {
+      console.warn('[fetchUserProfile] 조회 실패:', err);
+    }
+  }, []);
+
   // States for the 2-step termination flow
   const [terminateTargetId, setTerminateTargetId] = useState<string | null>(null);
   const [settlementResult, setSettlementResult] = useState<{
@@ -142,20 +181,14 @@ const App: React.FC = () => {
     setIsInTossApp(isTossApp());
   }, []);
 
-  // 알람이 켜진 포트폴리오 기준 daily execution 요약을 Supabase에 캐싱 (Dashboard 상세 블록 우선, 없으면 fallback)
+  // 알람이 켜진 포트폴리오 기준 daily execution 요약을 Supabase에 캐싱
+  // - 실제 요약 계산은 summaryToSave(useMemo)에서만 수행되고, 이 effect는 DB 저장만 담당
   useEffect(() => {
     if (!user?.id) return;
-    if (!portfolios || portfolios.length === 0) return;
+    if (!summaryToSave || summaryToSave.trim().length === 0) return;
 
     const run = async () => {
       try {
-        const summaryToSave =
-          dailyExecutionSummaryFromDashboard != null && dailyExecutionSummaryFromDashboard.trim() !== ''
-            ? dailyExecutionSummaryFromDashboard
-            : buildDailyExecutionSummary(portfolios, lang);
-
-        if (!summaryToSave || summaryToSave.trim().length === 0) return;
-
         const summaryDate = getCurrentKSTDateString();
 
         const { error } = await supabase
@@ -183,7 +216,7 @@ const App: React.FC = () => {
     };
 
     run();
-  }, [user?.id, portfolios, lang, dailyExecutionSummaryFromDashboard]);
+  }, [user?.id, summaryToSave, lang]);
 
   // 유료 로그인 시: 유료 종목만 추가로 IndexedDB에 저장 (중복 호출 방지)
   const paidStocksLoadedRef = useRef(false);
@@ -295,76 +328,26 @@ const App: React.FC = () => {
 
   useEffect(() => {
     let isMounted = true;
-    
-    // 세션 기반 유저/포트폴리오 로딩 로직을 공통 함수로 분리
+
+    // 세션 기반 유저/포트폴리오 로딩 (세션 복구 시 단일 진입점)
     const fetchUserData = async (sessionUser: { id: string; email?: string | null }) => {
       console.log('[fetchUserData] 시작:', sessionUser?.id);
-      if (!sessionUser?.id || !isMounted) {
-        console.log('[fetchUserData] 조기 종료 - sessionUser.id:', sessionUser?.id, 'isMounted:', isMounted);
-        return;
-      }
+      if (!sessionUser?.id || !isMounted) return;
 
       try {
-        const currentUser = {
-          id: sessionUser.id,
-          email: sessionUser.email || '',
-        };
-
-        if (!isMounted) {
-          console.log('[fetchUserData] isMounted=false, 종료');
-          return;
-        }
-        console.log('[fetchUserData] setUser 호출');
+        const currentUser = { id: sessionUser.id, email: sessionUser.email || '' };
+        if (!isMounted) return;
         setUser(currentUser);
-
-        // 사용자 프로필 - 일단 기본값 사용 (나중에 비동기로 업데이트)
-        // 기본값은 Free 티어 기준: 포트폴리오 2개, 알림 2개
-        console.log('[fetchUserData] 프로필 기본값 설정');
         setUserProfile({
           subscription_tier: 'free',
           max_portfolios: 2,
           max_alarms: 2,
           preferred_language: 'ko',
         });
-        
-        // user_profiles 조회는 백그라운드에서 (블로킹 없이)
-        // subscription_status, subscription_expires_at도 함께 조회 (광고 표시 여부 판단용)
-        Promise.resolve(
-          supabase
-            .from('user_profiles')
-            .select('subscription_tier, max_portfolios, max_alarms, subscription_status, subscription_expires_at, telegram_enabled, telegram_connected_at, telegram_last_error, preferred_language')
-            .eq('id', currentUser.id)
-            .single()
-        )
-          .then(({ data: profileData, error: profileError }) => {
-            console.log('[fetchUserData] user_profiles 백그라운드 조회 완료:', { profileData, profileError: profileError?.message });
-            if (!profileError && profileData) {
-              setUserProfile({
-                subscription_tier: profileData.subscription_tier || 'free',
-                max_portfolios: profileData.max_portfolios ?? 3,
-                max_alarms: profileData.max_alarms ?? 2,
-                subscription_status: profileData.subscription_status ?? null,
-                subscription_expires_at: profileData.subscription_expires_at ?? null,
-                telegram_enabled: profileData.telegram_enabled ?? false,
-                telegram_connected_at: profileData.telegram_connected_at ?? null,
-                telegram_last_error: profileData.telegram_last_error ?? null,
-                preferred_language: profileData.preferred_language ?? 'ko',
-              });
-            }
-          })
-          .catch((err) => {
-            console.warn('[fetchUserData] user_profiles 백그라운드 조회 실패:', err);
-          });
-
-        // fetchPortfolios 함수 사용 (로컬 우선, 백그라운드 업데이트)
-        // await 없이 호출 - 로컬 데이터는 즉시 표시되고, Supabase 요청은 백그라운드에서 처리
-        console.log('[fetchUserData] fetchPortfolios 호출 (로컬 우선, 백그라운드 업데이트)');
+        fetchUserProfile(currentUser.id);
         fetchPortfolios(currentUser.id);
       } catch (err) {
         console.error('[fetchUserData] catch 에러:', err);
-        if (isMounted) {
-          console.error('Failed to fetch user data:', err);
-        }
       }
     };
 
@@ -534,11 +517,16 @@ const App: React.FC = () => {
             return;
           }
 
-          // 초기 로드 완료 후에만 fetchUserData 호출
+          // 초기 로드 완료 후에만 fetchUserData 호출 (모달 로그인 직후는 스킵 → portfolios 중복 조회 방지)
           if (currentUser && initialSessionLoaded) {
-            console.log('[onAuthStateChange] currentUser 있음, fetchUserData 호출:', currentUser.id);
-            await fetchUserData(currentUser);
-            console.log('[onAuthStateChange] fetchUserData 완료');
+            if (justLoggedInRef.current) {
+              justLoggedInRef.current = false;
+              console.log('[onAuthStateChange] 모달 로그인 직후, fetchUserData 스킵');
+            } else {
+              console.log('[onAuthStateChange] currentUser 있음, fetchUserData 호출:', currentUser.id);
+              await fetchUserData(currentUser);
+              console.log('[onAuthStateChange] fetchUserData 완료');
+            }
 
             // 로그인 성공 시 FCM 토큰 저장 (SIGNED_IN 이벤트일 때만)
             if (event === 'SIGNED_IN' && currentUser.id) {
@@ -763,6 +751,7 @@ const App: React.FC = () => {
       closedAt: item.closed_at ?? item.closedAt ?? undefined,
       finalSellAmount: item.final_sell_amount ?? item.finalSellAmount ?? undefined,
       alarmconfig: item.alarm_config ?? item.alarmconfig ?? undefined,
+      isQuarterMode: item.is_quarter_mode ?? item.isQuarterMode ?? false,
       strategy: item.strategy, // strategy 컬럼은 이미 일치
     })) as Portfolio[];
   };
@@ -821,7 +810,7 @@ const App: React.FC = () => {
       // 쿼리 최적화: 필요한 컬럼만 선택 (SELECT * 대신)
       const { data, error } = await supabase
         .from('portfolios')
-        .select('id, created_at, name, daily_buy_amount, start_date, fee_rate, is_closed, closed_at, final_sell_amount, trades, strategy, alarm_config, user_id')
+        .select('id, created_at, name, daily_buy_amount, start_date, fee_rate, is_closed, closed_at, final_sell_amount, trades, strategy, alarm_config, is_quarter_mode, user_id')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .abortSignal(controller.signal);
@@ -1622,30 +1611,10 @@ const App: React.FC = () => {
             onSwitchType={(type) => setAuthModal(type)} 
             onLogin={async (u) => { 
               setUser(u); 
-              setAuthModal('profile'); 
-
-              const { data, error } = await supabase
-                .from('portfolios')
-                .select('*')
-                .eq('user_id', u.id)
-                .order('created_at', { ascending: false });
-
-              if (!error && data) {
-                // Supabase 컬럼명이 snake_case이므로 모든 필드를 camelCase로 정규화
-                // DB 컬럼명(daily_buy_amount)을 우선적으로 사용
-                const normalized = (data as any[]).map((row) => ({
-                  ...row,
-                  dailyBuyAmount: row.daily_buy_amount ?? row.dailyBuyAmount ?? 0,
-                  startDate: row.start_date ?? row.startDate ?? '',
-                  feeRate: row.fee_rate ?? row.feeRate ?? 0.25,
-                  isClosed: row.is_closed ?? row.isClosed ?? false,
-                  closedAt: row.closed_at ?? row.closedAt ?? undefined,
-                  finalSellAmount: row.final_sell_amount ?? row.finalSellAmount ?? undefined,
-                  alarmconfig: row.alarm_config ?? row.alarmconfig ?? undefined,
-                  isQuarterMode: row.is_quarter_mode ?? row.isQuarterMode ?? false,
-                }));
-                setPortfolios(normalized as Portfolio[]);
-              }
+              setAuthModal('profile');
+              justLoggedInRef.current = true;
+              fetchUserProfile(u.id);
+              fetchPortfolios(u.id);
             }}
             onLogout={async () => { 
               try {

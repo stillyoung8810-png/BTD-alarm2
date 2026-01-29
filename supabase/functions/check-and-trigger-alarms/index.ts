@@ -18,6 +18,11 @@ interface SendAlarmPayload {
   data?: Record<string, string>;
 }
 
+// 간단한 sleep 유틸 (배치 간 딜레이용)
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // 현재 UTC 시간을 KST(UTC+9) 기준 HH:mm 문자열로 변환
 function getCurrentKSTTimeString(): string {
   const now = new Date();
@@ -140,43 +145,64 @@ serve(async (_req) => {
       },
     }));
 
-    const results = await Promise.allSettled(
-      payloads.map(async (payload) => {
-        try {
-          const res = await fetch(sendAlarmUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              // 내부 호출이지만, 필요 시 인증을 위해 service role key를 포함
-              "Authorization": `Bearer ${serviceKey}`,
-            },
-            body: JSON.stringify(payload),
-          });
+    // 동시성 제한: 너무 많은 send-alarm을 한 번에 호출하지 않도록 배치 처리
+    const BATCH_SIZE = 30;
+    const BATCH_DELAY_MS = 200; // 배치 간 0.2초 간격 (rate limit 완화용)
 
-          if (!res.ok) {
-            const text = await res.text();
+    const allResults: PromiseSettledResult<boolean>[] = [];
+
+    for (let i = 0; i < payloads.length; i += BATCH_SIZE) {
+      const batch = payloads.slice(i, i + BATCH_SIZE);
+
+      const batchResults = await Promise.allSettled(
+        batch.map(async (payload) => {
+          try {
+            const res = await fetch(sendAlarmUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                // 내부 호출이지만, 필요 시 인증을 위해 service role key를 포함
+                "Authorization": `Bearer ${serviceKey}`,
+              },
+              body: JSON.stringify(payload),
+            });
+
+            if (!res.ok) {
+              const text = await res.text();
+              console.error(
+                `send-alarm failed for user ${payload.user_id}:`,
+                res.status,
+                text,
+              );
+              return false;
+            }
+
+            const json = await res.json();
+            console.log("send-alarm response for user", payload.user_id, json);
+            return true;
+          } catch (err) {
             console.error(
-              `send-alarm failed for user ${payload.user_id}:`,
-              res.status,
-              text,
+              "Error calling send-alarm for user",
+              payload.user_id,
+              err,
             );
             return false;
           }
+        }),
+      );
 
-          const json = await res.json();
-          console.log("send-alarm response for user", payload.user_id, json);
-          return true;
-        } catch (err) {
-          console.error("Error calling send-alarm for user", payload.user_id, err);
-          return false;
-        }
-      }),
-    );
+      allResults.push(...batchResults);
 
-    const successful = results.filter(
+      // 마지막 배치가 아니면 잠시 대기하여 외부 API rate limit 완화
+      if (i + BATCH_SIZE < payloads.length) {
+        await sleep(BATCH_DELAY_MS);
+      }
+    }
+
+    const successful = allResults.filter(
       (r) => r.status === "fulfilled" && r.value === true,
     ).length;
-    const failed = results.length - successful;
+    const failed = allResults.length - successful;
 
     return new Response(
       JSON.stringify({

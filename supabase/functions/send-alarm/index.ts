@@ -293,67 +293,33 @@ serve(async (req) => {
     // Supabase 클라이언트 생성
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // user_profiles 조회 (텔레그램/언어/구독 상태 확인)
-    const { data: profile, error: profileError } = await supabase
-      .from("user_profiles")
-      .select("subscription_tier, subscription_status, subscription_expires_at, telegram_enabled, telegram_chat_id, preferred_language")
-      .eq("id", user_id)
-      .single();
+    // RPC: user_profiles + daily_execution_summaries + user_devices 한 번에 조회
+    const { data: payload, error: payloadError } = await supabase.rpc("get_alarm_payload", {
+      p_user_id: user_id,
+    });
 
-    if (profileError) {
-      console.warn("Could not fetch user_profiles for Telegram check:", profileError.message);
+    if (payloadError) {
+      console.error("get_alarm_payload RPC error:", payloadError.message);
+      return new Response(
+        JSON.stringify({ error: "Failed to fetch alarm payload" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    const profileRow = profile as UserProfileRow | null;
+    const profileRow = (payload?.profile ?? null) as UserProfileRow | null;
     const sendTelegram = shouldSendTelegram(profileRow);
     const preferredLang: 'ko' | 'en' =
       profileRow?.preferred_language === 'en' ? 'en' : 'ko';
     const telegramBotToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
 
-    // daily_execution_summaries 조회 (KST 기준 오늘 날짜)
-    let dailyExecutionText: string | null = null;
-    try {
-      const kstDate = getCurrentKSTDateString();
-      const { data: summaryRow, error: summaryError } = await supabase
-        .from("daily_execution_summaries")
-        .select("summary_text")
-        .eq("user_id", user_id)
-        .eq("summary_date", kstDate)
-        .maybeSingle();
+    const dailyExecutionText: string | null = payload?.summary_text ?? null;
+    const tokens: string[] = Array.isArray(payload?.fcm_tokens)
+      ? payload.fcm_tokens.filter((t: string) => t)
+      : [];
 
-      if (!summaryError && summaryRow) {
-        dailyExecutionText = (summaryRow as DailyExecutionSummaryRow).summary_text;
-      } else if (summaryError && summaryError.code !== "PGRST116") {
-        // PGRST116: Results contain 0 rows (maybeSingle에서 자주 쓰이는 코드) - 이 경우는 무시
-        console.warn(
-          "Error fetching daily_execution_summaries for user",
-          user_id,
-          summaryError.message,
-        );
-      }
-    } catch (e) {
-      console.warn(
-        "Unhandled error while fetching daily_execution_summaries:",
-        e,
-      );
-    }
-
-    // user_devices 테이블에서 활성화된 토큰 조회
-    const { data: devices, error: devicesError } = await supabase
-      .from("user_devices")
-      .select("fcm_token")
-      .eq("user_id", user_id)
-      .eq("is_active", true);
-
-    if (devicesError) {
-      console.error("Error fetching devices:", devicesError);
-      return new Response(
-        JSON.stringify({ error: "Failed to fetch user devices" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const tokens = (devices ?? []).map((d) => d.fcm_token).filter((t) => t);
+    // 알람 메타 정보 (이력 기록용)
+    const alarmType = data?.type ?? null;
+    const alarmTimeKst = data?.time_kst ?? null;
     if (tokens.length === 0) {
       console.warn(`No active FCM devices for user ${user_id}; will still try Telegram if enabled.`);
     }
@@ -450,6 +416,69 @@ serve(async (req) => {
       }
     } else if (sendTelegram && !telegramBotToken) {
       console.warn("TELEGRAM_BOT_TOKEN not set; skipping Telegram.");
+    }
+
+    // sent_alarms 테이블에 전송 이력 기록 (채널별 1행씩)
+    try {
+      const historyRows: Array<{
+        user_id: string;
+        channel: string;
+        status: string;
+        error_message?: string | null;
+        alarm_type?: string | null;
+        time_kst?: string | null;
+        payload_snapshot?: Record<string, unknown>;
+      }> = [];
+
+      // FCM 이력
+      if (tokens.length > 0) {
+        const fcmStatus = successful > 0 ? "success" : "failure";
+        const fcmError =
+          failed > 0
+            ? `FCM: ${successful} success, ${failed} failure (tokens=${tokens.length})`
+            : null;
+
+        historyRows.push({
+          user_id,
+          channel: "fcm",
+          status: fcmStatus,
+          error_message: fcmError,
+          alarm_type: alarmType ?? undefined,
+          time_kst: alarmTimeKst ?? undefined,
+          payload_snapshot: {
+            title: localizedTitle,
+            body: localizedBody,
+            time_kst: alarmTimeKst,
+          },
+        });
+      }
+
+      // 텔레그램 이력
+      if (sendTelegram) {
+        const tgStatus = telegramSent ? "success" : "failure";
+        // 구체적인 에러 메시지는 user_profiles.telegram_last_error에 남기므로 여기서는 요약만
+        const tgError = tgStatus === "failure" ? "Telegram send failed" : null;
+
+        historyRows.push({
+          user_id,
+          channel: "telegram",
+          status: tgStatus,
+          error_message: tgError,
+          alarm_type: alarmType ?? undefined,
+          time_kst: alarmTimeKst ?? undefined,
+          payload_snapshot: {
+            title: localizedTitle,
+            body: localizedBody,
+            time_kst: alarmTimeKst,
+          },
+        });
+      }
+
+      if (historyRows.length > 0) {
+        await supabase.from("sent_alarms").insert(historyRows);
+      }
+    } catch (err) {
+      console.warn("[sent_alarms] insert failed (logging only):", err);
     }
 
     // 마지막 알림 전송 시간 업데이트 (성공한 경우)

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Portfolio } from '../types';
 import { I18N, CUSTOM_GRADIENT_LOGOS, PAID_STOCKS } from '../constants';
 import StockLogo from './StockLogo';
@@ -54,15 +54,21 @@ const Dashboard: React.FC<DashboardProps> = ({
 }) => {
   const [dailyExecutionBlocks, setDailyExecutionBlocks] = useState<Record<string, string>>({});
 
+  // 알람이 켜진 포트폴리오 id 목록 (파생 배열) – 포트폴리오가 바뀔 때만 재계산
+  const alarmIds = useMemo(
+    () =>
+      portfolios
+        .filter((p) => p.alarmconfig?.enabled && (p.alarmconfig.selectedHours?.length || 0) > 0)
+        .map((p) => p.id),
+    [portfolios]
+  );
+
   useEffect(() => {
     if (!onDailyExecutionSummaryChange) return;
-    const alarmIds = portfolios
-      .filter((p) => p.alarmconfig?.enabled && (p.alarmconfig.selectedHours?.length || 0) > 0)
-      .map((p) => p.id);
     const blocks = alarmIds.map((id) => dailyExecutionBlocks[id]).filter(Boolean);
     const summary = joinDailyExecutionBlocks(blocks);
     onDailyExecutionSummaryChange(summary || null);
-  }, [portfolios, dailyExecutionBlocks, onDailyExecutionSummaryChange]);
+  }, [alarmIds, dailyExecutionBlocks, onDailyExecutionSummaryChange]);
 
   const t = I18N[lang];
   const isPositiveChange = totalValuationChange >= 0;
@@ -208,27 +214,26 @@ const PortfolioCard: React.FC<{
 
   const strategyInfo = getStrategyInfo();
 
-  // 다분할 매매법의 현재 시행 회차(T) 계산
-  const calculateCurrentRound = (): number => {
+  // 다분할 매매법의 현재 시행 회차(T) – 포트폴리오가 바뀔 때만 계산
+  const currentRound = useMemo(() => {
     if (!portfolio.strategy.multiSplit) return 0;
-    
+
     // 현재 보유 중인 종목의 매수금액만 계산 (매도된 부분은 제외)
     const holdings = calculateHoldings(portfolio);
     const totalInvested = holdings.reduce((sum, h) => sum + h.totalCost, 0);
-    
+
     const oneTimeAmount = portfolio.dailyBuyAmount;
     if (oneTimeAmount === 0) return 0;
-    
+
     // T = 현재 보유 중인 매수금액 / 1회 매수액, 소수점 둘째 자리 올림
-    const T = Math.ceil((totalInvested / oneTimeAmount) * 100) / 100;
-    return T;
-  };
+    return Math.ceil((totalInvested / oneTimeAmount) * 100) / 100;
+  }, [portfolio]);
 
   // 다분할 매매법의 현재 구간 판별
   const getMultiSplitPhase = (): 'first' | 'second' | 'quarter' | null => {
     if (!portfolio.strategy.multiSplit) return null;
     
-    const T = calculateCurrentRound();
+    const T = currentRound;
     const a = portfolio.strategy.multiSplit.totalSplitCount;
     
     if (T >= 1 && T < a / 2) return 'first';
@@ -443,7 +448,7 @@ const PortfolioCard: React.FC<{
         const { targetReturnRate, totalSplitCount, targetStock } = portfolio.strategy.multiSplit;
         const A = targetReturnRate;      // 목표 수익률 (%)
         const a = totalSplitCount;      // 총 분할 횟수
-        const T = calculateCurrentRound();
+        const T = currentRound;
         
         // LOC 계산 전 유효성 검사
         if (A <= 0 || a <= 0 || T <= 0) {

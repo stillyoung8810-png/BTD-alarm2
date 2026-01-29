@@ -17,6 +17,7 @@ import { calculateInvestedAmount, calculateYield, determineActiveSection, calcul
 import { fetchStockPrices } from '../services/stockService';
 import HoverTip from './HoverTip';
 import { getStockPrices, initDatabase } from '../services/db';
+import { formatPortfolioDailyExecutionBlock, joinDailyExecutionBlocks } from '../utils/dailyExecutionSummary';
 
 interface DashboardProps {
   lang: 'ko' | 'en';
@@ -32,6 +33,7 @@ interface DashboardProps {
   totalValuation: number;
   totalValuationChange: number;
   totalValuationChangePct: number;
+  onDailyExecutionSummaryChange?: (summaryText: string | null) => void;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ 
@@ -39,6 +41,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   portfolios, 
   onClosePortfolio,
   onDeletePortfolio,
+  onUpdatePortfolio,
   onOpenCreator, 
   onOpenAlarm,
   onOpenDetails,
@@ -47,7 +50,20 @@ const Dashboard: React.FC<DashboardProps> = ({
   totalValuation,
   totalValuationChange,
   totalValuationChangePct,
+  onDailyExecutionSummaryChange,
 }) => {
+  const [dailyExecutionBlocks, setDailyExecutionBlocks] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!onDailyExecutionSummaryChange) return;
+    const alarmIds = portfolios
+      .filter((p) => p.alarmconfig?.enabled && (p.alarmconfig.selectedHours?.length || 0) > 0)
+      .map((p) => p.id);
+    const blocks = alarmIds.map((id) => dailyExecutionBlocks[id]).filter(Boolean);
+    const summary = joinDailyExecutionBlocks(blocks);
+    onDailyExecutionSummaryChange(summary || null);
+  }, [portfolios, dailyExecutionBlocks, onDailyExecutionSummaryChange]);
+
   const t = I18N[lang];
   const isPositiveChange = totalValuationChange >= 0;
   const changeColor = totalValuationChange === 0 ? 'text-slate-400' : (isPositiveChange ? 'text-emerald-500' : 'text-rose-500');
@@ -119,6 +135,8 @@ const Dashboard: React.FC<DashboardProps> = ({
               onOpenExecution={() => onOpenExecution(p.id)}
               onClose={() => onClosePortfolio(p.id)}
               onDelete={() => onDeletePortfolio(p.id)}
+              onUpdatePortfolio={onUpdatePortfolio}
+              onDailyExecutionBlock={onDailyExecutionSummaryChange ? (block) => setDailyExecutionBlocks(prev => ({ ...prev, [p.id]: block ?? '' })) : undefined}
             />
           ))
         )}
@@ -135,8 +153,10 @@ const PortfolioCard: React.FC<{
   onOpenDetails: () => void;
   onOpenQuickInput: () => void;
   onOpenExecution: () => void;
-  lang: 'ko' | 'en' 
-}> = ({ portfolio, onClose, onDelete, onOpenAlarm, onOpenDetails, onOpenQuickInput, onOpenExecution, lang }) => {
+  onUpdatePortfolio: (updated: Portfolio) => void;
+  lang: 'ko' | 'en';
+  onDailyExecutionBlock?: (block: string | null) => void;
+}> = ({ portfolio, onClose, onDelete, onOpenAlarm, onOpenDetails, onOpenQuickInput, onOpenExecution, onUpdatePortfolio, lang, onDailyExecutionBlock }) => {
   const t = I18N[lang];
   // 다분할 매매법일 때는 multiSplit.targetStock을 사용, 아니면 ma0.stock 사용
   const ma0Ticker = portfolio.strategy.multiSplit?.targetStock || portfolio.strategy.ma0.stock;
@@ -147,7 +167,29 @@ const PortfolioCard: React.FC<{
   const [yieldRate, setYieldRate] = useState<number>(0);
   const [realizedProfit, setRealizedProfit] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isQuarterStopLossActive, setIsQuarterStopLossActive] = useState<boolean>(false);
+
+  // 쿼터 손절 모드: DB 플래그 또는 T > a-1 (신규 진입 시 플래그 갱신)
+  const T = portfolio.strategy.multiSplit
+    ? (() => {
+        const holdings = calculateHoldings(portfolio);
+        const totalInvested = holdings.reduce((sum, h) => sum + h.totalCost, 0);
+        const oneTime = portfolio.dailyBuyAmount;
+        if (oneTime === 0) return 0;
+        return Math.ceil((totalInvested / oneTime) * 100) / 100;
+      })()
+    : 0;
+  const a = portfolio.strategy.multiSplit?.totalSplitCount ?? 0;
+  const isInQuarterModeByT = T > a - 1 && T <= a; // 신규 쿼터 진입 조건 (플래그 갱신용)
+  const isInQuarterMode = portfolio.isQuarterMode === true; // 표시/계산은 DB 플래그만 사용 (해제 후 복귀 시 T>a-1이어도 false)
+
+  // T > a-1 이고 플래그가 아직 false면 DB에 true로 갱신 (신규 쿼터 진입, 1회만)
+  const quarterModeUpdateSentRef = React.useRef(false);
+  if (portfolio.isQuarterMode === false) quarterModeUpdateSentRef.current = false;
+  useEffect(() => {
+    if (!portfolio.strategy.multiSplit || !isInQuarterModeByT || portfolio.isQuarterMode === true || quarterModeUpdateSentRef.current) return;
+    quarterModeUpdateSentRef.current = true;
+    onUpdatePortfolio({ ...portfolio, isQuarterMode: true });
+  }, [portfolio.id, isInQuarterModeByT, portfolio.isQuarterMode]);
 
   // 전략 이름 및 아이콘 결정
   const getStrategyInfo = () => {
@@ -321,7 +363,7 @@ const PortfolioCard: React.FC<{
 
   // 쿼터 손절 모드 계산
   useEffect(() => {
-    if (!portfolio.strategy.multiSplit || !isQuarterStopLossActive || recentTradingDays.length === 0) {
+    if (!portfolio.strategy.multiSplit || !isInQuarterMode || recentTradingDays.length === 0) {
       setQuarterStopLossData(null);
       return;
     }
@@ -377,7 +419,7 @@ const PortfolioCard: React.FC<{
     };
 
     calculateQuarterStopLoss();
-  }, [portfolio, isQuarterStopLossActive, recentTradingDays]);
+  }, [portfolio, isInQuarterMode, recentTradingDays]);
 
   // 다분할 매매법의 일별 매매 실행 계산
   const [multiSplitExecutionData, setMultiSplitExecutionData] = useState<{
@@ -522,6 +564,18 @@ const PortfolioCard: React.FC<{
       calculateMultiSplitExecution();
     }
   }, [portfolio, multiSplitPhase]);
+
+  // 알람 켜진 포트폴리오용: 상세 daily execution 블록 생성 후 상위로 전달 (텔레그램 메시지에 LOC/MOC 등 반영)
+  useEffect(() => {
+    if (!onDailyExecutionBlock) return;
+    const block = formatPortfolioDailyExecutionBlock(portfolio, lang, {
+      multiSplitExecutionData: multiSplitExecutionData ?? undefined,
+      quarterStopLossData: quarterStopLossData ?? undefined,
+      multiSplitPhase: multiSplitPhase ?? null,
+      isQuarterStopLossActive: isInQuarterMode,
+    });
+    onDailyExecutionBlock(block);
+  }, [portfolio, lang, multiSplitExecutionData, quarterStopLossData, multiSplitPhase, isInQuarterMode, onDailyExecutionBlock]);
 
   useEffect(() => {
     const updateMetrics = async () => {
@@ -684,40 +738,21 @@ const PortfolioCard: React.FC<{
              )}
              {portfolio.strategy.multiSplit && (
                <HoverTip
-                 text={isQuarterStopLossActive 
+                 text={isInQuarterMode
                    ? (lang === 'ko' ? '쿼터손절 → 복귀 : LOC 매도 또는 지정가 매도가 체결될 때.' : 'Quarter Stop-Loss → Return: When LOC sell or limit sell is executed.')
-                   : (lang === 'ko' ? '정규 → 쿼터손절 : 남은 예수금이 1회분 미만일 때.' : 'Normal → Quarter Stop-Loss: When remaining funds are less than 1 round.')
+                   : (lang === 'ko' ? '정규 → 쿼터손절 : T > a-1 이면 자동 진입.' : 'Normal → Quarter Stop-Loss: Auto when T > a-1.')
                  }
                  className="ml-auto"
                >
-                 <div 
-                   className="flex items-center gap-2 cursor-pointer"
-                   onClick={(e) => {
-                     e.stopPropagation();
-                     setIsQuarterStopLossActive(!isQuarterStopLossActive);
-                   }}
-                 >
-                   <span className="text-[9px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">
-                     {lang === 'ko' ? '쿼터 손절' : 'Quarter Stop-Loss'}
-                   </span>
-                   <button
-                     className={`relative w-10 h-5 rounded-full transition-colors duration-200 ${
-                       isQuarterStopLossActive ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
-                     }`}
-                   >
-                     <span
-                       className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 ${
-                         isQuarterStopLossActive ? 'translate-x-5' : 'translate-x-0'
-                       }`}
-                     />
-                   </button>
-                 </div>
+                 <span className="text-[9px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">
+                   {lang === 'ko' ? '쿼터 손절' : 'Quarter Stop-Loss'}
+                 </span>
                </HoverTip>
              )}
           </div>
           {portfolio.strategy.multiSplit ? (
             <div className="text-sm font-black text-blue-900 dark:text-white space-y-2">
-              {isQuarterStopLossActive ? (
+              {isInQuarterMode ? (
                 // 쿼터 손절 모드 활성화 시
                 quarterStopLossData ? (
                   !quarterStopLossData.hasMOC ? (

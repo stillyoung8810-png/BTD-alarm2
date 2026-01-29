@@ -20,6 +20,7 @@ import { getUSSelectionHolidays } from './utils/marketUtils';
 import { requestForToken, getNotificationPermission } from './services/firebase';
 import { initializeTossApp, isTossApp } from './services/tossAppBridge';
 import { TossAppProvider } from './contexts/TossAppContext';
+import { buildDailyExecutionSummary } from './utils/dailyExecutionSummary';
 import { 
   LayoutDashboard, 
   BarChart3, 
@@ -46,6 +47,10 @@ const App: React.FC = () => {
     max_alarms: number;
     subscription_status?: string | null;
     subscription_expires_at?: string | null;
+    telegram_enabled?: boolean;
+    telegram_connected_at?: string | null;
+    telegram_last_error?: string | null;
+    preferred_language?: 'ko' | 'en' | null;
   } | null>(null);
   const [authModal, setAuthModal] = useState<'login' | 'signup' | 'profile' | 'reset-password' | 'change-password' | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -61,6 +66,8 @@ const App: React.FC = () => {
   const [totalValuationPrev, setTotalValuationPrev] = useState<number>(0);
   const [totalValuationChange, setTotalValuationChange] = useState<number>(0);
   const [totalValuationChangePct, setTotalValuationChangePct] = useState<number>(0);
+  /** Dashboard에서 만든 상세 daily execution 요약 (LOC/MOC 등 포함). 있으면 DB 저장 시 이걸 사용. */
+  const [dailyExecutionSummaryFromDashboard, setDailyExecutionSummaryFromDashboard] = useState<string | null>(null);
 
   // 현재 유저의 구독 티어 (default: free)
   const currentTier = (userProfile?.subscription_tier || 'free').toLowerCase();
@@ -135,6 +142,49 @@ const App: React.FC = () => {
     setIsInTossApp(isTossApp());
   }, []);
 
+  // 알람이 켜진 포트폴리오 기준 daily execution 요약을 Supabase에 캐싱 (Dashboard 상세 블록 우선, 없으면 fallback)
+  useEffect(() => {
+    if (!user?.id) return;
+    if (!portfolios || portfolios.length === 0) return;
+
+    const run = async () => {
+      try {
+        const summaryToSave =
+          dailyExecutionSummaryFromDashboard != null && dailyExecutionSummaryFromDashboard.trim() !== ''
+            ? dailyExecutionSummaryFromDashboard
+            : buildDailyExecutionSummary(portfolios, lang);
+
+        if (!summaryToSave || summaryToSave.trim().length === 0) return;
+
+        const summaryDate = getCurrentKSTDateString();
+
+        const { error } = await supabase
+          .from('daily_execution_summaries')
+          .upsert(
+            {
+              user_id: user.id,
+              summary_date: summaryDate,
+              summary_text: summaryToSave,
+              lang,
+            },
+            {
+              onConflict: 'user_id,summary_date',
+            } as any,
+          );
+
+        if (error) {
+          console.warn('[DailyExecution] upsert error:', error.message);
+        } else {
+          console.log('[DailyExecution] summary upserted for', user.id, summaryDate);
+        }
+      } catch (err) {
+        console.warn('[DailyExecution] upsert failed:', err);
+      }
+    };
+
+    run();
+  }, [user?.id, portfolios, lang, dailyExecutionSummaryFromDashboard]);
+
   // 유료 로그인 시: 유료 종목만 추가로 IndexedDB에 저장 (중복 호출 방지)
   const paidStocksLoadedRef = useRef(false);
   useEffect(() => {
@@ -163,6 +213,46 @@ const App: React.FC = () => {
       setAuthModal('reset-password');
     }
   }, []);
+
+  // KST(Asia/Seoul) 기준 YYYY-MM-DD 문자열 (서버와 동일한 방식)
+  const getCurrentKSTDateString = () => {
+    const nowUtc = new Date();
+    const kstTime = new Date(nowUtc.getTime() + 9 * 60 * 60 * 1000);
+    const year = kstTime.getUTCFullYear();
+    const month = String(kstTime.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(kstTime.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // 프로필 모달이 열릴 때 user_profiles 최신화 (텔레그램 연결 상태 등 반영)
+  useEffect(() => {
+    if (authModal !== 'profile' || !user?.id) return;
+    (async () => {
+      try {
+        const { data: profileData, error: profileError } = await supabase
+          .from('user_profiles')
+          .select('subscription_tier, max_portfolios, max_alarms, subscription_status, subscription_expires_at, telegram_enabled, telegram_connected_at, telegram_last_error, preferred_language')
+          .eq('id', user.id)
+          .single();
+        if (!profileError && profileData) {
+          setUserProfile((prev) => (prev ? {
+            ...prev,
+            subscription_tier: profileData.subscription_tier || prev.subscription_tier,
+            max_portfolios: profileData.max_portfolios ?? prev.max_portfolios,
+            max_alarms: profileData.max_alarms ?? prev.max_alarms,
+            subscription_status: profileData.subscription_status ?? prev.subscription_status,
+            subscription_expires_at: profileData.subscription_expires_at ?? prev.subscription_expires_at,
+            telegram_enabled: profileData.telegram_enabled ?? prev.telegram_enabled,
+            telegram_connected_at: profileData.telegram_connected_at ?? prev.telegram_connected_at,
+            telegram_last_error: profileData.telegram_last_error ?? prev.telegram_last_error,
+            preferred_language: profileData.preferred_language ?? prev.preferred_language ?? 'ko',
+          } : prev));
+        }
+      } catch (err) {
+        console.warn('[App] profile refetch on modal open:', err);
+      }
+    })();
+  }, [authModal, user?.id]);
 
   // 초기 다크 모드 및 Supabase 세션/포트폴리오 로딩
   useEffect(() => {
@@ -228,11 +318,13 @@ const App: React.FC = () => {
         setUser(currentUser);
 
         // 사용자 프로필 - 일단 기본값 사용 (나중에 비동기로 업데이트)
+        // 기본값은 Free 티어 기준: 포트폴리오 2개, 알림 2개
         console.log('[fetchUserData] 프로필 기본값 설정');
         setUserProfile({
           subscription_tier: 'free',
-          max_portfolios: 3,
+          max_portfolios: 2,
           max_alarms: 2,
+          preferred_language: 'ko',
         });
         
         // user_profiles 조회는 백그라운드에서 (블로킹 없이)
@@ -240,7 +332,7 @@ const App: React.FC = () => {
         Promise.resolve(
           supabase
             .from('user_profiles')
-            .select('subscription_tier, max_portfolios, max_alarms, subscription_status, subscription_expires_at')
+            .select('subscription_tier, max_portfolios, max_alarms, subscription_status, subscription_expires_at, telegram_enabled, telegram_connected_at, telegram_last_error, preferred_language')
             .eq('id', currentUser.id)
             .single()
         )
@@ -253,6 +345,10 @@ const App: React.FC = () => {
                 max_alarms: profileData.max_alarms ?? 2,
                 subscription_status: profileData.subscription_status ?? null,
                 subscription_expires_at: profileData.subscription_expires_at ?? null,
+                telegram_enabled: profileData.telegram_enabled ?? false,
+                telegram_connected_at: profileData.telegram_connected_at ?? null,
+                telegram_last_error: profileData.telegram_last_error ?? null,
+                preferred_language: profileData.preferred_language ?? 'ko',
               });
             }
           })
@@ -1158,6 +1254,7 @@ const App: React.FC = () => {
         closed_at: updated.closedAt || null,
         final_sell_amount: updated.finalSellAmount || null,
         alarm_config: updated.alarmconfig || null,
+        is_quarter_mode: updated.isQuarterMode ?? false,
       })
       .eq('id', updated.id);
 
@@ -1175,6 +1272,7 @@ const App: React.FC = () => {
     if (!target) return;
 
     const updatedTrades = [trade, ...target.trades];
+    const updatedPortfolio = { ...target, trades: updatedTrades };
 
     const { error } = await supabase
       .from('portfolios')
@@ -1187,8 +1285,27 @@ const App: React.FC = () => {
       return;
     }
 
-    setPortfolios(prev => prev.map(p => 
-      p.id === portfolioId ? { ...p, trades: updatedTrades } : p
+    // 쿼터 손절 모드 해제: 다분할 포트폴리오에서 매도로 보유수량 24% 이상 감소 또는 99% 이상 감소(수량 0) 시
+    let nextIsQuarterMode = target.isQuarterMode ?? false;
+    if (target.strategy.multiSplit && nextIsQuarterMode && trade.type === 'sell') {
+      const holdingsBefore = calculateHoldings(target);
+      const holdingsAfter = calculateHoldings(updatedPortfolio);
+      const qtyBefore = holdingsBefore.find(h => h.stock === trade.stock)?.quantity ?? 0;
+      const qtyAfter = holdingsAfter.find(h => h.stock === trade.stock)?.quantity ?? 0;
+      if (qtyBefore > 0) {
+        const dropPct = (qtyBefore - qtyAfter) / qtyBefore;
+        if (dropPct >= 0.24 || dropPct >= 0.99 || qtyAfter <= 0) {
+          nextIsQuarterMode = false;
+          await supabase
+            .from('portfolios')
+            .update({ is_quarter_mode: false })
+            .eq('id', portfolioId);
+        }
+      }
+    }
+
+    setPortfolios(prev => prev.map(p =>
+      p.id === portfolioId ? { ...updatedPortfolio, isQuarterMode: nextIsQuarterMode } : p
     ));
   };
 
@@ -1298,7 +1415,27 @@ const App: React.FC = () => {
           
           <div className="flex items-center gap-2 md:gap-8">
             <button 
-              onClick={() => setLang(lang === 'ko' ? 'en' : 'ko')}
+              onClick={async () => {
+                const nextLang: 'ko' | 'en' = lang === 'ko' ? 'en' : 'ko';
+                setLang(nextLang);
+
+                // 로그인된 경우, 선호 언어를 user_profiles에 반영
+                if (user?.id) {
+                  try {
+                    const { error } = await supabase
+                      .from('user_profiles')
+                      .update({ preferred_language: nextLang })
+                      .eq('id', user.id);
+                    if (error) {
+                      console.warn('[LangToggle] failed to update preferred_language:', error.message);
+                    } else {
+                      setUserProfile((prev) => prev ? { ...prev, preferred_language: nextLang } : prev);
+                    }
+                  } catch (err) {
+                    console.warn('[LangToggle] unexpected error updating preferred_language:', err);
+                  }
+                }
+              }}
               className="px-4 py-2 rounded-full bg-slate-100 dark:bg-slate-800 text-[11px] font-black uppercase transition-all hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center gap-2"
             >
               <Languages size={14} />
@@ -1343,6 +1480,7 @@ const App: React.FC = () => {
                 totalValuation={totalValuation}
                 totalValuationChange={totalValuationChange}
                 totalValuationChangePct={totalValuationChangePct}
+                onDailyExecutionSummaryChange={(summary) => setDailyExecutionSummaryFromDashboard(summary ?? null)}
               />
             ) : (
               <Landing 
@@ -1504,6 +1642,7 @@ const App: React.FC = () => {
                   closedAt: row.closed_at ?? row.closedAt ?? undefined,
                   finalSellAmount: row.final_sell_amount ?? row.finalSellAmount ?? undefined,
                   alarmconfig: row.alarm_config ?? row.alarmconfig ?? undefined,
+                  isQuarterMode: row.is_quarter_mode ?? row.isQuarterMode ?? false,
                 }));
                 setPortfolios(normalized as Portfolio[]);
               }
@@ -1542,6 +1681,9 @@ const App: React.FC = () => {
             }}
             currentUserEmail={user?.email}
             currentTier={currentTier === 'premium' || currentTier === 'pro' ? currentTier : 'free'}
+            currentUserId={user?.id ?? undefined}
+            telegramEnabled={userProfile?.telegram_enabled ?? false}
+            telegramConnectedAt={userProfile?.telegram_connected_at ?? null}
           />
         )}
       </div>

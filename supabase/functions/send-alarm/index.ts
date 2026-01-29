@@ -1,13 +1,140 @@
 // supabase/functions/send-alarm/index.ts
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { SignJWT, importPKCS8 } from "https://deno.land/x/jose@v5.2.0/index.ts";
+import { serve } from "std/http/server";
+import { createClient } from "@supabase/supabase-js";
+import { SignJWT, importPKCS8 } from "jose";
 
 interface AlarmRequest {
   user_id: string;
   title: string;
   body: string;
   data?: Record<string, string>;
+}
+
+interface UserProfileRow {
+  subscription_tier?: string | null;
+  subscription_status?: string | null;
+  subscription_expires_at?: string | null;
+  telegram_enabled?: boolean | null;
+  telegram_chat_id?: string | null;
+  preferred_language?: string | null;
+}
+
+interface DailyExecutionSummaryRow {
+  summary_text: string;
+}
+
+// KST(Asia/Seoul) 기준 YYYY-MM-DD 문자열
+function getCurrentKSTDateString(): string {
+  const nowUtc = new Date();
+  const kstTime = new Date(nowUtc.getTime() + 9 * 60 * 60 * 1000);
+  const year = kstTime.getUTCFullYear();
+  const month = String(kstTime.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(kstTime.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/** 유료 구독 + 텔레그램 연결 시에만 텔레그램 발송 */
+function shouldSendTelegram(profile: UserProfileRow | null): boolean {
+  if (!profile) return false;
+  const tier = (profile.subscription_tier || "").toLowerCase();
+  if (tier !== "pro" && tier !== "premium") return false;
+  const status = (profile.subscription_status || "").toLowerCase();
+  const active = status === "active" || status === "trial" || status === "";
+  if (!active) return false;
+  const expiresAt = profile.subscription_expires_at;
+  if (expiresAt && new Date(expiresAt) <= new Date()) return false;
+  if (profile.telegram_enabled !== true) return false;
+  const chatId = profile.telegram_chat_id;
+  if (!chatId || String(chatId).trim() === "") return false;
+  return true;
+}
+
+const TELEGRAM_MAX_MESSAGE_LENGTH = 4096;
+const TELEGRAM_MAX_ERROR_STORAGE = 500;
+
+/** 알람용 텔레그램 메시지 포맷 (길이 제한 적용) */
+function formatTelegramAlarmMessage(
+  title: string,
+  body: string,
+  data?: Record<string, string>,
+  dailyExecutionSummary?: string,
+): string {
+  const timeKst = data?.time_kst;
+  const parts = [
+    "🔔 " + (title || "BTD 매매 알람"),
+    "",
+    body || "설정하신 매매 알람 시간입니다. 포트폴리오 전략을 확인해 주세요.",
+  ];
+  if (timeKst) {
+    parts.push("");
+    parts.push(`⏰ KST ${timeKst}`);
+  }
+  if (dailyExecutionSummary && dailyExecutionSummary.trim().length > 0) {
+    parts.push("");
+    parts.push("📋 DAILY EXECUTION");
+    parts.push(dailyExecutionSummary.trim());
+  }
+  const text = parts.join("\n");
+  if (text.length <= TELEGRAM_MAX_MESSAGE_LENGTH) return text;
+  return text.slice(0, TELEGRAM_MAX_MESSAGE_LENGTH - 3) + "...";
+}
+
+/** DB에 저장할 에러 메시지 길이 제한 */
+function truncateErrorForStorage(msg: string): string {
+  if (!msg || msg.length <= TELEGRAM_MAX_ERROR_STORAGE) return msg;
+  return msg.slice(0, TELEGRAM_MAX_ERROR_STORAGE - 3) + "...";
+}
+
+async function sendTelegramMessage(
+  botToken: string,
+  chatId: string,
+  text: string,
+  retryCount = 0,
+): Promise<{ success: boolean; errorMessage?: string }> {
+  const maxRetries = 1;
+  try {
+    const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text }),
+    });
+    const resText = await res.text();
+
+    if (res.ok) {
+      return { success: true };
+    }
+
+    // Telegram API 에러 응답 파싱 (JSON인 경우 description 사용)
+    let errorMessage = `${res.status}: ${resText}`;
+    try {
+      const json = JSON.parse(resText) as { description?: string };
+      if (json?.description) {
+        errorMessage = json.description;
+      }
+    } catch {
+      // 비-JSON 응답이면 그대로 사용
+    }
+    errorMessage = truncateErrorForStorage(errorMessage);
+
+    // 5xx 또는 일시적 오류 시 1회 재시도
+    const isRetryable = res.status >= 500 || res.status === 429;
+    if (isRetryable && retryCount < maxRetries) {
+      await new Promise((r) => setTimeout(r, 1000 * (retryCount + 1)));
+      return sendTelegramMessage(botToken, chatId, text, retryCount + 1);
+    }
+
+    return { success: false, errorMessage };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const errorMessage = truncateErrorForStorage(msg);
+    const isRetryable = err instanceof TypeError && msg.includes("fetch");
+    if (isRetryable && retryCount < maxRetries) {
+      await new Promise((r) => setTimeout(r, 1000 * (retryCount + 1)));
+      return sendTelegramMessage(botToken, chatId, text, retryCount + 1);
+    }
+    return { success: false, errorMessage };
+  }
 }
 
 /**
@@ -166,6 +293,51 @@ serve(async (req) => {
     // Supabase 클라이언트 생성
     const supabase = createClient(supabaseUrl, serviceKey);
 
+    // user_profiles 조회 (텔레그램/언어/구독 상태 확인)
+    const { data: profile, error: profileError } = await supabase
+      .from("user_profiles")
+      .select("subscription_tier, subscription_status, subscription_expires_at, telegram_enabled, telegram_chat_id, preferred_language")
+      .eq("id", user_id)
+      .single();
+
+    if (profileError) {
+      console.warn("Could not fetch user_profiles for Telegram check:", profileError.message);
+    }
+
+    const profileRow = profile as UserProfileRow | null;
+    const sendTelegram = shouldSendTelegram(profileRow);
+    const preferredLang: 'ko' | 'en' =
+      profileRow?.preferred_language === 'en' ? 'en' : 'ko';
+    const telegramBotToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
+
+    // daily_execution_summaries 조회 (KST 기준 오늘 날짜)
+    let dailyExecutionText: string | null = null;
+    try {
+      const kstDate = getCurrentKSTDateString();
+      const { data: summaryRow, error: summaryError } = await supabase
+        .from("daily_execution_summaries")
+        .select("summary_text")
+        .eq("user_id", user_id)
+        .eq("summary_date", kstDate)
+        .maybeSingle();
+
+      if (!summaryError && summaryRow) {
+        dailyExecutionText = (summaryRow as DailyExecutionSummaryRow).summary_text;
+      } else if (summaryError && summaryError.code !== "PGRST116") {
+        // PGRST116: Results contain 0 rows (maybeSingle에서 자주 쓰이는 코드) - 이 경우는 무시
+        console.warn(
+          "Error fetching daily_execution_summaries for user",
+          user_id,
+          summaryError.message,
+        );
+      }
+    } catch (e) {
+      console.warn(
+        "Unhandled error while fetching daily_execution_summaries:",
+        e,
+      );
+    }
+
     // user_devices 테이블에서 활성화된 토큰 조회
     const { data: devices, error: devicesError } = await supabase
       .from("user_devices")
@@ -181,17 +353,9 @@ serve(async (req) => {
       );
     }
 
-    if (!devices || devices.length === 0) {
-      console.warn(`No active devices found for user ${user_id}`);
-      return new Response(
-        JSON.stringify({ 
-          success: false, 
-          message: "No active devices found",
-          sent: 0,
-          total: 0 
-        }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    const tokens = (devices ?? []).map((d) => d.fcm_token).filter((t) => t);
+    if (tokens.length === 0) {
+      console.warn(`No active FCM devices for user ${user_id}; will still try Telegram if enabled.`);
     }
 
     // Firebase Service Account 파싱
@@ -209,13 +373,20 @@ serve(async (req) => {
     // Access Token 획득
     const accessToken = await getGoogleAccessToken(firebaseServiceAccount);
 
-    // 모든 활성 토큰에 알림 전송
-    const tokens = devices.map((d) => d.fcm_token).filter((token) => token);
-    console.log(`Sending to ${tokens.length} device(s)`);
+    // 언어에 따른 알림 제목/본문 결정
+    const localizedTitle =
+      preferredLang === 'en' ? 'BTD Trading Alert' : 'BTD 매매 알람';
+    const localizedBody =
+      preferredLang === 'en'
+        ? 'This is your scheduled trading alert. Please review your portfolio strategy.'
+        : '설정하신 매매 알람 시간입니다. 포트폴리오 전략을 확인해 주세요.';
+
+    // 모든 활성 토큰에 FCM 알림 전송
+    console.log(`Sending FCM to ${tokens.length} device(s)`);
 
     const results = await Promise.allSettled(
       tokens.map((token) =>
-        sendFCMNotification(accessToken, projectId, token, title, body, data)
+        sendFCMNotification(accessToken, projectId, token, localizedTitle, localizedBody, data)
       )
     );
 
@@ -248,6 +419,39 @@ serve(async (req) => {
         .in("fcm_token", tokensToDeactivate);
     }
 
+    // 텔레그램 발송 (Pro/Premium + telegram_enabled + chat_id 있을 때만)
+    let telegramSent = false;
+    if (sendTelegram && telegramBotToken && profileRow?.telegram_chat_id) {
+      const telegramText = formatTelegramAlarmMessage(
+        localizedTitle,
+        localizedBody,
+        data,
+        dailyExecutionText || undefined,
+      );
+      const tgResult = await sendTelegramMessage(
+        telegramBotToken,
+        String(profileRow.telegram_chat_id).trim(),
+        telegramText,
+      );
+      if (tgResult.success) {
+        telegramSent = true;
+        console.log(`Telegram sent for user ${user_id}`);
+        await supabase
+          .from("user_profiles")
+          .update({ telegram_last_error: null })
+          .eq("id", user_id);
+      } else {
+        const errToStore = truncateErrorForStorage(tgResult.errorMessage ?? "Send failed");
+        console.warn(`Telegram send failed for user ${user_id}:`, errToStore);
+        await supabase
+          .from("user_profiles")
+          .update({ telegram_last_error: errToStore })
+          .eq("id", user_id);
+      }
+    } else if (sendTelegram && !telegramBotToken) {
+      console.warn("TELEGRAM_BOT_TOKEN not set; skipping Telegram.");
+    }
+
     // 마지막 알림 전송 시간 업데이트 (성공한 경우)
     if (successful > 0) {
       const now = new Date().toISOString();
@@ -265,14 +469,15 @@ serve(async (req) => {
       }
     }
 
-    console.log(`Alarm sent: ${successful} success, ${failed} failed`);
+    console.log(`Alarm sent: ${successful} success, ${failed} failed; telegram: ${telegramSent}`);
 
     return new Response(
       JSON.stringify({
-        success: successful > 0,
+        success: successful > 0 || telegramSent,
         sent: successful,
         failed,
         total: tokens.length,
+        telegram_sent: telegramSent,
       }),
       {
         status: 200,
@@ -281,15 +486,20 @@ serve(async (req) => {
     );
   } catch (error) {
     console.error("Unhandled error:", error);
+    const message =
+      error instanceof Error ? error.message : String(error);
     return new Response(
-      JSON.stringify({ error: "Internal server error", message: error.message }),
+      JSON.stringify({
+        error: "Internal server error",
+        message,
+      }),
       {
         status: 500,
         headers: {
           "Access-Control-Allow-Origin": "*",
           "Content-Type": "application/json",
         },
-      }
+      },
     );
   }
 });

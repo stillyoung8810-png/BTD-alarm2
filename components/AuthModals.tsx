@@ -1,7 +1,7 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { I18N } from '../constants';
-import { X, Mail, Lock, LogOut, Key, UserCheck, ShieldCheck, Sparkles } from 'lucide-react';
+import { X, Mail, Lock, LogOut, Key, UserCheck, ShieldCheck, Sparkles, Send } from 'lucide-react';
 import { supabase } from '../services/supabase';
 
 interface AuthModalsProps {
@@ -13,9 +13,12 @@ interface AuthModalsProps {
   onLogout: () => void;
   currentUserEmail?: string | null;
   currentTier?: 'free' | 'pro' | 'premium' | null;
+  currentUserId?: string;
+  telegramEnabled?: boolean;
+  telegramConnectedAt?: string | null;
 }
 
-const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchType, onLogin, onLogout, currentUserEmail, currentTier = 'free' }) => {
+const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchType, onLogin, onLogout, currentUserEmail, currentTier = 'free', currentUserId, telegramEnabled = false, telegramConnectedAt = null }) => {
   const t = I18N[lang];
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -26,6 +29,13 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
+
+  const [telegramLinkToken, setTelegramLinkToken] = useState<string | null>(null);
+  const [telegramLinkLoading, setTelegramLinkLoading] = useState(false);
+
+  useEffect(() => {
+    if (type !== 'profile') setTelegramLinkToken(null);
+  }, [type]);
 
   const tierLabel =
     currentTier === 'premium'
@@ -541,6 +551,74 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                  <p className="text-xs font-bold text-emerald-400 bg-emerald-500/5 border border-emerald-500/30 rounded-2xl px-4 py-3">
                    {info}
                  </p>
+               )}
+
+               {(currentTier === 'pro' || currentTier === 'premium') && (
+                 <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-2xl border border-slate-200 dark:border-white/5 space-y-3">
+                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                     {lang === 'ko' ? '텔레그램 알림' : 'TELEGRAM'}
+                   </p>
+                   {telegramEnabled ? (
+                     <p className="text-sm font-bold text-emerald-500 dark:text-emerald-400">
+                       {lang === 'ko' ? '연결됨' : 'Connected'}
+                       {telegramConnectedAt && (
+                         <span className="text-slate-500 dark:text-slate-400 font-normal ml-1">
+                           ({new Date(telegramConnectedAt).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-US')})
+                         </span>
+                       )}
+                     </p>
+                   ) : telegramLinkToken ? (
+                     <div className="space-y-2 text-left">
+                       <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                         {lang === 'ko'
+                           ? '아래 링크를 클릭하거나, 텔레그램에서 봇에게 다음을 보내주세요:'
+                           : 'Click the link below or send the following to the bot on Telegram:'}
+                       </p>
+                       <p className="font-mono text-sm font-black bg-slate-800 text-emerald-400 px-3 py-2 rounded-xl break-all">
+                         /start {telegramLinkToken}
+                       </p>
+                       {(import.meta.env.VITE_TELEGRAM_BOT_USERNAME as string) ? (
+                         <a
+                           href={`https://t.me/${import.meta.env.VITE_TELEGRAM_BOT_USERNAME}?start=${telegramLinkToken}`}
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           className="inline-flex items-center gap-2 px-4 py-2 bg-[#0088cc] text-white rounded-xl text-sm font-bold hover:opacity-90"
+                         >
+                           <Send size={16} /> {lang === 'ko' ? '텔레그램에서 열기' : 'Open in Telegram'}
+                         </a>
+                       ) : null}
+                       <p className="text-[10px] text-slate-500">
+                         {lang === 'ko' ? '연결 후 프로필을 다시 열면 상태가 반영됩니다.' : 'Reopen profile after connecting to see status.'}
+                       </p>
+                     </div>
+                   ) : (
+                     <button
+                       type="button"
+                       disabled={!currentUserId || telegramLinkLoading}
+                       onClick={async () => {
+                         if (!currentUserId) return;
+                         setTelegramLinkLoading(true);
+                         setError(null);
+                         try {
+                           const token = crypto.randomUUID().replace(/-/g, '');
+                           const { error: insertError } = await supabase
+                             .from('telegram_link_tokens')
+                             .insert({ user_id: currentUserId, token });
+                           if (insertError) throw insertError;
+                           setTelegramLinkToken(token);
+                         } catch (e: any) {
+                           setError(e?.message || (lang === 'ko' ? '토큰 생성에 실패했습니다.' : 'Failed to create link token.'));
+                         } finally {
+                           setTelegramLinkLoading(false);
+                         }
+                       }}
+                       className="w-full py-4 bg-[#0088cc]/10 text-[#0088cc] dark:text-[#54a9eb] rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 border border-[#0088cc]/30 hover:bg-[#0088cc]/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                     >
+                       <Send size={18} />
+                       {telegramLinkLoading ? (lang === 'ko' ? '처리 중…' : 'Loading…') : (lang === 'ko' ? '텔레그램 연결하기' : 'Connect Telegram')}
+                     </button>
+                   )}
+                 </div>
                )}
                
                <div className="space-y-3">

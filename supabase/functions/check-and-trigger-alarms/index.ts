@@ -58,6 +58,18 @@ serve(async (_req) => {
     const currentKstTime = getCurrentKSTTimeString();
     console.log("Current KST time:", currentKstTime);
 
+    // KST 기준 주말(토·일)이면 알람 트리거하지 않음
+    const now = new Date();
+    const kstTime = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const kstDay = kstTime.getUTCDay(); // 0 = Sunday, 6 = Saturday
+    if (kstDay === 0 || kstDay === 6) {
+      console.log("KST weekend (day=" + kstDay + "), skipping alarm trigger.");
+      return new Response(
+        JSON.stringify({ success: true, triggeredUsers: 0, skipped: "weekend" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
     // alarm_config.enabled = true 이고, alarm_config.selectedHours 에 현재 시간이 포함된 포트폴리오 조회
     const { data: portfolios, error } = await supabase
       .from("portfolios")

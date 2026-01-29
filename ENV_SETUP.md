@@ -89,6 +89,14 @@ VITE_FIREBASE_VAPID_KEY=your_vapid_key
   - `getNotificationPermission()`: 현재 알림 권한 상태 확인
   - `isNotificationPermissionGranted()`: 알림 권한 허용 여부 확인
 
+### ✅ 9. supabase/functions/telegram-webhook (Edge Function)
+- **사용 변수**: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `TELEGRAM_BOT_TOKEN`
+- **접근 방식**: `Deno.env.get()`
+- **상태**: ✅ 정상 연동 (Supabase Edge Function Secrets에 설정)
+- **설정 위치**: Supabase Dashboard → Project Settings → Edge Functions → Secrets
+- **용도**: 텔레그램 봇 Webhook — 사용자가 `/start <token>` 전송 시 `user_profiles`에 `telegram_chat_id` 등 연동
+- **웹훅 등록**: 자세한 단계는 `TELEGRAM_SETUP.md` 참고
+
 ---
 
 ## ⚠️ 주의사항

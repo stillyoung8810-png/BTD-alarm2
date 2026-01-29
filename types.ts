@@ -64,6 +64,8 @@ export interface Portfolio {
   closedAt?: string;
   finalSellAmount?: number;
   alarmconfig?: AlarmConfig;
+  /** 다분할 매매법: T > a-1 이면 true. LOC 매도(24% 이상 감소) 또는 +A% 지정가 매도(99% 이상 감소) 시 false. */
+  isQuarterMode?: boolean;
 }
 
 export interface StockData {

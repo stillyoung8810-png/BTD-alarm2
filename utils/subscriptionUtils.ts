@@ -19,6 +19,16 @@ export interface UserProfile {
   avatar_url?: string | null;
   created_at?: string;
   updated_at?: string;
+
+  // 알림 관련 설정 (user_profiles 확장 컬럼과 매핑)
+  app_notification_enabled?: boolean;   // 기본 앱 내 알림 사용 여부 (default true)
+  telegram_enabled?: boolean;           // 텔레그램 알림 사용 여부 (default false)
+  telegram_chat_id?: string | null;     // 연결된 텔레그램 chat_id
+  telegram_last_error?: string | null;  // 최근 텔레그램 에러 메시지 (옵션)
+  telegram_connected_at?: string | null; // 텔레그램 연결 시각 (ISO, 옵션)
+
+  // 언어 설정
+  preferred_language?: 'ko' | 'en' | null; // 알림/기본 UI 언어
 }
 
 /**
@@ -130,21 +140,47 @@ export const shouldShowAds = (profile: UserProfile | SimpleUserProfile | null): 
 /**
  * 사용자의 최대 포트폴리오 개수 가져오기
  * @param profile 사용자 프로필
- * @returns 최대 포트폴리오 개수 (기본값: 3)
+ * @returns 최대 포트폴리오 개수
+ *
+ * 기본 규칙:
+ * - 프로필 없음        →  Free 기본값 2개
+ * - max_portfolios 있음 → 해당 값 사용
+ * - Pro/Premium 티어   → 기본 5개
+ * - 그 외(Free 등)     → 기본 2개
  */
 export const getMaxPortfolios = (profile: UserProfile | SimpleUserProfile | null): number => {
-  if (!profile) return 3; // 기본값
-  return profile.max_portfolios ?? 3;
+  if (!profile) return 2; // Free 기본값
+
+  const explicit = profile.max_portfolios;
+  if (typeof explicit === 'number') return explicit;
+
+  const tier = profile.subscription_tier?.toLowerCase?.() || 'free';
+  if (tier === 'pro' || tier === 'premium') return 4;
+
+  return 2;
 };
 
 /**
  * 사용자의 최대 알람 개수 가져오기
  * @param profile 사용자 프로필
- * @returns 최대 알람 개수 (기본값: 2)
+ * @returns 최대 알람 개수
+ *
+ * 기본 규칙:
+ * - 프로필 없음        → Free 기본값 2개
+ * - max_alarms 있음    → 해당 값 사용
+ * - Pro/Premium 티어   → 기본 5개
+ * - 그 외(Free 등)     → 기본 2개
  */
 export const getMaxAlarms = (profile: UserProfile | SimpleUserProfile | null): number => {
-  if (!profile) return 2; // 기본값
-  return profile.max_alarms ?? 2;
+  if (!profile) return 2; // Free 기본값
+
+  const explicit = profile.max_alarms;
+  if (typeof explicit === 'number') return explicit;
+
+  const tier = profile.subscription_tier?.toLowerCase?.() || 'free';
+  if (tier === 'pro' || tier === 'premium') return 4;
+
+  return 2;
 };
 
 /**

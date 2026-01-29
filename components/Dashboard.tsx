@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Portfolio } from '../types';
 import { I18N, CUSTOM_GRADIENT_LOGOS, PAID_STOCKS } from '../constants';
 import StockLogo from './StockLogo';
@@ -53,6 +53,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   onDailyExecutionSummaryChange,
 }) => {
   const [dailyExecutionBlocks, setDailyExecutionBlocks] = useState<Record<string, string>>({});
+  const lastDailyExecutionSummaryRef = useRef<string | null>(null);
 
   // 알람이 켜진 포트폴리오 id 목록 (파생 배열) – 포트폴리오가 바뀔 때만 재계산
   const alarmIds = useMemo(
@@ -67,7 +68,14 @@ const Dashboard: React.FC<DashboardProps> = ({
     if (!onDailyExecutionSummaryChange) return;
     const blocks = alarmIds.map((id) => dailyExecutionBlocks[id]).filter(Boolean);
     const summary = joinDailyExecutionBlocks(blocks);
-    onDailyExecutionSummaryChange(summary || null);
+    const next = summary || null;
+
+    // 요약 문자열이 이전과 동일하면 상위로 콜백 호출 생략 → App과의 루프 방지
+    if (lastDailyExecutionSummaryRef.current === next) {
+      return;
+    }
+    lastDailyExecutionSummaryRef.current = next;
+    onDailyExecutionSummaryChange(next);
   }, [alarmIds, dailyExecutionBlocks, onDailyExecutionSummaryChange]);
 
   const t = I18N[lang];
@@ -142,7 +150,16 @@ const Dashboard: React.FC<DashboardProps> = ({
               onClose={() => onClosePortfolio(p.id)}
               onDelete={() => onDeletePortfolio(p.id)}
               onUpdatePortfolio={onUpdatePortfolio}
-              onDailyExecutionBlock={onDailyExecutionSummaryChange ? (block) => setDailyExecutionBlocks(prev => ({ ...prev, [p.id]: block ?? '' })) : undefined}
+              onDailyExecutionBlock={
+                onDailyExecutionSummaryChange
+                  ? (block) =>
+                      setDailyExecutionBlocks((prev) => {
+                        const nextValue = block ?? '';
+                        if (prev[p.id] === nextValue) return prev; // 내용이 동일하면 상태 변경 생략
+                        return { ...prev, [p.id]: nextValue };
+                      })
+                  : undefined
+              }
             />
           ))
         )}
@@ -274,14 +291,28 @@ const PortfolioCard: React.FC<{
   
   useEffect(() => {
     if (!portfolio.strategy.multiSplit) return;
-    
+
+    let cancelled = false;
+
     const fetchTradingDays = async () => {
       const days = await getRecentTradingDays(11);
-      setRecentTradingDays(days);
+      if (cancelled) return;
+
+      // 이전 값과 완전히 동일하면 setState 생략 → 불필요한 재렌더 및 루프 방지
+      setRecentTradingDays((prev) => {
+        if (prev.length === days.length && prev.every((d, i) => d === days[i])) {
+          return prev;
+        }
+        return days;
+      });
     };
-    
+
     fetchTradingDays();
-  }, [portfolio]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [portfolio.id, portfolio.strategy.multiSplit?.targetStock]);
 
   const checkRecentMOCSell = (): { hasMOC: boolean; mocDate?: string } => {
     if (!portfolio.strategy.multiSplit || recentTradingDays.length === 0) return { hasMOC: false };
@@ -385,14 +416,18 @@ const PortfolioCard: React.FC<{
       if (!mocCheck.hasMOC) {
         // MOC 매도 기록 없음
         const mocQuantity = currentQuantity * 0.25;
-        setQuarterStopLossData({
+        const next = {
           hasMOC: false,
-          mocQuantity: Math.round(mocQuantity * 100) / 100 // 소수점 2자리
+          mocQuantity: Math.round(mocQuantity * 100) / 100, // 소수점 2자리
+        };
+        setQuarterStopLossData((prev) => {
+          if (prev && JSON.stringify(prev) === JSON.stringify(next)) return prev;
+          return next;
         });
       } else {
         // MOC 매도 기록 있음
         if (!mocCheck.mocDate || avgPrice <= 0 || currentQuantity <= 0) {
-          setQuarterStopLossData(null);
+          setQuarterStopLossData((prev) => (prev === null ? prev : null));
           return;
         }
 
@@ -401,9 +436,10 @@ const PortfolioCard: React.FC<{
 
         // LOC 매수: 현재 평균 단가 * 0.9 - 0.01
         const locBuyPrice = Math.max(0.01, avgPrice * 0.9 - 0.01);
-        const locBuyQty = newOneTimeAmount > 0 && locBuyPrice > 0
-          ? Math.floor(newOneTimeAmount / (locBuyPrice * (1 + feeRate / 100)))
-          : 0;
+        const locBuyQty =
+          newOneTimeAmount > 0 && locBuyPrice > 0
+            ? Math.floor(newOneTimeAmount / (locBuyPrice * (1 + feeRate / 100)))
+            : 0;
 
         // LOC 매도: 현재 평균 단가 * 0.9, 보유 수량의 25%
         const locSellPrice = avgPrice * 0.9;
@@ -413,12 +449,26 @@ const PortfolioCard: React.FC<{
         const limitSellPrice = avgPrice * (1 + A / 100);
         const limitSellQty = Math.floor(currentQuantity * 0.75);
 
-        setQuarterStopLossData({
-          hasMOC: true,
+        const next = {
+          hasMOC: true as const,
           newOneTimeAmount,
-          locBuy: locBuyQty > 0 ? { price: Math.round(locBuyPrice * 100) / 100, quantity: locBuyQty } : undefined,
-          locSell: locSellQty > 0 ? { price: Math.round(locSellPrice * 100) / 100, quantity: locSellQty } : undefined,
-          limitSell: limitSellQty > 0 ? { price: Math.round(limitSellPrice * 100) / 100, quantity: limitSellQty } : undefined
+          locBuy:
+            locBuyQty > 0
+              ? { price: Math.round(locBuyPrice * 100) / 100, quantity: locBuyQty }
+              : undefined,
+          locSell:
+            locSellQty > 0
+              ? { price: Math.round(locSellPrice * 100) / 100, quantity: locSellQty }
+              : undefined,
+          limitSell:
+            limitSellQty > 0
+              ? { price: Math.round(limitSellPrice * 100) / 100, quantity: limitSellQty }
+              : undefined,
+        };
+
+        setQuarterStopLossData((prev) => {
+          if (prev && JSON.stringify(prev) === JSON.stringify(next)) return prev;
+          return next;
         });
       }
     };
@@ -436,10 +486,12 @@ const PortfolioCard: React.FC<{
     mocSell?: { quantity: number };
   } | null>(null);
 
+  const lastMultiSplitExecutionKeyRef = useRef<string | null>(null);
+
   useEffect(() => {
     const calculateMultiSplitExecution = async () => {
       if (!portfolio.strategy.multiSplit || !multiSplitPhase) {
-        setMultiSplitExecutionData(null);
+        setMultiSplitExecutionData((prev) => (prev === null ? prev : null));
         return;
       }
 
@@ -468,15 +520,6 @@ const PortfolioCard: React.FC<{
         
         const avgPrice = targetHolding?.avgPrice || 0;
         const currentQuantity = targetHolding?.quantity || 0;
-        
-        // 디버깅 로그
-        console.log('[Multi-Split] Holdings Debug:', {
-          targetStock,
-          allHoldings: holdings.map(h => ({ stock: h.stock, quantity: h.quantity })),
-          targetHolding: targetHolding ? { stock: targetHolding.stock, quantity: targetHolding.quantity, avgPrice: targetHolding.avgPrice } : null,
-          currentQuantity,
-          trades: portfolio.trades.filter(t => t.type === 'buy').map(t => ({ stock: t.stock, quantity: t.quantity }))
-        });
         
         // 현재 주가 가져오기
         const stockPrices = await fetchStockPrices([targetStock]);
@@ -558,52 +601,130 @@ const PortfolioCard: React.FC<{
           result.limitSell = safeCalculate(limitSellPrice, limitSellQty) || undefined;
         }
 
-        setMultiSplitExecutionData(result);
+        // 동일한 입력 조합에 대해 이미 계산했다면 다시 계산/업데이트하지 않음
+        const inputKey = [
+          portfolio.id,
+          portfolio.strategy.multiSplit.targetStock,
+          portfolio.strategy.multiSplit.totalSplitCount,
+          portfolio.dailyBuyAmount,
+          portfolio.feeRate,
+          portfolio.trades.length,
+          multiSplitPhase,
+          currentRound,
+        ].join('|');
+
+        if (lastMultiSplitExecutionKeyRef.current === inputKey) {
+          return;
+        }
+        lastMultiSplitExecutionKeyRef.current = inputKey;
+
+        setMultiSplitExecutionData((prev) => {
+          const prevJson = prev ? JSON.stringify(prev) : null;
+          const nextJson = result ? JSON.stringify(result) : null;
+          if (prevJson === nextJson) return prev;
+          return result;
+        });
       } catch (err) {
         console.error('Error calculating multi-split execution:', err);
-        setMultiSplitExecutionData(null);
+        setMultiSplitExecutionData((prev) => (prev === null ? prev : null));
       }
     };
 
     if (portfolio.strategy.multiSplit) {
       calculateMultiSplitExecution();
     }
-  }, [portfolio, multiSplitPhase]);
+  }, [
+    portfolio.id,
+    portfolio.strategy.multiSplit?.targetStock,
+    portfolio.strategy.multiSplit?.totalSplitCount,
+    portfolio.dailyBuyAmount,
+    portfolio.feeRate,
+    portfolio.trades.length,
+    multiSplitPhase,
+  ]);
+
+  // 마지막으로 전달한 daily execution 블록을 기억 (동일 문자열 반복 전달 방지)
+  const lastDailyExecutionBlockRef = React.useRef<string | null>(null);
 
   // 알람 켜진 포트폴리오용: 상세 daily execution 블록 생성 후 상위로 전달 (텔레그램 메시지에 LOC/MOC 등 반영)
   useEffect(() => {
     if (!onDailyExecutionBlock) return;
+
+    // 알람이 꺼져 있으면 블록을 비우고 더 이상 올리지 않음
+    if (!isAlarmEnabled) {
+      if (lastDailyExecutionBlockRef.current !== null) {
+        lastDailyExecutionBlockRef.current = null;
+        onDailyExecutionBlock(null);
+      }
+      return;
+    }
+
     const block = formatPortfolioDailyExecutionBlock(portfolio, lang, {
       multiSplitExecutionData: multiSplitExecutionData ?? undefined,
       quarterStopLossData: quarterStopLossData ?? undefined,
       multiSplitPhase: multiSplitPhase ?? null,
       isQuarterStopLossActive: isInQuarterMode,
     });
-    onDailyExecutionBlock(block);
-  }, [portfolio, lang, multiSplitExecutionData, quarterStopLossData, multiSplitPhase, isInQuarterMode, onDailyExecutionBlock]);
 
+    // 내용이 이전과 동일하면 상위로 전달하지 않음
+    if (lastDailyExecutionBlockRef.current === block) {
+      return;
+    }
+    lastDailyExecutionBlockRef.current = block;
+    onDailyExecutionBlock(block);
+  }, [
+    isAlarmEnabled,
+    // portfolio 객체 전체 대신, 알람 메시지에 실제로 영향을 주는 파생 상태들만 의존성으로 사용
+    lang,
+    multiSplitExecutionData,
+    quarterStopLossData,
+    multiSplitPhase,
+    isInQuarterMode,
+  ]);
+
+  // 최신 portfolio를 참조하기 위한 ref (metrics 계산용)
+  const portfolioRef = useRef(portfolio);
   useEffect(() => {
+    portfolioRef.current = portfolio;
+  }, [portfolio]);
+
+  // 수익률/투자금/실현손익 계산
+  // - StrictMode: 첫 마운트에서 클린업되면 ref를 리셋해서 두 번째 마운트에서 다시 계산되도록 함
+  const metricsInitializedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (metricsInitializedRef.current === portfolio.id) return;
+    metricsInitializedRef.current = portfolio.id;
+
+    let cancelled = false;
+
     const updateMetrics = async () => {
       setIsLoading(true);
       try {
-        const invested = calculateInvestedAmount(portfolio);
-        const yieldValue = await calculateYield(portfolio);
-        const realized = calculateAlreadyRealized(portfolio);
+        const current = portfolioRef.current;
+        const invested = calculateInvestedAmount(current);
+        const yieldValue = await calculateYield(current);
+        const realized = calculateAlreadyRealized(current);
+        if (cancelled) return;
         setInvestedAmount(invested);
         setYieldRate(yieldValue);
         setRealizedProfit(realized);
       } catch (err) {
         console.error('Error calculating portfolio metrics:', err);
       } finally {
-        setIsLoading(false);
+        if (!cancelled) {
+          setIsLoading(false);
+        }
       }
     };
 
     updateMetrics();
-    // 30초마다 업데이트
-    const interval = setInterval(updateMetrics, 30000);
-    return () => clearInterval(interval);
-  }, [portfolio]);
+
+    return () => {
+      cancelled = true;
+      // StrictMode에서 두 번째 마운트 시 updateMetrics가 다시 실행되도록 리셋
+      metricsInitializedRef.current = null;
+    };
+  }, [portfolio.id]);
 
   return (
     <div

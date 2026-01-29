@@ -13,6 +13,9 @@ import {
 } from './db';
 import { AVAILABLE_STOCKS, PAID_STOCKS } from '../constants';
 
+// 주가/지표 관련 디버그 로그 토글 (필요할 때만 true로 변경)
+const DEBUG_STOCK_LOG = false;
+
 /**
  * 주가 데이터를 가져옵니다 (IndexedDB 우선 사용)
  * IndexedDB에 데이터가 없으면 Supabase에서 가져와서 저장
@@ -30,7 +33,6 @@ export const fetchStockPrices = async (symbols: string[]): Promise<Record<string
   try {
     // IndexedDB 초기화
     await initDatabase();
-    
     const latestPrices: Record<string, StockData> = {};
     
     // 각 심볼별로 병렬 처리
@@ -61,7 +63,9 @@ export const fetchStockPrices = async (symbols: string[]): Promise<Record<string
             };
           } else {
             // IndexedDB에 데이터가 없으면 Supabase에서 가져오기
-            console.log(`[fetchStockPrices] ${symbol}: IndexedDB 데이터 없음, Supabase에서 가져오기`);
+            if (DEBUG_STOCK_LOG) {
+              console.log(`[fetchStockPrices] ${symbol}: IndexedDB 데이터 없음, Supabase에서 가져오기`);
+            }
             
             const { data, error } = await supabase
               .from('stock_prices')
@@ -369,7 +373,9 @@ export const loadInitialStockData = async (): Promise<void> => {
     const todayKst = getTodayDateString();
     const nowUtc = new Date();
     const todayUtc = getTodayUtcDateString(nowUtc);
-    console.log('[loadInitialStockData] 초기 데이터 로딩 시작:', todayKst, '(UTC:', todayUtc, ')');
+    if (DEBUG_STOCK_LOG) {
+      console.log('[loadInitialStockData] 초기 데이터 로딩 시작:', todayKst, '(UTC:', todayUtc, ')');
+    }
     
     // 무료 종목에 대해 병렬로 처리
     await Promise.all(
@@ -380,27 +386,33 @@ export const loadInitialStockData = async (): Promise<void> => {
 
           // 1) 데이터가 충분(200일 이상)이고, 오늘/24시간 이내에 이미 확인했다면 서버에 다시 묻지 않고 캐시 사용
           if (metadata && metadata.dataCount >= 200 && !shouldCheck) {
-            console.log(
-              `[loadInitialStockData] ${symbol}: 캐시 데이터 사용 (dataCount=${metadata.dataCount}, lastUpdated=${metadata.lastUpdated}, lastCheckedDate=${metadata.lastCheckedDate})`,
-            );
+            if (DEBUG_STOCK_LOG) {
+              console.log(
+                `[loadInitialStockData] ${symbol}: 캐시 데이터 사용 (dataCount=${metadata.dataCount}, lastUpdated=${metadata.lastUpdated}, lastCheckedDate=${metadata.lastCheckedDate})`,
+              );
+            }
             return;
           }
 
           // 2) 데이터가 충분(200일 이상)이고, 서버 확인 조건을 충족한다면 최신 1일치만 부분 업데이트
           if (metadata && metadata.dataCount >= 200 && shouldCheck) {
-            console.log(
-              `[loadInitialStockData] ${symbol}: 부분 업데이트 조건 충족 → 최신 1일치 업데이트 시도`,
-            );
+            if (DEBUG_STOCK_LOG) {
+              console.log(
+                `[loadInitialStockData] ${symbol}: 부분 업데이트 조건 충족 → 최신 1일치 업데이트 시도`,
+              );
+            }
             await updateLatestStockData(symbol);
             return;
           }
 
           // 3) 그 외(메타데이터가 없거나, 데이터가 부족한 경우): 전체 240일 데이터 로딩
-          console.log(
-            `[loadInitialStockData] ${symbol}: 메타데이터 없음 또는 데이터 부족 → Supabase에서 전체 240일 데이터 가져오는 중...`,
-          );
+          if (DEBUG_STOCK_LOG) {
+            console.log(
+              `[loadInitialStockData] ${symbol}: 메타데이터 없음 또는 데이터 부족 → Supabase에서 전체 240일 데이터 가져오는 중...`,
+            );
+          }
           
-          // Supabase에서 240일치 데이터 가져오기
+    // Supabase에서 240일치 데이터 가져오기
           const { data, error } = await supabase
             .from('stock_prices')
             .select('close, trade_date')
@@ -436,14 +448,18 @@ export const loadInitialStockData = async (): Promise<void> => {
             window.localStorage.setItem('LATEST_TRADE_DATE', latestDate);
           }
           
-          console.log(`[loadInitialStockData] ${symbol}: ${records.length}일치 데이터 저장 완료`);
+          if (DEBUG_STOCK_LOG) {
+            console.log(`[loadInitialStockData] ${symbol}: ${records.length}일치 데이터 저장 완료`);
+          }
         } catch (err) {
           console.error(`[loadInitialStockData] ${symbol} 처리 실패:`, err);
         }
       })
     );
     
-    console.log('[loadInitialStockData] 초기 데이터 로딩 완료');
+    if (DEBUG_STOCK_LOG) {
+      console.log('[loadInitialStockData] 초기 데이터 로딩 완료');
+    }
   } catch (err) {
     console.error('[loadInitialStockData] 초기 데이터 로딩 실패:', err);
   }
@@ -459,7 +475,9 @@ export const loadPaidStockData = async (): Promise<void> => {
     const todayKst = getTodayDateString();
     const nowUtc = new Date();
     const todayUtc = getTodayUtcDateString(nowUtc);
-    console.log('[loadPaidStockData] 유료 종목 데이터 로딩 시작:', todayKst, '(UTC:', todayUtc, ')');
+    if (DEBUG_STOCK_LOG) {
+      console.log('[loadPaidStockData] 유료 종목 데이터 로딩 시작:', todayKst, '(UTC:', todayUtc, ')');
+    }
 
     await Promise.all(
       PAID_STOCKS.map(async (symbol) => {
@@ -469,24 +487,30 @@ export const loadPaidStockData = async (): Promise<void> => {
 
           // 1) 데이터가 충분(200일 이상)이고, 오늘/24시간 이내에 이미 확인했다면 서버에 다시 묻지 않고 캐시 사용
           if (metadata && metadata.dataCount >= 200 && !shouldCheck) {
-            console.log(
-              `[loadPaidStockData] ${symbol}: 캐시 데이터 사용 (dataCount=${metadata.dataCount}, lastUpdated=${metadata.lastUpdated}, lastCheckedDate=${metadata.lastCheckedDate})`,
-            );
+            if (DEBUG_STOCK_LOG) {
+              console.log(
+                `[loadPaidStockData] ${symbol}: 캐시 데이터 사용 (dataCount=${metadata.dataCount}, lastUpdated=${metadata.lastUpdated}, lastCheckedDate=${metadata.lastCheckedDate})`,
+              );
+            }
             return;
           }
 
           // 2) 데이터가 충분(200일 이상)이고, 서버 확인 조건을 충족한다면 최신 1일치만 부분 업데이트
           if (metadata && metadata.dataCount >= 200 && shouldCheck) {
-            console.log(
-              `[loadPaidStockData] ${symbol}: 부분 업데이트 조건 충족 → 최신 1일치 업데이트 시도`,
-            );
+            if (DEBUG_STOCK_LOG) {
+              console.log(
+                `[loadPaidStockData] ${symbol}: 부분 업데이트 조건 충족 → 최신 1일치 업데이트 시도`,
+              );
+            }
             await updateLatestStockData(symbol);
             return;
           }
 
-          console.log(
-            `[loadPaidStockData] ${symbol}: 메타데이터 없음 또는 데이터 부족 → Supabase에서 전체 240일 데이터 가져오는 중...`,
-          );
+          if (DEBUG_STOCK_LOG) {
+            console.log(
+              `[loadPaidStockData] ${symbol}: 메타데이터 없음 또는 데이터 부족 → Supabase에서 전체 240일 데이터 가져오는 중...`,
+            );
+          }
           const { data, error } = await supabase
             .from('stock_prices')
             .select('close, trade_date')
@@ -519,14 +543,18 @@ export const loadPaidStockData = async (): Promise<void> => {
           if (typeof window !== 'undefined' && symbol === 'QQQ') {
             window.localStorage.setItem('LATEST_TRADE_DATE', latestDate);
           }
-          console.log(`[loadPaidStockData] ${symbol}: ${records.length}일치 데이터 저장 완료`);
+          if (DEBUG_STOCK_LOG) {
+            console.log(`[loadPaidStockData] ${symbol}: ${records.length}일치 데이터 저장 완료`);
+          }
         } catch (err) {
           console.error(`[loadPaidStockData] ${symbol} 처리 실패:`, err);
         }
       })
     );
 
-    console.log('[loadPaidStockData] 유료 종목 데이터 로딩 완료');
+    if (DEBUG_STOCK_LOG) {
+      console.log('[loadPaidStockData] 유료 종목 데이터 로딩 완료');
+    }
   } catch (err) {
     console.error('[loadPaidStockData] 유료 종목 데이터 로딩 실패:', err);
   }

@@ -182,12 +182,19 @@ const App: React.FC = () => {
   }, []);
 
   // 알람이 켜진 포트폴리오 기준 daily execution 요약을 Supabase에 캐싱
-  // - 실제 요약 계산은 summaryToSave(useMemo)에서만 수행되고, 이 effect는 DB 저장만 담당
+  // - summaryToSave(useMemo)로 계산된 값을, 변경 후 일정 시간(디바운스) 뒤에 한 번만 upsert
+  const dailyExecutionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!user?.id) return;
     if (!summaryToSave || summaryToSave.trim().length === 0) return;
 
-    const run = async () => {
+    // 이전 타이머가 있으면 취소
+    if (dailyExecutionDebounceRef.current) {
+      clearTimeout(dailyExecutionDebounceRef.current);
+    }
+
+    // 3초 디바운스 후 한 번만 upsert
+    dailyExecutionDebounceRef.current = setTimeout(async () => {
       try {
         const summaryDate = getCurrentKSTDateString();
 
@@ -213,9 +220,15 @@ const App: React.FC = () => {
       } catch (err) {
         console.warn('[DailyExecution] upsert failed:', err);
       }
-    };
+    }, 3000);
 
-    run();
+    // 의존성 변경/언마운트 시 타이머 정리
+    return () => {
+      if (dailyExecutionDebounceRef.current) {
+        clearTimeout(dailyExecutionDebounceRef.current);
+        dailyExecutionDebounceRef.current = null;
+      }
+    };
   }, [user?.id, summaryToSave, lang]);
 
   // 유료 로그인 시: 유료 종목만 추가로 IndexedDB에 저장 (중복 호출 방지)

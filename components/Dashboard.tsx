@@ -478,15 +478,6 @@ const PortfolioCard: React.FC<{
         const avgPrice = targetHolding?.avgPrice || 0;
         const currentQuantity = targetHolding?.quantity || 0;
         
-        // 디버깅 로그
-        console.log('[Multi-Split] Holdings Debug:', {
-          targetStock,
-          allHoldings: holdings.map(h => ({ stock: h.stock, quantity: h.quantity })),
-          targetHolding: targetHolding ? { stock: targetHolding.stock, quantity: targetHolding.quantity, avgPrice: targetHolding.avgPrice } : null,
-          currentQuantity,
-          trades: portfolio.trades.filter(t => t.type === 'buy').map(t => ({ stock: t.stock, quantity: t.quantity }))
-        });
-        
         // 현재 주가 가져오기
         const stockPrices = await fetchStockPrices([targetStock]);
         const currentPrice = stockPrices[targetStock]?.price || 0;

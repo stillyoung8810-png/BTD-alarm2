@@ -13,6 +13,7 @@ import TradeExecutionModal from './components/TradeExecutionModal';
 import SettlementModals from './components/SettlementModals';
 import AuthModals from './components/AuthModals';
 import Landing from './components/Landing';
+import Pricing from './components/Pricing';
 import { supabase, clearAuthStorage } from './services/supabase';
 import { calculateTotalInvested, calculateAlreadyRealized, calculateHoldings } from './utils/portfolioCalculations';
 import { fetchStockPricesWithPrev, loadInitialStockData, loadPaidStockData } from './services/stockService';
@@ -30,12 +31,13 @@ import {
   Languages,
   Sparkles,
   Star,
-  Zap
+  Zap,
+  Crown
 } from 'lucide-react';
 
 const App: React.FC = () => {
   const [lang, setLang] = useState<'ko' | 'en'>('ko');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'markets' | 'history'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'markets' | 'history' | 'pricing'>('dashboard');
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [isCreatorOpen, setIsCreatorOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
@@ -1503,6 +1505,12 @@ const App: React.FC = () => {
             )
           )}
           {activeTab === 'markets' && <Markets lang={lang} portfolios={portfolios} canAccessPaidStocks={canAccessPaidStocks} />}
+          {activeTab === 'pricing' && (
+            <Pricing 
+              lang={lang} 
+              currentTier={currentTier === 'premium' || currentTier === 'pro' ? currentTier : 'free'}
+            />
+          )}
           {activeTab === 'history' && (
             <History 
               lang={lang} 
@@ -1577,13 +1585,12 @@ const App: React.FC = () => {
           )}
         </main>
 
-        {/* Unified Floating Navigation Bar - Reordered & Wallet Removed */}
+        {/* Unified Floating Navigation Bar - center '+' button */}
         <div className="floating-nav w-[calc(100%-3rem)] md:w-auto">
           <nav className="glass rounded-full px-4 py-3 flex items-center gap-2 md:gap-6 shadow-2xl border border-white/10 premium-shadow min-w-[320px] justify-center">
             <NavIcon active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutDashboard size={22} />} label={t.dashboard} />
             <NavIcon active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<HistoryIcon size={22} />} label={t.history} />
-            <NavIcon active={activeTab === 'markets'} onClick={() => setActiveTab('markets')} icon={<BarChart3 size={22} />} label={t.markets} />
-            
+
             <div className="mx-1">
               <button 
                 onClick={() => setIsCreatorOpen(true)} 
@@ -1592,6 +1599,9 @@ const App: React.FC = () => {
                 <Plus size={28} strokeWidth={3} />
               </button>
             </div>
+
+            <NavIcon active={activeTab === 'markets'} onClick={() => setActiveTab('markets')} icon={<BarChart3 size={22} />} label={t.markets} />
+            <NavIcon active={activeTab === 'pricing'} onClick={() => setActiveTab('pricing')} icon={<Crown size={22} />} label={t.membership ?? (lang === 'ko' ? '멤버십' : 'Membership')} />
           </nav>
         </div>
 

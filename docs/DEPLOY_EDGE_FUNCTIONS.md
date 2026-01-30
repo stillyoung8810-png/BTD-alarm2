@@ -81,11 +81,15 @@ supabase link --project-ref YOUR_PROJECT_REF
 supabase functions deploy check-and-trigger-alarms
 ```
 
-### send-alarm만 배포
+### send-alarm만 배포 (JWT 검증 비활성화 권장)
+
+`check-and-trigger-alarms`가 내부에서 `send-alarm`을 호출할 때 401 Invalid JWT가 나지 않도록 **JWT 검증을 끄고** 내부 시크릿(`INTERNAL_ALARM_SECRET`)으로만 인증하는 구성을 권장합니다.
 
 ```bash
-supabase functions deploy send-alarm
+supabase functions deploy send-alarm --no-verify-jwt
 ```
+
+- `--no-verify-jwt` 없이 배포하면 게이트웨이가 Bearer JWT를 검증해 401이 날 수 있음. 자세한 내용은 `docs/TELEGRAM_ALARM_SETUP.md`의 "401 Invalid JWT 해결" 섹션 참고.
 
 ### 여러 함수 한 번에 배포
 
@@ -112,6 +116,17 @@ Edge Function이 **SUPABASE_URL**, **SUPABASE_SERVICE_ROLE_KEY** 등을 사용�
 
 로컬 `supabase/config.toml`의 `[functions.함수이름.env]`에 넣은 값은 **로컬 실행용**이며, **원격 배포**에는 Dashboard(또는 `supabase secrets set`)로 설정한 값이 사용됩니다.
 
+### send-alarm 401 방지: INTERNAL_ALARM_SECRET
+
+`send-alarm`을 `--no-verify-jwt`로 배포했다면, **내부 호출만 허용**하려면 다음 시크릿을 설정하세요.
+
+| 함수 | 시크릿 이름 | 설명 |
+|------|-------------|------|
+| **send-alarm** | `INTERNAL_ALARM_SECRET` | 헤더 `X-Internal-Alarm-Secret`과 일치해야 요청 처리 |
+| **check-and-trigger-alarms** | `INTERNAL_ALARM_SECRET` | 위와 **동일한 값**. send-alarm 호출 시 위 헤더로 전달 |
+
+두 함수에 **같은 값**을 넣어야 합니다. 401 Invalid JWT 해결 흐름은 `docs/TELEGRAM_ALARM_SETUP.md`의 "401 Invalid JWT 해결" 참고.
+
 ---
 
 ## 4. 배포 후 확인
@@ -131,7 +146,7 @@ cd c:\Users\user\Desktop\BTD-alarm2
 supabase login
 supabase link --project-ref YOUR_PROJECT_REF
 supabase functions deploy check-and-trigger-alarms
-supabase functions deploy send-alarm
+supabase functions deploy send-alarm --no-verify-jwt
 ```
 
 **프로젝트에 `npm install supabase --save-dev` 한 경우 (npx 사용):**
@@ -141,7 +156,7 @@ cd c:\Users\user\Desktop\BTD-alarm2
 npx supabase login
 npx supabase link --project-ref YOUR_PROJECT_REF
 npx supabase functions deploy check-and-trigger-alarms
-npx supabase functions deploy send-alarm
+npx supabase functions deploy send-alarm --no-verify-jwt
 ```
 
 `YOUR_PROJECT_REF`만 실제 프로젝트 Reference ID로 바꾸면 됩니다.

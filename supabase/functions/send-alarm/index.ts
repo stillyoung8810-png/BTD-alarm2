@@ -247,12 +247,24 @@ async function sendFCMNotification(
 serve(async (req) => {
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-internal-alarm-secret",
   };
 
   // OPTIONS 요청 처리
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
+  }
+
+  // 내부 호출 전용: INTERNAL_ALARM_SECRET 이 있으면 헤더 검사 (JWT 없이 배포 시 401 방지)
+  const internalSecret = Deno.env.get("INTERNAL_ALARM_SECRET");
+  if (internalSecret) {
+    const headerSecret = req.headers.get("X-Internal-Alarm-Secret");
+    if (headerSecret !== internalSecret) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized", code: 401, message: "Invalid or missing X-Internal-Alarm-Secret" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
   }
 
   try {

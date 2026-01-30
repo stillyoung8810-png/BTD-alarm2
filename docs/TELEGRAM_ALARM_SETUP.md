@@ -171,6 +171,34 @@ if (profile.telegram_enabled !== true) return false;
 
 ---
 
+### 401 Invalid JWT 해결 (send-alarm 배포·시크릿)
+
+**증상**: Edge Function 로그에 `send-alarm failed for user ... 401 {"code":401,"message":"Invalid JWT"}` 가 반복해서 찍힘.
+
+**원인**: 401의 `"Invalid JWT"` 메시지는 **Supabase Edge 게이트웨이**가 요청의 `Authorization: Bearer ...` JWT를 검증하다가 거절한 결과입니다. `send-alarm` 함수 코드가 반환하는 `"Invalid or missing X-Internal-Alarm-Secret"` 와는 다릅니다. 즉, **send-alarm이 기본(JWT 검증 ON)으로 배포되어 있어서** 게이트웨이에서 401이 나는 상황입니다.
+
+**해결** (둘 다 적용해야 함):
+
+1. **send-alarm을 JWT 검증 없이 배포**  
+   - 터미널에서:
+   ```bash
+   supabase functions deploy send-alarm --no-verify-jwt
+   ```
+   - (npx 사용 시: `npx supabase functions deploy send-alarm --no-verify-jwt`)
+   - 이렇게 하면 게이트웨이가 Bearer JWT를 검증하지 않고, 요청이 `send-alarm` 코드까지 들어갑니다.
+
+2. **내부 인증용 시크릿 설정**  
+   - `send-alarm`은 **내부 호출만 허용**하려면 `INTERNAL_ALARM_SECRET` 환경 변수를 설정하고, 요청 헤더 `X-Internal-Alarm-Secret` 값이 그 값과 일치할 때만 처리합니다.
+   - Supabase Dashboard → **Edge Functions** → **send-alarm** → **Secrets** (또는 **Settings**) 에서:
+     - `INTERNAL_ALARM_SECRET` = 원하는 긴 랜덤 문자열 (예: 비밀번호 생성기로 생성)
+   - 같은 값을 **check-and-trigger-alarms** 함수의 Secrets에도 추가:
+     - **Edge Functions** → **check-and-trigger-alarms** → **Secrets** → `INTERNAL_ALARM_SECRET` = **send-alarm과 동일한 값**
+   - `check-and-trigger-alarms`는 `send-alarm` 호출 시 이 값을 `X-Internal-Alarm-Secret` 헤더에 넣어 보냅니다.
+
+**정리**: `send-alarm`을 `--no-verify-jwt`로 배포하고, 두 함수 모두에 **같은 값**의 `INTERNAL_ALARM_SECRET`을 설정하면 401 Invalid JWT는 사라지고, 내부 시크릿으로만 인증됩니다.
+
+---
+
 ### Supabase에서 확인할 것 (알람이 안 올 때)
 
 | 확인 항목 | Supabase에서 하는 방법 |

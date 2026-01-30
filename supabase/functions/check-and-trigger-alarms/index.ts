@@ -81,6 +81,7 @@ serve(async (_req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const internalAlarmSecret = Deno.env.get("INTERNAL_ALARM_SECRET");
 
     if (!supabaseUrl || !serviceKey) {
       console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
@@ -217,13 +218,16 @@ serve(async (_req) => {
       const batchResults = await Promise.allSettled(
         batch.map(async (payload) => {
           try {
+            const headers: Record<string, string> = {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${serviceKey}`,
+            };
+            if (internalAlarmSecret) {
+              headers["X-Internal-Alarm-Secret"] = internalAlarmSecret;
+            }
             const res = await fetch(sendAlarmUrl, {
               method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                // 내부 호출이지만, 필요 시 인증을 위해 service role key를 포함
-                "Authorization": `Bearer ${serviceKey}`,
-              },
+              headers,
               body: JSON.stringify(payload),
             });
 

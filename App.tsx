@@ -69,6 +69,10 @@ const App: React.FC = () => {
   /** Dashboard에서 만든 상세 daily execution 요약 (LOC/MOC 등 포함). 있으면 DB 저장 시 이걸 사용. */
   const [dailyExecutionSummaryFromDashboard, setDailyExecutionSummaryFromDashboard] = useState<string | null>(null);
 
+  const onDailyExecutionSummaryChange = useCallback((summary: string | null) => {
+    setDailyExecutionSummaryFromDashboard(summary ?? null);
+  }, []);
+
   // 현재 유저의 구독 티어 (default: free)
   const currentTier = (userProfile?.subscription_tier || 'free').toLowerCase();
 
@@ -119,6 +123,7 @@ const App: React.FC = () => {
   // 중복 요청 방지를 위한 ref
   const fetchingPortfoliosRef = useRef<Set<string>>(new Set());
   const fetchPortfoliosAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
+  const unhandledRejectionHandlerRef = useRef<((e: PromiseRejectionEvent) => void) | null>(null);
   /** 모달 로그인 직후 onAuthStateChange에서 fetchUserData 중복 호출 방지 */
   const justLoggedInRef = useRef(false);
 
@@ -278,35 +283,12 @@ const App: React.FC = () => {
     return `${year}-${month}-${day}`;
   };
 
-  // 프로필 모달이 열릴 때 user_profiles 최신화 (텔레그램 연결 상태 등 반영)
+  // 프로필 모달이 열릴 때: 전역 상태(userProfile)가 있으면 캐시 사용(select 생략), 없을 때만 서버 조회(폴백)
   useEffect(() => {
     if (authModal !== 'profile' || !user?.id) return;
-    (async () => {
-      try {
-        const { data: profileData, error: profileError } = await supabase
-          .from('user_profiles')
-          .select('subscription_tier, max_portfolios, max_alarms, subscription_status, subscription_expires_at, telegram_enabled, telegram_connected_at, telegram_last_error, preferred_language')
-          .eq('id', user.id)
-          .single();
-        if (!profileError && profileData) {
-          setUserProfile((prev) => (prev ? {
-            ...prev,
-            subscription_tier: profileData.subscription_tier || prev.subscription_tier,
-            max_portfolios: profileData.max_portfolios ?? prev.max_portfolios,
-            max_alarms: profileData.max_alarms ?? prev.max_alarms,
-            subscription_status: profileData.subscription_status ?? prev.subscription_status,
-            subscription_expires_at: profileData.subscription_expires_at ?? prev.subscription_expires_at,
-            telegram_enabled: profileData.telegram_enabled ?? prev.telegram_enabled,
-            telegram_connected_at: profileData.telegram_connected_at ?? prev.telegram_connected_at,
-            telegram_last_error: profileData.telegram_last_error ?? prev.telegram_last_error,
-            preferred_language: profileData.preferred_language ?? prev.preferred_language ?? 'ko',
-          } : prev));
-        }
-      } catch (err) {
-        console.warn('[App] profile refetch on modal open:', err);
-      }
-    })();
-  }, [authModal, user?.id]);
+    if (userProfile != null) return; // 캐시 사용, 불필요한 서버 호출 생략
+    fetchUserProfile(user.id); // 예외: 초기 로딩 전 등 프로필이 없을 때만 조회
+  }, [authModal, user?.id, userProfile, fetchUserProfile]);
 
   // 초기 다크 모드 및 Supabase 세션/포트폴리오 로딩
   useEffect(() => {
@@ -598,38 +580,39 @@ const App: React.FC = () => {
     );
 
     // 3. Supabase 내부 에러 이벤트 리스너 (토큰 갱신 실패 등)
-    // _recoverAndRefresh 에러를 잡기 위한 전역 에러 핸들러
+    // _recoverAndRefresh 에러를 잡기 위한 전역 에러 핸들러 (등록/해제 시 동일 참조 사용)
     const handleAuthError = async (event: PromiseRejectionEvent) => {
       if (!isMounted) return;
-      
+
       const errorMessage = event.reason?.message?.toLowerCase() || '';
       const errorName = event.reason?.name || '';
-      
-      // AuthApiError: Invalid Refresh Token 패턴 감지
+
       if (
         errorName === 'AuthApiError' ||
         errorMessage.includes('refresh token') ||
         errorMessage.includes('invalid refresh token')
       ) {
         console.warn('[Auth] Unhandled auth error detected:', event.reason);
-        event.preventDefault(); // 콘솔 에러 방지
+        event.preventDefault();
         await clearAuthState(true);
       }
     };
+    const handler = (e: PromiseRejectionEvent) => {
+      handleAuthError(e);
+    };
+    unhandledRejectionHandlerRef.current = handler;
 
     if (typeof window !== 'undefined') {
-      window.addEventListener('unhandledrejection', handleAuthError);
+      window.addEventListener('unhandledrejection', handler);
     }
 
     return () => {
       isMounted = false;
       listener.subscription.unsubscribe();
-      
-      // 전역 에러 핸들러 정리
-      if (typeof window !== 'undefined') {
-        // handleAuthError 참조를 유지하기 위해 동일한 함수를 제거해야 하지만,
-        // 클로저 특성상 새로운 함수가 생성되므로 실제로는 제거되지 않을 수 있음
-        // 하지만 isMounted 플래그로 인해 실행되지 않음
+
+      if (typeof window !== 'undefined' && unhandledRejectionHandlerRef.current) {
+        window.removeEventListener('unhandledrejection', unhandledRejectionHandlerRef.current);
+        unhandledRejectionHandlerRef.current = null;
       }
     };
   }, [lang]);
@@ -693,12 +676,19 @@ const App: React.FC = () => {
     };
   };
 
-  // FCM 토큰을 Supabase에 저장하는 함수 (디버깅 로그 포함)
+  const saveFCMTokenInProgressRef = useRef<string | null>(null);
+
+  // FCM 토큰을 Supabase에 저장하는 함수 (디버깅 로그 포함, user당 중복 호출 방지)
   const saveFCMToken = async (userId: string): Promise<void> => {
     if (typeof window === 'undefined') {
       console.warn('[FCM] saveFCMToken called on non-browser environment. Skipping.');
       return;
     }
+    if (saveFCMTokenInProgressRef.current === userId) {
+      console.log('[FCM] saveFCMToken already in progress for user:', userId);
+      return;
+    }
+    saveFCMTokenInProgressRef.current = userId;
 
     console.log('[FCM] saveFCMToken called for user:', userId);
 
@@ -758,6 +748,8 @@ const App: React.FC = () => {
     } catch (error) {
       // 에러 발생 시에도 사용자 경험을 해치지 않도록 조용히 처리
       console.error('[FCM] Error saving FCM token:', error);
+    } finally {
+      saveFCMTokenInProgressRef.current = null;
     }
   };
 
@@ -819,11 +811,12 @@ const App: React.FC = () => {
     const controller = new AbortController();
     fetchPortfoliosAbortControllersRef.current.set(userId, controller);
     
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
       console.log('[fetchPortfoliosFromSupabase] Supabase 쿼리 실행 (백그라운드), userId:', userId);
 
       // 타임아웃 설정 (10초)
-      const timeoutId = setTimeout(() => {
+      timeoutId = setTimeout(() => {
         console.warn('[fetchPortfoliosFromSupabase] 10초 타임아웃, 요청 중단 (로컬 데이터 사용)');
         controller.abort();
       }, 10000);
@@ -836,7 +829,6 @@ const App: React.FC = () => {
         .order('created_at', { ascending: false })
         .abortSignal(controller.signal);
       
-      clearTimeout(timeoutId);
       console.log('[fetchPortfoliosFromSupabase] Supabase 쿼리 완료, userId:', userId);
 
       if (error) {
@@ -890,6 +882,10 @@ const App: React.FC = () => {
       });
       // 에러가 나도 로컬 데이터가 있으면 화면은 유지됨
     } finally {
+      // 예외/정상 종료 모두에서 타임아웃 정리 (10초 뒤 불필요한 abort 방지)
+      if (timeoutId != null) {
+        clearTimeout(timeoutId);
+      }
       // 진행 중인 요청 표시 제거
       fetchingPortfoliosRef.current.delete(userId);
       fetchPortfoliosAbortControllersRef.current.delete(userId);
@@ -1240,6 +1236,12 @@ const App: React.FC = () => {
 
     if (updateError) {
       console.error('Failed to close portfolio', updateError);
+      // 보상: 방금 넣은 portfolio_history 행 삭제 (부분 성공 상태 방지)
+      await supabase
+        .from('portfolio_history')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('portfolio_id', terminateTargetId);
       alert(lang === 'ko' ? '전략 종료 저장에 실패했습니다.' : 'Failed to save termination.');
       return;
     }
@@ -1490,7 +1492,7 @@ const App: React.FC = () => {
                 totalValuation={totalValuation}
                 totalValuationChange={totalValuationChange}
                 totalValuationChangePct={totalValuationChangePct}
-                onDailyExecutionSummaryChange={(summary) => setDailyExecutionSummaryFromDashboard(summary ?? null)}
+                onDailyExecutionSummaryChange={onDailyExecutionSummaryChange}
               />
             ) : (
               <Landing 

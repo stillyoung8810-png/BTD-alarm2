@@ -40,19 +40,20 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
 
   const holdings = Array.from(new Set(portfolio.trades.map(t => t.stock)));
 
-  // 최신 종가 거래일 가져오기
+  // 최신 종가 거래일 가져오기 (의존성: 원시/식별자만, effect 내부에서는 portfolio 사용)
+  const targetStockForDate = portfolio.strategy.multiSplit?.targetStock ?? portfolio.strategy.ma0?.stock;
   useEffect(() => {
     const fetchLatestDate = async () => {
       try {
-        const targetStock = portfolio.strategy.multiSplit 
-          ? portfolio.strategy.multiSplit.targetStock 
+        const targetStock = portfolio.strategy.multiSplit
+          ? portfolio.strategy.multiSplit.targetStock
           : portfolio.strategy.ma0.stock;
-        
+
         // IndexedDB에서 최신 데이터 가져오기
         const { getStockPrices, initDatabase } = await import('../services/db');
         await initDatabase();
         const records = await getStockPrices(targetStock, 1);
-        
+
         if (records.length > 0) {
           const latestDate = records[records.length - 1].date;
           setLatestTradeDate(latestDate);
@@ -74,19 +75,19 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
         setLatestTradeDate(`${year}-${month}-${day}`);
       }
     };
-    
-    fetchLatestDate();
-  }, [portfolio]);
 
-  // 매수일 때 활성 구간의 종목 자동 선택
+    fetchLatestDate();
+  }, [portfolio.id, targetStockForDate]);
+
+  // 매수일 때 활성 구간의 종목 자동 선택 (의존성: 원시/식별자만)
   useEffect(() => {
     if (type === 'buy') {
       setSelectedStock(getActiveSectionStock());
       setIsMOC(false); // 매수일 때는 MOC 비활성화
     }
-  }, [type, activeSection, portfolio.strategy]);
+  }, [type, activeSection, portfolio.strategy.ma1?.stock, portfolio.strategy.ma2?.stock, portfolio.strategy.ma3?.stock]);
 
-  // MOC 활성화 시 체결 단가 입력하면 전체 보유 수량의 25% 자동 계산
+  // MOC 활성화 시 체결 단가 입력하면 전체 보유 수량의 25% 자동 계산 (의존성: 원시/식별자만)
   useEffect(() => {
     if (type === 'sell' && isMOC && price > 0 && selectedStock) {
       const holdings = calculateHoldings(portfolio);
@@ -96,7 +97,7 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
         setQuantity(mocQuantity);
       }
     }
-  }, [type, isMOC, price, selectedStock, portfolio]);
+  }, [type, isMOC, price, selectedStock, portfolio.id, portfolio.trades.length]);
 
   useEffect(() => {
     if (type === 'buy' && price > 0) {

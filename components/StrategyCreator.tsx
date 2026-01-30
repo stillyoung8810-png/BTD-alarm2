@@ -1039,7 +1039,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
             <ul className="text-[10px] text-slate-300 dark:text-slate-400 space-y-1.5 font-medium leading-relaxed">
               <li>• {lang === 'ko' ? 'B: 감소 계수 (a / 2A)' : 'B: Reduction Coefficient (a / 2A)'}</li>
               <li>• {lang === 'ko' ? 'LOC 기준점 = A - (T/B × 40/a)' : 'LOC Point = A - (T/B × 40/a)'}</li>
-              <li>• {lang === 'ko' ? '전반전: 1 ≤ T < a/2 (전체 회차의 절반 미만)' : 'First Half: 1 ≤ T < a/2 (Less than half of total rounds)'}</li>
+              <li>• {lang === 'ko' ? '전반전: 0.5 ≤ T < a/2 (전체 회차의 절반 미만)' : 'First Half: 0.5 ≤ T < a/2 (Less than half of total rounds)'}</li>
               <li>• {lang === 'ko' ? '후반전: a/2 ≤ T < a-1 (절반 이후부터 마지막 직전까지)' : 'Second Half: a/2 ≤ T < a-1 (After half until one before last)'}</li>
               <li>• {lang === 'ko' ? '쿼터 손절 모드: a-1 < T ≤ a (자금이 1회치 남았거나 모두 소진된 상태)' : 'Quarter Stop-Loss Mode: a-1 < T ≤ a (Funds left for 1 round or exhausted)'}</li>
               <li>• {lang === 'ko' ? '매도: 1/4은 LOC 지점, 3/4은 +A% 지정가' : 'Sell: 1/4 at LOC, 3/4 at +A% limit'}</li>

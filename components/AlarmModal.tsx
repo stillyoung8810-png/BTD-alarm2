@@ -55,24 +55,28 @@ const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSav
   // Minute 옵션: 00, 10, 20, 30, 40, 50
   const minutes = Array.from({ length: 6 }).map((_, i) => (i * MINUTE_STEP).toString().padStart(2, '0'));
 
-  // 기존 선택된 시간을 로드할 때 AM/PM과 hour를 추출
+  // 기존 선택된 시간을 로드할 때 AM/PM과 hour를 추출 (동일 값 반복 setState 방지 → 무한루프 방지)
+  const prevSelectedHoursKeyRef = React.useRef<string | null>(null);
   useEffect(() => {
-    if (selectedHours.length > 0) {
-      const firstTime = selectedHours[0];
-      const [hourStr, minuteStr] = firstTime.split(':');
-      const hour = parseInt(hourStr, 10);
-      
-      if (hour >= 12) {
-        setPeriod('PM');
-        const pmHour = hour === 12 ? 0 : hour - 12;
-        setSelectedHour(pmHour.toString().padStart(2, '0'));
-      } else {
-        setPeriod('AM');
-        setSelectedHour(hourStr === '00' ? '00' : hourStr.padStart(2, '0'));
-      }
-      setSelectedMinute(minuteStr || '00');
+    if (selectedHours.length === 0) return;
+    const key = selectedHours.join(',');
+    if (prevSelectedHoursKeyRef.current === key) return;
+    prevSelectedHoursKeyRef.current = key;
+
+    const firstTime = selectedHours[0];
+    const [hourStr, minuteStr] = firstTime.split(':');
+    const hour = parseInt(hourStr, 10);
+
+    if (hour >= 12) {
+      setPeriod('PM');
+      const pmHour = hour === 12 ? 0 : hour - 12;
+      setSelectedHour(pmHour.toString().padStart(2, '0'));
+    } else {
+      setPeriod('AM');
+      setSelectedHour(hourStr === '00' ? '00' : hourStr.padStart(2, '0'));
     }
-  }, []);
+    setSelectedMinute(minuteStr || '00');
+  }, [selectedHours]);
 
   // AM/PM과 hour(0-11)를 24시간 형식으로 변환
   const convertTo24Hour = (period: 'AM' | 'PM', hour: string): string => {

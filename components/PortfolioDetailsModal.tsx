@@ -82,7 +82,7 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
       }));
   }, [portfolio.trades, stockPrices, isReadOnly]);
 
-  // 주가 데이터 가져오기 (진행 중인 포트폴리오의 보유 자산 요약용)
+  // 주가 데이터 가져오기 (진행 중인 포트폴리오의 보유 자산 요약용, 의존성: 원시/식별자만)
   useEffect(() => {
     if (isReadOnly) return;
     const fetchPrices = async () => {
@@ -112,7 +112,7 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
     };
 
     fetchPrices();
-  }, [portfolio.trades, isReadOnly]);
+  }, [portfolio.id, portfolio.trades.length, isReadOnly]);
 
   const calendarGrid = useMemo(() => {
     const year = currentMonth.getFullYear();

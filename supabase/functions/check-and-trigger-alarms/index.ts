@@ -23,19 +23,51 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// 현재 UTC 시간을 KST(UTC+9) 기준 HH:mm 문자열로 변환
+/** 크론 주기(분). 이 구간만큼 과거 시간을 검사하고, sent_alarms로 중복 발송을 막습니다. */
+const WINDOW_MINUTES = 10;
+
+/** KST(UTC+9) 기준 현재 HH:mm */
 function getCurrentKSTTimeString(): string {
   const now = new Date();
   const utcHour = now.getUTCHours();
   const utcMinute = now.getUTCMinutes();
-
   const kstHour = (utcHour + 9) % 24;
   const kstMinute = utcMinute;
-
   const hh = String(kstHour).padStart(2, "0");
   const mm = String(kstMinute).padStart(2, "0");
-
   return `${hh}:${mm}`;
+}
+
+/** 과거 WINDOW_MINUTES분 구간의 KST HH:mm 목록 (현재 분 제외, 예: 15:10 실행 시 ["15:00","15:01",...,"15:09"]) */
+function getKSTTimeWindow(): string[] {
+  const now = new Date();
+  const utcHour = now.getUTCHours();
+  const utcMinute = now.getUTCMinutes();
+  const kstTotalMinutes = (utcHour + 9) * 60 + utcMinute;
+  const window: string[] = [];
+  for (let i = WINDOW_MINUTES; i >= 1; i--) {
+    const m = kstTotalMinutes - i;
+    const dayMinutes = ((m % (24 * 60)) + (24 * 60)) % (24 * 60);
+    const h = Math.floor(dayMinutes / 60);
+    const min = dayMinutes % 60;
+    const hh = String(h).padStart(2, "0");
+    const mm = String(min).padStart(2, "0");
+    window.push(`${hh}:${mm}`);
+  }
+  return window;
+}
+
+/** KST 기준 "오늘"의 시작/끝을 UTC ISO 문자열로 반환 (sent_alarms 조회용) */
+function getTodayKSTRangeUTC(): { start: string; end: string } {
+  const now = new Date();
+  const kstOffsetMs = 9 * 60 * 60 * 1000;
+  const kstNow = new Date(now.getTime() + kstOffsetMs);
+  const y = kstNow.getUTCFullYear();
+  const m = String(kstNow.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(kstNow.getUTCDate()).padStart(2, "0");
+  const startDate = new Date(`${y}-${m}-${d}T00:00:00+09:00`);
+  const endDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
+  return { start: startDate.toISOString(), end: endDate.toISOString() };
 }
 
 // Supabase Functions URL 생성 (https://<project>.supabase.co -> https://<project>.functions.supabase.co)
@@ -59,9 +91,10 @@ serve(async (_req) => {
 
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // 현재 KST 시간 (HH:mm)
+    // 과거 WINDOW_MINUTES분 구간의 KST HH:mm 목록 (10분 크론 시 "보냈어야 하는 알람" 구간)
+    const timeWindow = getKSTTimeWindow();
     const currentKstTime = getCurrentKSTTimeString();
-    console.log("Current KST time:", currentKstTime);
+    console.log("Current KST time:", currentKstTime, "window (past", WINDOW_MINUTES, "min):", timeWindow);
 
     // KST 기준 주말(토·일)이면 알람 트리거하지 않음
     const now = new Date();
@@ -75,7 +108,7 @@ serve(async (_req) => {
       );
     }
 
-    // alarm_config.enabled = true 이고, alarm_config.selectedHours 에 현재 시간이 포함된 포트폴리오 조회
+    // alarm_config.enabled = true 이고, alarm_config.selectedHours 가 있는 포트폴리오 조회
     const { data: portfolios, error } = await supabase
       .from("portfolios")
       .select("user_id, alarm_config, is_closed")
@@ -93,36 +126,63 @@ serve(async (_req) => {
     if (!portfolios || portfolios.length === 0) {
       console.log("No portfolios with alarm_config found.");
       return new Response(
-        JSON.stringify({ success: true, triggeredUsers: 0 }),
+        JSON.stringify({ success: true, triggeredUsers: 0, sent: 0 }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
     }
 
-    // 현재 시간에 알람이 활성화된 user_id 목록 추출
-    const userIdSet = new Set<string>();
+    // 과거 WINDOW_MINUTES분 구간 중 selectedHours에 포함된 (user_id, time_kst) 후보 수집
+    const candidateKeys = new Set<string>();
+    const candidateList: { user_id: string; time_kst: string }[] = [];
 
     (portfolios as PortfolioRow[]).forEach((row) => {
       if (!row.user_id || !row.alarm_config) return;
-
       const cfg = row.alarm_config;
       const enabled = cfg.enabled === true;
-      const selectedHours = Array.isArray(cfg.selectedHours)
-        ? cfg.selectedHours
-        : [];
-
+      const selectedHours = Array.isArray(cfg.selectedHours) ? cfg.selectedHours : [];
       if (!enabled) return;
 
-      if (selectedHours.includes(currentKstTime)) {
-        userIdSet.add(row.user_id);
-      }
+      timeWindow.forEach((hhmm) => {
+        if (!selectedHours.includes(hhmm)) return;
+        const key = `${row.user_id}|${hhmm}`;
+        if (candidateKeys.has(key)) return;
+        candidateKeys.add(key);
+        candidateList.push({ user_id: row.user_id, time_kst: hhmm });
+      });
     });
 
-    const userIds = Array.from(userIdSet);
-
-    if (userIds.length === 0) {
-      console.log("No users to notify at this time.");
+    if (candidateList.length === 0) {
+      console.log("No (user, time) candidates in window.");
       return new Response(
-        JSON.stringify({ success: true, triggeredUsers: 0 }),
+        JSON.stringify({ success: true, triggeredUsers: 0, sent: 0, time_window: timeWindow }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // 오늘 KST 기준 이미 발송된 (user_id, time_kst) 조회 → 중복 발송 방지
+    const { start: todayStart, end: todayEnd } = getTodayKSTRangeUTC();
+    const userIdsInCandidates = [...new Set(candidateList.map((c) => c.user_id))];
+    const timeKstsInWindow = [...new Set(candidateList.map((c) => c.time_kst))];
+
+    const { data: alreadySentRows } = await supabase
+      .from("sent_alarms")
+      .select("user_id, time_kst")
+      .gte("sent_at", todayStart)
+      .lt("sent_at", todayEnd)
+      .in("user_id", userIdsInCandidates)
+      .in("time_kst", timeKstsInWindow);
+
+    const alreadySentKeys = new Set<string>();
+    (alreadySentRows ?? []).forEach((r: { user_id: string; time_kst: string }) => {
+      alreadySentKeys.add(`${r.user_id}|${r.time_kst}`);
+    });
+
+    const toSend = candidateList.filter((c) => !alreadySentKeys.has(`${c.user_id}|${c.time_kst}`));
+    console.log("Candidates:", candidateList.length, "already sent:", alreadySentKeys.size, "to send:", toSend.length);
+
+    if (toSend.length === 0) {
+      return new Response(
+        JSON.stringify({ success: true, triggeredUsers: 0, sent: 0, time_window: timeWindow, skipped: "already_sent" }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
     }
@@ -134,14 +194,14 @@ serve(async (_req) => {
     const title = "BTD 매매 알람";
     const body = "설정하신 매매 알람 시간입니다. 포트폴리오 전략을 확인해 주세요.";
 
-    // 각 user_id 에 대해 send-alarm Edge Function 호출
-    const payloads: SendAlarmPayload[] = userIds.map((userId) => ({
-      user_id: userId,
+    // 각 (user_id, time_kst) 에 대해 send-alarm 호출 (같은 사용자도 time_kst별로 1회씩)
+    const payloads: SendAlarmPayload[] = toSend.map(({ user_id, time_kst }) => ({
+      user_id,
       title,
       body,
       data: {
         type: "portfolio_alarm",
-        time_kst: currentKstTime,
+        time_kst,
       },
     }));
 
@@ -207,10 +267,11 @@ serve(async (_req) => {
     return new Response(
       JSON.stringify({
         success: successful > 0,
-        triggeredUsers: userIds.length,
+        triggeredUsers: toSend.length,
         sent: successful,
         failed,
         time_kst: currentKstTime,
+        time_window: timeWindow,
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );

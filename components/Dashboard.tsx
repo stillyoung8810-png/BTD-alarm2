@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Portfolio } from '../types';
 import { I18N, CUSTOM_GRADIENT_LOGOS, PAID_STOCKS } from '../constants';
 import StockLogo from './StockLogo';
@@ -55,6 +55,15 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [dailyExecutionBlocks, setDailyExecutionBlocks] = useState<Record<string, string>>({});
   const lastDailyExecutionSummaryRef = useRef<string | null>(null);
 
+  // 안정적인 콜백: 매 렌더마다 새 함수를 넘기면 자식 effect가 반복 실행될 수 있음(다분할 알람 무한루프 원인)
+  const setDailyExecutionBlockForId = useCallback((id: string, block: string | null) => {
+    setDailyExecutionBlocks((prev) => {
+      const nextValue = block ?? '';
+      if (prev[id] === nextValue) return prev;
+      return { ...prev, [id]: nextValue };
+    });
+  }, []);
+
   // 알람이 켜진 포트폴리오 id 목록 (파생 배열) – 포트폴리오가 바뀔 때만 재계산
   const alarmIds = useMemo(
     () =>
@@ -66,14 +75,22 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   useEffect(() => {
     if (!onDailyExecutionSummaryChange) return;
+    // 알람이 없으면 null로 한 번만 전달
+    if (alarmIds.length === 0) {
+      if (lastDailyExecutionSummaryRef.current !== null) {
+        lastDailyExecutionSummaryRef.current = null;
+        onDailyExecutionSummaryChange(null);
+      }
+      return;
+    }
+    // 모든 알람 포트폴리오의 블록이 준비된 경우에만 요약 전달 → 저장 직후 불완전 요약으로 인한 연쇄 리렌더/무한루프 방지
     const blocks = alarmIds.map((id) => dailyExecutionBlocks[id]).filter(Boolean);
+    if (blocks.length !== alarmIds.length) return;
+
     const summary = joinDailyExecutionBlocks(blocks);
     const next = summary || null;
 
-    // 요약 문자열이 이전과 동일하면 상위로 콜백 호출 생략 → App과의 루프 방지
-    if (lastDailyExecutionSummaryRef.current === next) {
-      return;
-    }
+    if (lastDailyExecutionSummaryRef.current === next) return;
     lastDailyExecutionSummaryRef.current = next;
     onDailyExecutionSummaryChange(next);
   }, [alarmIds, dailyExecutionBlocks, onDailyExecutionSummaryChange]);
@@ -151,14 +168,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               onDelete={() => onDeletePortfolio(p.id)}
               onUpdatePortfolio={onUpdatePortfolio}
               onDailyExecutionBlock={
-                onDailyExecutionSummaryChange
-                  ? (block) =>
-                      setDailyExecutionBlocks((prev) => {
-                        const nextValue = block ?? '';
-                        if (prev[p.id] === nextValue) return prev; // 내용이 동일하면 상태 변경 생략
-                        return { ...prev, [p.id]: nextValue };
-                      })
-                  : undefined
+                onDailyExecutionSummaryChange ? setDailyExecutionBlockForId : undefined
               }
             />
           ))
@@ -178,13 +188,17 @@ const PortfolioCard: React.FC<{
   onOpenExecution: () => void;
   onUpdatePortfolio: (updated: Portfolio) => void;
   lang: 'ko' | 'en';
-  onDailyExecutionBlock?: (block: string | null) => void;
+  onDailyExecutionBlock?: (id: string, block: string | null) => void;
 }> = ({ portfolio, onClose, onDelete, onOpenAlarm, onOpenDetails, onOpenQuickInput, onOpenExecution, onUpdatePortfolio, lang, onDailyExecutionBlock }) => {
   const t = I18N[lang];
   // 다분할 매매법일 때는 multiSplit.targetStock을 사용, 아니면 ma0.stock 사용
   const ma0Ticker = portfolio.strategy.multiSplit?.targetStock || portfolio.strategy.ma0.stock;
   const gradientInfo = CUSTOM_GRADIENT_LOGOS[ma0Ticker] || { gradient: 'linear-gradient(135deg, #2563eb, #1e40af)', label: 'STOCK' };
   const isAlarmEnabled = portfolio.alarmconfig?.enabled;
+
+  // 콜백을 ref에 보관해 effect 의존성에서 제외 → 부모 리렌더 시 콜백 참조 변경으로 인한 반복 실행 방지
+  const onDailyExecutionBlockRef = useRef(onDailyExecutionBlock);
+  onDailyExecutionBlockRef.current = onDailyExecutionBlock;
   
   const [investedAmount, setInvestedAmount] = useState<number>(0);
   const [yieldRate, setYieldRate] = useState<number>(0);
@@ -246,14 +260,14 @@ const PortfolioCard: React.FC<{
     return Math.ceil((totalInvested / oneTimeAmount) * 100) / 100;
   }, [portfolio]);
 
-  // 다분할 매매법의 현재 구간 판별
+  // 다분할 매매법의 현재 구간 판별 (전반전: T >= 0.5)
   const getMultiSplitPhase = (): 'first' | 'second' | 'quarter' | null => {
     if (!portfolio.strategy.multiSplit) return null;
     
     const T = currentRound;
     const a = portfolio.strategy.multiSplit.totalSplitCount;
     
-    if (T >= 1 && T < a / 2) return 'first';
+    if (T >= 0.5 && T < a / 2) return 'first';
     if (T >= a / 2 && T < a - 1) return 'second';
     if (T > a - 1 && T <= a) return 'quarter';
     
@@ -474,7 +488,7 @@ const PortfolioCard: React.FC<{
     };
 
     calculateQuarterStopLoss();
-  }, [portfolio, isInQuarterMode, recentTradingDays]);
+  }, [portfolio.id, portfolio.trades.length, portfolio.strategy.multiSplit?.targetStock, portfolio.feeRate, isInQuarterMode, recentTradingDays]);
 
   // 다분할 매매법의 일별 매매 실행 계산
   const [multiSplitExecutionData, setMultiSplitExecutionData] = useState<{
@@ -650,14 +664,21 @@ const PortfolioCard: React.FC<{
   useEffect(() => {
     if (!onDailyExecutionBlock) return;
 
+    const report = onDailyExecutionBlockRef.current;
+    if (!report) return;
+
     // 알람이 꺼져 있으면 블록을 비우고 더 이상 올리지 않음
     if (!isAlarmEnabled) {
       if (lastDailyExecutionBlockRef.current !== null) {
         lastDailyExecutionBlockRef.current = null;
-        onDailyExecutionBlock(null);
+        report(portfolio.id, null);
       }
       return;
     }
+
+    // 다분할 매매법: 비동기 데이터(multiSplitExecutionData)가 준비되기 전에 블록을 보내면
+    // 데이터 도착 시 다시 effect가 돌아 연쇄 리렌더/무한루프가 발생하므로, 준비된 경우에만 전달
+    if (portfolio.strategy.multiSplit && multiSplitExecutionData == null) return;
 
     const block = formatPortfolioDailyExecutionBlock(portfolio, lang, {
       multiSplitExecutionData: multiSplitExecutionData ?? undefined,
@@ -671,7 +692,7 @@ const PortfolioCard: React.FC<{
       return;
     }
     lastDailyExecutionBlockRef.current = block;
-    onDailyExecutionBlock(block);
+    report(portfolio.id, block);
   }, [
     isAlarmEnabled,
     // portfolio 객체 전체 대신, 알람 메시지에 실제로 영향을 주는 파생 상태들만 의존성으로 사용
@@ -689,12 +710,8 @@ const PortfolioCard: React.FC<{
   }, [portfolio]);
 
   // 수익률/투자금/실현손익 계산
-  // - StrictMode: 첫 마운트에서 클린업되면 ref를 리셋해서 두 번째 마운트에서 다시 계산되도록 함
-  const metricsInitializedRef = useRef<string | null>(null);
+  // - portfolio.id 또는 매매 개수(trades.length)가 바뀔 때만 재계산 (매매 추가/삭제 시 즉시 반영)
   useEffect(() => {
-    if (metricsInitializedRef.current === portfolio.id) return;
-    metricsInitializedRef.current = portfolio.id;
-
     let cancelled = false;
 
     const updateMetrics = async () => {
@@ -721,10 +738,8 @@ const PortfolioCard: React.FC<{
 
     return () => {
       cancelled = true;
-      // StrictMode에서 두 번째 마운트 시 updateMetrics가 다시 실행되도록 리셋
-      metricsInitializedRef.current = null;
     };
-  }, [portfolio.id]);
+  }, [portfolio.id, portfolio.trades.length]);
 
   return (
     <div

@@ -809,6 +809,7 @@ const PortfolioCard: React.FC<{
               shape="circle"
               paidAccent={PAID_STOCKS.includes(ma0Ticker)}
               showFallbackText
+              dashboardCardText
               className="w-16 h-16 border-2 border-white/30 shadow-xl"
             />
           </div>

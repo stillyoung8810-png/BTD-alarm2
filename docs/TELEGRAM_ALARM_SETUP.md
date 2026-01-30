@@ -199,6 +199,29 @@ if (profile.telegram_enabled !== true) return false;
 
 ---
 
+### 401 "Invalid or missing X-Internal-Alarm-Secret" 해결
+
+**증상**: 로그에 `send-alarm failed ... 401 {"error":"Unauthorized","code":401,"message":"Invalid or missing X-Internal-Alarm-Secret"}` 가 찍힘. (게이트웨이 "Invalid JWT"가 아님.)
+
+**원인**: `send-alarm`에만 시크릿이 있거나, **check-and-trigger-alarms**에는 없어서 헤더를 안 보내거나, 두 함수에 넣은 **값이 다르거나** 공백/오타가 있는 경우.
+
+**해결**:
+
+1. **두 함수 모두에 같은 시크릿 추가**  
+   - Dashboard → **Edge Functions** → **check-and-trigger-alarms** → **Secrets**  
+     - 이름: `INTERNAL_ALARM_SECRET` (또는 `internal_alarm_secret` 둘 다 지원)  
+     - 값: 예) `my-super-secret-alarm-key-12345` (복사해 두기)
+   - **send-alarm** → **Secrets**  
+     - **이름·값을 check-and-trigger-alarms와 완전히 동일하게** 입력 (앞뒤 공백 없이).
+2. **값이 정말 같은지 확인**  
+   - 한쪽만 수정했거나, 복사 시 공백이 들어가면 401이 납니다. 새로 생성한 랜덤 문자열을 두 함수에 똑같이 붙여넣는 것을 권장합니다.
+3. **수정 후 재배포**  
+   - 시크릿만 바꿔도 적용되지만, 코드를 수정했다면 `supabase functions deploy check-and-trigger-alarms` 와 `supabase functions deploy send-alarm --no-verify-jwt` 로 다시 배포하세요.
+
+**정리**: check-and-trigger-alarms와 send-alarm **둘 다**에 **같은 이름·같은 값**의 시크릿이 있어야 합니다. 코드는 `INTERNAL_ALARM_SECRET` / `internal_alarm_secret` 둘 다 읽고, 비교 시 앞뒤 공백은 무시합니다.
+
+---
+
 ### Supabase에서 확인할 것 (알람이 안 올 때)
 
 | 확인 항목 | Supabase에서 하는 방법 |

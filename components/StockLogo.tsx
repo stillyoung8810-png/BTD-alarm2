@@ -59,6 +59,7 @@ export default function StockLogo({
   paidAccent = false,
   dimmed = false,
   showFallbackText = true,
+  dashboardCardText = false,
 }: {
   ticker: string;
   size?: StockLogoSize;
@@ -70,6 +71,8 @@ export default function StockLogo({
   dimmed?: boolean;
   /** 로고가 없을 때(그라데이션) 내부에 ticker 텍스트를 표시할지 */
   showFallbackText?: boolean;
+  /** 대시보드 포트폴리오 카드 전용: fallback 티커/라벨(2x·3x 등) 글자 크기만 키움. 시세 종목정보 등 다른 화면에는 적용 안 함 */
+  dashboardCardText?: boolean;
 }) {
   const logoUrl = getLogoUrlForTicker(ticker);
   const gradientInfo = CUSTOM_GRADIENT_LOGOS[ticker] || {
@@ -86,6 +89,10 @@ export default function StockLogo({
     : '';
 
   const dimClass = dimmed ? 'opacity-60 grayscale' : '';
+
+  // 대시보드 포트폴리오 카드: 티커 50%↑, 2x·3x 라벨 2배
+  const tickerTextClass = dashboardCardText ? 'text-[15px] font-black leading-none z-10' : 'text-[10px] font-black leading-none z-10';
+  const labelTextClass = dashboardCardText ? 'text-[10px] font-bold opacity-80 mt-0.5 uppercase text-center px-0.5 z-10' : 'text-[5px] font-bold opacity-80 mt-0.5 uppercase text-center px-0.5 z-10';
 
   return (
     <div
@@ -111,9 +118,9 @@ export default function StockLogo({
           <div className="absolute inset-0 bg-black/5" />
           {showFallbackText ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-white">
-              <span className="text-[10px] font-black leading-none z-10">{ticker}</span>
-              <span className="text-[5px] font-bold opacity-80 mt-0.5 uppercase text-center px-0.5 z-10">
-                {gradientInfo.label.split(' ')[0]}
+              <span className={tickerTextClass}>{ticker}</span>
+              <span className={labelTextClass}>
+                {gradientInfo.label}
               </span>
             </div>
           ) : null}

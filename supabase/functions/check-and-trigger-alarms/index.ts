@@ -81,7 +81,8 @@ serve(async (_req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const internalAlarmSecret = Deno.env.get("INTERNAL_ALARM_SECRET");
+    // Dashboard에서 internal_alarm_secret 으로 넣어도 동작하도록 둘 다 확인 (대소문자 구분 없이)
+    const internalAlarmSecret = (Deno.env.get("INTERNAL_ALARM_SECRET") ?? Deno.env.get("internal_alarm_secret"))?.trim() || "";
 
     if (!supabaseUrl || !serviceKey) {
       console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");

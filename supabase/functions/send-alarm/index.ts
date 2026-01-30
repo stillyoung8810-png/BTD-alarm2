@@ -256,9 +256,10 @@ serve(async (req) => {
   }
 
   // 내부 호출 전용: INTERNAL_ALARM_SECRET 이 있으면 헤더 검사 (JWT 없이 배포 시 401 방지)
-  const internalSecret = Deno.env.get("INTERNAL_ALARM_SECRET");
+  // Dashboard에서 internal_alarm_secret 으로 넣어도 동작하도록 둘 다 확인
+  const internalSecret = (Deno.env.get("INTERNAL_ALARM_SECRET") ?? Deno.env.get("internal_alarm_secret"))?.trim() || "";
   if (internalSecret) {
-    const headerSecret = req.headers.get("X-Internal-Alarm-Secret");
+    const headerSecret = (req.headers.get("X-Internal-Alarm-Secret") ?? req.headers.get("x-internal-alarm-secret"))?.trim() ?? "";
     if (headerSecret !== internalSecret) {
       return new Response(
         JSON.stringify({ error: "Unauthorized", code: 401, message: "Invalid or missing X-Internal-Alarm-Secret" }),

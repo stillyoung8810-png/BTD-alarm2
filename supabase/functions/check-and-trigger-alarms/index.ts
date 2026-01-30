@@ -70,10 +70,11 @@ function getTodayKSTRangeUTC(): { start: string; end: string } {
   return { start: startDate.toISOString(), end: endDate.toISOString() };
 }
 
-// Supabase Functions URL 생성 (https://<project>.supabase.co -> https://<project>.functions.supabase.co)
-function getFunctionsBaseUrl(supabaseUrl: string): string {
+// Edge Function 호출 URL (공식: https://<project>.supabase.co/functions/v1/<함수명>)
+function getSendAlarmUrl(supabaseUrl: string): string {
   if (!supabaseUrl) return "";
-  return supabaseUrl.replace(".supabase.co", ".functions.supabase.co");
+  const base = supabaseUrl.replace(/\/+$/, "");
+  return `${base}/functions/v1/send-alarm`;
 }
 
 serve(async (_req) => {
@@ -187,9 +188,8 @@ serve(async (_req) => {
       );
     }
 
-    // send-alarm 함수 URL 구성
-    const functionsBaseUrl = getFunctionsBaseUrl(supabaseUrl);
-    const sendAlarmUrl = `${functionsBaseUrl}/send-alarm`;
+    // send-alarm 함수 URL (공식 invoke URL 사용 → 401 Invalid JWT 방지)
+    const sendAlarmUrl = getSendAlarmUrl(supabaseUrl);
 
     const title = "BTD 매매 알람";
     const body = "설정하신 매매 알람 시간입니다. 포트폴리오 전략을 확인해 주세요.";

@@ -7,7 +7,8 @@
     "dev": "granite dev",
     "build": "vite build",
     "preview": "vite preview",
-    "deploy": "ait deploy"
+    "deploy": "ait deploy",
+    "supabase:deploy": "npx supabase functions deploy check-and-trigger-alarms && npx supabase functions deploy send-alarm"
   },
   "dependencies": {
     "@apps-in-toss/web-framework": "^1.8.0",
@@ -27,6 +28,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "supabase": "^2.0.0",
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"

@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Portfolio, AlarmConfig } from '../types';
-import { X, ToggleRight, ToggleLeft, Clock, Plus, Trash2, Info, ChevronDown } from 'lucide-react';
+import { X, Clock, Plus, Trash2, Info, ChevronDown } from 'lucide-react';
+import Toggle from './Toggle';
 import { useTossApp } from '../contexts/TossAppContext';
 import CustomDropdown from './CustomDropdown';
 
@@ -178,9 +179,11 @@ const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSav
                 <span className={`text-xs font-black ${enabled ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}>
                   {enabled ? 'ON' : 'OFF'}
                 </span>
-                <button onClick={() => setEnabled(!enabled)} className="transition-all active:scale-95">
-                  {enabled ? <ToggleRight size={36} className="text-blue-600" /> : <ToggleLeft size={36} className="text-slate-400 dark:text-slate-500" />}
-                </button>
+                <Toggle
+                  checked={enabled}
+                  onChange={setEnabled}
+                  aria-label={lang === 'ko' ? '알람 켜기/끄기' : 'Toggle alarm on/off'}
+                />
               </div>
             </div>
             {enabled && (

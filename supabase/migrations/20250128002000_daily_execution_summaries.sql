@@ -36,19 +36,22 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_execution_summaries_user_date
 -- RLS 활성화
 ALTER TABLE public.daily_execution_summaries ENABLE ROW LEVEL SECURITY;
 
--- 인증된 사용자는 자신의 user_id 로만 INSERT / SELECT / UPDATE 가능
+-- 인증된 사용자는 자신의 user_id 로만 INSERT / SELECT / UPDATE 가능 (이미 있으면 제거 후 재생성)
+DROP POLICY IF EXISTS "Users can insert own daily execution summary" ON public.daily_execution_summaries;
 CREATE POLICY "Users can insert own daily execution summary"
   ON public.daily_execution_summaries
   FOR INSERT
   TO authenticated
   WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can select own daily execution summary" ON public.daily_execution_summaries;
 CREATE POLICY "Users can select own daily execution summary"
   ON public.daily_execution_summaries
   FOR SELECT
   TO authenticated
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update own daily execution summary" ON public.daily_execution_summaries;
 CREATE POLICY "Users can update own daily execution summary"
   ON public.daily_execution_summaries
   FOR UPDATE

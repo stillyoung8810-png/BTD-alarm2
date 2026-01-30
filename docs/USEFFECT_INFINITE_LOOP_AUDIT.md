@@ -104,3 +104,29 @@
 - **현재**: 고위험 무한루프 후보는 0건. 남은 주의 구간은 Dashboard의 `[portfolio]` ref 동기화 1곳이며, 무한루프 원인은 아님.
 
 이 문서는 “무한 루프 후보” 점검용입니다. 새로 **useEffect + 객체/배열/인라인 콜백 의존성**을 추가할 때는 위 패턴(안정 콜백 + ref)과 비교해 보는 것을 권장합니다.
+
+---
+
+## 6. 최근 변경 점검 (Toggle / AuthModals / App – 2026-01-30)
+
+**변경 내용**: 공통 Toggle 컴포넌트 도입, AlarmModal 아이콘 → Toggle 교체, AuthModals에 텔레그램 알림 토글 추가, App에서 `onTelegramAlertsEnabledChange` 인라인 콜백 전달.
+
+| 위치 | 점검 결과 |
+|------|-----------|
+| **App.tsx** | `onTelegramAlertsEnabledChange`는 **인라인 async 함수**로 매 렌더 새 참조. 단, **AuthModals 쪽에서 useEffect 의존성으로 사용하지 않음** → 콜백은 클릭 시에만 호출되므로 리렌더→effect 재실행 루프 없음. |
+| **AuthModals** | `useEffect`는 `[type]`만 의존, `onTelegramAlertsEnabledChange` 미사용. 토글은 `onChange`에서만 콜백 호출 → **무한루프 위험 없음**. |
+| **AlarmModal** | Toggle은 `checked`/`onChange`만 사용, 부모에서 넘긴 `setEnabled`(useState setter)는 안정 참조. **effect 추가 없음** → **무한루프 위험 없음**. |
+| **Toggle** | 비제어/제어 컴포넌트, useEffect 없음. **위험 없음**. |
+
+**결론**: 이번 변경으로 인한 **무한루프 위험 없음**. 인라인 콜백은 이벤트 핸들러로만 사용되며, effect 의존성에 포함되지 않음.
+
+---
+
+## 7. 코드 변경 시 무한루프 점검 권장 사항
+
+앞으로 **모든 코드 변경**에서 아래를 기본적으로 점검할 것을 권장합니다.
+
+1. **부모 → 자식 콜백**: `map` 안에서 인라인 콜백을 넘기지 말고, **useCallback**으로 고정하거나 **(id, payload)** 형태의 단일 콜백으로 전달. 자식에서는 **ref에 보관 후 effect 의존성에서 제외**.
+2. **effect 내 setState**: setState가 부모 리렌더를 유발하고, 그 부모가 해당 effect의 의존성(객체/배열/인라인 함수)을 새로 넘기면 **effect → setState → 리렌더 → effect** 루프 가능. 의존성은 **원시값·ref·안정 콜백**으로 제한.
+3. **새로 추가하는 useEffect**: 의존성 배열에 **객체/배열/인라인 함수**가 들어가면, 그 참조가 매 렌더 바뀌지 않는지 확인. 필요 시 **원시값만** 의존하거나 **ref + 의존성에서 제외** 패턴 사용.
+4. **인라인 콜백**: 이벤트 핸들러(`onClick`, `onChange` 등)로만 쓰이고 **effect 의존성에 넣지 않으면** 루프 원인이 되지 않음. effect에서 호출하거나 의존성에 넣는 경우에만 **useCallback** 등으로 안정화 필요.

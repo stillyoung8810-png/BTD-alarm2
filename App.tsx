@@ -1674,8 +1674,21 @@ const App: React.FC = () => {
             currentUserEmail={user?.email}
             currentTier={currentTier === 'premium' || currentTier === 'pro' ? currentTier : 'free'}
             currentUserId={user?.id ?? undefined}
-            telegramEnabled={userProfile?.telegram_enabled ?? false}
             telegramConnectedAt={userProfile?.telegram_connected_at ?? null}
+            telegramAlertsEnabled={userProfile?.telegram_enabled ?? false}
+            onTelegramAlertsEnabledChange={async (enabled) => {
+              if (!user?.id) return;
+              try {
+                const { error } = await supabase
+                  .from('user_profiles')
+                  .update({ telegram_enabled: enabled })
+                  .eq('id', user.id);
+                if (error) throw error;
+                setUserProfile((prev) => (prev ? { ...prev, telegram_enabled: enabled } : null));
+              } catch (e) {
+                console.warn('[Profile] telegram_enabled update failed:', e);
+              }
+            }}
           />
         )}
       </div>

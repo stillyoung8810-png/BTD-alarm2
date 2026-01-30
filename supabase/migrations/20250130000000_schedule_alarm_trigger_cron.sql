@@ -13,21 +13,5 @@
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
 
--- 실제 스케줄 등록 예시 (10분마다, 값 교체 후 SQL Editor에서 별도 실행):
-/*
-select cron.schedule(
-  'trigger-btd-alarms-every-10-min',
-  '*/10 * * * *',
-  $$
-  select net.http_post(
-    url := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/check-and-trigger-alarms',
-    headers := jsonb_build_object(
-      'Content-Type', 'application/json',
-      'Authorization', 'Bearer YOUR_SERVICE_ROLE_KEY'
-    ),
-    body := '{}',
-    timeout_milliseconds := 60000
-  ) as request_id;
-  $$
-);
-*/
+-- 크론 스케줄 등록은 별도 실행. docs/TELEGRAM_ALARM_SETUP.md, docs/CRON_SETUP_SQL_GUIDE.md 참고.
+-- (블록 주석 안에 '*/10'이 있으면 */ 가 주석 종료로 파싱되어 문법 오류가 나므로 예시는 문서에만 둠.)

@@ -809,7 +809,7 @@ const PortfolioCard: React.FC<{
               shape="circle"
               paidAccent={PAID_STOCKS.includes(ma0Ticker)}
               showFallbackText
-              className="w-16 h-16 border border-white/20 shadow-xl"
+              className="w-16 h-16 border-2 border-white/30 shadow-xl"
             />
           </div>
           <div>

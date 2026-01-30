@@ -21,6 +21,8 @@ ALTER TABLE public.telegram_link_tokens ENABLE ROW LEVEL SECURITY;
 -- 서비스 역할은 RLS를 우회하므로 정책은 "인증된 사용자가 자신의 토큰만 삽입/조회"용으로 둘 수 있음.
 -- Edge Function은 service_role_key를 쓰므로 RLS를 우회합니다.
 -- 앱에서 "연결 토큰 생성" 시 인증된 사용자만 자신의 user_id로 행을 삽입할 수 있게 함.
+-- (이미 있으면 제거 후 재생성 → 원격에 이미 적용된 상태에서 push 시에도 통과)
+DROP POLICY IF EXISTS "Users can insert own telegram link token" ON public.telegram_link_tokens;
 CREATE POLICY "Users can insert own telegram link token"
   ON public.telegram_link_tokens
   FOR INSERT
@@ -29,6 +31,7 @@ CREATE POLICY "Users can insert own telegram link token"
 
 -- 토큰 조회는 Edge Function(service_role)만 하므로, authenticated용 SELECT 정책은 선택사항.
 -- 필요 시: 사용자가 자신의 미사용 토큰 존재 여부만 확인하려면 SELECT 정책 추가 가능.
+DROP POLICY IF EXISTS "Users can read own telegram link tokens" ON public.telegram_link_tokens;
 CREATE POLICY "Users can read own telegram link tokens"
   ON public.telegram_link_tokens
   FOR SELECT

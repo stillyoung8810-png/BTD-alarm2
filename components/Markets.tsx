@@ -178,8 +178,8 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
     return filtered;
   }, [showHoldingsOnly, show1xOnly, holdingsSet, oneXStocks]);
 
-  // 무한 루프용 3중 리스트 (끝/처음 자연 연결)
-  const loopEnabled = filteredStocks.length >= 2;
+  // 무한 루프용 3중 리스트 (끝/처음 자연 연결). 보유 종목만 보기 시에는 중복 노출 방지를 위해 3중 반복하지 않음
+  const loopEnabled = filteredStocks.length >= 2 && !showHoldingsOnly;
   const loopedStocks = useMemo(() => {
     if (!loopEnabled) return filteredStocks;
     return [...filteredStocks, ...filteredStocks, ...filteredStocks];
@@ -316,12 +316,14 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
       const { step } = getCardStep();
       const middleStart = children?.[baseLen]?.offsetLeft ?? 0; // 가운데 리스트 시작
       const thirdStart = children?.[baseLen * 2]?.offsetLeft ?? 0; // 3번째 리스트 시작
-      const threshold = step * 0.5; // 살짝 넘어갔을 때만 점프 (튀는 느낌 최소화)
+      // 왼쪽: 한 카드 이상 들어갔을 때만 점프 (한 칸 왼쪽에서 마지막 종목 SGOV 보이도록)
+      const thresholdLeft = step;
+      const thresholdRight = step * 0.5; // 오른쪽: 살짝 넘어갔을 때 점프
 
       // 가운데 범위를 벗어나면 같은 카드 위치를 유지한 채 가운데로 되돌림
-      if (el.scrollLeft < middleStart - threshold) {
+      if (el.scrollLeft < middleStart - thresholdLeft) {
         el.scrollLeft += baseLen * step;
-      } else if (el.scrollLeft >= thirdStart + threshold) {
+      } else if (el.scrollLeft >= thirdStart + thresholdRight) {
         el.scrollLeft -= baseLen * step;
       }
     });

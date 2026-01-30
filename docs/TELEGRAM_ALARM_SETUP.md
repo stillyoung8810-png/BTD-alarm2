@@ -39,6 +39,7 @@
 | 6 | 프로필 텔레그램 연결 | `user_profiles.telegram_enabled = true`, `telegram_chat_id` 값 있음 |
 
 - 프로필에 "텔레그램 연결됨"이 보이는 건 **6번**이 된 상태입니다.
+- **토글 OFF 시**: 앱 프로필에서 "텔레그램 알림 사용" 토글을 끄면 `user_profiles.telegram_enabled`가 `false`로 저장됩니다. 크론이 깨우는 **check-and-trigger-alarms → send-alarm** 흐름에서 **반드시** 이 값을 읽어 발송 여부를 결정합니다(아래 "텔레그램 비활성화 시 크론 반영" 참고).
 - **1번(cron)** 이 없으면, 2~6이 다 맞아도 알람이 한 번도 가지 않습니다.
 - **5번**: free 사용자는 앱에서 텔레그램 블록 자체가 안 보이므로, "연결됨"이 보인다면 현재는 Pro/Premium으로 간주됩니다.
 
@@ -66,6 +67,8 @@
 
 `check-and-trigger-alarms`는 **과거 10분 구간**을 검사하고 **sent_alarms**로 중복 발송을 막으므로, **10분마다 실행**하는 크론이 권장됩니다.
 
+**중요**: **Edge Function 배포(`supabase functions deploy`)는 크론 스케줄을 바꾸지 않습니다.** 크론이 **언제** 실행되는지는 Dashboard의 Cron Jobs 또는 pg_cron SQL에 **별도로** 저장됩니다. 1분마다 로그가 찍힌다면 현재 크론이 1분 주기로 설정된 것이므로, 10분으로 바꾸려면 **크론 설정을 직접 수정**해야 합니다.
+
 - **이유**: "지금 이 분"만 보면 크론 실행 시각과 서버 시각이 몇 초 어긋날 때 알람을 놓칠 수 있음. **"지금부터 과거 10분 사이에 보냈어야 하는 알람 중 아직 안 보낸 것"**을 찾는 방식이라 10분 단위 크론이 가장 안전합니다.
 - **Schedule**: `*/10 * * * *` (매시 :00, :10, :20, :30, :40, :50)
 
@@ -78,6 +81,8 @@
    - **Type**: Supabase Edge Function
    - **Function**: `check-and-trigger-alarms`
    - Body는 비워두거나 `{}` (이 함수는 body를 사용하지 않음)
+
+**이미 1분마다 돌고 있는 크론을 10분으로 바꾸려면**: Dashboard → **Integrations** → **Cron Jobs** → 해당 Job 선택 → **Schedule**을 `*/10 * * * *`로 변경 후 저장. (SQL로 등록한 경우 아래 "방법 B"에서 기존 job을 `cron.unschedule` 한 뒤 10분 스케줄로 다시 등록.)
 
 Dashboard에 Cron이 없다면, 아래 SQL 방식으로 등록합니다.
 
@@ -117,7 +122,30 @@ select cron.schedule(
 
 ---
 
-## 5. 안전장치 (10분 구간 + sent_alarms)
+## 5. 텔레그램 비활성화(토글 OFF) 시 크론 반영
+
+**질문**: 프로필에서 "텔레그램 알림 사용" 토글을 끄면, 크론이 깨우는 `check-and-trigger-alarms` / `send-alarm`에서도 발송이 차단되는가?
+
+**답**: 예. 토글 OFF 시 `user_profiles.telegram_enabled`가 `false`로 저장되고, **매 발송 시점마다 DB에서 이 값을 다시 읽어** 발송 여부를 결정합니다.
+
+| 단계 | 확인 내용 |
+|------|-----------|
+| **1. DB 반영** | 앱에서 토글 OFF → `user_profiles.telegram_enabled = false` 업데이트. |
+| **2. get_alarm_payload** | `send-alarm`이 호출될 때 **RPC `get_alarm_payload(p_user_id)`**로 user_profiles를 조회. 이 RPC는 **`telegram_enabled` 컬럼을 포함**해 반환함 (`supabase/migrations/20250128005000_rpc_get_alarm_payload.sql`). |
+| **3. send-alarm** | `shouldSendTelegram(profile)`에서 **`profile.telegram_enabled !== true`이면 `return false`** (`supabase/functions/send-alarm/index.ts`). `sendTelegram`이 false이면 텔레그램 발송 블록으로 진입하지 않음. |
+
+**코드 확인 (send-alarm)**:
+
+```ts
+// send-alarm/index.ts – shouldSendTelegram()
+if (profile.telegram_enabled !== true) return false;
+```
+
+**결론**: 토글 OFF 시 서버는 **매 요청마다 DB의 `telegram_enabled`**를 읽어, 비활성화된 사용자에 대해서는 텔레그램 발송을 건너뜁니다. 크론 관련 업무에 완벽하게 반영됩니다.
+
+---
+
+## 6. 안전장치 (10분 구간 + sent_alarms)
 
 - **문제**: "정확히 현재 시각"만 보면, 크론 실행 시각과 서버 시각이 몇 초 어긋날 때 해당 분을 놓쳐 알람이 안 갈 수 있음.
 - **대응**: `check-and-trigger-alarms`는 다음처럼 동작합니다.
@@ -130,7 +158,7 @@ select cron.schedule(
 
 ---
 
-## 6. 점검 체크리스트
+## 7. 점검 체크리스트
 
 알람이 안 올 때 아래를 순서대로 확인하세요.
 
@@ -143,7 +171,28 @@ select cron.schedule(
 
 ---
 
-## 7. 버튼/UI 정리
+### Supabase에서 확인할 것 (알람이 안 올 때)
+
+| 확인 항목 | Supabase에서 하는 방법 |
+|-----------|-------------------------|
+| **Cron 등록** | Dashboard → **Integrations** → **Cron Jobs** (또는 Database → Extensions에서 `pg_cron` 활성화 여부). `check-and-trigger-alarms`가 **10분마다** 호출되는지 확인. |
+| **포트폴리오 alarm_config** | **Table Editor** → `portfolios` → 해당 행의 `alarm_config` 컬럼. `{"enabled": true, "selectedHours": ["14:30"]}` 처럼 **24시간 형식 HH:mm** (오후 2:30 → `"14:30"`)인지 확인. |
+| **프로필 텔레그램** | **Table Editor** → `user_profiles` → 해당 사용자 행. `telegram_enabled = true`, `telegram_chat_id` 값 있음, `subscription_tier`가 `pro` 또는 `premium`인지 확인. |
+| **Edge Function 로그** | **Edge Functions** → `check-and-trigger-alarms` → **Logs**. 실행 시 "Current KST time:", "window" 로그로 KST 시간과 검사 구간이 맞는지 확인. |
+
+---
+
+### KST “현재 분” 누락 버그 (수정 반영됨)
+
+**증상**: 오후 2:30처럼 **정각·30분**에 맞춘 알람이 그 시간에 오지 않음.
+
+**원인**: `check-and-trigger-alarms`의 `getKSTTimeWindow()`가 **과거 10분 구간**을 만들 때 **현재 분을 제외**하고 있었음. 예: 크론이 14:30 KST에 실행되면 윈도우가 `["14:20",...,"14:29"]`만 포함해 `"14:30"`이 빠짐 → 14:30 알람이 그 회차에서 스킵되고, 다음 크론(14:40)에서야 14:30이 윈도우에 포함됨.
+
+**수정**: `getKSTTimeWindow()`에서 **현재 분을 포함**하도록 루프를 `i >= 0`으로 변경. 이제 14:30 KST 실행 시 윈도우에 `"14:30"`이 포함되어 해당 분에 알람이 발송됨.
+
+---
+
+## 8. 버튼/UI 정리
 
 - **새 버튼을 만들 필요는 없습니다.**  
   - 텔레그램 연결: 프로필(모달) → Pro/Premium일 때만 보이는 **「텔레그램 연결하기」** 로 연결.  
@@ -153,7 +202,7 @@ select cron.schedule(
 
 ---
 
-## 8. Free 사용자도 텔레그램 수신하게 하려면
+## 9. Free 사용자도 텔레그램 수신하게 하려면
 
 현재는 `send-alarm` → `shouldSendTelegram()`에서 **Pro/Premium만** 텔레그램 발송을 허용합니다.  
 Free에서도 텔레그램 발송을 허용하려면:

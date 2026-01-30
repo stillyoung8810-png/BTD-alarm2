@@ -38,14 +38,14 @@ function getCurrentKSTTimeString(): string {
   return `${hh}:${mm}`;
 }
 
-/** 과거 WINDOW_MINUTES분 구간의 KST HH:mm 목록 (현재 분 제외, 예: 15:10 실행 시 ["15:00","15:01",...,"15:09"]) */
+/** 과거 WINDOW_MINUTES분 구간의 KST HH:mm 목록 (현재 분 포함, 예: 15:10 실행 시 ["15:00","15:01",...,"15:10"]) */
 function getKSTTimeWindow(): string[] {
   const now = new Date();
   const utcHour = now.getUTCHours();
   const utcMinute = now.getUTCMinutes();
   const kstTotalMinutes = (utcHour + 9) * 60 + utcMinute;
   const window: string[] = [];
-  for (let i = WINDOW_MINUTES; i >= 1; i--) {
+  for (let i = WINDOW_MINUTES; i >= 0; i--) {
     const m = kstTotalMinutes - i;
     const dayMinutes = ((m % (24 * 60)) + (24 * 60)) % (24 * 60);
     const h = Math.floor(dayMinutes / 60);

@@ -14,11 +14,15 @@ interface AuthModalsProps {
   currentUserEmail?: string | null;
   currentTier?: 'free' | 'pro' | 'premium' | null;
   currentUserId?: string;
-  telegramEnabled?: boolean;
+  /** 텔레그램 계정 연결 여부 (연결됨 표시용) */
   telegramConnectedAt?: string | null;
+  /** 텔레그램 알림 사용 여부 (토글 값, user_profiles.telegram_enabled) */
+  telegramAlertsEnabled?: boolean;
+  /** 텔레그램 알림 사용 여부 변경 시 호출 (DB 업데이트용) */
+  onTelegramAlertsEnabledChange?: (enabled: boolean) => void;
 }
 
-const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchType, onLogin, onLogout, currentUserEmail, currentTier = 'free', currentUserId, telegramEnabled = false, telegramConnectedAt = null }) => {
+const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchType, onLogin, onLogout, currentUserEmail, currentTier = 'free', currentUserId, telegramConnectedAt = null, telegramAlertsEnabled = false, onTelegramAlertsEnabledChange }) => {
   const t = I18N[lang];
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -558,15 +562,20 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
                      {lang === 'ko' ? '텔레그램 알림' : 'TELEGRAM'}
                    </p>
-                   {telegramEnabled ? (
-                     <p className="text-sm font-bold text-emerald-500 dark:text-emerald-400">
-                       {lang === 'ko' ? '연결됨' : 'Connected'}
-                       {telegramConnectedAt && (
+                   {telegramConnectedAt ? (
+                     <div className="flex items-center justify-between gap-3">
+                       <p className="text-sm font-bold text-emerald-500 dark:text-emerald-400">
+                         {lang === 'ko' ? '연결됨' : 'Connected'}
                          <span className="text-slate-500 dark:text-slate-400 font-normal ml-1">
                            ({new Date(telegramConnectedAt).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-US')})
                          </span>
-                       )}
-                     </p>
+                       </p>
+                       <Toggle
+                         checked={telegramAlertsEnabled}
+                         onChange={(v) => onTelegramAlertsEnabledChange?.(v)}
+                         aria-label={lang === 'ko' ? '텔레그램 알림 사용' : 'Telegram alerts'}
+                       />
+                     </div>
                    ) : telegramLinkToken ? (
                      <div className="space-y-2 text-left">
                        <p className="text-xs font-bold text-slate-600 dark:text-slate-300">

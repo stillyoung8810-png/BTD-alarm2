@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { I18N } from '../constants';
 import { X, Mail, Lock, LogOut, Key, UserCheck, ShieldCheck, Sparkles, Send } from 'lucide-react';
 import { supabase } from '../services/supabase';
+import Toggle from './Toggle';
 
 interface AuthModalsProps {
   lang: 'ko' | 'en';

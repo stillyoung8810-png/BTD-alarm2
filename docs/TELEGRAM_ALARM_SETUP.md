@@ -4,6 +4,41 @@
 
 ---
 
+## 0. 환경 변수·시크릿 저장 위치 (TELEGRAM_BOT_TOKEN, VITE_TELEGRAM_BOT_USERNAME, INTERNAL_ALARM_SECRET)
+
+| 변수명 | 어디에 저장? | 용도 |
+|--------|----------------|------|
+| **TELEGRAM_BOT_TOKEN** | **Supabase Dashboard** → Edge Functions → **send-alarm** · **telegram-webhook** → 각 함수의 **Secrets**에 동일 값으로 추가 | 봇이 텔레그램 API 호출 시 사용. **절대** 프론트엔드(브라우저)에 노출하면 안 됨. |
+| **VITE_TELEGRAM_BOT_USERNAME** | **프론트엔드 배포 환경** (로컬: 프로젝트 `.env` / `.env.local`, 배포: Vercel·Netlify 등 호스팅의 **Environment Variables**) | 앱에서 "텔레그램 연결하기" 시 `t.me/봇유저명?start=토큰` 링크 생성용. 봇 유저명은 공개되어도 됨. |
+| **INTERNAL_ALARM_SECRET** | **Supabase Dashboard** → Edge Functions → **check-and-trigger-alarms** · **send-alarm** → 각 함수의 **Secrets**에 **동일 값**으로 추가 | check-and-trigger-alarms가 send-alarm 호출 시 헤더로 전달, send-alarm이 검증. 두 함수에 **같은 값**이어야 함. |
+
+- **Supabase 시크릿**: [Supabase Dashboard](https://app.supabase.com) → 프로젝트 → **Edge Functions** → 함수 선택 → **Secrets** (또는 Settings)에서 이름·값 입력.
+- **프론트엔드 .env**: `VITE_` 접두사가 붙은 변수만 Vite가 클라이언트 번들에 포함하므로, `TELEGRAM_BOT_TOKEN`·`INTERNAL_ALARM_SECRET`은 **프론트엔드 .env에 넣지 말 것** (노출 위험). 로컬에서 Edge Function 테스트용으로만 쓰는 경우는 Supabase CLI / Dashboard에서 설정.
+
+### 웹 배포 환경에서 VITE_TELEGRAM_BOT_USERNAME 설정 (.env 없을 때)
+
+웹 서비스는 보통 **배포 플랫폼**에서 빌드하므로, **서버/호스팅 쪽 환경 변수**에 넣어야 합니다. `.env` 파일은 배포 환경에 없어도 됩니다.
+
+1. **사용 중인 배포 서비스** 대시보드에 접속합니다.
+2. 해당 **프로젝트(사이트)** → **Settings** → **Environment Variables** (또는 **Build & deploy** → **Environment**) 메뉴로 이동합니다.
+3. **새 변수 추가**:
+   - **Name**: `VITE_TELEGRAM_BOT_USERNAME`
+   - **Value**: 봇 유저명 (예: `btd_alarm_bot`). @ 없이 입력.
+4. **저장** 후 **한 번 다시 배포(Re-deploy / Rebuild)** 합니다.  
+   Vite는 빌드 시점에 `VITE_` 변수를 코드에 박아 넣기 때문에, 변수를 추가·수정한 뒤에는 **반드시 재빌드**해야 사용자에게 반영됩니다.
+
+| 배포 서비스 | 설정 위치 예시 |
+|-------------|----------------|
+| **Vercel** | Project → Settings → **Environment Variables** → Add (Production / Preview / Development 원하는 것에) |
+| **Netlify** | Site → **Site configuration** → **Environment variables** → Add / Edit |
+| **Cloudflare Pages** | Project → **Settings** → **Environment variables** |
+| **GitHub Pages** (Actions로 빌드) | Repo → **Settings** → **Secrets and variables** → **Actions** → Variables에 추가 후, workflow에서 `env.VITE_TELEGRAM_BOT_USERNAME` 로 참조 |
+| **기타** | 해당 서비스 문서에서 "Environment Variables" 또는 "Build env" 검색 후, 빌드가 실행되는 환경에 변수 추가 |
+
+설정이 반영되면, 다른 사용자도 웹 서비스에서 "텔레그램 연결하기" 버튼을 누를 때 `t.me/봇유저명?start=토큰` 이 올바르게 열립니다.
+
+---
+
 ## 1. 발송 흐름 요약
 
 ```

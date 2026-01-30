@@ -616,6 +616,10 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                              .insert({ user_id: currentUserId, token });
                            if (insertError) throw insertError;
                            setTelegramLinkToken(token);
+                           const botUsername = import.meta.env.VITE_TELEGRAM_BOT_USERNAME as string;
+                           if (botUsername) {
+                             window.open(`https://t.me/${botUsername}?start=${token}`, '_blank', 'noopener,noreferrer');
+                           }
                          } catch (e: any) {
                            setError(e?.message || (lang === 'ko' ? '토큰 생성에 실패했습니다.' : 'Failed to create link token.'));
                          } finally {

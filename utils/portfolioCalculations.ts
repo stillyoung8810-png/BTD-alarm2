@@ -200,6 +200,12 @@ export const determineActiveSection = async (portfolio: Portfolio): Promise<1 | 
       return 1;
     }
 
+    // 20이평 아래인데 구간 2·3을 판별 못한 경우(ma60 등 누락): 구간 3으로 처리
+    // (null 반환 시 QuickInputModal이 기본값 1을 보여주는 문제 방지)
+    if (ma1Price > 0 && ma0Price < ma1Price) {
+      return 3;
+    }
+
     return null;
   } catch (err) {
     console.error('Error determining active section:', err);

@@ -205,6 +205,20 @@ const PortfolioCard: React.FC<{
   const [realizedProfit, setRealizedProfit] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
+  // 이평선 구간매수: 최신 종가·이평선 기준 활성 구간 (일별 매매 실행 표시용)
+  const [maActiveSection, setMaActiveSection] = useState<1 | 2 | 3 | null>(null);
+  useEffect(() => {
+    if (portfolio.strategy.multiSplit) {
+      setMaActiveSection(null);
+      return;
+    }
+    let cancelled = false;
+    determineActiveSection(portfolio).then((section) => {
+      if (!cancelled) setMaActiveSection(section);
+    });
+    return () => { cancelled = true; };
+  }, [portfolio.id, portfolio.strategy.ma0?.stock, portfolio.strategy.ma1?.period, portfolio.strategy.ma2?.period1, portfolio.strategy.ma2?.period2, portfolio.strategy.ma3?.period, portfolio.strategy.multiSplit]);
+
   // 쿼터 손절 모드: DB 플래그 또는 T > a-1 (신규 진입 시 플래그 갱신)
   const T = portfolio.strategy.multiSplit
     ? (() => {
@@ -676,13 +690,12 @@ const PortfolioCard: React.FC<{
       return;
     }
 
-    // 다분할 매매법만: 비동기 데이터(multiSplitExecutionData)가 준비되기 전에 블록을 보내면
-    // 데이터 도착 시 다시 effect가 돌아 연쇄 리렌더/무한루프가 발생하므로, 준비된 경우에만 전달
-    // 이평선 구간매수는 multiSplitExecutionData 없이 바로 블록 생성·전달
-    if (portfolio.strategy.multiSplit && multiSplitExecutionData == null) return;
-
     const a = portfolio.strategy.multiSplit?.totalSplitCount ?? 0;
     const multiSplitOverLimit = portfolio.strategy.multiSplit && a > 0 && currentRound > a;
+
+    // 다분할 매매법: 총투자금 초과(T > a)일 때는 multiSplitExecutionData 없이도 "총투자금 초과" 블록 전달
+    // 그 외에는 비동기 데이터가 준비되기 전에 블록을 보내지 않음 (연쇄 리렌더/무한루프 방지)
+    if (portfolio.strategy.multiSplit && !multiSplitOverLimit && multiSplitExecutionData == null) return;
 
     const block = formatPortfolioDailyExecutionBlock(portfolio, lang, {
       multiSplitExecutionData: multiSplitExecutionData ?? undefined,
@@ -690,6 +703,7 @@ const PortfolioCard: React.FC<{
       multiSplitPhase: multiSplitPhase ?? null,
       isQuarterStopLossActive: isInQuarterMode,
       multiSplitOverLimit: multiSplitOverLimit ?? false,
+      maActiveSection: portfolio.strategy.multiSplit ? undefined : maActiveSection ?? undefined,
     });
 
     // 내용이 이전과 동일하면 상위로 전달하지 않음
@@ -706,7 +720,8 @@ const PortfolioCard: React.FC<{
     multiSplitPhase,
     isInQuarterMode,
     currentRound,
-    // 이평선 구간매수: name·alarm 시간이 바뀌면 블록을 다시 만들어 전달 (텔레그램 daily execution 반영)
+    maActiveSection,
+    // 이평선 구간매수: name·alarm 시간·구간이 바뀌면 블록을 다시 만들어 전달 (텔레그램 daily execution 반영)
     portfolio.id,
     portfolio.name,
     portfolio.alarmconfig?.enabled,
@@ -1077,7 +1092,14 @@ const PortfolioCard: React.FC<{
             </div>
           ) : (
             <div className="text-lg font-black text-blue-900 dark:text-white leading-tight">
-              {t.section} 1: {portfolio.strategy.ma1.stock} {t.buy}
+              {maActiveSection === 1 && `${t.section} 1: ${portfolio.strategy.ma1.stock} ${t.buy}`}
+              {maActiveSection === 2 && `${t.section} 2: ${portfolio.strategy.ma2.stock} ${t.buy}`}
+              {maActiveSection === 3 && `${t.section} 3: ${portfolio.strategy.ma3.stock} ${t.buy}`}
+              {maActiveSection === null && (
+                <span className="text-[12px] text-blue-600/70 dark:text-blue-400/70 font-medium">
+                  {lang === 'ko' ? '구간 확인 중…' : 'Checking section…'}
+                </span>
+              )}
             </div>
           )}
         </div>

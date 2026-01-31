@@ -14,6 +14,8 @@ const STRINGS: Record<Lang, {
   alarmTimes: string;
   noOrder: string;
   overLimit: string;
+  section: string;
+  buy: string;
   locBuy1: string;
   locBuy2: string;
   locSell: string;
@@ -29,6 +31,8 @@ const STRINGS: Record<Lang, {
     alarmTimes: '알람 시간 (KST)',
     noOrder: '오늘 주문 요약은 앱에서 확인해 주세요.',
     overLimit: '매매 내역을 확인하세요. 총투자금을 초과했습니다.',
+    section: '구간',
+    buy: '매수',
     locBuy1: 'LOC 매수1',
     locBuy2: 'LOC 매수2',
     locSell: 'LOC 매도',
@@ -44,6 +48,8 @@ const STRINGS: Record<Lang, {
     alarmTimes: 'Alarm times (KST)',
     noOrder: 'Please check today\'s orders in the app.',
     overLimit: 'Check your trades. Total invested has exceeded the limit.',
+    section: 'Section',
+    buy: 'Buy',
     locBuy1: 'LOC Buy1',
     locBuy2: 'LOC Buy2',
     locSell: 'LOC Sell',
@@ -93,6 +99,8 @@ export function formatPortfolioDailyExecutionBlock(
     isQuarterStopLossActive?: boolean;
     /** 다분할 매매법: 총투자금이 1회 투자금 × a 를 초과한 경우 true */
     multiSplitOverLimit?: boolean;
+    /** 이평선 구간매수: 현재 활성 구간(1/2/3). 있으면 "구간 N: 종목 매수" 한 줄 추가 후 텔레그램에도 노출 */
+    maActiveSection?: 1 | 2 | 3 | null;
   },
 ): string {
   const s = STRINGS[lang] ?? STRINGS.ko;
@@ -103,8 +111,17 @@ export function formatPortfolioDailyExecutionBlock(
   lines.push(portfolio.strategy.multiSplit ? `- ${s.strategyMultiSplit}` : `- ${s.strategyMa}`);
   lines.push(`- ${s.alarmTimes}: ${hours || '-'}`);
 
-  // 이평선 구간매수: LOC/MOC 등 상세는 없고, 포트폴리오명·전략·알람 시간 + 안내만 (텔레그램 DAILY EXECUTION 섹션에 그대로 노출)
+  // 이평선 구간매수: 구간·매수 종목이 있으면 한 줄 추가, 그 다음 안내 문구 (텔레그램 DAILY EXECUTION에 그대로 노출)
   if (!portfolio.strategy.multiSplit) {
+    const { maActiveSection } = options;
+    if (maActiveSection === 1 || maActiveSection === 2 || maActiveSection === 3) {
+      const stock = maActiveSection === 1
+        ? portfolio.strategy.ma1.stock
+        : maActiveSection === 2
+          ? portfolio.strategy.ma2.stock
+          : portfolio.strategy.ma3.stock;
+      lines.push(`- ${s.section} ${maActiveSection}: ${stock} ${s.buy}`);
+    }
     lines.push(`- ${s.noOrder}`);
     return lines.join('\n');
   }

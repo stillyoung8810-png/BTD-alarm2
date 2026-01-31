@@ -586,6 +586,11 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                              ? '아래 링크를 클릭하거나, 텔레그램에서 봇에게 다음을 보내주세요:'
                              : 'Click the link below or send the following to the bot on Telegram:'}
                          </p>
+                         <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                           {lang === 'ko'
+                             ? '봇 유저네임(@btd_alarm_bot) 을 검색하세요.'
+                             : 'Search for the bot username (@btd_alarm_bot).'}
+                         </p>
                          <p className="font-mono text-sm font-black bg-slate-800 text-emerald-400 px-3 py-2 rounded-xl break-all">
                            /start {telegramLinkToken}
                          </p>

@@ -1652,30 +1652,28 @@ const App: React.FC = () => {
             onLogout={async () => { 
               try {
                 const { error } = await supabase.auth.signOut();
-                
                 if (error) {
                   console.error('Logout error:', error);
-                  // 에러가 발생해도 상태는 초기화 (세션이 이미 만료되었을 수 있음)
                 }
-                
-                // 로그아웃 성공 또는 에러와 관계없이 상태 초기화
+                // 카카오/구글 OAuth 여부와 관계없이, 로컬에 남은 Supabase 세션 토큰을 확실히 제거
+                // (비우지 않으면 새로고침 시 getSession()이 이전 토큰을 읽어 다시 로그인된 것처럼 보일 수 있음)
+                clearAuthStorage();
+
                 setUser(null); 
                 setUserProfile(null);
                 setPortfolios([]); 
                 setAuthModal(null);
 
-                // 배포 환경 포함 전체 상태를 확실히 초기화
                 if (typeof window !== 'undefined') {
                   window.location.reload();
                 }
               } catch (err) {
                 console.error('Unexpected logout error:', err);
-                // 예상치 못한 에러가 발생해도 상태는 초기화
+                clearAuthStorage();
                 setUser(null); 
                 setUserProfile(null);
                 setPortfolios([]); 
                 setAuthModal(null);
-
                 if (typeof window !== 'undefined') {
                   window.location.reload();
                 }

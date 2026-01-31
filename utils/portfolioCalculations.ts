@@ -1,5 +1,5 @@
 import { Portfolio, Trade } from '../types';
-import { fetchStockPrices } from '../services/stockService';
+import { fetchStockPrices, fetchStockPriceHistory, calculateMA } from '../services/stockService';
 
 /**
  * 포트폴리오의 현재 보유 내역을 계산합니다
@@ -101,27 +101,60 @@ export const calculateYield = async (portfolio: Portfolio): Promise<number> => {
   return ((currentValuation / investedAmount) - 1) * 100;
 };
 
+/** 캐시(StockData)에 있는 표준 이평선 기간. 이 기간은 fetchStockPrices 결과의 ma20/ma60/ma120를 그대로 사용 */
+const STANDARD_MA_PERIODS = [20, 60, 120];
+
 /**
- * StockData에서 period에 해당하는 MA 값 반환 (20/60/120만 지원, 그 외는 20일선 폴백)
+ * StockData에서 period에 해당하는 MA 값 반환 (20/60/120만 사용, 그 외는 0 – 별도 계산 필요)
  */
-function getMAForPeriod(data: { ma20?: number; ma60?: number; ma120?: number } | undefined, period: number): number {
+function getCachedMA(data: { ma20?: number; ma60?: number; ma120?: number } | undefined, period: number): number {
   if (!data) return 0;
-  if (period <= 20) return data.ma20 ?? 0;
-  if (period <= 60) return data.ma60 ?? 0;
-  if (period <= 120) return data.ma120 ?? 0;
-  return data.ma20 ?? 0;
+  if (period === 20) return data.ma20 ?? 0;
+  if (period === 60) return data.ma60 ?? 0;
+  if (period === 120) return data.ma120 ?? 0;
+  return 0;
+}
+
+/**
+ * 가격 이력 배열에서 최신 N일 종가로 이동평균을 직접 계산합니다.
+ * 이력은 날짜 오름차순(과거→최신)이어야 하며, IndexedDB/Supabase 캐시 데이터를 사용합니다.
+ */
+function computeMAFromHistory(
+  history: Array<{ price: number }>,
+  period: number
+): number {
+  if (!history.length || period < 1) return 0;
+  const prices = history.map((h) => h.price);
+  const lastN = prices.slice(-period);
+  return calculateMA(lastN, period);
+}
+
+/**
+ * 기준 주식의 특정 기간 이평선 값을 반환합니다.
+ * 20/60/120일은 캐시(StockData)에서 사용하고, 그 외 기간은 가격 이력을 불러와 직접 계산합니다.
+ */
+async function getMAForBaseStock(
+  symbol: string,
+  period: number,
+  baseData: { ma20?: number; ma60?: number; ma120?: number } | undefined,
+  historyCache: Array<{ price: number }> | null
+): Promise<number> {
+  if (STANDARD_MA_PERIODS.includes(period)) {
+    const cached = getCachedMA(baseData, period);
+    if (cached > 0) return cached;
+  }
+  // 20/60/120이 아니거나 캐시에 없으면 가격 이력으로 계산
+  const needed = historyCache ?? (await fetchStockPriceHistory(symbol, Math.max(period + 30, 120)));
+  const pricesOnly = needed.map((h) => ({ price: h.price }));
+  return computeMAFromHistory(pricesOnly, period);
 }
 
 /**
  * 현재 활성화된 구간을 판별합니다.
  * - 구간 0에서 선택한 **기준 주식(ma0.stock)** 하나만 사용합니다.
  * - 기준 주식의 **종가**와 **기준 주식의** 이동평균선(ma1.period, ma2.period1/period2, ma3.period)과의 관계로 구간 1~3을 정의합니다.
- * - 각 구간에서 선택한 주식(ma1.stock, ma2.stock, ma3.stock)은 해당 구간일 때 매수할 종목일 뿐, 이평선 계산에는 사용하지 않습니다.
- *
- * 구간 정의 (예: 기준주식 QQQ, 이평선 20·60일):
- * - 구간 1: QQQ 종가가 QQQ의 20일 이평선 **위**에 있음
- * - 구간 2: QQQ 종가가 QQQ의 20~60일 이평선 **사이**에 있음
- * - 구간 3: QQQ 종가가 QQQ의 60일 이평선 **아래**에 있음
+ * - 20/60/120일 이평선은 캐시(IndexedDB 등)의 ma20/ma60/ma120를 사용하고,
+ *   그 외 기간(예: 30, 50일)은 가격 이력을 불러와 직접 계산한 뒤 비교에 사용합니다.
  */
 export const determineActiveSection = async (portfolio: Portfolio): Promise<1 | 2 | 3 | null> => {
   try {
@@ -132,11 +165,25 @@ export const determineActiveSection = async (portfolio: Portfolio): Promise<1 | 
 
     if (!ma0Price) return null;
 
-    // 모든 이평선은 기준 주식(ma0.stock)의 값만 사용
-    const ma1Price = getMAForPeriod(baseData, portfolio.strategy.ma1.period);
-    const ma2Price1 = getMAForPeriod(baseData, portfolio.strategy.ma2.period1);
-    const ma2Price2 = getMAForPeriod(baseData, portfolio.strategy.ma2.period2);
-    const ma3Price = getMAForPeriod(baseData, portfolio.strategy.ma3.period);
+    const p1 = portfolio.strategy.ma1.period;
+    const p2a = portfolio.strategy.ma2.period1;
+    const p2b = portfolio.strategy.ma2.period2;
+    const p3 = portfolio.strategy.ma3.period;
+
+    const needsHistory = [p1, p2a, p2b, p3].some(
+      (period) => !STANDARD_MA_PERIODS.includes(period)
+    );
+    let historyCache: Array<{ price: number }> | null = null;
+    if (needsHistory) {
+      const maxPeriod = Math.max(p1, p2a, p2b, p3, 120);
+      const history = await fetchStockPriceHistory(ma0Stock, maxPeriod + 30);
+      historyCache = history.map((h) => ({ price: h.price }));
+    }
+
+    const ma1Price = await getMAForBaseStock(ma0Stock, p1, baseData, historyCache);
+    const ma2Price1 = await getMAForBaseStock(ma0Stock, p2a, baseData, historyCache);
+    const ma2Price2 = await getMAForBaseStock(ma0Stock, p2b, baseData, historyCache);
+    const ma3Price = await getMAForBaseStock(ma0Stock, p3, baseData, historyCache);
 
     // 구간 3: 기준 주식이 ma3 이평선 **아래**
     if (ma3Price > 0 && ma0Price < ma3Price) {

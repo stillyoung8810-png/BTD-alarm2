@@ -128,11 +128,15 @@ const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSav
   };
 
   const removeTime = (timeString: string) => {
-    setSelectedHours(selectedHours.filter(h => h !== timeString));
+    const next = selectedHours.filter(h => h !== timeString);
+    setSelectedHours(next);
+    if (next.length === 0) setEnabled(false); // 설정된 시간이 없으면 자동 OFF
   };
 
+  // ON인데 설정된 시간이 없으면 OFF로 저장 (자동 비활성화). 토글 ON은 허용해 시간 설정 UI가 보이게 함.
   const handleSave = () => {
-    onSave({ enabled, selectedHours });
+    const effectiveEnabled = enabled && selectedHours.length > 0;
+    onSave({ enabled: effectiveEnabled, selectedHours: effectiveEnabled ? selectedHours : [] });
   };
 
   const isAllSlotsFilled = selectedHours.length >= MAX_SLOTS;

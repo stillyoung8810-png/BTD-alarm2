@@ -721,6 +721,9 @@ const PortfolioCard: React.FC<{
     // 그 외에는 비동기 데이터가 준비되기 전에 블록을 보내지 않음 (연쇄 리렌더/무한루프 방지)
     if (portfolio.strategy.multiSplit && !multiSplitOverLimit && multiSplitExecutionData == null) return;
 
+    // 이평선 구간매수: 구간 계산(maBlockVersion)이 끝나기 전에는 report 안 함 → 알람 켜는 순간 report→부모 리렌더→effect 재실행 무한루프 방지
+    if (!portfolio.strategy.multiSplit && isAlarmEnabled && maBlockVersion === 0) return;
+
     const block = formatPortfolioDailyExecutionBlock(portfolio, lang, {
       multiSplitExecutionData: multiSplitExecutionData ?? undefined,
       quarterStopLossData: quarterStopLossData ?? undefined,
@@ -744,13 +747,13 @@ const PortfolioCard: React.FC<{
     multiSplitPhase,
     isInQuarterMode,
     currentRound,
-    // maActiveSection 대신 maBlockVersion만 의존 → report→부모 리렌더 시 연쇄 재실행/무한루프 방지
     maBlockVersion,
     portfolio.id,
     portfolio.name,
     portfolio.alarmconfig?.enabled,
     (portfolio.alarmconfig?.selectedHours ?? []).join(','),
-    portfolio.strategy.multiSplit,
+    // 객체 참조 대신 원시값 사용 → 부모 리렌더 시 참조만 바뀌어도 effect 재실행되는 무한루프 방지
+    !!portfolio.strategy.multiSplit,
   ]);
 
   // 최신 portfolio를 참조하기 위한 ref (metrics 계산용)

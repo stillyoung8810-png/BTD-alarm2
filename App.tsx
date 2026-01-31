@@ -925,6 +925,12 @@ const App: React.FC = () => {
     return result;
   }, [portfolios]);
 
+  // 대시보드에 넘길 포트폴리오 목록 – 매 렌더마다 filter()로 새 배열이 되면 자식 alarmIds/effect 연쇄 실행·무한루프 위험
+  const activePortfolios = useMemo(
+    () => portfolios.filter(p => !p.isClosed),
+    [portfolios]
+  );
+
   // 전체 포트폴리오의 현재 평가액 및 24h 변동 계산 + 캐싱
   useEffect(() => {
     const symbols = Object.keys(aggregateHoldings).filter(sym => aggregateHoldings[sym] > 0);
@@ -1479,7 +1485,7 @@ const App: React.FC = () => {
             user ? (
               <Dashboard 
                 lang={lang}
-                portfolios={portfolios.filter(p => !p.isClosed)} 
+                portfolios={activePortfolios} 
                 onClosePortfolio={(id) => setTerminateTargetId(id)}
                 onDeletePortfolio={handleDeletePortfolio}
                 onUpdatePortfolio={handleUpdatePortfolio}

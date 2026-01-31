@@ -73,6 +73,9 @@ const Dashboard: React.FC<DashboardProps> = ({
     [portfolios]
   );
 
+  // 의존성을 문자열로 고정 → 동일 id 집합이면 effect 재실행 방지 (알람 설정 시 연쇄 리렌더/무한루프 방지)
+  const alarmIdsKey = useMemo(() => alarmIds.join(','), [alarmIds]);
+
   useEffect(() => {
     if (!onDailyExecutionSummaryChange) return;
     // 알람이 없으면 null로 한 번만 전달
@@ -93,7 +96,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     if (lastDailyExecutionSummaryRef.current === next) return;
     lastDailyExecutionSummaryRef.current = next;
     onDailyExecutionSummaryChange(next);
-  }, [alarmIds, dailyExecutionBlocks, onDailyExecutionSummaryChange]);
+  }, [alarmIdsKey, dailyExecutionBlocks, onDailyExecutionSummaryChange]);
 
   const t = I18N[lang];
   const isPositiveChange = totalValuationChange >= 0;
@@ -207,17 +210,38 @@ const PortfolioCard: React.FC<{
 
   // 이평선 구간매수: 최신 종가·이평선 기준 활성 구간 (일별 매매 실행 표시용)
   const [maActiveSection, setMaActiveSection] = useState<1 | 2 | 3 | null>(null);
+  // 구간이 바뀔 때만 블록 effect를 한 번 돌리기 위한 버전 (maActiveSection을 의존성에 넣으면 report→부모 리렌더→무한루프 위험)
+  const [maBlockVersion, setMaBlockVersion] = useState(0);
+  const maSectionDepsKey = React.useMemo(
+    () =>
+      portfolio.strategy.multiSplit
+        ? ''
+        : `${portfolio.id}-${portfolio.strategy.ma0?.stock}-${portfolio.strategy.ma1?.period}-${portfolio.strategy.ma2?.period1}-${portfolio.strategy.ma2?.period2}-${portfolio.strategy.ma3?.period}`,
+    [
+      portfolio.id,
+      portfolio.strategy.multiSplit,
+      portfolio.strategy.ma0?.stock,
+      portfolio.strategy.ma1?.period,
+      portfolio.strategy.ma2?.period1,
+      portfolio.strategy.ma2?.period2,
+      portfolio.strategy.ma3?.period,
+    ]
+  );
   useEffect(() => {
     if (portfolio.strategy.multiSplit) {
       setMaActiveSection(null);
       return;
     }
+    if (!maSectionDepsKey) return;
     let cancelled = false;
     determineActiveSection(portfolio).then((section) => {
-      if (!cancelled) setMaActiveSection(section);
+      if (!cancelled) {
+        setMaActiveSection((prev) => (prev === section ? prev : section));
+        setMaBlockVersion((v) => v + 1); // 구간 계산 완료 시 한 번만 올림 → 블록 effect는 maBlockVersion에만 의존해 무한루프 방지
+      }
     });
     return () => { cancelled = true; };
-  }, [portfolio.id, portfolio.strategy.ma0?.stock, portfolio.strategy.ma1?.period, portfolio.strategy.ma2?.period1, portfolio.strategy.ma2?.period2, portfolio.strategy.ma3?.period, portfolio.strategy.multiSplit]);
+  }, [maSectionDepsKey, portfolio.strategy.multiSplit]);
 
   // 쿼터 손절 모드: DB 플래그 또는 T > a-1 (신규 진입 시 플래그 갱신)
   const T = portfolio.strategy.multiSplit
@@ -504,7 +528,7 @@ const PortfolioCard: React.FC<{
     calculateQuarterStopLoss();
   }, [portfolio.id, portfolio.trades.length, portfolio.strategy.multiSplit?.targetStock, portfolio.feeRate, isInQuarterMode, recentTradingDays]);
 
-  // 다분할 매매법의 일별 매매 실행 계산
+  // 다분할 매매법의 일별 매매 실행 계산 (effect 의존성에 multiSplitExecutionData 넣지 않음 → setState→블록 effect→report→부모 리렌더 시 재실행/무한루프 방지)
   const [multiSplitExecutionData, setMultiSplitExecutionData] = useState<{
     phase: 'first' | 'second' | 'quarter' | null;
     locBuy1?: { price: number; quantity: number };
@@ -720,8 +744,8 @@ const PortfolioCard: React.FC<{
     multiSplitPhase,
     isInQuarterMode,
     currentRound,
-    maActiveSection,
-    // 이평선 구간매수: name·alarm 시간·구간이 바뀌면 블록을 다시 만들어 전달 (텔레그램 daily execution 반영)
+    // maActiveSection 대신 maBlockVersion만 의존 → report→부모 리렌더 시 연쇄 재실행/무한루프 방지
+    maBlockVersion,
     portfolio.id,
     portfolio.name,
     portfolio.alarmconfig?.enabled,

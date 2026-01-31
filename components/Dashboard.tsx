@@ -681,11 +681,15 @@ const PortfolioCard: React.FC<{
     // 이평선 구간매수는 multiSplitExecutionData 없이 바로 블록 생성·전달
     if (portfolio.strategy.multiSplit && multiSplitExecutionData == null) return;
 
+    const a = portfolio.strategy.multiSplit?.totalSplitCount ?? 0;
+    const multiSplitOverLimit = portfolio.strategy.multiSplit && a > 0 && currentRound > a;
+
     const block = formatPortfolioDailyExecutionBlock(portfolio, lang, {
       multiSplitExecutionData: multiSplitExecutionData ?? undefined,
       quarterStopLossData: quarterStopLossData ?? undefined,
       multiSplitPhase: multiSplitPhase ?? null,
       isQuarterStopLossActive: isInQuarterMode,
+      multiSplitOverLimit: multiSplitOverLimit ?? false,
     });
 
     // 내용이 이전과 동일하면 상위로 전달하지 않음
@@ -701,6 +705,7 @@ const PortfolioCard: React.FC<{
     quarterStopLossData,
     multiSplitPhase,
     isInQuarterMode,
+    currentRound,
     // 이평선 구간매수: name·alarm 시간이 바뀌면 블록을 다시 만들어 전달 (텔레그램 daily execution 반영)
     portfolio.id,
     portfolio.name,

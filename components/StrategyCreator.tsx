@@ -411,8 +411,8 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
           )}
           <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
             {lang === 'ko' 
-              ? '구간 0에서 선택한 주식의 가격을 구간 1, 2, 3의 이동평균선 위치와 비교하여 매수 여부를 결정합니다.' 
-              : 'The price of the Section 0 stock is compared to the MA positions in Sections 1, 2, and 3 to determine execution.'}
+              ? '구간 0에서 선택한 주식의 종가와 이동평균선과의 관계로 구간 1~3을 정의합니다.' 
+              : 'Sections 1–3 are defined by the relationship between the Section 0 stock\'s close and its moving averages.'}
           </p>
         </div>
 
@@ -570,7 +570,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
         )}
 
         <p className="text-[10px] text-slate-500 font-medium">
-          {lang === 'ko' ? `구간 0 주식이 구간 1 이동평균선 아래에 있을 때 매수합니다.` : `Executes buy when Section 0 stock is below Section 1 MA.`}
+          {lang === 'ko' ? `기준 주식의 종가가 설정한 기준주식의 이동평균선 위에 있는 경우로 정의합니다.` : `Defined when the reference stock\'s close is above the reference stock\'s MA.`}
         </p>
       </div>
 
@@ -731,7 +731,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
         )}
 
         <p className="text-[10px] text-slate-500 font-medium">
-          {lang === 'ko' ? `구간 0 주식이 구간 2의 두 이동평균선 사이에 있을 때 매수합니다.` : `Executes buy when Section 0 stock is between Section 2 MAs.`}
+          {lang === 'ko' ? `기준 주식의 종가가 설정한 2개의 이동평균선(기준주식의) 사이에 있는 경우로 정의합니다.` : `Defined when the reference stock\'s close is between the reference stock\'s two MAs.`}
         </p>
       </div>
 
@@ -857,6 +857,10 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
             </p>
           </div>
         )}
+
+        <p className="text-[10px] text-slate-500 font-medium">
+          {lang === 'ko' ? `기준 주식의 종가가 설정한 이동평균선 아래에 있는 경우로 정의합니다.` : `Defined when the reference stock's close is below the reference stock's MA.`}
+        </p>
 
         <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-start gap-3">
           <AlertTriangle className="text-amber-500 shrink-0 mt-0.5" size={16} />

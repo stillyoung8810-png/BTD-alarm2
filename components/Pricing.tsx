@@ -1,13 +1,68 @@
-import React from 'react';
-import { Sparkles, Star, Crown, Check, Lock, Zap } from 'lucide-react';
+import React, { useState, useCallback, useRef } from 'react';
+import { Sparkles, Star, Crown, Check, Lock, Zap, Bell, Clock } from 'lucide-react';
 
 interface PricingProps {
   lang: 'ko' | 'en';
   currentTier: 'free' | 'pro' | 'premium' | string;
 }
 
+// 텔레그램 알람 미리보기용 3종 메시지 데이터 (기본 분할 / 커스텀 혼합 / 손절·특수대응)
+const TELEGRAM_PREVIEW_CARDS = (isKo: boolean) => [
+  {
+    badge: isKo ? '기본 분할매수' : 'Basic Split',
+    badgeClass: 'bg-blue-500/20 text-blue-200 border-blue-400/50',
+    intro: isKo ? '설정하신 매매 알람 시간입니다. 포트폴리오 전략을 확인해 주세요.' : 'Your set trading alarm time. Please check your portfolio strategy.',
+    time: '18:00',
+    lines: [
+      { text: isKo ? '다분할 매매법' : 'Multi-split trading', type: 'text' },
+      { text: isKo ? '알람 시간 (KST): 17:10, 18:00' : 'Alarm (KST): 17:10, 18:00', type: 'text' },
+      { text: 'LOC 매수1: 55.14 / 9주', type: 'buy' },
+      { text: 'LOC 매수2: 60.37 / 8주', type: 'buy' },
+      { text: 'LOC 매도: 60.38 / 4주', type: 'sell' },
+      { text: '지정가 매도: 60.65 / 13주', type: 'sell' },
+    ],
+  },
+  {
+    badge: isKo ? '커스텀 전략 혼합' : 'Custom Strategy Mix',
+    badgeClass: 'bg-purple-500/20 text-purple-200 border-purple-400/50',
+    intro: isKo ? '설정하신 매매 알람 시간입니다. 포트폴리오 전략을 확인해 주세요.' : 'Your set trading alarm time. Please check your portfolio strategy.',
+    time: '09:00',
+    lines: [
+      { text: isKo ? '다분할 매매법' : 'Multi-split trading', type: 'text' },
+      { text: isKo ? '알람 시간 (KST): 09:00' : 'Alarm (KST): 09:00', type: 'text' },
+      { text: 'LOC 매수2: 54.56 / 18주', type: 'buy' },
+      { text: 'LOC 매도: 54.57 / 100주', type: 'sell' },
+      { text: '지정가 매도: 60.65 / 300주', type: 'sell' },
+      { text: '—', type: 'text' },
+      { text: isKo ? '이평선 구간매수' : 'MA interval buy', type: 'text' },
+      { text: isKo ? '구간 2: QLD 매수' : 'Section 2: QLD Buy', type: 'buy' },
+      { text: isKo ? '오늘 주문 요약은 앱에서 확인해 주세요.' : 'Check today\'s order summary in the app.', type: 'footer' },
+    ],
+  },
+  {
+    badge: isKo ? '손절 및 특수대응' : 'Stop-loss & Special',
+    badgeClass: 'bg-amber-500/20 text-amber-200 border-amber-400/50',
+    intro: isKo ? '설정하신 매매 알람 시간입니다. 포트폴리오 전략을 확인해 주세요.' : 'Your set trading alarm time. Please check your portfolio strategy.',
+    time: '09:00',
+    lines: [
+      { text: isKo ? '이평선 구간매수' : 'MA interval buy', type: 'text' },
+      { text: isKo ? '알람 시간 (KST): 09:00' : 'Alarm (KST): 09:00', type: 'text' },
+      { text: isKo ? '구간 3: QQQ 매수' : 'Section 3: QQQ Buy', type: 'buy' },
+      { text: isKo ? '오늘 주문 요약은 앱에서 확인해 주세요.' : 'Check today\'s order summary in the app.', type: 'footer' },
+      { text: '—', type: 'text' },
+      { text: isKo ? '다분할 매매법' : 'Multi-split trading', type: 'text' },
+      { text: 'MOC 매도: 104.25 주', type: 'sell' },
+      { text: isKo ? 'MOC 매도 하여 쿼터 손절 모드 시작' : 'MOC sell to start quarter stop-loss mode', type: 'sell' },
+    ],
+  },
+];
+
 const Pricing: React.FC<PricingProps> = ({ lang, currentTier }) => {
   const isKo = lang === 'ko';
+  const [telegramCardIndex, setTelegramCardIndex] = useState(0);
+  const previewCards = TELEGRAM_PREVIEW_CARDS(isKo);
+  const cycleNext = useCallback(() => setTelegramCardIndex((i) => (i + 1) % previewCards.length), [previewCards.length]);
+  const touchStartX = useRef<number>(0);
 
   const tiers = [
     {
@@ -216,6 +271,131 @@ const Pricing: React.FC<PricingProps> = ({ lang, currentTier }) => {
             );
           })}
         </div>
+
+        {/* 텔레그램 알람 미리보기 – 인터랙티브 스택 카드 */}
+        <section className="mt-24 md:mt-32 scroll-mt-20">
+          <div className="text-center mb-8">
+            <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-900/80 border border-slate-700 text-[10px] font-black uppercase tracking-[0.2em] text-slate-200">
+              <Bell size={14} className="text-amber-300" />
+              {isKo ? '텔레그램 알람 미리보기' : 'Telegram Alarm Preview'}
+            </span>
+            <h3 className="mt-4 text-2xl md:text-3xl font-black tracking-tight text-white">
+              {isKo ? '매일 정해진 시간, 한 통의 메시지로' : 'One message at your set time'}
+            </h3>
+            <p className="mt-2 text-sm text-slate-400 max-w-xl mx-auto">
+              {isKo
+                ? 'LOC 매수가·수량·지정가 매도점까지 텔레그램 한 통으로 확인하세요.'
+                : 'Check LOC buy price, quantity, and limit sell in a single Telegram message.'}
+            </p>
+          </div>
+
+          {/* 스마트폰 목업 + 스택 카드 */}
+          <div className="flex justify-center">
+            <div
+              className="relative w-[min(320px,90vw)] select-none"
+              style={{ perspective: '1200px' }}
+            >
+              {/* 폰 베젤 */}
+              <div className="relative rounded-[2.5rem] bg-slate-800 shadow-2xl border border-slate-600/80 overflow-hidden aspect-[9/19] max-h-[520px]">
+                {/* 폰 내부 (채팅 배경) */}
+                <div className="absolute inset-3 rounded-[2rem] bg-[#0e1117] overflow-hidden">
+                  {/* 봇 프로필 헤더 */}
+                  <div className="flex items-center gap-3 px-4 py-3 border-b border-white/5">
+                    <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-black text-lg">B</div>
+                    <div>
+                      <div className="text-sm font-bold text-white">btd_alarm_bot</div>
+                      <div className="text-[10px] text-slate-500">bot</div>
+                    </div>
+                  </div>
+
+                  {/* 스택된 메시지 카드 영역 (클릭/스와이프로 순환) */}
+                  <div
+                    className="absolute inset-x-2 top-14 bottom-12 flex items-start justify-center pt-2 cursor-pointer touch-pan-y"
+                    onClick={cycleNext}
+                    onTouchStart={(e) => { touchStartX.current = e.touches[0].clientX; }}
+                    onTouchEnd={(e) => {
+                      const endX = e.changedTouches[0].clientX;
+                      const diff = touchStartX.current - endX;
+                      if (Math.abs(diff) > 40) setTelegramCardIndex((i) => (diff > 0 ? (i + 1) : i - 1 + previewCards.length) % previewCards.length);
+                    }}
+                  >
+                    {previewCards.map((card, idx) => {
+                      const order = (idx - telegramCardIndex + previewCards.length) % previewCards.length;
+                      const isFront = order === 0;
+                      const z = order === 0 ? 30 : order === 1 ? 20 : 10;
+                      const translateX = order === 0 ? 0 : order === 1 ? 12 : 24;
+                      const translateY = order === 0 ? 0 : order === 1 ? 8 : 16;
+                      const rotate = order === 0 ? 0 : order === 1 ? -2 : -4;
+                      const scale = order === 0 ? 1 : order === 1 ? 0.98 : 0.96;
+                      return (
+                        <div
+                          key={idx}
+                          className="absolute left-0 right-0 rounded-2xl border border-white/10 bg-slate-800/95 shadow-xl overflow-hidden transition-all duration-300 ease-out"
+                          style={{
+                            zIndex: z,
+                            transform: `translate(${translateX}px, ${translateY}px) rotate(${rotate}deg) scale(${scale})`,
+                            boxShadow: isFront ? '0 20px 40px rgba(0,0,0,0.4)' : '0 8px 20px rgba(0,0,0,0.3)',
+                          }}
+                        >
+                          <div className="p-4 space-y-2 text-left">
+                            {/* 상단 배지 */}
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <span className="inline-flex items-center gap-1.5 text-amber-400 font-black text-xs">
+                                <Bell size={12} /> BTD 매매 알람
+                              </span>
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${card.badgeClass}`}>
+                                {card.badge}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-300 leading-snug">{card.intro}</p>
+                            <div className="flex items-center gap-1.5 text-slate-400 text-[11px]">
+                              <Clock size={12} /> KST {card.time}
+                            </div>
+                            <div className="border-t border-white/5 pt-2 mt-2">
+                              <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                                <span aria-hidden>📁</span> DAILY EXECUTION
+                              </div>
+                              {card.lines.map((line, i) => (
+                                <div
+                                  key={i}
+                                  className={`text-[11px] leading-relaxed ${
+                                    line.type === 'buy' ? 'text-emerald-400' : line.type === 'sell' ? 'text-rose-400' : line.type === 'footer' ? 'text-slate-500 italic' : 'text-slate-300'
+                                  }`}
+                                >
+                                  {line.type === 'text' || line.type === 'footer' ? (line.text.startsWith('—') ? '—' : `- ${line.text}`) : `- ${line.text}`}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* 하단 안내 */}
+                  <div className="absolute bottom-2 left-0 right-0 text-center">
+                    <p className="text-[10px] text-slate-500">
+                      {isKo ? '클릭하여 다음 예시 보기' : 'Click to see next example'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* 페이지네이션 점 */}
+              <div className="flex justify-center gap-2 mt-4">
+                {previewCards.map((_, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    aria-label={isKo ? `예시 ${i + 1}` : `Example ${i + 1}`}
+                    onClick={(e) => { e.stopPropagation(); setTelegramCardIndex(i); }}
+                    className={`w-2 h-2 rounded-full transition-colors ${i === telegramCardIndex ? 'bg-blue-400 scale-110' : 'bg-slate-600'}`}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   );

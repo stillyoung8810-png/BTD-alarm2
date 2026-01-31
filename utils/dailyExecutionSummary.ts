@@ -98,6 +98,7 @@ export function formatPortfolioDailyExecutionBlock(
   lines.push(portfolio.strategy.multiSplit ? `- ${s.strategyMultiSplit}` : `- ${s.strategyMa}`);
   lines.push(`- ${s.alarmTimes}: ${hours || '-'}`);
 
+  // 이평선 구간매수: LOC/MOC 등 상세는 없고, 포트폴리오명·전략·알람 시간 + 안내만 (텔레그램 DAILY EXECUTION 섹션에 그대로 노출)
   if (!portfolio.strategy.multiSplit) {
     lines.push(`- ${s.noOrder}`);
     return lines.join('\n');

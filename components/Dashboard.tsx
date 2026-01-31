@@ -676,8 +676,9 @@ const PortfolioCard: React.FC<{
       return;
     }
 
-    // 다분할 매매법: 비동기 데이터(multiSplitExecutionData)가 준비되기 전에 블록을 보내면
+    // 다분할 매매법만: 비동기 데이터(multiSplitExecutionData)가 준비되기 전에 블록을 보내면
     // 데이터 도착 시 다시 effect가 돌아 연쇄 리렌더/무한루프가 발생하므로, 준비된 경우에만 전달
+    // 이평선 구간매수는 multiSplitExecutionData 없이 바로 블록 생성·전달
     if (portfolio.strategy.multiSplit && multiSplitExecutionData == null) return;
 
     const block = formatPortfolioDailyExecutionBlock(portfolio, lang, {
@@ -695,12 +696,17 @@ const PortfolioCard: React.FC<{
     report(portfolio.id, block);
   }, [
     isAlarmEnabled,
-    // portfolio 객체 전체 대신, 알람 메시지에 실제로 영향을 주는 파생 상태들만 의존성으로 사용
     lang,
     multiSplitExecutionData,
     quarterStopLossData,
     multiSplitPhase,
     isInQuarterMode,
+    // 이평선 구간매수: name·alarm 시간이 바뀌면 블록을 다시 만들어 전달 (텔레그램 daily execution 반영)
+    portfolio.id,
+    portfolio.name,
+    portfolio.alarmconfig?.enabled,
+    (portfolio.alarmconfig?.selectedHours ?? []).join(','),
+    portfolio.strategy.multiSplit,
   ]);
 
   // 최신 portfolio를 참조하기 위한 ref (metrics 계산용)

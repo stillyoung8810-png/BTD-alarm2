@@ -257,6 +257,57 @@ if (profile.telegram_enabled !== true) return false;
 
 ---
 
+### 주말·테스트용 1회 발송 (send-alarm 직접 호출)
+
+**상황**: 주말에는 `check-and-trigger-alarms`가 **주말 스킵**이라 알람이 안 감. 알람 예시를 **1회만** 테스트하고 싶을 때.
+
+**방법**: **send-alarm** Edge Function을 **직접 HTTP로 한 번 호출**하면 됩니다. 크론/주말 로직을 거치지 않습니다.
+
+1. **필요한 값**
+   - **Supabase 프로젝트 URL**  
+     예: `https://abcdefgh.supabase.co` (Dashboard → Settings → API → Project URL)
+   - **INTERNAL_ALARM_SECRET**  
+     send-alarm에 설정한 시크릿 값 (Dashboard → Edge Functions → send-alarm → Secrets)
+   - **테스트할 사용자 user_id**  
+     Supabase Dashboard → Authentication → Users 에서 복사하거나, `user_profiles.id` (UUID)
+
+2. **호출 예시 (PowerShell)**
+
+   ```powershell
+   $url = "https://YOUR_PROJECT_REF.supabase.co/functions/v1/send-alarm"
+   $secret = "YOUR_INTERNAL_ALARM_SECRET"
+   $userId = "테스트할_사용자_UUID"
+
+   $body = @{
+     user_id = $userId
+     title   = "BTD 매매 알람"
+     body    = "설정하신 매매 알람 시간입니다. 포트폴리오 전략을 확인해 주세요."
+     data    = @{ type = "portfolio_alarm"; time_kst = "테스트" }
+   } | ConvertTo-Json
+
+   Invoke-RestMethod -Uri $url -Method Post -Headers @{
+     "Content-Type"             = "application/json"
+     "X-Internal-Alarm-Secret"   = $secret
+   } -Body $body
+   ```
+
+   `YOUR_PROJECT_REF`, `YOUR_INTERNAL_ALARM_SECRET`, `테스트할_사용자_UUID`만 실제 값으로 바꾸면 됩니다.
+
+3. **호출 예시 (curl)**
+
+   ```bash
+   curl -X POST "https://YOUR_PROJECT_REF.supabase.co/functions/v1/send-alarm" \
+     -H "Content-Type: application/json" \
+     -H "X-Internal-Alarm-Secret: YOUR_INTERNAL_ALARM_SECRET" \
+     -d '{"user_id":"테스트할_사용자_UUID","title":"BTD 매매 알람","body":"설정하신 매매 알람 시간입니다. 포트폴리오 전략을 확인해 주세요.","data":{"type":"portfolio_alarm","time_kst":"테스트"}}'
+   ```
+
+4. **주의**
+   - 해당 사용자는 **Pro/Premium**이고 **텔레그램 연결**(`telegram_chat_id` 있음)되어 있어야 텔레그램으로 발송됩니다.
+   - 1회 호출이므로 **sent_alarms**에는 기록되지 않습니다. 평일 크론 흐름과 동일한 메시지 형식으로만 테스트할 수 있습니다.
+
+---
+
 ### Supabase에서 확인할 것 (알람이 안 올 때)
 
 | 확인 항목 | Supabase에서 하는 방법 |

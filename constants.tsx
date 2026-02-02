@@ -121,7 +121,18 @@ export const I18N = {
     email: "이메일 주소",
     password: "비밀번호",
     activeSection: "현재 활성 구간",
-    section: "구간"
+    section: "구간",
+    aiScan: "AI 매매 인식",
+    aiScanSub: "스크린샷 자동 분석",
+    dropImageOrClick: "여기에 이미지를 드롭하거나 클릭",
+    pasteShortcut: "PASTE (CTRL+V)",
+    screenshotOnly: "SCREENSHOT ONLY",
+    aiScanStart: "AI 스캔 시작",
+    aiScanHint: "증권사 앱의 체결 내역 화면을 캡쳐해서 올려주시면 자동으로 정보를 입력합니다.",
+    aiScanError: "이미지를 인식할 수 없습니다. 다시 시도하거나 직접 입력해주세요.",
+    aiScanRateLimit: "현재 요청이 많아 AI 서비스 이용이 지연되고 있습니다. 잠시 후 다시 시도해주세요.",
+    aiConfirmSave: "확인 후 저장",
+    aiRecognizedTrades: "인식된 매매 내역",
   },
   en: {
     dashboard: "Dashboard",
@@ -173,6 +184,17 @@ export const I18N = {
     email: "Email Address",
     password: "Password",
     activeSection: "Active Section",
-    section: "Section"
+    section: "Section",
+    aiScan: "AI Trade Recognition",
+    aiScanSub: "Screenshot auto-analysis",
+    dropImageOrClick: "Drop image here or click",
+    pasteShortcut: "PASTE (CTRL+V)",
+    screenshotOnly: "SCREENSHOT ONLY",
+    aiScanStart: "Start AI Scan",
+    aiScanHint: "Upload a screenshot of your broker's execution screen and we'll auto-fill the trade info.",
+    aiScanError: "Could not recognize the image. Try again or enter manually.",
+    aiScanRateLimit: "AI service is busy. Please try again later.",
+    aiConfirmSave: "Confirm & Save",
+    aiRecognizedTrades: "Recognized trades",
   }
 };

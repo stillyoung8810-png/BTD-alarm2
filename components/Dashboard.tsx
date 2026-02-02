@@ -11,7 +11,8 @@ import {
   BellOff,
   Trash2,
   TrendingUp,
-  Layers
+  Layers,
+  Camera
 } from 'lucide-react';
 import { calculateInvestedAmount, calculateYield, determineActiveSection, calculateAlreadyRealized, calculateHoldings } from '../utils/portfolioCalculations';
 import { fetchStockPrices } from '../services/stockService';
@@ -30,6 +31,7 @@ interface DashboardProps {
   onOpenDetails: (id: string) => void;
   onOpenQuickInput: (id: string, activeSection?: 1 | 2 | 3) => void;
   onOpenExecution: (id: string) => void;
+  onOpenAIImage: (id: string) => void;
   totalValuation: number;
   totalValuationChange: number;
   totalValuationChangePct: number;
@@ -47,6 +49,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   onOpenDetails,
   onOpenQuickInput,
   onOpenExecution,
+  onOpenAIImage,
   totalValuation,
   totalValuationChange,
   totalValuationChangePct,
@@ -167,6 +170,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 onOpenQuickInput(p.id, activeSection || undefined);
               }}
               onOpenExecution={() => onOpenExecution(p.id)}
+              onOpenAIImage={() => onOpenAIImage(p.id)}
               onClose={() => onClosePortfolio(p.id)}
               onDelete={() => onDeletePortfolio(p.id)}
               onUpdatePortfolio={onUpdatePortfolio}
@@ -189,10 +193,11 @@ const PortfolioCard: React.FC<{
   onOpenDetails: () => void;
   onOpenQuickInput: () => void;
   onOpenExecution: () => void;
+  onOpenAIImage: () => void;
   onUpdatePortfolio: (updated: Portfolio) => void;
   lang: 'ko' | 'en';
   onDailyExecutionBlock?: (id: string, block: string | null) => void;
-}> = ({ portfolio, onClose, onDelete, onOpenAlarm, onOpenDetails, onOpenQuickInput, onOpenExecution, onUpdatePortfolio, lang, onDailyExecutionBlock }) => {
+}> = ({ portfolio, onClose, onDelete, onOpenAlarm, onOpenDetails, onOpenQuickInput, onOpenExecution, onOpenAIImage, onUpdatePortfolio, lang, onDailyExecutionBlock }) => {
   const t = I18N[lang];
   // 다분할 매매법일 때는 multiSplit.targetStock을 사용, 아니면 ma0.stock 사용
   const ma0Ticker = portfolio.strategy.multiSplit?.targetStock || portfolio.strategy.ma0.stock;
@@ -796,9 +801,9 @@ const PortfolioCard: React.FC<{
 
   return (
     <div
-      className={`glass light-card-depth ${
-        portfolio.strategy.multiSplit ? 'px-4' : 'px-7'
-      } pt-3.5 pb-7 rounded-[2.5rem] space-y-5 group hover:-translate-y-1 transition-all duration-500 relative overflow-hidden shadow-[0_12px_40px_rgba(0,0,0,0.06)] dark:shadow-2xl`}
+      className={`glass light-card-depth p-7 rounded-[2.5rem] space-y-5 group hover:-translate-y-1 transition-all duration-500 relative overflow-hidden shadow-[0_12px_40px_rgba(0,0,0,0.06)] dark:shadow-2xl ${
+        portfolio.strategy.multiSplit ? 'px-4 py-5' : ''
+      }`}
     >
       
       {/* Visual background layers */}
@@ -878,32 +883,48 @@ const PortfolioCard: React.FC<{
         </div>
       </div>
 
-      <div className={`grid grid-cols-2 gap-4 relative z-10 ${portfolio.strategy.multiSplit ? 'gap-3 mt-3' : ''}`}>
-        <div className={`bg-white/40 dark:bg-black/20 rounded-[1.5rem] border border-white/20 dark:border-white/5 backdrop-blur-sm ${portfolio.strategy.multiSplit ? 'px-4 py-[20px]' : 'px-5 py-6'}`}>
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <span className={`font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest ${portfolio.strategy.multiSplit ? 'text-[11px]' : 'text-[11px]'}`}>{t.invested}</span>
-            <span className={`text-[9px] text-slate-400 dark:text-slate-500 ${portfolio.strategy.multiSplit ? '' : ''}`}>
-              {lang === 'ko' ? '(수수료 포함)' : '(Fee included)'}
-            </span>
+      {/* 좌측 지표 + 우측 AI 스캔 버튼 (flex): 버튼은 투자금액·실현손익 공간의 수직 중앙에 정렬 */}
+      <div className={`flex gap-4 relative z-10 min-h-[140px] items-center ${portfolio.strategy.multiSplit ? 'mt-3' : ''}`}>
+        <div className="flex-1 flex flex-col justify-center min-w-0 space-y-6">
+          <div className="space-y-1">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">{t.invested}</span>
+              <span className="text-[9px] text-slate-400 dark:text-slate-500">
+                {lang === 'ko' ? '(수수료 포함)' : '(Fee included)'}
+              </span>
+            </div>
+            <p className="text-2xl font-black text-slate-800 dark:text-white tracking-tight leading-tight">
+              {isLoading ? '...' : `$${investedAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            </p>
           </div>
-          <p className={`font-black text-slate-800 dark:text-white ${portfolio.strategy.multiSplit ? 'text-2xl leading-tight' : 'text-2xl leading-tight'}`}>
-            {isLoading ? '...' : `$${investedAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-          </p>
-        </div>
-        <div className={`bg-white/40 dark:bg-black/20 rounded-[1.5rem] border border-white/20 dark:border-white/5 backdrop-blur-sm ${portfolio.strategy.multiSplit ? 'px-4 py-[20px]' : 'px-5 py-6'}`}>
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <span className={`font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest ${portfolio.strategy.multiSplit ? 'text-[11px]' : 'text-[11px]'}`}>
-              {lang === 'ko' ? '실현손익' : 'Realized P/L'}
-            </span>
-            <span className={`text-[9px] text-slate-400 dark:text-slate-500 ${portfolio.strategy.multiSplit ? '' : ''}`}>
-              {lang === 'ko' ? '(제비용 반영)' : '(After fees)'}
-            </span>
+          <div className="space-y-1">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                {lang === 'ko' ? '실현손익' : 'Realized P/L'}
+              </span>
+              <span className="text-[9px] text-slate-400 dark:text-slate-500">
+                {lang === 'ko' ? '(제비용 반영)' : '(After fees)'}
+              </span>
+            </div>
+            <p className={`text-2xl font-black tracking-tight leading-tight flex items-center gap-1 ${realizedProfit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+              <span className="text-[11px]">{realizedProfit >= 0 ? '↑' : '↓'}</span>
+              {isLoading ? '...' : `${realizedProfit >= 0 ? '+' : ''}$${realizedProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            </p>
           </div>
-          <p className={`font-black flex items-center gap-1 ${realizedProfit >= 0 ? 'text-emerald-500' : 'text-rose-500'} ${portfolio.strategy.multiSplit ? 'text-2xl leading-tight' : 'text-2xl leading-tight'}`}>
-             <span className="text-[11px]">{realizedProfit >= 0 ? '↑' : '↓'}</span> 
-             {isLoading ? '...' : `${realizedProfit >= 0 ? '+' : ''}$${realizedProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-          </p>
         </div>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenAIImage();
+          }}
+          className="shrink-0 w-24 h-24 rounded-[2.5rem] bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-white/10 shadow-md dark:shadow-lg flex items-center justify-center hover:scale-[1.02] active:scale-[0.98] transition-transform focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+          title={lang === 'ko' ? 'AI 매매 인식' : 'AI Trade Recognition'}
+        >
+          <div className="w-12 h-12 rounded-2xl bg-indigo-600 dark:bg-indigo-500 flex items-center justify-center">
+            <Camera size={24} className="text-white" strokeWidth={2} />
+          </div>
+        </button>
       </div>
 
       <div 

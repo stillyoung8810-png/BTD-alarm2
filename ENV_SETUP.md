@@ -1,5 +1,9 @@
 # 환경 변수 설정 가이드
 
+**Supabase / Cloudflare / Firebase / GitHub에서 Variables를 어디에 어떻게 입력하는지** 단계별 안내는 **[docs/VARIABLES_BY_SERVICE.md](docs/VARIABLES_BY_SERVICE.md)** 를 참고하세요.
+
+---
+
 ## 📋 .env 파일에 필요한 환경 변수 목록
 
 프로젝트 루트 디렉토리에 `.env` 파일을 생성하고 아래 변수들을 설정하세요:
@@ -12,8 +16,15 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 # 사이트 URL (OAuth 리다이렉트용)
 VITE_SITE_URL=https://btd-alarm2.pages.dev
 
-# Gemini API (AI 어드바이저 기능용)
+# Gemini API (AI 어드바이저·AI 매매 인식 기능용)
 GEMINI_API_KEY=your_gemini_api_key
+
+# AI 매매 인식: 무료/유료 티어별 키 (선택)
+# - 무료 회원: VITE_GEMINI_API_KEY_FREE (구글 AI 스튜디오 무료 키 등)
+# - 유료 회원(PRO/PREMIUM): VITE_GEMINI_API_KEY_PAID
+# - 둘 다 없으면 GEMINI_API_KEY 하나로 통일 사용
+VITE_GEMINI_API_KEY_FREE=your_free_tier_gemini_key
+VITE_GEMINI_API_KEY_PAID=your_paid_tier_gemini_key
 
 # Firebase Cloud Messaging (FCM) 설정 (푸시 알림용)
 VITE_FIREBASE_API_KEY=your_firebase_api_key
@@ -36,16 +47,21 @@ VITE_FIREBASE_VAPID_KEY=your_vapid_key
 - **용도**: 프론트엔드에서 Supabase 클라이언트 생성
 
 ### ✅ 2. services/geminiService.ts
-- **사용 변수**: `process.env.API_KEY` (vite.config.ts에서 `GEMINI_API_KEY`로 매핑)
-- **접근 방식**: `process.env.API_KEY`
+- **사용 변수**: `process.env.API_KEY` (vite.config.ts에서 `GEMINI_API_KEY`로 매핑), AI 매매 인식 시 무료/유료 키는 `VITE_GEMINI_API_KEY_FREE`·`VITE_GEMINI_API_KEY_PAID` (App에서 전달)
+- **접근 방식**: `process.env.API_KEY` (기본), `analyzeTradeScreenshot(..., { apiKey })` (티어별 키)
 - **상태**: ✅ 정상 연동
-- **용도**: Google Gemini API 호출 (전략 어드바이저 기능)
+- **용도**: Google Gemini API 호출 (전략 어드바이저, AI 매매 인식)
+- **AI API 키 입력 위치**: 프로젝트 루트 `.env` 파일에 아래 변수를 넣으면 됩니다.
+  - **무료·유료 구분 없이 하나만 쓸 때**: `GEMINI_API_KEY=발급받은_키` (기존과 동일)
+  - **무료 티어용**: `VITE_GEMINI_API_KEY_FREE=무료_키` (구글 AI 스튜디오 등에서 무료 키 발급)
+  - **유료 회원용**: `VITE_GEMINI_API_KEY_PAID=유료_키`
+  - `VITE_` 변수는 빌드 시 클라이언트에 포함되므로, 배포 시에는 호스팅(Vercel·Netlify 등)의 **Environment Variables**에 같은 이름으로 설정하면 됩니다.
 
 ### ✅ 3. vite.config.ts
 - **사용 변수**: `GEMINI_API_KEY` (`.env`에서 로드)
 - **접근 방식**: `loadEnv(mode, '.', '')` → `env.GEMINI_API_KEY`
 - **상태**: ✅ 정상 연동
-- **용도**: `process.env.API_KEY`와 `process.env.GEMINI_API_KEY`로 컴파일 시 주입
+- **용도**: `process.env.API_KEY`·`process.env.GEMINI_API_KEY`로 컴파일 시 주입. `VITE_GEMINI_API_KEY_*`는 Vite가 자동으로 클라이언트에 노출
 
 ### ✅ 4. scripts/fetch_stock_prices.py
 - **사용 변수**: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`

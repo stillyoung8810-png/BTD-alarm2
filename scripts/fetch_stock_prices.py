@@ -188,8 +188,12 @@ def upsert_to_supabase(rows: List[Dict[str, Any]]) -> None:
         raise RuntimeError(f"Supabase upsert failed: {resp.status_code} {resp.text}")
 
 
+RETENTION_YEARS = 11
+RETENTION_DAYS = RETENTION_YEARS * 365  # 11년 이상 된 데이터만 삭제
+
+
 def cleanup_old_stock_prices() -> None:
-    """300일 이상 된 stock_prices 데이터를 삭제"""
+    """11년 이상 된 stock_prices 데이터를 삭제"""
     supabase_url = os.environ.get("SUPABASE_URL")
     service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
@@ -197,8 +201,8 @@ def cleanup_old_stock_prices() -> None:
         # cleanup 함수에서는 더 간단한 에러 메시지
         raise RuntimeError("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment")
 
-    # 300일 전 날짜 계산
-    cutoff_date = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=300)).date().isoformat()
+    # 11년 전 날짜 계산
+    cutoff_date = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=RETENTION_DAYS)).date().isoformat()
     
     endpoint = f"{supabase_url.rstrip('/')}/rest/v1/stock_prices"
     params = {
@@ -224,7 +228,7 @@ def cleanup_old_stock_prices() -> None:
         if "/" in content_range:
             total_count = content_range.split("/")[-1]
             if total_count != "*" and total_count.isdigit():
-                print(f"Found {total_count} rows older than 300 days to delete")
+                print(f"Found {total_count} rows older than {RETENTION_YEARS} years to delete")
     
     # DELETE 요청 실행
     resp = requests.delete(endpoint, params=params, headers=headers, timeout=20)
@@ -233,7 +237,7 @@ def cleanup_old_stock_prices() -> None:
         raise RuntimeError(f"Supabase delete failed: {resp.status_code} {resp.text}")
     
     deleted_count = len(resp.json()) if resp.json() else 0
-    print(f"✓ Deleted {deleted_count} rows older than {cutoff_date} (300 days)")
+    print(f"✓ Deleted {deleted_count} rows older than {cutoff_date} ({RETENTION_YEARS} years)")
 
 
 def main() -> None:
@@ -258,9 +262,9 @@ def main() -> None:
         upsert_to_supabase(rows)
         print(f"\n✓ Successfully upserted {len(rows)} rows to Supabase")
         
-        # 300일 이상 된 데이터 정리
+        # 11년 이상 된 데이터 정리
         print("\n" + "=" * 60)
-        print("Cleaning up old stock prices (older than 300 days)...")
+        print(f"Cleaning up old stock prices (older than {RETENTION_YEARS} years)...")
         print("=" * 60)
         try:
             cleanup_old_stock_prices()

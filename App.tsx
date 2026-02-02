@@ -10,6 +10,7 @@ import AlarmModal from './components/AlarmModal';
 import PortfolioDetailsModal from './components/PortfolioDetailsModal';
 import QuickInputModal from './components/QuickInputModal';
 import TradeExecutionModal from './components/TradeExecutionModal';
+import AIImageInputModal from './components/AIImageInputModal';
 import SettlementModals from './components/SettlementModals';
 import AuthModals from './components/AuthModals';
 import Landing from './components/Landing';
@@ -63,6 +64,7 @@ const App: React.FC = () => {
   const [quickInputTargetId, setQuickInputTargetId] = useState<string | null>(null);
   const [quickInputActiveSection, setQuickInputActiveSection] = useState<1 | 2 | 3 | undefined>(undefined);
   const [executionTargetId, setExecutionTargetId] = useState<string | null>(null);
+  const [aiImageTargetId, setAiImageTargetId] = useState<string | null>(null);
   const [hiddenHistoryIds, setHiddenHistoryIds] = useState<string[]>([]);
   const [totalValuation, setTotalValuation] = useState<number>(0);
   const [totalValuationPrev, setTotalValuationPrev] = useState<number>(0);
@@ -115,6 +117,15 @@ const App: React.FC = () => {
       : currentTier === 'pro'
       ? 'pro-icon-twinkle'
       : 'free-icon-zap';
+
+  // AI 매매 인식: 무료/유료 티어별 Gemini API 키 (무료: VITE_GEMINI_API_KEY_FREE, 유료: VITE_GEMINI_API_KEY_PAID, 미설정 시 VITE_GEMINI_API_KEY 또는 GEMINI_API_KEY 사용)
+  const geminiApiKey = useMemo(() => {
+    const isPaid = currentTier === 'pro' || currentTier === 'premium';
+    const paid = import.meta.env.VITE_GEMINI_API_KEY_PAID;
+    const free = import.meta.env.VITE_GEMINI_API_KEY_FREE;
+    const fallback = import.meta.env.VITE_GEMINI_API_KEY || (process as { env?: { API_KEY?: string } }).env?.API_KEY;
+    return (isPaid ? paid : free) || fallback || undefined;
+  }, [currentTier]);
 
   // 주가 캐싱 관련 상수
   const STOCK_PRICE_CACHE_KEY = 'STOCK_PRICE_CACHE_V1';
@@ -1397,6 +1408,7 @@ const App: React.FC = () => {
   const currentDetailsPortfolio = portfolios.find(p => p.id === detailsTargetId);
   const currentQuickInputPortfolio = portfolios.find(p => p.id === quickInputTargetId);
   const currentExecutionPortfolio = portfolios.find(p => p.id === executionTargetId);
+  const currentAIImagePortfolio = portfolios.find(p => p.id === aiImageTargetId);
   const currentTerminatePortfolio = portfolios.find(p => p.id === terminateTargetId);
 
   // 메인 레이아웃: 토스 앱 환경에서만 TDSMobileAITProvider로 감싸기
@@ -1497,6 +1509,7 @@ const App: React.FC = () => {
                   setQuickInputActiveSection(activeSection);
                 }}
                 onOpenExecution={(id) => setExecutionTargetId(id)}
+                onOpenAIImage={(id) => setAiImageTargetId(id)}
                 totalValuation={totalValuation}
                 totalValuationChange={totalValuationChange}
                 totalValuationChangePct={totalValuationChangePct}
@@ -1624,7 +1637,21 @@ const App: React.FC = () => {
         )}
         {currentQuickInputPortfolio && <QuickInputModal lang={lang} portfolio={currentQuickInputPortfolio} activeSection={quickInputActiveSection} onClose={() => { setQuickInputTargetId(null); setQuickInputActiveSection(undefined); }} onSave={(trade) => { handleAddTrade(currentQuickInputPortfolio.id, trade); setQuickInputTargetId(null); setQuickInputActiveSection(undefined); }} />}
         {currentExecutionPortfolio && <TradeExecutionModal lang={lang} portfolio={currentExecutionPortfolio} onClose={() => setExecutionTargetId(null)} onSave={(trade) => { handleAddTrade(currentExecutionPortfolio.id, trade); setExecutionTargetId(null); }} />}
-        
+        {currentAIImagePortfolio && (
+          <AIImageInputModal
+            lang={lang}
+            portfolio={currentAIImagePortfolio}
+            geminiApiKey={geminiApiKey}
+            onClose={() => setAiImageTargetId(null)}
+            onSave={async (trades) => {
+              for (const trade of trades) {
+                await handleAddTrade(currentAIImagePortfolio.id, trade);
+              }
+              setAiImageTargetId(null);
+            }}
+          />
+        )}
+
         {/* Termination Flow Modals */}
         {currentTerminatePortfolio && (
           <SettlementModals.TerminationInput 

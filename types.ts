@@ -15,11 +15,16 @@ export interface Strategy {
   ma0: {
     stock: string;
     rsiEnabled: boolean;
+    /** 이동평균선 a > b 일 때만 매수할지 여부 (정배열 매수) */
+    alignmentEnabled?: boolean;
   };
   ma1: {
     period: number;
     stock: string;
     rsiThreshold?: number;
+    /** 중간 이익 실현 사용 시 목표 수익률(%) */
+    takePartialProfit?: boolean;
+    partialProfitTargetPct?: number;
   };
   ma2: {
     period1: number;
@@ -27,11 +32,15 @@ export interface Strategy {
     stock: string;
     splitCount: number;
     rsiThreshold?: number;
+    takePartialProfit?: boolean;
+    partialProfitTargetPct?: number;
   };
   ma3: {
     period: number;
     stock: string;
     rsiThreshold?: number;
+    takePartialProfit?: boolean;
+    partialProfitTargetPct?: number;
   };
   // 다분할 매매법 전용 필드
   multiSplit?: {

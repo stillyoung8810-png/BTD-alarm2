@@ -27,7 +27,7 @@ import {
   LayoutDashboard, 
   BarChart3, 
   History as HistoryIcon, 
-  Plus, 
+  LineChart,
   UserCircle,
   Languages,
   Sparkles,
@@ -36,9 +36,11 @@ import {
   Crown
 } from 'lucide-react';
 
+const Backtest = React.lazy(() => import('./components/Backtest'));
+
 const App: React.FC = () => {
   const [lang, setLang] = useState<'ko' | 'en'>('ko');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'markets' | 'history' | 'pricing'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'markets' | 'history' | 'backtest' | 'pricing'>('dashboard');
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [isCreatorOpen, setIsCreatorOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
@@ -1524,6 +1526,11 @@ const App: React.FC = () => {
             )
           )}
           {activeTab === 'markets' && <Markets lang={lang} portfolios={portfolios} canAccessPaidStocks={canAccessPaidStocks} />}
+          {activeTab === 'backtest' && (
+            <React.Suspense fallback={<div className="flex items-center justify-center min-h-[50vh] text-slate-500 dark:text-slate-400 font-bold">백테스트 로딩 중…</div>}>
+              <Backtest lang={lang} />
+            </React.Suspense>
+          )}
           {activeTab === 'pricing' && (
             <Pricing 
               lang={lang} 
@@ -1609,16 +1616,7 @@ const App: React.FC = () => {
           <nav className="glass rounded-full px-4 py-3 flex items-center gap-2 md:gap-6 shadow-2xl border border-white/10 premium-shadow min-w-[320px] justify-center">
             <NavIcon active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutDashboard size={22} />} label={t.dashboard} />
             <NavIcon active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<HistoryIcon size={22} />} label={t.history} />
-
-            <div className="mx-1">
-              <button 
-                onClick={() => setIsCreatorOpen(true)} 
-                className="w-14 h-14 bg-gradient-to-tr from-blue-600 to-indigo-700 rounded-full flex items-center justify-center text-white shadow-xl shadow-blue-500/40 hover:scale-110 active:scale-95 transition-transform border-4 border-white dark:border-slate-900 p-3"
-              >
-                <Plus size={28} strokeWidth={3} />
-              </button>
-            </div>
-
+            <NavIcon active={activeTab === 'backtest'} onClick={() => setActiveTab('backtest')} icon={<LineChart size={22} />} label={t.backtest} />
             <NavIcon active={activeTab === 'markets'} onClick={() => setActiveTab('markets')} icon={<BarChart3 size={22} />} label={t.markets} />
             <NavIcon active={activeTab === 'pricing'} onClick={() => setActiveTab('pricing')} icon={<Crown size={22} />} label={t.membership ?? (lang === 'ko' ? '멤버십' : 'Membership')} />
           </nav>

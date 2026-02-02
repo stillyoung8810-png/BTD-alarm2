@@ -217,6 +217,10 @@ const PortfolioCard: React.FC<{
   const [maActiveSection, setMaActiveSection] = useState<1 | 2 | 3 | null>(null);
   // 구간이 바뀔 때만 블록 effect를 한 번 돌리기 위한 버전 (maActiveSection을 의존성에 넣으면 report→부모 리렌더→무한루프 위험)
   const [maBlockVersion, setMaBlockVersion] = useState(0);
+  // 이평선 구간매수: 구간별 목표 수익률 도달 시 "구간N 익절: 종목 수량주" 표시용
+  const [maPartialProfitLines, setMaPartialProfitLines] = useState<{ section: 1 | 2 | 3; stock: string; quantity: number }[]>([]);
+  // 이평선 구간매수 + RSI 사용 시: RSI 조건 미충족이면 true → "구간 N: 관망 (RSI 조건 미충족)" 표시
+  const [maRsiNotMet, setMaRsiNotMet] = useState(false);
   const maSectionDepsKey = React.useMemo(
     () =>
       portfolio.strategy.multiSplit
@@ -235,6 +239,7 @@ const PortfolioCard: React.FC<{
   useEffect(() => {
     if (portfolio.strategy.multiSplit) {
       setMaActiveSection(null);
+      setMaRsiNotMet(false);
       return;
     }
     if (!maSectionDepsKey) return;
@@ -247,6 +252,80 @@ const PortfolioCard: React.FC<{
     });
     return () => { cancelled = true; };
   }, [maSectionDepsKey, portfolio.strategy.multiSplit]);
+
+  // 이평선 구간매수 + RSI 사용: 활성 구간이 있고 RSI 조건 미충족이면 maRsiNotMet true
+  useEffect(() => {
+    if (portfolio.strategy.multiSplit || !portfolio.strategy.ma0?.rsiEnabled) {
+      setMaRsiNotMet(false);
+      return;
+    }
+    const section = maActiveSection;
+    if (section !== 1 && section !== 2 && section !== 3) {
+      setMaRsiNotMet(false);
+      return;
+    }
+    const threshold = section === 1
+      ? portfolio.strategy.ma1?.rsiThreshold
+      : section === 2
+        ? portfolio.strategy.ma2?.rsiThreshold
+        : portfolio.strategy.ma3?.rsiThreshold;
+    if (threshold == null) {
+      setMaRsiNotMet(false);
+      return;
+    }
+    const baseStock = portfolio.strategy.ma0.stock;
+    let cancelled = false;
+    fetchStockPrices([baseStock]).then((prices) => {
+      if (cancelled) return;
+      const rsi = prices[baseStock]?.rsi ?? 50;
+      setMaRsiNotMet(rsi > threshold);
+    }).catch(() => {
+      if (!cancelled) setMaRsiNotMet(false);
+    });
+    return () => { cancelled = true; };
+  }, [portfolio.strategy.multiSplit, portfolio.strategy.ma0?.rsiEnabled, portfolio.strategy.ma0?.stock, portfolio.strategy.ma1?.rsiThreshold, portfolio.strategy.ma2?.rsiThreshold, portfolio.strategy.ma3?.rsiThreshold, maActiveSection]);
+
+  // 이평선 구간매수: 구간별 중간 이익 실현 목표 % 도달 여부 → daily execution에 "구간N 익절: 종목 수량주" 반영
+  useEffect(() => {
+    if (portfolio.strategy.multiSplit) {
+      setMaPartialProfitLines([]);
+      return;
+    }
+    const ma1 = portfolio.strategy.ma1;
+    const ma2 = portfolio.strategy.ma2;
+    const ma3 = portfolio.strategy.ma3;
+    const stocks = Array.from(new Set([ma1.stock, ma2.stock, ma3.stock]));
+    let cancelled = false;
+    (async () => {
+      try {
+        const prices = await fetchStockPrices(stocks);
+        if (cancelled) return;
+        const holdings = calculateHoldings(portfolio);
+        const lines: { section: 1 | 2 | 3; stock: string; quantity: number }[] = [];
+        const check = (section: 1 | 2 | 3, stock: string, takePartialProfit?: boolean, targetPct?: number) => {
+          if (!takePartialProfit || targetPct == null || targetPct <= 0) return;
+          const h = holdings.find((x) => x.stock === stock);
+          if (!h || h.quantity <= 0 || h.avgPrice <= 0) return;
+          const currentPrice = prices[stock]?.price ?? 0;
+          if (currentPrice <= 0) return;
+          const yieldPct = ((currentPrice - h.avgPrice) / h.avgPrice) * 100;
+          if (yieldPct >= targetPct) lines.push({ section, stock, quantity: h.quantity });
+        };
+        check(1, ma1.stock, ma1.takePartialProfit, ma1.partialProfitTargetPct);
+        check(2, ma2.stock, ma2.takePartialProfit, ma2.partialProfitTargetPct);
+        check(3, ma3.stock, ma3.takePartialProfit, ma3.partialProfitTargetPct);
+        if (!cancelled) {
+          setMaPartialProfitLines((prev) => {
+            if (prev.length === lines.length && prev.every((p, i) => p.section === lines[i].section && p.stock === lines[i].stock && p.quantity === lines[i].quantity)) return prev;
+            return lines;
+          });
+        }
+      } catch (err) {
+        if (!cancelled) setMaPartialProfitLines((prev) => (prev.length === 0 ? prev : []));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [portfolio.id, portfolio.trades.length, portfolio.strategy.multiSplit, portfolio.strategy.ma1?.stock, portfolio.strategy.ma1?.takePartialProfit, portfolio.strategy.ma1?.partialProfitTargetPct, portfolio.strategy.ma2?.stock, portfolio.strategy.ma2?.takePartialProfit, portfolio.strategy.ma2?.partialProfitTargetPct, portfolio.strategy.ma3?.stock, portfolio.strategy.ma3?.takePartialProfit, portfolio.strategy.ma3?.partialProfitTargetPct]);
 
   // 쿼터 손절 모드: DB 플래그 또는 T > a-1 (신규 진입 시 플래그 갱신)
   const T = portfolio.strategy.multiSplit
@@ -736,6 +815,8 @@ const PortfolioCard: React.FC<{
       isQuarterStopLossActive: isInQuarterMode,
       multiSplitOverLimit: multiSplitOverLimit ?? false,
       maActiveSection: portfolio.strategy.multiSplit ? undefined : maActiveSection ?? undefined,
+      maPartialProfitLines: portfolio.strategy.multiSplit ? undefined : (maPartialProfitLines.length ? maPartialProfitLines : undefined),
+      maRsiNotMet: portfolio.strategy.multiSplit ? undefined : maRsiNotMet,
     });
 
     // 내용이 이전과 동일하면 상위로 전달하지 않음
@@ -753,6 +834,8 @@ const PortfolioCard: React.FC<{
     isInQuarterMode,
     currentRound,
     maBlockVersion,
+    maPartialProfitLines,
+    maRsiNotMet,
     portfolio.id,
     portfolio.name,
     portfolio.alarmconfig?.enabled,
@@ -1139,15 +1222,20 @@ const PortfolioCard: React.FC<{
               )}
             </div>
           ) : (
-            <div className="text-lg font-black text-blue-900 dark:text-white leading-tight">
-              {maActiveSection === 1 && `${t.section} 1: ${portfolio.strategy.ma1.stock} ${t.buy}`}
-              {maActiveSection === 2 && `${t.section} 2: ${portfolio.strategy.ma2.stock} ${t.buy}`}
-              {maActiveSection === 3 && `${t.section} 3: ${portfolio.strategy.ma3.stock} ${t.buy}`}
+            <div className="text-lg font-black text-blue-900 dark:text-white leading-tight space-y-1">
+              {maActiveSection === 1 && (maRsiNotMet ? `${t.section} 1: ${t.sectionWatchRsiNotMet}` : `${t.section} 1: ${portfolio.strategy.ma1.stock} ${t.buy}`)}
+              {maActiveSection === 2 && (maRsiNotMet ? `${t.section} 2: ${t.sectionWatchRsiNotMet}` : `${t.section} 2: ${portfolio.strategy.ma2.stock} ${t.buy}`)}
+              {maActiveSection === 3 && (maRsiNotMet ? `${t.section} 3: ${t.sectionWatchRsiNotMet}` : `${t.section} 3: ${portfolio.strategy.ma3.stock} ${t.buy}`)}
               {maActiveSection === null && (
                 <span className="text-[12px] text-blue-600/70 dark:text-blue-400/70 font-medium">
                   {lang === 'ko' ? '구간 확인 중…' : 'Checking section…'}
                 </span>
               )}
+              {maPartialProfitLines.length > 0 && maPartialProfitLines.map(({ section, stock, quantity }) => (
+                <div key={`${section}-${stock}`} className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                  {t.section}{section} {lang === 'ko' ? '익절' : 'Take profit'}: {stock} {Math.round(quantity)}{lang === 'ko' ? '주' : ' shares'}
+                </div>
+              ))}
             </div>
           )}
         </div>

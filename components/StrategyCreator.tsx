@@ -7,6 +7,7 @@ import { useTossApp } from '../contexts/TossAppContext';
 import CustomDropdown from './CustomDropdown';
 import HoverTip from './HoverTip';
 import InfoModal from './InfoModal';
+import Toggle from './Toggle';
 
 // 전략 타입 정의 (확장 가능)
 export type StrategyType = 'rsi_ma_interval' | 'multi_split';
@@ -69,6 +70,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
   // Step 1: Section 0
   const [ma0Stock, setMa0Stock] = useState('QQQ');
   const [rsiEnabled, setRsiEnabled] = useState(false);
+  const [alignmentEnabled, setAlignmentEnabled] = useState(false);
   const [ma0MenuOpen, setMa0MenuOpen] = useState(false);
 
   // Step 2: Sections 1, 2, 3
@@ -80,7 +82,6 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
   const [ma2Period1, setMa2Period1] = useState(20);
   const [ma2Period2, setMa2Period2] = useState(60);
   const [ma2Stock, setMa2Stock] = useState('QLD');
-  const [ma2Split, setMa2Split] = useState(3);
   const [ma2Rsi, setMa2Rsi] = useState(30);
   const [ma2MenuOpen, setMa2MenuOpen] = useState(false);
 
@@ -88,6 +89,14 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
   const [ma3Stock, setMa3Stock] = useState('QQQ');
   const [ma3Rsi, setMa3Rsi] = useState(30);
   const [ma3MenuOpen, setMa3MenuOpen] = useState(false);
+
+  // 구간 1~3 중간 이익 실현
+  const [ma1TakePartialProfit, setMa1TakePartialProfit] = useState(false);
+  const [ma1PartialProfitPct, setMa1PartialProfitPct] = useState(10);
+  const [ma2TakePartialProfit, setMa2TakePartialProfit] = useState(false);
+  const [ma2PartialProfitPct, setMa2PartialProfitPct] = useState(10);
+  const [ma3TakePartialProfit, setMa3TakePartialProfit] = useState(false);
+  const [ma3PartialProfitPct, setMa3PartialProfitPct] = useState(10);
 
   // 다분할 매매법 전용 state
   const [multiSplitStock, setMultiSplitStock] = useState('TQQQ');
@@ -114,6 +123,39 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
     badge: PAID_STOCKS.includes(s) ? 'PRO+' : undefined,
     tooltip: PAID_STOCKS.includes(s) ? lockedTooltip : undefined,
   }));
+
+  // 구간 1,2,3: 다른 구간에서 선택된 종목은 비활성화 (동일 종목 중복 선택 방지)
+  const usedByOtherSectionTooltip = lang === 'ko' ? '다른 구간에서 이미 선택된 종목입니다.' : 'Already selected in another section.';
+  const stockOptionsForMa1 = React.useMemo(() =>
+    ALL_STOCKS.map((s) => ({
+      value: s,
+      label: s,
+      disabled: isLockedTicker(s) || s === ma2Stock || s === ma3Stock,
+      badge: PAID_STOCKS.includes(s) ? 'PRO+' : undefined,
+      tooltip: isLockedTicker(s) ? lockedTooltip : s === ma2Stock || s === ma3Stock ? usedByOtherSectionTooltip : undefined,
+    })),
+    [ma2Stock, ma3Stock, lang, canAccessPaidStocks]
+  );
+  const stockOptionsForMa2 = React.useMemo(() =>
+    ALL_STOCKS.map((s) => ({
+      value: s,
+      label: s,
+      disabled: isLockedTicker(s) || s === ma1Stock || s === ma3Stock,
+      badge: PAID_STOCKS.includes(s) ? 'PRO+' : undefined,
+      tooltip: isLockedTicker(s) ? lockedTooltip : s === ma1Stock || s === ma3Stock ? usedByOtherSectionTooltip : undefined,
+    })),
+    [ma1Stock, ma3Stock, lang, canAccessPaidStocks]
+  );
+  const stockOptionsForMa3 = React.useMemo(() =>
+    ALL_STOCKS.map((s) => ({
+      value: s,
+      label: s,
+      disabled: isLockedTicker(s) || s === ma1Stock || s === ma2Stock,
+      badge: PAID_STOCKS.includes(s) ? 'PRO+' : undefined,
+      tooltip: isLockedTicker(s) ? lockedTooltip : s === ma1Stock || s === ma2Stock ? usedByOtherSectionTooltip : undefined,
+    })),
+    [ma1Stock, ma2Stock, lang, canAccessPaidStocks]
+  );
 
   // 이동평균선 입력값 검증 및 정규화 함수
   const normalizeMaPeriod = (value: string): number => {
@@ -146,18 +188,23 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
     let strategy: Strategy;
     
     if (selectedStrategy === 'rsi_ma_interval') {
+      if (ma1Stock === ma2Stock || ma2Stock === ma3Stock || ma1Stock === ma3Stock) {
+        const msg = lang === 'ko' ? '구간 1, 2, 3에서 서로 다른 종목을 선택해 주세요.' : 'Please select different stocks for sections 1, 2, and 3.';
+        alert(msg);
+        return;
+      }
       strategy = {
-        ma0: { stock: ma0Stock, rsiEnabled },
-        ma1: { period: ma1Period, stock: ma1Stock, rsiThreshold: rsiEnabled ? ma1Rsi : undefined },
-        ma2: { period1: ma2Period1, period2: ma2Period2, stock: ma2Stock, splitCount: ma2Split, rsiThreshold: rsiEnabled ? ma2Rsi : undefined },
-        ma3: { period: ma3Period, stock: ma3Stock, rsiThreshold: rsiEnabled ? ma3Rsi : undefined }
+        ma0: { stock: ma0Stock, rsiEnabled, alignmentEnabled },
+        ma1: { period: ma1Period, stock: ma1Stock, rsiThreshold: rsiEnabled ? ma1Rsi : undefined, takePartialProfit: ma1TakePartialProfit, partialProfitTargetPct: ma1TakePartialProfit ? ma1PartialProfitPct : undefined },
+        ma2: { period1: ma2Period1, period2: ma2Period2, stock: ma2Stock, splitCount: 1, rsiThreshold: rsiEnabled ? ma2Rsi : undefined, takePartialProfit: ma2TakePartialProfit, partialProfitTargetPct: ma2TakePartialProfit ? ma2PartialProfitPct : undefined },
+        ma3: { period: ma3Period, stock: ma3Stock, rsiThreshold: rsiEnabled ? ma3Rsi : undefined, takePartialProfit: ma3TakePartialProfit, partialProfitTargetPct: ma3TakePartialProfit ? ma3PartialProfitPct : undefined }
       };
     } else if (selectedStrategy === 'multi_split') {
-      // 다분할 매매법 전략 - targetStock을 ma0에도 설정
+      // 다분할 매매법 전략 - targetStock을 ma0에도 설정 (정배열/RSI는 사용 안 함)
       strategy = {
-        ma0: { stock: multiSplitStock, rsiEnabled: false },
+        ma0: { stock: multiSplitStock, rsiEnabled: false, alignmentEnabled: false },
         ma1: { period: 20, stock: multiSplitStock },
-        ma2: { period1: 20, period2: 60, stock: multiSplitStock, splitCount: 3 },
+        ma2: { period1: 20, period2: 60, stock: multiSplitStock, splitCount: 1 },
         ma3: { period: 60, stock: multiSplitStock },
         multiSplit: {
           targetStock: multiSplitStock,
@@ -168,9 +215,9 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
     } else {
       // 기본값
       strategy = {
-        ma0: { stock: 'QQQ', rsiEnabled: false },
+        ma0: { stock: 'QQQ', rsiEnabled: false, alignmentEnabled: false },
         ma1: { period: 20, stock: 'TQQQ' },
-        ma2: { period1: 20, period2: 60, stock: 'QLD', splitCount: 3 },
+        ma2: { period1: 20, period2: 60, stock: 'QLD', splitCount: 1 },
         ma3: { period: 60, stock: 'QQQ' }
       };
     }
@@ -333,7 +380,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
 
   const renderStep1 = () => (
     <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
-      <div className="bg-blue-600/5 border border-blue-500/20 p-8 rounded-[2rem] space-y-6 backdrop-blur-sm">
+      <div className="bg-slate-900/70 border border-white/5 p-8 rounded-[2rem] space-y-6 backdrop-blur-xl">
         <div className="flex items-center gap-3 mb-2">
            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
               <span className="text-[10px] font-black text-white">0</span>
@@ -344,7 +391,9 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
         </div>
         
         <div className="space-y-4">
-          <label className="text-[10px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '기준 주식 선택:' : 'Select Reference Stock:'}</label>
+          <label className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+            {lang === 'ko' ? '기준 주식 선택:' : 'Select Reference Stock:'}
+          </label>
           {isInTossApp && Menu ? (
             <Menu
               open={ma0MenuOpen}
@@ -353,7 +402,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
               placement="bottom"
             >
               <Menu.Trigger>
-                <button className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all cursor-pointer flex items-center justify-between">
+                <button className="w-full px-5 py-4 bg-slate-900/80 border border-white/10 rounded-2xl text-lg font-black text-slate-50 outline-none focus:ring-2 focus:ring-blue-500/60 transition-all cursor-pointer flex items-center justify-between shadow-[0_18px_45px_rgba(15,23,42,0.9)]">
                   <span>{ma0Stock || (lang === 'ko' ? '선택하세요' : 'Select')}</span>
                   <ChevronDown size={16} className="text-slate-500" />
                 </button>
@@ -409,71 +458,147 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
               header={lang === 'ko' ? '종목 선택' : 'Select Stock'}
             />
           )}
-          <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
+          <p className="text-[11px] text-slate-400 leading-relaxed font-medium">
             {lang === 'ko' 
               ? '구간 0에서 선택한 주식의 종가와 이동평균선과의 관계로 구간 1~3을 정의합니다.' 
               : 'Sections 1–3 are defined by the relationship between the Section 0 stock\'s close and its moving averages.'}
           </p>
         </div>
 
-        <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-white/5">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              {lang === 'ko' ? 'RSI 사용' : 'Enable RSI'}
-            </span>
-            <button
-              onClick={() => setRsiEnabled(!rsiEnabled)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${
-                rsiEnabled 
-                  ? 'bg-blue-500 shadow-lg shadow-blue-500/50' 
-                  : 'bg-slate-600'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${
-                  rsiEnabled ? 'translate-x-6' : 'translate-x-1'
+        <div className="flex flex-col gap-3 pt-4 border-t border-slate-200 dark:border-white/5">
+          {/* RSI 지표 카드 */}
+          <div
+            className={`group rounded-2xl border px-4 py-3 sm:px-5 sm:py-4 bg-slate-900/40 flex flex-col gap-2 cursor-pointer transition-all ${
+              rsiEnabled
+                ? 'border-blue-500/60 bg-blue-500/5 shadow-[0_0_0_1px_rgba(59,130,246,0.35)]'
+                : 'border-slate-700/60 hover:border-blue-500/40'
+            }`}
+            onClick={() => setRsiEnabled(!rsiEnabled)}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-blue-500/15 flex items-center justify-center text-blue-400">
+                  <Zap size={16} />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[11px] font-black text-slate-50 tracking-widest">
+                    {lang === 'ko' ? 'RSI 지표 사용' : 'Use RSI Filter'}
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    {lang === 'ko'
+                      ? 'RSI 기준값 아래에서만 매수 신호를 활성화합니다.'
+                      : 'Only buy when RSI is below your threshold.'}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setRsiEnabled(!rsiEnabled);
+                }}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${
+                  rsiEnabled
+                    ? 'bg-blue-500 shadow-lg shadow-blue-500/40'
+                    : 'bg-slate-600'
                 }`}
-              />
-            </button>
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${
+                    rsiEnabled ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
           </div>
-          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">
-            {lang === 'ko' ? 'RSI 기준 값 아래에서만 매수 진행' : 'Buy only below RSI threshold'}
-          </span>
+
+          {/* 정배열 매수 카드 */}
+          <div
+            className={`group rounded-2xl border px-4 py-3 sm:px-5 sm:py-4 bg-slate-900/40 flex flex-col gap-2 cursor-pointer transition-all ${
+              alignmentEnabled
+                ? 'border-emerald-500/60 bg-emerald-500/5 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]'
+                : 'border-slate-700/60 hover:border-emerald-500/40'
+            }`}
+            onClick={() => setAlignmentEnabled(!alignmentEnabled)}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/15 flex items-center justify-center text-emerald-400">
+                  <TrendingUp size={16} />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[11px] font-black text-slate-50 tracking-widest">
+                    {lang === 'ko' ? '정배열 매수' : 'Buy in MA Alignment'}
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    {lang === 'ko'
+                      ? '이동평균선 a > b인 상승 추세에서만 매수를 허용합니다.'
+                      : 'Only allow buys when MA a is above MA b (uptrend).'}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setAlignmentEnabled(!alignmentEnabled);
+                }}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${
+                  alignmentEnabled
+                    ? 'bg-emerald-500 shadow-lg shadow-emerald-500/40'
+                    : 'bg-slate-600'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${
+                    alignmentEnabled ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
 
   const renderStep2 = () => (
-    <div className="space-y-6 animate-in slide-in-from-right-8 duration-500">
+    <div className="space-y-6 animate-in slide-in-from-right-8 duration-500 relative">
       {/* Section 1 */}
-      <div className="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 p-8 rounded-[2rem] space-y-5 shadow-md dark:shadow-xl">
+      <div className="bg-slate-900/80 border border-white/5 p-8 rounded-[2rem] space-y-5 shadow-xl shadow-slate-900/60">
         <h3 className="text-xs font-black dark:text-white uppercase tracking-widest flex items-center gap-2">
           <div className="w-6 h-6 bg-white/10 rounded flex items-center justify-center text-[10px]">1</div>
-          {lang === 'ko' ? '구간 1: 특정 이동평균선 위에서 매일 매수 구간' : 'Section 1: Daily Buy Above MA'}
+          {lang === 'ko' ? '구간 1: 이동평균선 a 보다 종가가 큰 구간' : 'Section 1: Close Above MA a'}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '기준 이동평균선 설정 (1~240일):' : 'MA Period (1-240):'}</label>
-            <input 
-              type="number" 
-              value={ma1Period}
-              onChange={(e) => {
-                const normalized = normalizeMaPeriod(e.target.value);
-                if (normalized !== -1) {
-                  setMa1Period(normalized);
-                }
-              }}
-              onBlur={(e) => {
-                const normalized = normalizeMaPeriod(e.target.value);
-                if (normalized !== -1) {
-                  setMa1Period(normalized);
-                }
-              }}
-              min="1"
-              max="240"
-              className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-            />
+            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">
+              {lang === 'ko' ? '이동평균선 a (1~240일):' : 'MA a Period (1-240):'}
+            </label>
+            <div className="relative">
+              <input 
+                type="number" 
+                value={ma1Period}
+                onChange={(e) => {
+                  const normalized = normalizeMaPeriod(e.target.value);
+                  if (normalized !== -1) {
+                    setMa1Period(normalized);
+                  }
+                }}
+                onBlur={(e) => {
+                  const normalized = normalizeMaPeriod(e.target.value);
+                  if (normalized !== -1) {
+                    setMa1Period(normalized);
+                  }
+                }}
+                min="1"
+                max="240"
+                className="w-full pr-10 p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+              />
+              <span className="absolute inset-y-0 right-3 flex items-center text-[10px] font-bold text-slate-500">
+                {lang === 'ko' ? '일' : 'd'}
+              </span>
+            </div>
           </div>
           <div className="space-y-2">
             <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '매수할 종목 선택:' : 'Stock to Buy:'}</label>
@@ -494,6 +619,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
                   <Menu.Header>{lang === 'ko' ? '종목 선택' : 'Select Stock'}</Menu.Header>
                   {ALL_STOCKS.map((stock) => {
                     const locked = isLockedTicker(stock);
+                    const usedByOther = stock === ma2Stock || stock === ma3Stock;
                     if (locked) {
                       return (
                         <div
@@ -512,6 +638,19 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
                           <span className="text-[9px] font-black uppercase tracking-widest bg-white/10 border border-white/10 px-2 py-0.5 rounded-full">
                             PRO+
                           </span>
+                        </div>
+                      );
+                    }
+                    if (usedByOther) {
+                      return (
+                        <div
+                          key={stock}
+                          className="px-4 py-3 text-sm font-bold text-slate-400 dark:text-slate-600 flex items-center justify-between opacity-70 cursor-not-allowed"
+                        >
+                          <span>{stock}</span>
+                          <HoverTip text={usedByOtherSectionTooltip}>
+                            <span className="text-[9px] font-black uppercase tracking-widest">✓</span>
+                          </HoverTip>
                         </div>
                       );
                     }
@@ -535,7 +674,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
             ) : (
               <CustomDropdown
                 value={ma1Stock}
-                options={stockOptions}
+                options={stockOptionsForMa1}
                 onChange={(value) => setMa1Stock(value)}
                 header={lang === 'ko' ? '종목 선택' : 'Select Stock'}
               />
@@ -569,61 +708,63 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
           </div>
         )}
 
+        <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-white/5">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <Toggle checked={ma1TakePartialProfit} onChange={setMa1TakePartialProfit} aria-label={lang === 'ko' ? '중간 이익 실현' : 'Take partial profit'} />
+            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">{lang === 'ko' ? '중간 이익 실현' : 'Take partial profit'}</span>
+          </label>
+          {ma1TakePartialProfit && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-slate-500">{lang === 'ko' ? '목표 수익률:' : 'Target %:'}</span>
+              <input type="number" value={ma1PartialProfitPct} onChange={(e) => setMa1PartialProfitPct(Number(e.target.value))} min={1} max={100} className="w-20 p-2 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-slate-900 text-sm font-bold" />
+              <span className="text-[10px] text-slate-500">%</span>
+            </div>
+          )}
+        </div>
+
         <p className="text-[10px] text-slate-500 font-medium">
           {lang === 'ko' ? `기준 주식의 종가가 설정한 기준주식의 이동평균선 위에 있는 경우로 정의합니다.` : `Defined when the reference stock\'s close is above the reference stock\'s MA.`}
         </p>
       </div>
-
+      {/* dotted connector */}
+      <div className="hidden md:flex items-center justify-center">
+        <div className="h-8 border-l border-dashed border-slate-700/70" />
+      </div>
       {/* Section 2 */}
-      <div className="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 p-8 rounded-[2rem] space-y-5 shadow-md dark:shadow-xl">
+      <div className="bg-slate-900/80 border border-white/5 p-8 rounded-[2rem] space-y-5 shadow-xl shadow-slate-900/60">
         <h3 className="text-xs font-black dark:text-white uppercase tracking-widest flex items-center gap-2">
           <div className="w-6 h-6 bg-white/10 rounded flex items-center justify-center text-[10px]">2</div>
-          {lang === 'ko' ? '구간 2: 특정 2개의 이동평균선 사이에서 매일 매수' : 'Section 2: Daily Buy Between 2 MAs'}
+          {lang === 'ko' ? '구간 2: 이동평균선 a, b 사이 구간' : 'Section 2: Between MA a and b'}
         </h3>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '기준 이동평균선 1 (1~240일):' : 'MA Period 1 (1-240):'}</label>
-            <input 
-              type="number" 
-              value={ma2Period1}
-              onChange={(e) => {
-                const normalized = normalizeMaPeriod(e.target.value);
-                if (normalized !== -1) {
-                  setMa2Period1(normalized);
-                }
-              }}
-              onBlur={(e) => {
-                const normalized = normalizeMaPeriod(e.target.value);
-                if (normalized !== -1) {
-                  setMa2Period1(normalized);
-                }
-              }}
-              min="1"
-              max="240"
-              className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '기준 이동평균선 2 (1~240일):' : 'MA Period 2 (1-240):'}</label>
-            <input 
-              type="number" 
-              value={ma2Period2}
-              onChange={(e) => {
-                const normalized = normalizeMaPeriod(e.target.value);
-                if (normalized !== -1) {
-                  setMa2Period2(normalized);
-                }
-              }}
-              onBlur={(e) => {
-                const normalized = normalizeMaPeriod(e.target.value);
-                if (normalized !== -1) {
-                  setMa2Period2(normalized);
-                }
-              }}
-              min="1"
-              max="240"
-              className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-            />
+            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">
+              {lang === 'ko' ? '이동평균선 b (1~240일):' : 'MA b Period (1-240):'}
+            </label>
+            <div className="relative">
+              <input 
+                type="number" 
+                value={ma2Period2}
+                onChange={(e) => {
+                  const normalized = normalizeMaPeriod(e.target.value);
+                  if (normalized !== -1) {
+                    setMa2Period2(normalized);
+                  }
+                }}
+                onBlur={(e) => {
+                  const normalized = normalizeMaPeriod(e.target.value);
+                  if (normalized !== -1) {
+                    setMa2Period2(normalized);
+                  }
+                }}
+                min="1"
+                max="240"
+                className="w-full pr-10 p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+              />
+              <span className="absolute inset-y-0 right-3 flex items-center text-[10px] font-bold text-slate-500">
+                {lang === 'ko' ? '일' : 'd'}
+              </span>
+            </div>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
@@ -646,6 +787,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
                   <Menu.Header>{lang === 'ko' ? '종목 선택' : 'Select Stock'}</Menu.Header>
                   {ALL_STOCKS.map((stock) => {
                     const locked = isLockedTicker(stock);
+                    const usedByOther = stock === ma1Stock || stock === ma3Stock;
                     if (locked) {
                       return (
                         <div
@@ -664,6 +806,19 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
                           <span className="text-[9px] font-black uppercase tracking-widest bg-white/10 border border-white/10 px-2 py-0.5 rounded-full">
                             PRO+
                           </span>
+                        </div>
+                      );
+                    }
+                    if (usedByOther) {
+                      return (
+                        <div
+                          key={stock}
+                          className="px-4 py-3 text-sm font-bold text-slate-400 dark:text-slate-600 flex items-center justify-between opacity-70 cursor-not-allowed"
+                        >
+                          <span>{stock}</span>
+                          <HoverTip text={usedByOtherSectionTooltip}>
+                            <span className="text-[9px] font-black uppercase tracking-widest">✓</span>
+                          </HoverTip>
                         </div>
                       );
                     }
@@ -687,20 +842,11 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
             ) : (
               <CustomDropdown
                 value={ma2Stock}
-                options={stockOptions}
+                options={stockOptionsForMa2}
                 onChange={(value) => setMa2Stock(value)}
                 header={lang === 'ko' ? '종목 선택' : 'Select Stock'}
               />
             )}
-          </div>
-          <div className="space-y-2">
-            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '매수한 종목 분할 횟수:' : 'Split Count:'}</label>
-            <input 
-              type="number" 
-              value={ma2Split}
-              onChange={(e) => setMa2Split(Number(e.target.value))}
-              className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-            />
           </div>
         </div>
 
@@ -730,42 +876,39 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
           </div>
         )}
 
+        <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-white/5">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <Toggle checked={ma2TakePartialProfit} onChange={setMa2TakePartialProfit} aria-label={lang === 'ko' ? '중간 이익 실현' : 'Take partial profit'} />
+            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">{lang === 'ko' ? '중간 이익 실현' : 'Take partial profit'}</span>
+          </label>
+          {ma2TakePartialProfit && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-slate-500">{lang === 'ko' ? '목표 수익률:' : 'Target %:'}</span>
+              <input type="number" value={ma2PartialProfitPct} onChange={(e) => setMa2PartialProfitPct(Number(e.target.value))} min={1} max={100} className="w-20 p-2 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-slate-900 text-sm font-bold" />
+              <span className="text-[10px] text-slate-500">%</span>
+            </div>
+          )}
+        </div>
+
         <p className="text-[10px] text-slate-500 font-medium">
           {lang === 'ko' ? `기준 주식의 종가가 설정한 2개의 이동평균선(기준주식의) 사이에 있는 경우로 정의합니다.` : `Defined when the reference stock\'s close is between the reference stock\'s two MAs.`}
         </p>
       </div>
-
+      {/* dotted connector */}
+      <div className="hidden md:flex items-center justify-center">
+        <div className="h-8 border-l border-dashed border-slate-700/70" />
+      </div>
       {/* Section 3 */}
-      <div className="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 p-8 rounded-[2rem] space-y-5 shadow-md dark:shadow-xl">
+      <div className="bg-slate-900/80 border border-white/5 p-8 rounded-[2rem] space-y-5 shadow-xl shadow-slate-900/60">
         <h3 className="text-xs font-black dark:text-white uppercase tracking-widest flex items-center gap-2">
           <div className="w-6 h-6 bg-white/10 rounded flex items-center justify-center text-[10px]">3</div>
-          {lang === 'ko' ? '구간 3: 특정 이동평균선 아래에서 매일 매수 구간' : 'Section 3: Daily Buy Below MA'}
+          {lang === 'ko' ? '구간 3: 이동평균선 b 보다 종가가 작은 구간' : 'Section 3: Close Below MA b'}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '기준 이동평균선 설정 (1~240일):' : 'MA Period (1-240):'}</label>
-            <input 
-              type="number" 
-              value={ma3Period}
-              onChange={(e) => {
-                const normalized = normalizeMaPeriod(e.target.value);
-                if (normalized !== -1) {
-                  setMa3Period(normalized);
-                }
-              }}
-              onBlur={(e) => {
-                const normalized = normalizeMaPeriod(e.target.value);
-                if (normalized !== -1) {
-                  setMa3Period(normalized);
-                }
-              }}
-              min="1"
-              max="240"
-              className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '매수할 종목 선택:' : 'Stock to Buy:'}</label>
+            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">
+              {lang === 'ko' ? '매수할 종목 선택:' : 'Stock to Buy:'}
+            </label>
             {isInTossApp && Menu ? (
               <Menu
                 open={ma3MenuOpen}
@@ -783,6 +926,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
                   <Menu.Header>{lang === 'ko' ? '종목 선택' : 'Select Stock'}</Menu.Header>
                   {ALL_STOCKS.map((stock) => {
                     const locked = isLockedTicker(stock);
+                    const usedByOther = stock === ma1Stock || stock === ma2Stock;
                     if (locked) {
                       return (
                         <div
@@ -801,6 +945,19 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
                           <span className="text-[9px] font-black uppercase tracking-widest bg-white/10 border border-white/10 px-2 py-0.5 rounded-full">
                             PRO+
                           </span>
+                        </div>
+                      );
+                    }
+                    if (usedByOther) {
+                      return (
+                        <div
+                          key={stock}
+                          className="px-4 py-3 text-sm font-bold text-slate-400 dark:text-slate-600 flex items-center justify-between opacity-70 cursor-not-allowed"
+                        >
+                          <span>{stock}</span>
+                          <HoverTip text={usedByOtherSectionTooltip}>
+                            <span className="text-[9px] font-black uppercase tracking-widest">✓</span>
+                          </HoverTip>
                         </div>
                       );
                     }
@@ -824,7 +981,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
             ) : (
               <CustomDropdown
                 value={ma3Stock}
-                options={stockOptions}
+                options={stockOptionsForMa3}
                 onChange={(value) => setMa3Stock(value)}
                 header={lang === 'ko' ? '종목 선택' : 'Select Stock'}
               />
@@ -858,18 +1015,25 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
           </div>
         )}
 
-        <p className="text-[10px] text-slate-500 font-medium">
-          {lang === 'ko' ? `기준 주식의 종가가 설정한 이동평균선 아래에 있는 경우로 정의합니다.` : `Defined when the reference stock's close is below the reference stock's MA.`}
-        </p>
-
-        <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-start gap-3">
-          <AlertTriangle className="text-amber-500 shrink-0 mt-0.5" size={16} />
-          <p className="text-[11px] font-bold text-amber-500 leading-tight">
-            {lang === 'ko' 
-              ? '* 수익률 10% 초과시 전량 매도 및 구간 2 매수 종목 전량 매수' 
-              : '* Sell all if yield exceeds 10%, and execute bulk buy for Section 2 holdings.'}
-          </p>
+        <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-white/5">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <Toggle checked={ma3TakePartialProfit} onChange={setMa3TakePartialProfit} aria-label={lang === 'ko' ? '중간 이익 실현' : 'Take partial profit'} />
+            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">{lang === 'ko' ? '중간 이익 실현' : 'Take partial profit'}</span>
+          </label>
+          {ma3TakePartialProfit && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-slate-500">{lang === 'ko' ? '목표 수익률:' : 'Target %:'}</span>
+              <input type="number" value={ma3PartialProfitPct} onChange={(e) => setMa3PartialProfitPct(Number(e.target.value))} min={1} max={100} className="w-20 p-2 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-slate-900 text-sm font-bold" />
+              <span className="text-[10px] text-slate-500">%</span>
+            </div>
+          )}
         </div>
+
+        <p className="text-[10px] text-slate-500 font-medium">
+          {lang === 'ko'
+            ? `기준 주식의 종가가 이동평균선 b 아래에 있는 경우로 정의합니다.`
+            : `Defined when the reference stock's close is below MA b.`}
+        </p>
       </div>
     </div>
   );
@@ -1205,17 +1369,17 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
   );
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/40 dark:bg-slate-950/90 backdrop-blur-xl" onClick={onClose}></div>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 font-['Pretendard','Inter',system-ui]">
+      <div className="absolute inset-0 bg-slate-900/60 dark:bg-black/80 backdrop-blur-2xl" onClick={onClose}></div>
       <div 
-        className="relative w-full max-w-2xl bg-white dark:bg-[#111827] rounded-[2.5rem] md:rounded-[3rem] shadow-2xl dark:shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)] border border-slate-200 dark:border-white/10"
+        className="relative w-full max-w-2xl bg-[#0B0F19] rounded-[2.5rem] md:rounded-[3rem] shadow-[0_40px_120px_rgba(15,23,42,0.9)] overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)] border border-white/5"
         style={{ touchAction: 'pan-y' }}
       >
         
         {/* Header - 고정 */}
-        <div className="p-6 md:p-10 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-slate-900/60 shrink-0">
+        <div className="p-6 md:p-8 border-b border-white/5 flex justify-between items-center bg-gradient-to-r from-slate-900/90 via-slate-900/80 to-slate-900/60 shrink-0">
           <div className="flex items-center gap-4">
-             <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20">
+             <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-3xl flex items-center justify-center shadow-lg shadow-blue-500/40">
                 {step === 0 ? (
                   <Sparkles className="text-white" size={24} />
                 ) : step === 3 ? (
@@ -1225,7 +1389,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
                 )}
              </div>
              <div>
-                <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                <h2 className="text-2xl md:text-[1.6rem] font-black text-white tracking-tight">
                   {step === 0 
                     ? (lang === 'ko' ? '전략 엔진 선택' : 'Strategy Engine Selection')
                     : step === 3 
@@ -1233,21 +1397,21 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
                     : (lang === 'ko' ? '전략 세부 설정' : 'Strategy Detailed Settings')}
                 </h2>
                 {step > 0 && (
-                  <div className="flex items-center gap-2 mt-0.5">
+                  <div className="flex items-center gap-2 mt-1">
                      <div className="flex gap-1">
                         {selectedStrategy === 'rsi_ma_interval' 
                           ? [1, 2, 3].map(i => (
-                              <div key={i} className={`h-1.5 rounded-full transition-all duration-500 ${step === i ? 'w-8 bg-blue-500' : 'w-3 bg-slate-200 dark:bg-slate-800'}`}></div>
+                              <div key={i} className={`h-1.5 rounded-full transition-all duration-500 ${step === i ? 'w-8 bg-blue-500' : 'w-3 bg-slate-700'}`}></div>
                             ))
                           : selectedStrategy === 'multi_split'
                           ? [1, 2].map(i => (
-                              <div key={i} className={`h-1.5 rounded-full transition-all duration-500 ${step === i ? 'w-8 bg-emerald-500' : 'w-3 bg-slate-200 dark:bg-slate-800'}`}></div>
+                              <div key={i} className={`h-1.5 rounded-full transition-all duration-500 ${step === i ? 'w-8 bg-emerald-500' : 'w-3 bg-slate-700'}`}></div>
                             ))
                           : null
                         }
                      </div>
                      <span className={`text-[10px] font-black uppercase tracking-widest ml-2 ${
-                       selectedStrategy === 'multi_split' ? 'text-emerald-500' : 'text-blue-500'
+                       selectedStrategy === 'multi_split' ? 'text-emerald-400' : 'text-blue-400'
                      }`}>
                        {selectedStrategy === 'rsi_ma_interval' 
                          ? `Step ${step} of 3`
@@ -1259,13 +1423,13 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
                 )}
              </div>
           </div>
-          <button onClick={onClose} className="p-3 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full transition-colors text-slate-500 dark:text-slate-400">
+          <button onClick={onClose} className="p-3 hover:bg-slate-800/80 rounded-full transition-colors text-slate-400">
             <X size={24} />
           </button>
         </div>
 
         {/* Content Area - 스크롤 가능 */}
-        <div className="flex-1 overflow-y-auto overscroll-contain p-6 md:p-10 scrollbar-hide">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-6 md:p-8 scrollbar-hide bg-gradient-to-b from-slate-900/80 via-slate-950/80 to-slate-950">
           {step === 0 && renderStrategySelection()}
           {step === 1 && selectedStrategy === 'rsi_ma_interval' && renderStep1()}
           {step === 2 && selectedStrategy === 'rsi_ma_interval' && renderStep2()}
@@ -1275,11 +1439,11 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
         </div>
 
         {/* Footer - 하단 고정 */}
-        <div className="p-6 md:p-10 border-t border-slate-200 dark:border-white/5 flex gap-4 bg-slate-50 dark:bg-slate-900/60 shrink-0">
+        <div className="p-6 md:p-8 border-t border-white/5 flex gap-4 bg-slate-900/80 shrink-0">
           {step === 0 ? (
             <button 
               onClick={onClose}
-              className="flex-1 py-5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-white hover:bg-slate-200 dark:hover:bg-slate-700 rounded-2xl font-black uppercase text-xs transition-all border border-slate-200 dark:border-white/10"
+              className="flex-1 py-5 bg-slate-800 text-slate-200 hover:bg-slate-700 rounded-2xl font-black uppercase text-xs transition-all border border-slate-600/60"
             >
               {lang === 'ko' ? '취소' : 'Cancel'}
             </button>
@@ -1295,7 +1459,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
                       setStep(step - 1);
                     }
                   }}
-                  className="px-8 py-5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-white hover:bg-slate-200 dark:hover:bg-slate-700 rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 transition-all border border-slate-200 dark:border-white/10"
+                  className="px-8 py-5 bg-slate-800 text-slate-200 hover:bg-slate-700 rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 transition-all border border-slate-600/60"
                 >
                   <ChevronLeft size={18} strokeWidth={3} /> {lang === 'ko' ? '이전' : 'Back'}
                 </button>
@@ -1319,7 +1483,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
                   }
                 }}
                 disabled={!selectedStrategy}
-                className="flex-1 py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 shadow-xl shadow-blue-500/30 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 shadow-[0_12px_40px_rgba(37,99,235,0.6)] hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {selectedStrategy === 'multi_split' 
                   ? (step === 2 ? (lang === 'ko' ? '전략 시작' : 'Start Strategy') : (lang === 'ko' ? '다음' : 'Next'))

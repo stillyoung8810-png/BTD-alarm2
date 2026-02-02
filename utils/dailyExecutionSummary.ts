@@ -16,6 +16,8 @@ const STRINGS: Record<Lang, {
   overLimit: string;
   section: string;
   buy: string;
+  sectionProfit: string; // "구간N 익절"
+  sectionWatchRsiNotMet: string; // "관망 (RSI 조건 미충족)"
   locBuy1: string;
   locBuy2: string;
   locSell: string;
@@ -33,6 +35,8 @@ const STRINGS: Record<Lang, {
     overLimit: '매매 내역을 확인하세요. 총투자금을 초과했습니다.',
     section: '구간',
     buy: '매수',
+    sectionProfit: '익절',
+    sectionWatchRsiNotMet: '관망 (RSI 조건 미충족)',
     locBuy1: 'LOC 매수1',
     locBuy2: 'LOC 매수2',
     locSell: 'LOC 매도',
@@ -50,6 +54,8 @@ const STRINGS: Record<Lang, {
     overLimit: 'Check your trades. Total invested has exceeded the limit.',
     section: 'Section',
     buy: 'Buy',
+    sectionProfit: 'Take profit',
+    sectionWatchRsiNotMet: 'Watch (RSI not met)',
     locBuy1: 'LOC Buy1',
     locBuy2: 'LOC Buy2',
     locSell: 'LOC Sell',
@@ -101,6 +107,10 @@ export function formatPortfolioDailyExecutionBlock(
     multiSplitOverLimit?: boolean;
     /** 이평선 구간매수: 현재 활성 구간(1/2/3). 있으면 "구간 N: 종목 매수" 한 줄 추가 후 텔레그램에도 노출 */
     maActiveSection?: 1 | 2 | 3 | null;
+    /** 이평선 구간매수: 목표 수익률 도달 시 "구간N 익절: 종목 수량주" 라인들 */
+    maPartialProfitLines?: { section: 1 | 2 | 3; stock: string; quantity: number }[];
+    /** 이평선 구간매수 + RSI 사용 시: RSI 조건 미충족이면 true → "구간 N: 관망 (RSI 조건 미충족)" 표시 */
+    maRsiNotMet?: boolean;
   },
 ): string {
   const s = STRINGS[lang] ?? STRINGS.ko;
@@ -111,16 +121,26 @@ export function formatPortfolioDailyExecutionBlock(
   lines.push(portfolio.strategy.multiSplit ? `- ${s.strategyMultiSplit}` : `- ${s.strategyMa}`);
   lines.push(`- ${s.alarmTimes}: ${hours || '-'}`);
 
-  // 이평선 구간매수: 구간·매수 종목이 있으면 한 줄 추가, 그 다음 안내 문구 (텔레그램 DAILY EXECUTION에 그대로 노출)
+  // 이평선 구간매수: 구간·매수 종목, 구간별 익절 제안, RSI 미충족 시 관망 문구
   if (!portfolio.strategy.multiSplit) {
-    const { maActiveSection } = options;
+    const { maActiveSection, maPartialProfitLines, maRsiNotMet } = options;
     if (maActiveSection === 1 || maActiveSection === 2 || maActiveSection === 3) {
-      const stock = maActiveSection === 1
-        ? portfolio.strategy.ma1.stock
-        : maActiveSection === 2
-          ? portfolio.strategy.ma2.stock
-          : portfolio.strategy.ma3.stock;
-      lines.push(`- ${s.section} ${maActiveSection}: ${stock} ${s.buy}`);
+      if (maRsiNotMet) {
+        lines.push(`- ${s.section} ${maActiveSection}: ${s.sectionWatchRsiNotMet}`);
+      } else {
+        const stock = maActiveSection === 1
+          ? portfolio.strategy.ma1.stock
+          : maActiveSection === 2
+            ? portfolio.strategy.ma2.stock
+            : portfolio.strategy.ma3.stock;
+        lines.push(`- ${s.section} ${maActiveSection}: ${stock} ${s.buy}`);
+      }
+    }
+    if (maPartialProfitLines?.length) {
+      maPartialProfitLines.forEach(({ section, stock, quantity }) => {
+        const q = Math.round(quantity);
+        if (q > 0) lines.push(`- ${s.section}${section} ${s.sectionProfit}: ${stock} ${q}${s.sharesUnit}`);
+      });
     }
     lines.push(`- ${s.noOrder}`);
     return lines.join('\n');

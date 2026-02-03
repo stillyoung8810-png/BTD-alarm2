@@ -11,9 +11,33 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+# Lambda: 레이어가 /opt에 풀리므로 해당 경로를 sys.path에 추가 (자동 추가가 안 되는 환경 대비)
+if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+    # 디버그: CloudWatch에서 /opt·sys.path 확인용 (원인 파악 후 제거 가능)
+    try:
+        _opt = "/opt"
+        print(f"[backtest_ma] /opt exists: {os.path.isdir(_opt)}")
+        if os.path.isdir(_opt):
+            print(f"[backtest_ma] /opt contents: {os.listdir(_opt)}")
+        _py = "/opt/python"
+        if os.path.isdir(_py):
+            print(f"[backtest_ma] /opt/python contents: {os.listdir(_py)}")
+            _sp = os.path.join(_py, "lib", "python3.11", "site-packages")
+            if os.path.isdir(os.path.join(_py, "lib")):
+                print(f"[backtest_ma] /opt/python/lib contents: {os.listdir(os.path.join(_py, 'lib'))}")
+        for _p in ("/opt/python", "/opt/python/lib/python3.11/site-packages", "/opt/python/lib/python3.12/site-packages"):
+            _exists = os.path.isdir(_p)
+            print(f"[backtest_ma] {_p} exists: {_exists}")
+            if _exists and _p not in sys.path:
+                sys.path.insert(0, _p)
+        print(f"[backtest_ma] sys.path (first 5): {sys.path[:5]}")
+    except Exception as _e:
+        print(f"[backtest_ma] path debug error: {_e}")
 
 # Lambda 레이어 또는 로컬 venv
 try:
@@ -23,7 +47,9 @@ except ImportError:
 
 try:
     from supabase import create_client
-except ImportError:
+except ImportError as e:
+    if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+        print(f"[backtest_ma] supabase import failed: {e!r}")
     create_client = None  # type: ignore
 
 # .env 로드 (로컬)

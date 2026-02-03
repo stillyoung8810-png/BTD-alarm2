@@ -27,6 +27,12 @@ jobs:
           cd lambda-layers/supabase
           zip -r supabase-layer-linux.zip python
 
+      - name: Verify zip structure (Lambda expects this path)
+        run: |
+          cd lambda-layers/supabase
+          unzip -l supabase-layer-linux.zip | head -20
+          test -d python/lib/python3.11/site-packages && test -d python/lib/python3.11/site-packages/supabase && echo "OK: structure correct for Lambda"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

@@ -3,7 +3,7 @@ import datetime as dt
 import json
 import time
 import random
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Literal
 from pathlib import Path
 
 import yfinance as yf
@@ -43,57 +43,85 @@ MAX_RETRIES = 3
 INITIAL_RETRY_DELAY = 5
 
 
-def fetch_ticker_price(ticker_symbol: str, retry_count: int = 0) -> Optional[Dict[str, Any]]:
-    """yfinance를 사용하여 단일 종목의 종가 가져오기 (재시도 로직 포함)"""
-    try:
-        ticker = yf.Ticker(ticker_symbol)
-        
-        # 최근 5거래일 내 데이터 가져오기
-        # 주말/공휴일에도 마지막 거래일(예: 금요일) 데이터가 반환되므로
-        # trade_date를 "실제 거래일"로 잡아서 주말/공휴일 중복 저장을 방지한다.
-        hist = ticker.history(period="5d", interval="1d")
-        
-        if hist.empty:
-            # 데이터가 없으면 info에서 이전 종가/시장 시간 가져오기 (최후의 수단)
-            info = ticker.info
-            close = info.get("regularMarketPrice") or info.get("previousClose")
-            if close is None:
-                print(f"⚠ Warning: No data found for {ticker_symbol}")
-                return None
-            market_time = info.get("regularMarketTime") or info.get("postMarketTime") or info.get("preMarketTime")
-            if not market_time:
-                print(f"⚠ Warning: No market time found for {ticker_symbol} (skip)")
-                return None
-            trade_date = dt.datetime.fromtimestamp(int(market_time), tz=dt.timezone.utc).date().isoformat()
-        else:
-            # 가장 최근 종가 가져오기
-            close = float(hist["Close"].iloc[-1])
-            # 가장 최근(=마지막 거래일) 날짜를 trade_date로 사용
-            trade_date = hist.index[-1].date().isoformat()
-        
-        return {
-            "symbol": ticker_symbol,
-            "close": close,
-            "trade_date": trade_date,
-        }
-    
-    except Exception as e:
-        if retry_count < MAX_RETRIES:
-            delay = INITIAL_RETRY_DELAY * (2 ** retry_count)  # Exponential backoff
-            print(f"Error fetching {ticker_symbol}: {e}. Retrying after {delay} seconds... (attempt {retry_count + 1}/{MAX_RETRIES})")
-            time.sleep(delay)
-            return fetch_ticker_price(ticker_symbol, retry_count + 1)
-        else:
-            print(f"✗ Failed to fetch {ticker_symbol} after {MAX_RETRIES} retries: {e}")
-            return None
+DataSource = Literal["yahoo", "fmp"]
 
 
-def fetch_quotes_batch(tickers: List[str]) -> List[Dict[str, Any]]:
+class StockDataProvider:
+    """
+    주가 데이터 소스를 추상화한 Provider.
+
+    - 현재: source="yahoo" 인 경우 yfinance 사용
+    - 추후: source="fmp" 인 경우 FMP API 사용으로 교체 예정
+    """
+
+    def __init__(self, source: DataSource = "yahoo", api_key: Optional[str] = None) -> None:
+        self.source = source
+        self.api_key = api_key
+
+    def fetch_ticker_price(self, ticker_symbol: str, retry_count: int = 0) -> Optional[Dict[str, Any]]:
+        if self.source == "yahoo":
+            return self._fetch_ticker_price_yahoo(ticker_symbol, retry_count=retry_count)
+        elif self.source == "fmp":
+            # TODO: FMP API 연동 시 여기 구현
+            print(f"⚠ FMP provider is not implemented yet (ticker={ticker_symbol}). Using yahoo as fallback.")
+            return self._fetch_ticker_price_yahoo(ticker_symbol, retry_count=retry_count)
+        else:
+            raise ValueError(f"Unsupported data source: {self.source}")
+
+    def _fetch_ticker_price_yahoo(self, ticker_symbol: str, retry_count: int = 0) -> Optional[Dict[str, Any]]:
+        """yfinance를 사용하여 단일 종목의 종가 가져오기 (재시도 로직 포함)"""
+        try:
+            ticker = yf.Ticker(ticker_symbol)
+
+            # 최근 5거래일 내 데이터 가져오기
+            # 주말/공휴일에도 마지막 거래일(예: 금요일) 데이터가 반환되므로
+            # trade_date를 "실제 거래일"로 잡아서 주말/공휴일 중복 저장을 방지한다.
+            hist = ticker.history(period="5d", interval="1d")
+
+            if hist.empty:
+                # 데이터가 없으면 info에서 이전 종가/시장 시간 가져오기 (최후의 수단)
+                info = ticker.info
+                close = info.get("regularMarketPrice") or info.get("previousClose")
+                if close is None:
+                    print(f"⚠ Warning: No data found for {ticker_symbol}")
+                    return None
+                market_time = info.get("regularMarketTime") or info.get("postMarketTime") or info.get("preMarketTime")
+                if not market_time:
+                    print(f"⚠ Warning: No market time found for {ticker_symbol} (skip)")
+                    return None
+                trade_date = dt.datetime.fromtimestamp(int(market_time), tz=dt.timezone.utc).date().isoformat()
+            else:
+                # 가장 최근 종가 가져오기
+                close = float(hist["Close"].iloc[-1])
+                # 가장 최근(=마지막 거래일) 날짜를 trade_date로 사용
+                trade_date = hist.index[-1].date().isoformat()
+
+            return {
+                "symbol": ticker_symbol,
+                "close": close,
+                "trade_date": trade_date,
+            }
+
+        except Exception as e:
+            if retry_count < MAX_RETRIES:
+                delay = INITIAL_RETRY_DELAY * (2 ** retry_count)  # Exponential backoff
+                print(
+                    f"Error fetching {ticker_symbol}: {e}. Retrying after {delay} seconds... "
+                    f"(attempt {retry_count + 1}/{MAX_RETRIES})"
+                )
+                time.sleep(delay)
+                return self._fetch_ticker_price_yahoo(ticker_symbol, retry_count=retry_count + 1)
+            else:
+                print(f"✗ Failed to fetch {ticker_symbol} after {MAX_RETRIES} retries: {e}")
+                return None
+
+
+def fetch_quotes_batch(tickers: List[str], provider: StockDataProvider) -> List[Dict[str, Any]]:
     """한 배치의 종목들을 순차적으로 가져오기"""
     results: List[Dict[str, Any]] = []
     
     for ticker in tickers:
-        result = fetch_ticker_price(ticker)
+        result = provider.fetch_ticker_price(ticker)
         if result:
             results.append(result)
         
@@ -104,7 +132,7 @@ def fetch_quotes_batch(tickers: List[str]) -> List[Dict[str, Any]]:
     return results
 
 
-def fetch_all_quotes(tickers: List[str]) -> List[Dict[str, Any]]:
+def fetch_all_quotes(tickers: List[str], provider: StockDataProvider) -> List[Dict[str, Any]]:
     """모든 종목을 2~3개씩 랜덤하게 묶어서 순차적으로 가져오기"""
     all_quotes: List[Dict[str, Any]] = []
     i = 0
@@ -116,7 +144,7 @@ def fetch_all_quotes(tickers: List[str]) -> List[Dict[str, Any]]:
         batch = tickers[i:i + batch_size]
         
         print(f"Fetching batch {batch_num}: {', '.join(batch)} ({len(batch)} tickers)")
-        quotes = fetch_quotes_batch(batch)
+        quotes = fetch_quotes_batch(batch, provider=provider)
         all_quotes.extend(quotes)
         
         i += batch_size
@@ -242,14 +270,20 @@ def cleanup_old_stock_prices() -> None:
 
 def main() -> None:
     print("=" * 60)
-    print("Starting stock price fetch using yfinance")
+    print("Starting stock price fetch using StockDataProvider (default: yahoo)")
     print(f"Total tickers: {len(TICKERS)}")
     print(f"Batch size: {MIN_BATCH_SIZE}~{MAX_BATCH_SIZE} (random)")
     print(f"Delay between batches: {MIN_DELAY}~{MAX_DELAY}s (random)")
     print("=" * 60)
     
+    # 데이터 소스 설정: 기본은 'yahoo', 추후 FMP 전환 시 STOCK_DATA_SOURCE, FMP_API_KEY로 제어
+    source: DataSource = os.environ.get("STOCK_DATA_SOURCE", "yahoo")  # 'yahoo' 또는 'fmp'
+    fmp_api_key = os.environ.get("FMP_API_KEY")
+    provider = StockDataProvider(source=source, api_key=fmp_api_key)
+    print(f"Data source: {provider.source}")
+
     try:
-        quotes = fetch_all_quotes(TICKERS)
+        quotes = fetch_all_quotes(TICKERS, provider=provider)
         print(f"\n✓ Received {len(quotes)} quotes from {len(TICKERS)} tickers")
 
         rows = build_rows(quotes)

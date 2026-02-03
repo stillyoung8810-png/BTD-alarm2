@@ -16,10 +16,11 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install supabase into python/
+      # Lambda는 /opt/python/lib/python3.11/site-packages 를 PYTHONPATH에 추가함
+      - name: Install supabase into python/lib/python3.11/site-packages/
         run: |
-          mkdir -p lambda-layers/supabase/python
-          pip install supabase -t lambda-layers/supabase/python
+          mkdir -p lambda-layers/supabase/python/lib/python3.11/site-packages
+          pip install supabase -t lambda-layers/supabase/python/lib/python3.11/site-packages
 
       - name: Create zip (python/ at top level)
         run: |

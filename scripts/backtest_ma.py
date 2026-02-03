@@ -40,7 +40,7 @@ except ImportError:
 DEFAULT_PARAMS: Dict[str, Any] = {
     "baseStock": "QQQ",
     "rsiEnabled": False,
-    "rsiThreshold": 70,
+    "rsiThreshold": 30,
     "alignmentEnabled": False,
     "maAPeriod": 20,
     "maAStock": "TQQQ",
@@ -331,7 +331,7 @@ def main(params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     start = end - timedelta(days=months * 31)
     start_str = start.isoformat()
     end_str = end.isoformat()
-    symbols = list({p["baseStock"], p["ma1Stock"], p["ma2Stock"], p["ma3Stock"]})
+    symbols = list({p["baseStock"], p["maAStock"], p["maBStock"], p["ma3Stock"]})
 
     client = get_supabase_client()
     raw = fetch_stock_prices(client, symbols, start_str, end_str)

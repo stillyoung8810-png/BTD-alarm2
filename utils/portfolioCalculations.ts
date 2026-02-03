@@ -149,12 +149,46 @@ async function getMAForBaseStock(
   return computeMAFromHistory(pricesOnly, period);
 }
 
+/** 구간 판정용 단기/장기 이평선 기간 읽기 (구 스키마 호환: ma0.maAPeriod 없으면 ma1.period 등 사용). Dashboard/백테스트 연동용. */
+export function getMaPeriods(portfolio: Portfolio): { maAPeriod: number; maBPeriod: number } {
+  const s = portfolio.strategy;
+  const ma1 = s.ma1 as { period?: number };
+  const ma2 = s.ma2 as { period1?: number; period2?: number };
+  const ma3 = s.ma3 as { period?: number };
+  return {
+    maAPeriod: s.ma0.maAPeriod ?? ma1.period ?? 20,
+    maBPeriod: s.ma0.maBPeriod ?? ma3.period ?? ma2.period2 ?? 60,
+  };
+}
+
+/**
+ * 정배열 판정용 단기(maA)·장기(maB) 이평선 값을 반환합니다.
+ * 백테스트와 동일: 정배열 = maA > maB. Dashboard에서 maAlignmentNotMet 계산용.
+ */
+export async function getMAValuesForAlignment(portfolio: Portfolio): Promise<{ maA: number; maB: number }> {
+  const ma0Stock = portfolio.strategy.ma0.stock;
+  const stockPrices = await fetchStockPrices([ma0Stock]);
+  const baseData = stockPrices[ma0Stock];
+  const { maAPeriod, maBPeriod } = getMaPeriods(portfolio);
+  const needsHistory = [maAPeriod, maBPeriod].some((p) => !STANDARD_MA_PERIODS.includes(p));
+  let historyCache: Array<{ price: number }> | null = null;
+  if (needsHistory) {
+    const maxPeriod = Math.max(maAPeriod, maBPeriod, 120);
+    const history = await fetchStockPriceHistory(ma0Stock, maxPeriod + 30);
+    historyCache = history.map((h) => ({ price: h.price }));
+  }
+  const maA = await getMAForBaseStock(ma0Stock, maAPeriod, baseData, historyCache);
+  const maB = await getMAForBaseStock(ma0Stock, maBPeriod, baseData, historyCache);
+  return { maA, maB };
+}
+
 /**
  * 현재 활성화된 구간을 판별합니다.
- * - 구간 0에서 선택한 **기준 주식(ma0.stock)** 하나만 사용합니다.
- * - 기준 주식의 **종가**와 **기준 주식의** 이동평균선(ma1.period, ma2.period1/period2, ma3.period)과의 관계로 구간 1~3을 정의합니다.
- * - 20/60/120일 이평선은 캐시(IndexedDB 등)의 ma20/ma60/ma120를 사용하고,
- *   그 외 기간(예: 30, 50일)은 가격 이력을 불러와 직접 계산한 뒤 비교에 사용합니다.
+ * - 기준 주식(ma0.stock) 종가와 **단기(maAPeriod)·장기(maBPeriod)** 2개 이평선만 사용.
+ * - 백테스트 엔진(determine_section)과 동일:
+ *   구간 1: 현재가 > Max(maA, maB)
+ *   구간 2: Min(maA, maB) ≤ 현재가 ≤ Max(maA, maB)
+ *   구간 3: 현재가 < Min(maA, maB)
  */
 export const determineActiveSection = async (portfolio: Portfolio): Promise<1 | 2 | 3 | null> => {
   try {
@@ -165,48 +199,29 @@ export const determineActiveSection = async (portfolio: Portfolio): Promise<1 | 
 
     if (!ma0Price) return null;
 
-    const p1 = portfolio.strategy.ma1.period;
-    const p2a = portfolio.strategy.ma2.period1;
-    const p2b = portfolio.strategy.ma2.period2;
-    const p3 = portfolio.strategy.ma3.period;
+    const { maAPeriod, maBPeriod } = getMaPeriods(portfolio);
 
-    const needsHistory = [p1, p2a, p2b, p3].some(
+    const needsHistory = [maAPeriod, maBPeriod].some(
       (period) => !STANDARD_MA_PERIODS.includes(period)
     );
     let historyCache: Array<{ price: number }> | null = null;
     if (needsHistory) {
-      const maxPeriod = Math.max(p1, p2a, p2b, p3, 120);
+      const maxPeriod = Math.max(maAPeriod, maBPeriod, 120);
       const history = await fetchStockPriceHistory(ma0Stock, maxPeriod + 30);
       historyCache = history.map((h) => ({ price: h.price }));
     }
 
-    const ma1Price = await getMAForBaseStock(ma0Stock, p1, baseData, historyCache);
-    const ma2Price1 = await getMAForBaseStock(ma0Stock, p2a, baseData, historyCache);
-    const ma2Price2 = await getMAForBaseStock(ma0Stock, p2b, baseData, historyCache);
-    const ma3Price = await getMAForBaseStock(ma0Stock, p3, baseData, historyCache);
+    const maA = await getMAForBaseStock(ma0Stock, maAPeriod, baseData, historyCache);
+    const maB = await getMAForBaseStock(ma0Stock, maBPeriod, baseData, historyCache);
 
-    // 구간 3: 기준 주식이 ma3 이평선 **아래**
-    if (ma3Price > 0 && ma0Price < ma3Price) {
-      return 3;
-    }
-    // 구간 2: 기준 주식이 ma2 두 이평선 **사이** (period1/period2 순서 무관)
-    const ma2Low = Math.min(ma2Price1, ma2Price2);
-    const ma2High = Math.max(ma2Price1, ma2Price2);
-    if (ma2Low > 0 && ma2High > 0 && ma0Price >= ma2Low && ma0Price <= ma2High) {
-      return 2;
-    }
-    // 구간 1: 기준 주식이 ma1 이평선 **위**
-    if (ma1Price > 0 && ma0Price >= ma1Price) {
-      return 1;
-    }
+    const hi = Math.max(maA, maB);
+    const lo = Math.min(maA, maB);
 
-    // 20이평 아래인데 구간 2·3을 판별 못한 경우(ma60 등 누락): 구간 3으로 처리
-    // (null 반환 시 QuickInputModal이 기본값 1을 보여주는 문제 방지)
-    if (ma1Price > 0 && ma0Price < ma1Price) {
-      return 3;
-    }
+    if (hi <= 0 || lo <= 0) return null;
 
-    return null;
+    if (ma0Price > hi) return 1;
+    if (ma0Price < lo) return 3;
+    return 2;
   } catch (err) {
     console.error('Error determining active section:', err);
     return null;

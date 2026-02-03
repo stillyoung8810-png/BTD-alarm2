@@ -2,12 +2,11 @@
 import React, { useState } from 'react';
 import { Portfolio, Strategy } from '../types';
 import { AVAILABLE_STOCKS, ALL_STOCKS, PAID_STOCKS, I18N } from '../constants';
-import { X, ChevronRight, ChevronLeft, Info, Sparkles, Target, Zap, Settings2, Calendar, Wallet, Percent, AlertTriangle, ChevronDown, Lock, TrendingUp, Layers } from 'lucide-react';
+import { X, ChevronRight, ChevronLeft, Info, Sparkles, Target, Zap, Settings2, Calendar, Wallet, Percent, AlertTriangle, ChevronDown, Lock, TrendingUp, Layers, BarChart2 } from 'lucide-react';
 import { useTossApp } from '../contexts/TossAppContext';
 import CustomDropdown from './CustomDropdown';
 import HoverTip from './HoverTip';
 import InfoModal from './InfoModal';
-import Toggle from './Toggle';
 
 // 전략 타입 정의 (확장 가능)
 export type StrategyType = 'rsi_ma_interval' | 'multi_split';
@@ -67,25 +66,23 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
   const [selectedStrategy, setSelectedStrategy] = useState<StrategyType | null>(null);
   const [proInfoOpen, setProInfoOpen] = useState(false);
   
-  // Step 1: Section 0
+  // Step 1: Section 0 (기준 주식 + 단기/장기 이평선 기간)
   const [ma0Stock, setMa0Stock] = useState('QQQ');
+  const [maAPeriod, setMaAPeriod] = useState(20);
+  const [maBPeriod, setMaBPeriod] = useState(60);
   const [rsiEnabled, setRsiEnabled] = useState(false);
   const [alignmentEnabled, setAlignmentEnabled] = useState(false);
   const [ma0MenuOpen, setMa0MenuOpen] = useState(false);
 
-  // Step 2: Sections 1, 2, 3
-  const [ma1Period, setMa1Period] = useState(20);
+  // Step 2: Sections 1, 2, 3 (종목·RSI·중간이익실현만)
   const [ma1Stock, setMa1Stock] = useState('TQQQ');
   const [ma1Rsi, setMa1Rsi] = useState(30);
   const [ma1MenuOpen, setMa1MenuOpen] = useState(false);
 
-  const [ma2Period1, setMa2Period1] = useState(20);
-  const [ma2Period2, setMa2Period2] = useState(60);
   const [ma2Stock, setMa2Stock] = useState('QLD');
   const [ma2Rsi, setMa2Rsi] = useState(30);
   const [ma2MenuOpen, setMa2MenuOpen] = useState(false);
 
-  const [ma3Period, setMa3Period] = useState(60);
   const [ma3Stock, setMa3Stock] = useState('QQQ');
   const [ma3Rsi, setMa3Rsi] = useState(30);
   const [ma3MenuOpen, setMa3MenuOpen] = useState(false);
@@ -194,18 +191,18 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
         return;
       }
       strategy = {
-        ma0: { stock: ma0Stock, rsiEnabled, alignmentEnabled },
-        ma1: { period: ma1Period, stock: ma1Stock, rsiThreshold: rsiEnabled ? ma1Rsi : undefined, takePartialProfit: ma1TakePartialProfit, partialProfitTargetPct: ma1TakePartialProfit ? ma1PartialProfitPct : undefined },
-        ma2: { period1: ma2Period1, period2: ma2Period2, stock: ma2Stock, splitCount: 1, rsiThreshold: rsiEnabled ? ma2Rsi : undefined, takePartialProfit: ma2TakePartialProfit, partialProfitTargetPct: ma2TakePartialProfit ? ma2PartialProfitPct : undefined },
-        ma3: { period: ma3Period, stock: ma3Stock, rsiThreshold: rsiEnabled ? ma3Rsi : undefined, takePartialProfit: ma3TakePartialProfit, partialProfitTargetPct: ma3TakePartialProfit ? ma3PartialProfitPct : undefined }
+        ma0: { stock: ma0Stock, rsiEnabled, alignmentEnabled, maAPeriod, maBPeriod },
+        ma1: { stock: ma1Stock, rsiThreshold: rsiEnabled ? ma1Rsi : undefined, takePartialProfit: ma1TakePartialProfit, partialProfitTargetPct: ma1TakePartialProfit ? ma1PartialProfitPct : undefined },
+        ma2: { stock: ma2Stock, splitCount: 1, rsiThreshold: rsiEnabled ? ma2Rsi : undefined, takePartialProfit: ma2TakePartialProfit, partialProfitTargetPct: ma2TakePartialProfit ? ma2PartialProfitPct : undefined },
+        ma3: { stock: ma3Stock, rsiThreshold: rsiEnabled ? ma3Rsi : undefined, takePartialProfit: ma3TakePartialProfit, partialProfitTargetPct: ma3TakePartialProfit ? ma3PartialProfitPct : undefined }
       };
     } else if (selectedStrategy === 'multi_split') {
       // 다분할 매매법 전략 - targetStock을 ma0에도 설정 (정배열/RSI는 사용 안 함)
       strategy = {
-        ma0: { stock: multiSplitStock, rsiEnabled: false, alignmentEnabled: false },
-        ma1: { period: 20, stock: multiSplitStock },
-        ma2: { period1: 20, period2: 60, stock: multiSplitStock, splitCount: 1 },
-        ma3: { period: 60, stock: multiSplitStock },
+        ma0: { stock: multiSplitStock, rsiEnabled: false, alignmentEnabled: false, maAPeriod: 20, maBPeriod: 60 },
+        ma1: { stock: multiSplitStock },
+        ma2: { stock: multiSplitStock, splitCount: 1 },
+        ma3: { stock: multiSplitStock },
         multiSplit: {
           targetStock: multiSplitStock,
           targetReturnRate: targetReturnRate,
@@ -215,10 +212,10 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
     } else {
       // 기본값
       strategy = {
-        ma0: { stock: 'QQQ', rsiEnabled: false, alignmentEnabled: false },
-        ma1: { period: 20, stock: 'TQQQ' },
-        ma2: { period1: 20, period2: 60, stock: 'QLD', splitCount: 1 },
-        ma3: { period: 60, stock: 'QQQ' }
+        ma0: { stock: 'QQQ', rsiEnabled: false, alignmentEnabled: false, maAPeriod: 20, maBPeriod: 60 },
+        ma1: { stock: 'TQQQ' },
+        ma2: { stock: 'QLD', splitCount: 1 },
+        ma3: { stock: 'QQQ' }
       };
     }
 
@@ -463,6 +460,64 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
               ? '구간 0에서 선택한 주식의 종가와 이동평균선과의 관계로 구간 1~3을 정의합니다.' 
               : 'Sections 1–3 are defined by the relationship between the Section 0 stock\'s close and its moving averages.'}
           </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+                {lang === 'ko' ? '이동평균선 단기 (일)' : 'MA Short (days)'}
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  min={1}
+                  max={240}
+                  value={maAPeriod}
+                  onChange={(e) => {
+                    const v = normalizeMaPeriod(e.target.value);
+                    if (v !== -1) setMaAPeriod(v);
+                  }}
+                  onBlur={(e) => {
+                    const v = normalizeMaPeriod(e.target.value);
+                    if (v !== -1) setMaAPeriod(v);
+                  }}
+                  className="w-full pr-10 p-4 bg-slate-900/80 border border-white/10 rounded-2xl text-sm font-black text-slate-50 outline-none focus:ring-2 focus:ring-blue-500/60 transition-all"
+                />
+                <span className="absolute inset-y-0 right-3 flex items-center text-[10px] font-bold text-slate-500">
+                  {lang === 'ko' ? '일' : 'd'}
+                </span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+                {lang === 'ko' ? '이동평균선 장기 (일)' : 'MA Long (days)'}
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  min={1}
+                  max={240}
+                  value={maBPeriod}
+                  onChange={(e) => {
+                    const v = normalizeMaPeriod(e.target.value);
+                    if (v !== -1) setMaBPeriod(v);
+                  }}
+                  onBlur={(e) => {
+                    const v = normalizeMaPeriod(e.target.value);
+                    if (v !== -1) setMaBPeriod(v);
+                  }}
+                  className="w-full pr-10 p-4 bg-slate-900/80 border border-white/10 rounded-2xl text-sm font-black text-slate-50 outline-none focus:ring-2 focus:ring-blue-500/60 transition-all"
+                />
+                <span className="absolute inset-y-0 right-3 flex items-center text-[10px] font-bold text-slate-500">
+                  {lang === 'ko' ? '일' : 'd'}
+                </span>
+              </div>
+            </div>
+          </div>
+          <p className="text-[10px] text-slate-400 pt-1">
+            {lang === 'ko'
+              ? '구간 1: 종가 &gt; Max(단기, 장기) · 구간 2: Min~Max 사이 · 구간 3: 종가 &lt; Min(단기, 장기)'
+              : 'Section 1: close &gt; Max(short, long) · Section 2: between · Section 3: close &lt; Min(short, long)'}
+          </p>
         </div>
 
         <div className="flex flex-col gap-3 pt-4 border-t border-slate-200 dark:border-white/5">
@@ -511,6 +566,57 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
               </button>
             </div>
           </div>
+
+          {/* RSI 활성화 시: 임계값 게이지 (보수적 10 ~ 공격적 60) */}
+          {rsiEnabled && (
+            <div
+              className="rounded-2xl border border-slate-700/60 px-4 py-3 sm:px-5 sm:py-4 bg-slate-900/40 flex flex-col gap-3 animate-in fade-in slide-in-from-top-2"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-blue-500/15 flex items-center justify-center text-blue-400">
+                    <BarChart2 size={16} />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[11px] font-black text-slate-50 tracking-widest">
+                      {lang === 'ko' ? 'RSI 임계값 설정' : 'RSI Threshold'}
+                    </span>
+                    <span className="text-[11px] text-slate-400">
+                      {lang === 'ko' ? 'RSI 기준값 이하에서만 매수' : 'Buy only when RSI is at or below threshold'}
+                    </span>
+                  </div>
+                </div>
+                <span className="text-sm font-black text-white tabular-nums">
+                  {Math.min(ma1Rsi, 60)} {lang === 'ko' ? '이하' : 'or below'}
+                </span>
+              </div>
+              <div className="space-y-2">
+                <input
+                  type="range"
+                  min={10}
+                  max={60}
+                  value={Math.min(60, Math.max(10, ma1Rsi))}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    setMa1Rsi(v);
+                    setMa2Rsi(v);
+                    setMa3Rsi(v);
+                  }}
+                  className="w-full h-2 rounded-full appearance-none bg-slate-600 accent-blue-500 cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-lg [&::-webkit-slider-thumb]:shadow-blue-500/40"
+                />
+                <div className="flex justify-between text-[10px] font-bold text-slate-500">
+                  <span>{lang === 'ko' ? '보수적 (10)' : 'Conservative (10)'}</span>
+                  <span>{lang === 'ko' ? '공격적 (60)' : 'Aggressive (60)'}</span>
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-400 leading-relaxed">
+                {lang === 'ko'
+                  ? `${ma0Stock}의 RSI(14)가 ${Math.min(ma1Rsi, 60)} 이하일 때만 매수 신호를 발생시킵니다. 과매수 구간에서의 매수를 방지합니다.`
+                  : `Buy signal only when ${ma0Stock}'s RSI(14) is ${Math.min(ma1Rsi, 60)} or below. Avoids buying in overbought zones.`}
+              </p>
+            </div>
+          )}
 
           {/* 정배열 매수 카드 */}
           <div
@@ -568,40 +674,10 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
       <div className="bg-slate-900/80 border border-white/5 p-8 rounded-[2rem] space-y-5 shadow-xl shadow-slate-900/60">
         <h3 className="text-xs font-black dark:text-white uppercase tracking-widest flex items-center gap-2">
           <div className="w-6 h-6 bg-white/10 rounded flex items-center justify-center text-[10px]">1</div>
-          {lang === 'ko' ? '구간 1: 이동평균선 a 보다 종가가 큰 구간' : 'Section 1: Close Above MA a'}
+          {lang === 'ko' ? '구간 1: 종가 > Max(단기, 장기)' : 'Section 1: Close > Max(MA short, MA long)'}
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">
-              {lang === 'ko' ? '이동평균선 a (1~240일):' : 'MA a Period (1-240):'}
-            </label>
-            <div className="relative">
-              <input 
-                type="number" 
-                value={ma1Period}
-                onChange={(e) => {
-                  const normalized = normalizeMaPeriod(e.target.value);
-                  if (normalized !== -1) {
-                    setMa1Period(normalized);
-                  }
-                }}
-                onBlur={(e) => {
-                  const normalized = normalizeMaPeriod(e.target.value);
-                  if (normalized !== -1) {
-                    setMa1Period(normalized);
-                  }
-                }}
-                min="1"
-                max="240"
-                className="w-full pr-10 p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-              />
-              <span className="absolute inset-y-0 right-3 flex items-center text-[10px] font-bold text-slate-500">
-                {lang === 'ko' ? '일' : 'd'}
-              </span>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '매수할 종목 선택:' : 'Stock to Buy:'}</label>
+        <div className="space-y-2">
+          <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '매수할 종목 선택:' : 'Stock to Buy:'}</label>
             {isInTossApp && Menu ? (
               <Menu
                 open={ma1MenuOpen}
@@ -676,48 +752,54 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
                 value={ma1Stock}
                 options={stockOptionsForMa1}
                 onChange={(value) => setMa1Stock(value)}
-                header={lang === 'ko' ? '종목 선택' : 'Select Stock'}
-              />
+              header={lang === 'ko' ? '종목 선택' : 'Select Stock'}
+            />
             )}
-          </div>
         </div>
 
-        {rsiEnabled && (
-          <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-white/5 animate-in fade-in slide-in-from-top-2">
-            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">
-              {lang === 'ko' ? 'RSI 기준 값 (0-100):' : 'RSI Base Value (0-100):'}
-            </label>
-            <input 
-              type="number" 
-              value={ma1Rsi}
-              onChange={(e) => setMa1Rsi(Number(e.target.value))}
-              className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-              min="0"
-              max="100"
-            />
-            <p className="text-[10px] text-slate-500 font-medium">
-              {lang === 'ko'
-                ? 'RSI가 이 값 이하일 때만 매수합니다.'
-                : 'Buy only when RSI is below this value.'}
-            </p>
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
-              {lang === 'ko'
-                ? '채권형 ETF는 가격 변동폭이 극히 작아 RSI 지표의 신뢰도가 낮습니다.'
-                : 'For bond ETFs, very small price movements can make RSI less reliable.'}
-            </p>
+        {/* 구간 1: 중간 이익 실현 - 긴 박스 */}
+        <div className="flex flex-col gap-3 pt-4 border-t border-slate-200 dark:border-white/5">
+          <div
+            className={`rounded-2xl border px-4 py-3 sm:px-5 sm:py-4 bg-slate-900/40 flex items-center justify-between gap-3 transition-all ${
+              ma1TakePartialProfit ? 'border-blue-500/60 bg-blue-500/5 shadow-[0_0_0_1px_rgba(59,130,246,0.35)]' : 'border-slate-700/60'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-[11px] font-black text-slate-50">%</span>
+              <span className="text-[11px] font-black text-slate-50 tracking-widest">
+                {lang === 'ko' ? '중간 이익 실현 (익절)' : 'Take Partial Profit (Take Profit)'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMa1TakePartialProfit(!ma1TakePartialProfit)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${
+                ma1TakePartialProfit ? 'bg-blue-500 shadow-lg shadow-blue-500/40' : 'bg-slate-600'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${
+                  ma1TakePartialProfit ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
           </div>
-        )}
-
-        <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-white/5">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <Toggle checked={ma1TakePartialProfit} onChange={setMa1TakePartialProfit} aria-label={lang === 'ko' ? '중간 이익 실현' : 'Take partial profit'} />
-            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">{lang === 'ko' ? '중간 이익 실현' : 'Take partial profit'}</span>
-          </label>
           {ma1TakePartialProfit && (
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-slate-500">{lang === 'ko' ? '목표 수익률:' : 'Target %:'}</span>
-              <input type="number" value={ma1PartialProfitPct} onChange={(e) => setMa1PartialProfitPct(Number(e.target.value))} min={1} max={100} className="w-20 p-2 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-slate-900 text-sm font-bold" />
-              <span className="text-[10px] text-slate-500">%</span>
+            <div className="rounded-2xl border border-slate-700/60 px-4 py-3 sm:px-5 sm:py-4 bg-slate-800/50 flex items-center justify-between gap-3 animate-in fade-in">
+              <span className="text-[11px] font-bold text-slate-400">
+                {lang === 'ko' ? '목표 수익률' : 'Target profit rate'}
+              </span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={ma1PartialProfitPct}
+                  onChange={(e) => setMa1PartialProfitPct(Number(e.target.value) || 10)}
+                  min={1}
+                  max={100}
+                  className="w-16 text-right p-2 rounded-lg border border-white/10 bg-slate-900/80 text-sm font-black text-white outline-none focus:ring-2 focus:ring-blue-500/50"
+                />
+                <span className="text-[11px] font-bold text-slate-400">%</span>
+              </div>
             </div>
           )}
         </div>
@@ -734,45 +816,13 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
       <div className="bg-slate-900/80 border border-white/5 p-8 rounded-[2rem] space-y-5 shadow-xl shadow-slate-900/60">
         <h3 className="text-xs font-black dark:text-white uppercase tracking-widest flex items-center gap-2">
           <div className="w-6 h-6 bg-white/10 rounded flex items-center justify-center text-[10px]">2</div>
-          {lang === 'ko' ? '구간 2: 이동평균선 a, b 사이 구간' : 'Section 2: Between MA a and b'}
+          {lang === 'ko' ? '구간 2: Min(단기, 장기) ≤ 종가 ≤ Max(단기, 장기)' : 'Section 2: Min ≤ Close ≤ Max'}
         </h3>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">
-              {lang === 'ko' ? '이동평균선 b (1~240일):' : 'MA b Period (1-240):'}
-            </label>
-            <div className="relative">
-              <input 
-                type="number" 
-                value={ma2Period2}
-                onChange={(e) => {
-                  const normalized = normalizeMaPeriod(e.target.value);
-                  if (normalized !== -1) {
-                    setMa2Period2(normalized);
-                  }
-                }}
-                onBlur={(e) => {
-                  const normalized = normalizeMaPeriod(e.target.value);
-                  if (normalized !== -1) {
-                    setMa2Period2(normalized);
-                  }
-                }}
-                min="1"
-                max="240"
-                className="w-full pr-10 p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-              />
-              <span className="absolute inset-y-0 right-3 flex items-center text-[10px] font-bold text-slate-500">
-                {lang === 'ko' ? '일' : 'd'}
-              </span>
-            </div>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '매수할 종목 선택:' : 'Stock to Buy:'}</label>
-            {isInTossApp && Menu ? (
-              <Menu
-                open={ma2MenuOpen}
+        <div className="space-y-2">
+          <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">{lang === 'ko' ? '매수할 종목 선택:' : 'Stock to Buy:'}</label>
+          {isInTossApp && Menu ? (
+            <Menu
+              open={ma2MenuOpen}
                 onOpen={() => setMa2MenuOpen(true)}
                 onClose={() => setMa2MenuOpen(false)}
                 placement="bottom"
@@ -847,45 +897,51 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
                 header={lang === 'ko' ? '종목 선택' : 'Select Stock'}
               />
             )}
-          </div>
         </div>
 
-        {rsiEnabled && (
-          <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-white/5 animate-in fade-in slide-in-from-top-2">
-            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">
-              {lang === 'ko' ? 'RSI 기준 값 (0-100):' : 'RSI Base Value (0-100):'}
-            </label>
-            <input 
-              type="number" 
-              value={ma2Rsi}
-              onChange={(e) => setMa2Rsi(Number(e.target.value))}
-              className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-              min="0"
-              max="100"
-            />
-            <p className="text-[10px] text-slate-500 font-medium">
-              {lang === 'ko'
-                ? 'RSI가 이 값 이하일 때만 매수합니다.'
-                : 'Buy only when RSI is below this value.'}
-            </p>
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
-              {lang === 'ko'
-                ? '채권형 ETF는 가격 변동폭이 극히 작아 RSI 지표의 신뢰도가 낮습니다.'
-                : 'For bond ETFs, very small price movements can make RSI less reliable.'}
-            </p>
+        {/* 구간 2: 중간 이익 실현 - 긴 박스 */}
+        <div className="flex flex-col gap-3 pt-4 border-t border-slate-200 dark:border-white/5">
+          <div
+            className={`rounded-2xl border px-4 py-3 sm:px-5 sm:py-4 bg-slate-900/40 flex items-center justify-between gap-3 transition-all ${
+              ma2TakePartialProfit ? 'border-blue-500/60 bg-blue-500/5 shadow-[0_0_0_1px_rgba(59,130,246,0.35)]' : 'border-slate-700/60'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-[11px] font-black text-slate-50">%</span>
+              <span className="text-[11px] font-black text-slate-50 tracking-widest">
+                {lang === 'ko' ? '중간 이익 실현 (익절)' : 'Take Partial Profit (Take Profit)'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMa2TakePartialProfit(!ma2TakePartialProfit)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${
+                ma2TakePartialProfit ? 'bg-blue-500 shadow-lg shadow-blue-500/40' : 'bg-slate-600'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${
+                  ma2TakePartialProfit ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
           </div>
-        )}
-
-        <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-white/5">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <Toggle checked={ma2TakePartialProfit} onChange={setMa2TakePartialProfit} aria-label={lang === 'ko' ? '중간 이익 실현' : 'Take partial profit'} />
-            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">{lang === 'ko' ? '중간 이익 실현' : 'Take partial profit'}</span>
-          </label>
           {ma2TakePartialProfit && (
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-slate-500">{lang === 'ko' ? '목표 수익률:' : 'Target %:'}</span>
-              <input type="number" value={ma2PartialProfitPct} onChange={(e) => setMa2PartialProfitPct(Number(e.target.value))} min={1} max={100} className="w-20 p-2 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-slate-900 text-sm font-bold" />
-              <span className="text-[10px] text-slate-500">%</span>
+            <div className="rounded-2xl border border-slate-700/60 px-4 py-3 sm:px-5 sm:py-4 bg-slate-800/50 flex items-center justify-between gap-3 animate-in fade-in">
+              <span className="text-[11px] font-bold text-slate-400">
+                {lang === 'ko' ? '목표 수익률' : 'Target profit rate'}
+              </span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={ma2PartialProfitPct}
+                  onChange={(e) => setMa2PartialProfitPct(Number(e.target.value) || 10)}
+                  min={1}
+                  max={100}
+                  className="w-16 text-right p-2 rounded-lg border border-white/10 bg-slate-900/80 text-sm font-black text-white outline-none focus:ring-2 focus:ring-blue-500/50"
+                />
+                <span className="text-[11px] font-bold text-slate-400">%</span>
+              </div>
             </div>
           )}
         </div>
@@ -902,7 +958,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
       <div className="bg-slate-900/80 border border-white/5 p-8 rounded-[2rem] space-y-5 shadow-xl shadow-slate-900/60">
         <h3 className="text-xs font-black dark:text-white uppercase tracking-widest flex items-center gap-2">
           <div className="w-6 h-6 bg-white/10 rounded flex items-center justify-center text-[10px]">3</div>
-          {lang === 'ko' ? '구간 3: 이동평균선 b 보다 종가가 작은 구간' : 'Section 3: Close Below MA b'}
+          {lang === 'ko' ? '구간 3: 종가 < Min(단기, 장기)' : 'Section 3: Close < Min(MA short, MA long)'}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
@@ -989,42 +1045,49 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
           </div>
         </div>
 
-        {rsiEnabled && (
-          <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-white/5 animate-in fade-in slide-in-from-top-2">
-            <label className="text-[9px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest">
-              {lang === 'ko' ? 'RSI 기준 값 (0-100):' : 'RSI Base Value (0-100):'}
-            </label>
-            <input 
-              type="number" 
-              value={ma3Rsi}
-              onChange={(e) => setMa3Rsi(Number(e.target.value))}
-              className="w-full p-4 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-              min="0"
-              max="100"
-            />
-            <p className="text-[10px] text-slate-500 font-medium">
-              {lang === 'ko'
-                ? 'RSI가 이 값 이하일 때만 매수합니다.'
-                : 'Buy only when RSI is below this value.'}
-            </p>
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
-              {lang === 'ko'
-                ? '채권형 ETF는 가격 변동폭이 극히 작아 RSI 지표의 신뢰도가 낮습니다.'
-                : 'For bond ETFs, very small price movements can make RSI less reliable.'}
-            </p>
+        {/* 구간 3: 중간 이익 실현 - 긴 박스 */}
+        <div className="flex flex-col gap-3 pt-4 border-t border-slate-200 dark:border-white/5">
+          <div
+            className={`rounded-2xl border px-4 py-3 sm:px-5 sm:py-4 bg-slate-900/40 flex items-center justify-between gap-3 transition-all ${
+              ma3TakePartialProfit ? 'border-blue-500/60 bg-blue-500/5 shadow-[0_0_0_1px_rgba(59,130,246,0.35)]' : 'border-slate-700/60'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-[11px] font-black text-slate-50">%</span>
+              <span className="text-[11px] font-black text-slate-50 tracking-widest">
+                {lang === 'ko' ? '중간 이익 실현 (익절)' : 'Take Partial Profit (Take Profit)'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMa3TakePartialProfit(!ma3TakePartialProfit)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${
+                ma3TakePartialProfit ? 'bg-blue-500 shadow-lg shadow-blue-500/40' : 'bg-slate-600'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${
+                  ma3TakePartialProfit ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
           </div>
-        )}
-
-        <div className="space-y-3 pt-4 border-t border-slate-200 dark:border-white/5">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <Toggle checked={ma3TakePartialProfit} onChange={setMa3TakePartialProfit} aria-label={lang === 'ko' ? '중간 이익 실현' : 'Take partial profit'} />
-            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">{lang === 'ko' ? '중간 이익 실현' : 'Take partial profit'}</span>
-          </label>
           {ma3TakePartialProfit && (
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-slate-500">{lang === 'ko' ? '목표 수익률:' : 'Target %:'}</span>
-              <input type="number" value={ma3PartialProfitPct} onChange={(e) => setMa3PartialProfitPct(Number(e.target.value))} min={1} max={100} className="w-20 p-2 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-slate-900 text-sm font-bold" />
-              <span className="text-[10px] text-slate-500">%</span>
+            <div className="rounded-2xl border border-slate-700/60 px-4 py-3 sm:px-5 sm:py-4 bg-slate-800/50 flex items-center justify-between gap-3 animate-in fade-in">
+              <span className="text-[11px] font-bold text-slate-400">
+                {lang === 'ko' ? '목표 수익률' : 'Target profit rate'}
+              </span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={ma3PartialProfitPct}
+                  onChange={(e) => setMa3PartialProfitPct(Number(e.target.value) || 10)}
+                  min={1}
+                  max={100}
+                  className="w-16 text-right p-2 rounded-lg border border-white/10 bg-slate-900/80 text-sm font-black text-white outline-none focus:ring-2 focus:ring-blue-500/50"
+                />
+                <span className="text-[11px] font-bold text-slate-400">%</span>
+              </div>
             </div>
           )}
         </div>

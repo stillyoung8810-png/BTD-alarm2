@@ -1,6 +1,6 @@
 # useEffect 무한 루프 후보 전수 조사 리포트 (재검사)
 
-**최종 조사일**: 2026-01-30  
+**최종 조사일**: 2026-02-03  
 **범위**: 프로젝트 전체 `useEffect` — 의존성 배열·setState·콜백 전달 패턴 재검사.
 
 ---
@@ -21,7 +21,7 @@
 | 구분 | 개수 | 비고 |
 |------|------|------|
 | **고위험 (무한 루프 가능성)** | 0 | 다분할 알람 루프 수정 반영 후 해당 패턴 제거됨 |
-| **주의 (불필요한 재실행·객체 의존성)** | 1 | Dashboard PortfolioCard `[portfolio]` ref 동기화 1곳 |
+| **주의 (불필요한 재실행·객체 의존성)** | 0 | 2026-02-03 portfolioRef·maSectionDepsKey 원시값/불리언 의존으로 정리 |
 | **안전 (원시값/ref/가드)** | 나머지 | useCallback·원시값 의존·ref 가드 적용됨 |
 
 ---
@@ -40,13 +40,7 @@
 
 ## 2. 주의 구간 (무한루프 아님, 개선 권장)
 
-### 2-1. `components/Dashboard.tsx` (PortfolioCard) – portfolioRef 동기화
-
-| 위치 | 의존성 배열 | effect 내 setState | 위험 요약 |
-|------|-------------|--------------------|-----------|
-| **L708** | `[portfolio]` | 없음 (ref 할당만) | **전체 `portfolio` 객체** 의존. 부모가 매 렌더 새 `portfolio` 참조를 넘기면 effect가 매번 실행됨. **setState 없어 무한루프는 아님.** |
-
-- **권장**: `portfolioRef.current = portfolio` 는 “portfolio가 바뀔 때마다 최신으로 유지”가 목적이므로, 의존성을 **`[portfolio.id, portfolio.trades.length, portfolio.alarmconfig?.enabled]`** 등 필요한 원시값으로 줄이면 불필요한 재실행만 줄일 수 있음. (선택 사항.)
+- **현재**: 해당 없음. Dashboard portfolioRef·maSectionDepsKey는 2026-02-03에 원시값/불리언 의존으로 정리 완료.
 
 ---
 
@@ -60,14 +54,17 @@
 
 ### components/Dashboard.tsx
 - **L76**: `[alarmIds, dailyExecutionBlocks, onDailyExecutionSummaryChange]` — lastDailyExecutionSummaryRef 가드, App에서 useCallback → **안전**.
+- **maSectionDepsKey (useMemo)**: `[portfolio.id, !!portfolio.strategy.multiSplit, ma0/ma1/ma2/ma3 원시값]` — 객체 대신 불리언 의존 (2026-02-03) → **안전**.
+- **L239 (구간 계산)**: `[maSectionDepsKey, !!portfolio.strategy.multiSplit]` — 원시값/불리언, cancelled 플래그 (2026-02-03 반영) → **안전**.
 - **L225**: `[portfolio.id, isInQuarterModeByT, portfolio.isQuarterMode]` — 원시값 → **안전**.
 - **L306**: `[portfolio.id, portfolio.strategy.multiSplit?.targetStock]` — 원시값, setState 시 이전과 같으면 생략 → **안전**.
 - **L415**: `[portfolio.id, portfolio.trades.length, portfolio.strategy.multiSplit?.targetStock, portfolio.feeRate, isInQuarterMode, recentTradingDays]` — 원시값, 함수형 setState·JSON 비교 → **안전**.
 - **L505**: `[portfolio.id, ..., multiSplitPhase]` — 원시값, lastMultiSplitExecutionKeyRef → **안전**.
 - **L253 (maPartialProfitLines)**: `[portfolio.id, portfolio.trades.length, portfolio.strategy.multiSplit, ma1/ma2/ma3 원시값]` — 원시값만, setState 시 prev와 내용 같으면 생략, cancelled 플래그 → **안전** (2026-02-02 추가).
-- **L664 (daily execution 블록)**: `[isAlarmEnabled, lang, multiSplitExecutionData, quarterStopLossData, multiSplitPhase, isInQuarterMode, maBlockVersion, maPartialProfitLines, ...]` — **onDailyExecutionBlock 미포함**, ref로 콜백 호출, lastDailyExecutionBlockRef 가드 → **안전** (무한루프 수정 반영).
-- **L708**: `[portfolio]` — ref 동기화만 → **주의** (무한루프 아님).
-- **L714**: `[portfolio.id, portfolio.trades.length]` — portfolioRef 사용 → **안전**.
+- **L646 (multiSplitInsufficientAmount)**: `[portfolio.id, !!portfolio.strategy.multiSplit, portfolio.strategy.multiSplit?.targetStock, portfolio.dailyBuyAmount]` — **원시값만** 의존, fetch 후 setState(boolean), cancelled 플래그. setState가 의존성 변경 없음 → **안전** (2026-02-03 다분할 금액 부족 알림 추가).
+- **L664 (daily execution 블록)**: `[..., multiSplitInsufficientAmount, ...]` — **onDailyExecutionBlock 미포함**, ref로 콜백 호출, lastDailyExecutionBlockRef 가드. multiSplitInsufficientAmount true 시에도 동일 블록이면 report 생략 → **안전** (무한루프 수정 반영).
+- **L891**: `[portfolio.id, portfolio.trades.length]` — portfolioRef 동기화 (원시값만 의존, 2026-02-03 반영) → **안전**.
+- **L897**: `[portfolio.id, portfolio.trades.length]` — portfolioRef 사용(메트릭) → **안전**.
 
 ### components/QuickInputModal.tsx
 - L45: `[portfolio.id, targetStockForDate]` → **안전**.
@@ -94,7 +91,7 @@
 - [x] **QuickInputModal**: 의존성 원시값/식별자만 사용.
 - [x] **Dashboard quarterStopLossData**: 의존성 원시값만 사용.
 - [x] **PortfolioDetailsModal**: 주가 fetch effect 의존성 원시값만 사용.
-- [ ] **Dashboard L708** (선택): `[portfolio]` → 필요 시 원시값만 의존성으로 축소.
+- [x] **Dashboard portfolioRef** (2026-02-03): `[portfolio]` → `[portfolio.id, portfolio.trades.length]` 원시값만 의존으로 축소 반영.
 
 ---
 
@@ -102,7 +99,7 @@
 
 - **다분할 알람 무한루프**: 부모가 카드마다 새 콜백을 넘기던 패턴을 제거하고, **안정된 (id, block) 콜백 + 자식에서 ref 사용**으로 해결됨.
 - **이전 검사가 놓친 이유**: “의존성에 콜백 없음”만 보았고, **map 안에서 매 렌더 새 콜백 생성**과 **비동기 데이터 도착 시 effect 재실행**이 겹치는 시나리오를 별도로 짚지 않았음.
-- **현재**: 고위험 무한루프 후보는 0건. 남은 주의 구간은 Dashboard의 `[portfolio]` ref 동기화 1곳이며, 무한루프 원인은 아님.
+- **현재**: 고위험 무한루프 후보는 0건. 주의 구간(객체 의존성)은 2026-02-03에 portfolioRef·maSectionDepsKey 원시값/불리언 의존으로 정리 완료.
 
 이 문서는 “무한 루프 후보” 점검용입니다. 새로 **useEffect + 객체/배열/인라인 콜백 의존성**을 추가할 때는 위 패턴(안정 콜백 + ref)과 비교해 보는 것을 권장합니다.
 
@@ -146,3 +143,53 @@
 | **utils/dailyExecutionSummary.ts** | **순수 함수**만 추가. React 상태·effect 없음. **위험 없음**. |
 
 **결론**: 이번 변경으로 인한 **무한루프·불필요한 요청/계산 반복 없음**. maPartialProfitLines effect는 원시값만 의존하고, setState 시 "값이 같으면 생략" 패턴 적용됨.
+
+---
+
+## 9. 이평선 전략 로직 수정 후 점검 (2026-02-03)
+
+**요청**: 이평선 전략 로직 수정으로 여러 코드 변동이 있었을 수 있으므로, docs 폴더의 infinite loop 관련 문서를 참조해 **쓸데없이 요청이 반복되거나 에러·무한루프 위험요소**를 체크.
+
+### 점검 결과 요약
+
+| 구역 | 점검 항목 | 결과 |
+|------|-----------|------|
+| **StrategyCreator.tsx** | RSI 게이지·구간2 레이아웃·중간 이익 실현 긴 박스 등 UI 변경 | **useEffect 없음**. state·폼 제출만 사용 → **무한루프·반복 요청 위험 없음**. |
+| **Dashboard – setDailyExecutionBlockForId** | 카드별 콜백 전달 | **useCallback(..., [])** 유지, **ref로만 호출**·의존성 미포함 → **안전**. |
+| **Dashboard – daily execution 블록 effect** | maBlockVersion, maPartialProfitLines, report | **lastDailyExecutionBlockRef** 로 동일 블록 시 report 생략. **onDailyExecutionBlock** ref 사용·의존성 미포함 → **안전**. |
+| **Dashboard – maPartialProfitLines effect** | 의존성·setState | **원시값만** 의존, setState 시 **prev와 내용 같으면 return prev**·cancelled 플래그 → **안전**. |
+| **Dashboard – maRsiNotMet effect** | rsiThreshold 등 | **원시값만** 의존, fetch 후 setState·cancelled → **안전**. |
+| **Dashboard – portfolioRef 동기화** | 의존성 `[portfolio]` | **개선 반영**: `[portfolio.id, portfolio.trades.length]` 로 변경 → 불필요한 재실행·객체 의존 제거. |
+| **Dashboard – maSectionDepsKey / 구간 계산 effect** | `portfolio.strategy.multiSplit` 객체 의존 | **개선 반영**: useMemo·effect 의존성을 **`!!portfolio.strategy.multiSplit`** 로 변경 → 참조만 바뀌어도 재실행되던 부분 제거. |
+| **App.tsx** | onDailyExecutionSummaryChange 등 | **useCallback** 유지, daily execution 요약 디바운스·lastSavedSummaryRef 유지 → **안전**. |
+
+### 적용한 개선 (문서 권장 사항 반영)
+
+1. **portfolioRef 동기화 (Dashboard)**  
+   - 의존성 `[portfolio]` → **`[portfolio.id, portfolio.trades.length]`**  
+   - 목적: 메트릭 계산 시 최신 portfolio만 필요하므로, id·trades 변경 시에만 ref 갱신. 객체 참조만 바뀌는 리렌더 시 effect 재실행 방지.
+
+2. **maSectionDepsKey 및 구간 계산 effect (Dashboard)**  
+   - useMemo 의존성: `portfolio.strategy.multiSplit` → **`!!portfolio.strategy.multiSplit`**  
+   - effect 의존성: `portfolio.strategy.multiSplit` → **`!!portfolio.strategy.multiSplit`**  
+   - 목적: multiSplit 객체 참조만 바뀌어도 effect가 도는 일을 막고, “다분할 여부”만으로 실행 여부 결정.
+
+### 정리
+
+- **이평선 전략 관련 최근 UI/로직 변경**으로 인한 **무한루프·불필요한 API/계산 반복·에러 위험요소는 없음**.  
+- 문서에 있던 **주의 구간 2건(portfolioRef, maSectionDepsKey)** 은 위와 같이 원시값/불리언 의존으로 정리해 **주의 구간 0건**으로 반영함.
+
+---
+
+## 10. 다분할 1회 매수금 부족 알림 추가 후 점검 (2026-02-03)
+
+**변경 내용**: 1회 매수금 < 1주 가격 시 백테스트 중단·Daily 요약/카드 경고 문구·Backtest API 에러 표시.
+
+| 구역 | 점검 항목 | 결과 |
+|------|-----------|------|
+| **Dashboard – multiSplitInsufficientAmount effect (신규)** | 의존성 `[portfolio.id, !!multiSplit, targetStock, dailyBuyAmount]` — 원시값만. setState(boolean)은 의존성 중 어느 것도 변경하지 않음. fetch 후 setState, cancelled 플래그 사용 | **안전**. 무한루프 요인 없음. |
+| **Dashboard – daily execution 블록 effect** | `multiSplitInsufficientAmount` 의존성 추가. 금액 부족 시 `multiSplitExecutionData == null`이어도 블록 전달하도록 early return 조건 변경. report 시 **lastDailyExecutionBlockRef** 로 동일 블록이면 생략 유지. onDailyExecutionBlock은 ref로만 호출·의존성 미포함 | **안전**. |
+| **dailyExecutionSummary.ts** | 옵션·문자열 추가만. 순수 함수·effect 없음 | **위험 없음**. |
+| **Backtest.tsx** | backtestError state·API 응답 body.error 표시. useEffect 없음, 클릭/비동기 후 setState만 | **위험 없음**. |
+
+**결론**: 다분할 금액 부족 알림 추가로 인한 **무한루프·연쇄 리렌더·에러 위험요소 없음**. 고위험 0건·주의 0건 유지.

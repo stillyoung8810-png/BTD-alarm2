@@ -17,9 +17,12 @@ export interface Strategy {
     rsiEnabled: boolean;
     /** 이동평균선 a > b 일 때만 매수할지 여부 (정배열 매수) */
     alignmentEnabled?: boolean;
+    /** 단기 이평선 기간(일). 구간 판정에 사용. 백테스트 maAPeriod와 동일. */
+    maAPeriod?: number;
+    /** 장기 이평선 기간(일). 구간 판정에 사용. 백테스트 maBPeriod와 동일. */
+    maBPeriod?: number;
   };
   ma1: {
-    period: number;
     stock: string;
     rsiThreshold?: number;
     /** 중간 이익 실현 사용 시 목표 수익률(%) */
@@ -27,8 +30,6 @@ export interface Strategy {
     partialProfitTargetPct?: number;
   };
   ma2: {
-    period1: number;
-    period2: number;
     stock: string;
     splitCount: number;
     rsiThreshold?: number;
@@ -36,7 +37,6 @@ export interface Strategy {
     partialProfitTargetPct?: number;
   };
   ma3: {
-    period: number;
     stock: string;
     rsiThreshold?: number;
     takePartialProfit?: boolean;

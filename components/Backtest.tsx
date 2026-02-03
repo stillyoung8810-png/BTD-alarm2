@@ -64,7 +64,7 @@ export interface BacktestResult {
 const DEFAULT_PARAMS_MA: BacktestParamsMa = {
   baseStock: 'QQQ',
   rsiEnabled: false,
-  rsiThreshold: 70,
+  rsiThreshold: 30,
   alignmentEnabled: false,
   maAPeriod: 20,
   maAStock: 'TQQQ',
@@ -131,13 +131,61 @@ const Backtest: React.FC<BacktestProps> = ({ lang }) => {
   const [paramsMa, setParamsMa] = useState<BacktestParamsMa>(DEFAULT_PARAMS_MA);
   const [paramsMulti, setParamsMulti] = useState<BacktestParamsMultiSplit>(DEFAULT_PARAMS_MULTI);
   const [result, setResult] = useState<BacktestResult | null>(null);
+  const [backtestError, setBacktestError] = useState<string | null>(null);
 
   const handleSelectStrategy = (id: BacktestStrategyId) => {
     setStrategyId(id);
     setStep('params');
   };
 
-  const handleRunBacktest = () => {
+  const handleRunBacktest = async () => {
+    if (strategyId === 'multi_split') {
+      const apiUrl = (import.meta as any).env?.VITE_BACKTEST_MULTI_URL;
+      if (apiUrl) {
+        try {
+          const res = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              stock: paramsMulti.stock,
+              targetReturnRate: paramsMulti.targetReturnRate,
+              totalSplitCount: paramsMulti.totalSplitCount,
+              oneTimeAmount: paramsMulti.oneTimeAmount,
+              months: paramsMulti.months,
+              feeRate: paramsMulti.feeRate,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const body = typeof data.body === 'string' ? JSON.parse(data.body) : data;
+            if (body.error) {
+              setBacktestError(body.error);
+              setResult(null);
+              setStep('results');
+              return;
+            }
+            if (body.equityCurve) {
+              setBacktestError(null);
+              setResult({
+                totalReturnPct: body.totalReturnPct ?? 0,
+                cagrPct: body.cagrPct ?? 0,
+                mddPct: body.mddPct ?? 0,
+                winRatePct: body.winRatePct ?? 0,
+                sharpeRatio: body.sharpeRatio ?? 0,
+                avgHoldingDays: body.avgHoldingDays ?? 0,
+                equityCurve: body.equityCurve,
+                drawdownSeries: body.drawdownSeries ?? [],
+              });
+              setStep('results');
+              return;
+            }
+          }
+        } catch (_e) {
+          // fallback to mock
+        }
+      }
+    }
+    setBacktestError(null);
     setResult(buildMockResult());
     setStep('results');
   };
@@ -146,6 +194,7 @@ const Backtest: React.FC<BacktestProps> = ({ lang }) => {
     setStep('strategy');
     setStrategyId(null);
     setResult(null);
+    setBacktestError(null);
   };
 
   return (
@@ -289,13 +338,13 @@ const Backtest: React.FC<BacktestProps> = ({ lang }) => {
                   {paramsMa.rsiEnabled && (
                     <input
                       type="number"
-                      min={0}
-                      max={100}
+                      min={10}
+                      max={60}
                       value={paramsMa.rsiThreshold}
                       onChange={(e) =>
                         setParamsMa((p) => ({
                           ...p,
-                          rsiThreshold: Number(e.target.value) || 70,
+                          rsiThreshold: Math.min(60, Math.max(10, Number(e.target.value) || 30)),
                         }))
                       }
                       className="w-20 p-2 rounded-lg border border-slate-200 dark:border-white/10 text-xs font-bold"
@@ -517,8 +566,21 @@ const Backtest: React.FC<BacktestProps> = ({ lang }) => {
         </div>
       )}
 
-      {/* Step 3: 결과 */}
-      {step === 'results' && result && (
+      {/* Step 3: 결과 (에러 시 메시지, 성공 시 KPI·차트) */}
+      {step === 'results' && backtestError && (
+        <div className="space-y-6">
+          <div className="rounded-2xl p-6 bg-red-50 dark:bg-red-900/20 border-2 border-red-200 dark:border-red-500/40">
+            <p className="text-sm font-bold text-red-700 dark:text-red-300 mb-2">
+              {lang === 'ko' ? '백테스트 실행 불가' : 'Backtest could not run'}
+            </p>
+            <p className="text-slate-700 dark:text-slate-300 font-medium">{backtestError}</p>
+          </div>
+          <button type="button" onClick={handleNewSettings} className="w-full py-4 rounded-xl bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-slate-300 font-black text-sm hover:bg-slate-200 dark:hover:bg-white/20 transition-colors flex items-center justify-center gap-2">
+            <ChevronLeft size={18} /> {t.newBacktestSettings}
+          </button>
+        </div>
+      )}
+      {step === 'results' && result && !backtestError && (
         <div className="space-y-6">
           {/* KPI 카드 */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

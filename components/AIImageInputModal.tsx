@@ -72,11 +72,11 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({ lang, portfolio, 
     setErrorMessage(null);
     try {
       const base64 = imageData.includes(',') ? imageData.split(',')[1] : imageData;
-      const result = await analyzeTradeScreenshot(
-        base64,
-        imageMime,
-        geminiApiKey ? { apiKey: geminiApiKey } : undefined
-      );
+      // Cloudflare Worker에서 유료/무료 티어별로 키를 선택하도록 넘기는 옵션 (현재는 isPaidUser 여부만 전달)
+      const result = await analyzeTradeScreenshot(base64, imageMime, {
+        // TODO: 멤버십 상태 연동 시 실제 isPaidUser 값으로 교체
+        isPaidUser: false,
+      });
 
       if (result && result.trades.length > 0) {
         // 이평선 전략: 구간 1~3 (ma1~ma3), 다분할 매매 전략: multiSplit.targetStock 만 허용

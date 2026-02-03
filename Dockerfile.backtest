@@ -1,0 +1,15 @@
+# 백테스트 Lambda용 컨테이너 이미지 (Python 3.11 + pandas + supabase)
+# 빌드: docker build -f Dockerfile.backtest -t backtest-lambda .
+# 푸시: AWS ECR에 푸시 후 Lambda 함수가 이 이미지를 사용하도록 설정
+
+FROM public.ecr.aws/lambda/python:3.11
+
+# 핸들러 코드 복사 (레이어 없이 이미지 안에 모두 포함)
+COPY scripts/backtest_ma.py ${LAMBDA_TASK_ROOT}/
+COPY scripts/backtest_multi.py ${LAMBDA_TASK_ROOT}/
+
+# 의존성 설치 (pandas, supabase) — 250MB zip 제한 없음
+RUN pip install --no-cache-dir pandas supabase
+
+# 기본 핸들러 (Lambda 콘솔에서 backtest_multi.handler 등으로 변경 가능)
+CMD ["backtest_ma.handler"]

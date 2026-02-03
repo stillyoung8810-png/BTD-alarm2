@@ -72,10 +72,42 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({ lang, portfolio, 
     setErrorMessage(null);
     try {
       const base64 = imageData.includes(',') ? imageData.split(',')[1] : imageData;
-      const result = await analyzeTradeScreenshot(base64, imageMime, geminiApiKey ? { apiKey: geminiApiKey } : undefined);
+      const result = await analyzeTradeScreenshot(
+        base64,
+        imageMime,
+        geminiApiKey ? { apiKey: geminiApiKey } : undefined
+      );
+
       if (result && result.trades.length > 0) {
-        setRecognizedTrades(result.trades);
-        setStep('result');
+        // 이평선 전략: 구간 1~3 (ma1~ma3), 다분할 매매 전략: multiSplit.targetStock 만 허용
+        const strategyStocks = [
+          // MA 구간 1~3
+          portfolio.strategy.ma1?.stock,
+          portfolio.strategy.ma2?.stock,
+          portfolio.strategy.ma3?.stock,
+          // 다분할 매매법
+          portfolio.strategy.multiSplit?.targetStock,
+        ]
+          .filter((s): s is string => !!s)
+          .map((s) => s.toUpperCase().trim());
+
+        const allowedSet = new Set(strategyStocks);
+        const filteredTrades = result.trades.filter((r) =>
+          allowedSet.has(r.stock.toUpperCase().trim())
+        );
+
+        if (filteredTrades.length > 0) {
+          setRecognizedTrades(filteredTrades);
+          setStep('result');
+        } else {
+          setRecognizedTrades([]);
+          setErrorMessage(
+            lang === 'ko'
+              ? '현재 포트폴리오에서 매매하기로 선택한 종목과 일치하는 매매 기록이 없습니다.'
+              : 'No trades match the stocks configured in this portfolio.'
+          );
+          setStep('error');
+        }
       } else {
         setErrorMessage(t.aiScanError);
         setStep('error');

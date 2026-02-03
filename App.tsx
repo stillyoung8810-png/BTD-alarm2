@@ -1616,9 +1616,20 @@ const App: React.FC = () => {
           <nav className="glass rounded-full px-4 py-3 flex items-center gap-2 md:gap-6 shadow-2xl border border-white/10 premium-shadow min-w-[320px] justify-center">
             <NavIcon active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutDashboard size={22} />} label={t.dashboard} />
             <NavIcon active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<HistoryIcon size={22} />} label={t.history} />
-            <NavIcon active={activeTab === 'backtest'} onClick={() => setActiveTab('backtest')} icon={<LineChart size={22} />} label={t.backtest} />
             <NavIcon active={activeTab === 'markets'} onClick={() => setActiveTab('markets')} icon={<BarChart3 size={22} />} label={t.markets} />
             <NavIcon active={activeTab === 'pricing'} onClick={() => setActiveTab('pricing')} icon={<Crown size={22} />} label={t.membership ?? (lang === 'ko' ? '멤버십' : 'Membership')} />
+            <NavIcon
+              active={false}
+              onClick={() => {}}
+              icon={<LineChart size={22} />}
+              label={t.backtest}
+              disabled
+              tooltip={
+                lang === 'ko'
+                  ? '더 나은 백테스트 경험을 위해 세밀하게 다듬는 중이니 조금만 기다려 주세요.'
+                  : 'We are carefully polishing this backtest experience, please check back soon.'
+              }
+            />
           </nav>
         </div>
 
@@ -1769,15 +1780,72 @@ interface NavIconProps {
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
+  disabled?: boolean;
+  tooltip?: string;
 }
 
-const NavIcon: React.FC<NavIconProps> = ({ active, onClick, icon, label }) => (
-  <button onClick={onClick} className="flex flex-col items-center gap-1 group transition-all px-2 md:px-4">
-    <div className={`p-2.5 rounded-xl transition-all duration-300 ${active ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}>
-      {icon}
+const NavIcon: React.FC<NavIconProps> = ({ active, onClick, icon, label, disabled, tooltip }) => {
+  const [showTooltip, setShowTooltip] = React.useState(false);
+  const hideTimeoutRef = React.useRef<number | null>(null);
+
+  const handleClick = () => {
+    if (disabled) {
+      if (tooltip) {
+        // 모바일/클릭용 말풍선 표시 (2초)
+        if (hideTimeoutRef.current) {
+          window.clearTimeout(hideTimeoutRef.current);
+        }
+        setShowTooltip(true);
+        hideTimeoutRef.current = window.setTimeout(() => {
+          setShowTooltip(false);
+        }, 2000);
+      }
+      return;
+    }
+    onClick();
+  };
+
+  const isActive = !disabled && active;
+
+  return (
+    <div className="relative flex flex-col items-center group">
+      {tooltip && (
+        <div
+          className={`pointer-events-none absolute -top-12 z-50 max-w-[220px] rounded-2xl bg-slate-900/95 px-3 py-2 text-[11px] leading-snug text-slate-50 shadow-xl border border-white/10 transition-opacity duration-200 ${
+            showTooltip ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          }`}
+        >
+          {tooltip}
+          <div className="absolute left-1/2 -bottom-1.5 h-3 w-3 -translate-x-1/2 rotate-45 bg-slate-900/95 border-r border-b border-white/10" />
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={handleClick}
+        className="flex flex-col items-center gap-1 transition-all px-2 md:px-4"
+        aria-disabled={disabled ? 'true' : 'false'}
+      >
+        <div
+          className={`p-2.5 rounded-xl transition-all duration-300 ${
+            isActive
+              ? 'bg-blue-600 text-white shadow-lg'
+              : disabled
+              ? 'text-slate-500/60 bg-white/0 cursor-not-allowed'
+              : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
+          }`}
+        >
+          {icon}
+        </div>
+        <span
+          className={`text-[9px] font-black uppercase tracking-tighter hidden md:block transition-colors ${
+            isActive ? 'text-blue-500' : disabled ? 'text-slate-500/60' : 'text-slate-500'
+          }`}
+        >
+          {label}
+        </span>
+      </button>
     </div>
-    <span className={`text-[9px] font-black uppercase tracking-tighter hidden md:block transition-colors ${active ? 'text-blue-500' : 'text-slate-500'}`}>{label}</span>
-  </button>
-);
+  );
+};
 
 export default App;

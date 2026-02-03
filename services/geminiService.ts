@@ -1,10 +1,31 @@
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const FALLBACK_ADVISOR_TEXT =
+  "The QQQ-based technical strategy shows strong historical momentum. Ensure rigorous drawdown management is active for leveraged positions.";
 
-export const getStrategyAdvisor = async (strategyDescription: string) => {
+/**
+ * 브라우저 번들에서 API Key 없이 new GoogleGenAI()를 호출하면
+ * \"An API Key must be set when running in a browser\" 에러가 발생하므로
+ * 이 함수로 안전하게 클라이언트를 생성한다.
+ */
+const createGeminiClient = (apiKey?: string | null) => {
+  if (!apiKey) {
+    // 키가 없으면 클라이언트 생성 자체를 하지 않고, 상위에서 fallback 동작을 하도록 함.
+    return null;
+  }
+  return new GoogleGenAI({ apiKey });
+};
+
+/** 전략 설명에 대한 짧은 인사이트를 반환. apiKey가 없으면 안전하게 fallback 문구만 반환. */
+export const getStrategyAdvisor = async (strategyDescription: string, apiKey?: string | null) => {
+  const client = createGeminiClient(apiKey);
+  if (!client) {
+    // 키 미설정 시 브라우저에서 런타임 에러 대신 안전한 기본 문구만 반환
+    return FALLBACK_ADVISOR_TEXT;
+  }
+
   try {
-    const response = await ai.models.generateContent({
+    const response = await client.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Evaluate this trading strategy. Provide a professional fintech advisor insight (max 3 sentences) that specifically includes a brief mention of potential historical backtest performance (e.g., expected returns or risk/reward ratio based on these technical indicators): ${strategyDescription}`,
       config: {
@@ -15,7 +36,7 @@ export const getStrategyAdvisor = async (strategyDescription: string) => {
     return response.text;
   } catch (error) {
     console.error("Gemini Insight Error:", error);
-    return "The QQQ-based technical strategy shows strong historical momentum. Ensure rigorous drawdown management is active for leveraged positions.";
+    return FALLBACK_ADVISOR_TEXT;
   }
 };
 
@@ -36,7 +57,13 @@ export const analyzeTradeScreenshot = async (
   mimeType: string = "image/png",
   options?: { apiKey?: string }
 ): Promise<{ trades: RecognizedTradeItem[] } | null> => {
-  const client = options?.apiKey ? new GoogleGenAI({ apiKey: options.apiKey }) : ai;
+  const client = createGeminiClient(options?.apiKey);
+
+  // 키가 없으면 브라우저에서 라이브러리 에러를 내지 않고, "분석하지 않음"으로 처리
+  if (!client) {
+    console.warn("Gemini API key is not configured; skipping trade screenshot analysis.");
+    return { trades: [] };
+  }
   try {
     const promptText = `This image is a screenshot of a brokerage/trading app showing trade execution history (buy/sell records).
 Extract ALL visible trade records. For each trade return: type ("buy" or "sell"), stock (ticker symbol, e.g. TQQQ, QQQ), date (YYYY-MM-DD), price (number), quantity (number), fee (number if visible, else 0), isMOC (true only if it is a market-on-close sell).

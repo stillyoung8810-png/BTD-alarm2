@@ -1,0 +1,33 @@
+# Supabase Lambda 레이어 zip 생성 (Linux + Python 3.11)
+# Actions 탭 → "Build Supabase Layer" → Run workflow → 완료 후 Artifacts에서 zip 다운로드
+name: Build Supabase Layer
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install supabase into python/
+        run: |
+          mkdir -p lambda-layers/supabase/python
+          pip install supabase -t lambda-layers/supabase/python
+
+      - name: Create zip (python/ at top level)
+        run: |
+          cd lambda-layers/supabase
+          zip -r supabase-layer-linux.zip python
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-layer-linux
+          path: lambda-layers/supabase/supabase-layer-linux.zip

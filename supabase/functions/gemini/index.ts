@@ -35,9 +35,20 @@ const getApiKey = (tier: Tier): string | null => {
   return freeKey ?? null;
 };
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
 serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    // CORS preflight
+    return new Response("ok", { headers: CORS_HEADERS });
+  }
+
   if (req.method !== "POST") {
-    return new Response("Method Not Allowed", { status: 405 });
+    return new Response("Method Not Allowed", { status: 405, headers: CORS_HEADERS });
   }
 
   let body: RequestBody;
@@ -52,11 +63,11 @@ serve(async (req) => {
   if (!apiKey) {
     if (body.mode === "advisor") {
       return new Response(JSON.stringify({ text: FALLBACK_ADVISOR_TEXT }), {
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...CORS_HEADERS },
       });
     }
     return new Response(JSON.stringify({ trades: [] }), {
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...CORS_HEADERS },
     });
   }
 
@@ -70,7 +81,7 @@ serve(async (req) => {
       );
       const text = resp.response.text();
       return new Response(JSON.stringify({ text }), {
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...CORS_HEADERS },
       });
     }
 
@@ -97,30 +108,31 @@ Output only the JSON, no other text.`;
       const match = text.match(/\{[\s\S]*\}/);
       if (!match) {
         return new Response(JSON.stringify({ trades: [] }), {
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...CORS_HEADERS },
         });
       }
 
       return new Response(match[0], {
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...CORS_HEADERS },
       });
     }
 
-    return new Response("Invalid mode", { status: 400 });
+    return new Response("Invalid mode", { status: 400, headers: CORS_HEADERS });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (/429|rate limit|quota|resource exhausted/i.test(msg)) {
       return new Response("RATE_LIMIT", { status: 429 });
+      return new Response("RATE_LIMIT", { status: 429, headers: CORS_HEADERS });
     }
     console.error("Supabase gemini function error:", err);
     if (body.mode === "advisor") {
       return new Response(JSON.stringify({ text: FALLBACK_ADVISOR_TEXT }), {
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...CORS_HEADERS },
         status: 500,
       });
     }
     return new Response(JSON.stringify({ trades: [] }), {
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...CORS_HEADERS },
       status: 500,
     });
   }

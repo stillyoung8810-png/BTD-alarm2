@@ -20,19 +20,21 @@ jobs:
       - name: Install supabase into python/lib/python3.11/site-packages/
         run: |
           mkdir -p lambda-layers/supabase/python/lib/python3.11/site-packages
-          pip install supabase -t lambda-layers/supabase/python/lib/python3.11/site-packages
+          pip install --no-compile supabase -t lambda-layers/supabase/python/lib/python3.11/site-packages
 
-      # 250MB 제한 대비: 불필요한 파일 제거
-      - name: Shrink layer (remove __pycache__, .pyc, tests, .dist-info)
+      # 250MB 제한 대비: 불필요한 파일 제거 (목표: 압축 해제 기준 100MB 이하)
+      - name: Shrink layer (remove __pycache__, .pyc, .pyi, tests, .dist-info)
         run: |
           SITE=lambda-layers/supabase/python/lib/python3.11/site-packages
           find "$SITE" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
           find "$SITE" -type f -name "*.pyc" -delete 2>/dev/null || true
+          find "$SITE" -type f -name "*.pyi" -delete 2>/dev/null || true
           find "$SITE" -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
           find "$SITE" -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
           find "$SITE" -type d -name "testing" -exec rm -rf {} + 2>/dev/null || true
           find "$SITE" -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
           find "$SITE" -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
+          find "$SITE" -type d -name "docs" -exec rm -rf {} + 2>/dev/null || true
           echo "Layer dir size:"
           du -sh "$SITE"
 

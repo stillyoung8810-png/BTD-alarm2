@@ -22,6 +22,20 @@ jobs:
           mkdir -p lambda-layers/supabase/python/lib/python3.11/site-packages
           pip install supabase -t lambda-layers/supabase/python/lib/python3.11/site-packages
 
+      # 250MB 제한 대비: 불필요한 파일 제거
+      - name: Shrink layer (remove __pycache__, .pyc, tests, .dist-info)
+        run: |
+          SITE=lambda-layers/supabase/python/lib/python3.11/site-packages
+          find "$SITE" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+          find "$SITE" -type f -name "*.pyc" -delete 2>/dev/null || true
+          find "$SITE" -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+          find "$SITE" -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
+          find "$SITE" -type d -name "testing" -exec rm -rf {} + 2>/dev/null || true
+          find "$SITE" -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
+          find "$SITE" -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
+          echo "Layer dir size:"
+          du -sh "$SITE"
+
       - name: Create zip (python/ at top level)
         run: |
           cd lambda-layers/supabase

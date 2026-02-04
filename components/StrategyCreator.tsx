@@ -23,19 +23,19 @@ interface StrategyDefinition {
 }
 
 // 전략 정의 목록 (추가 전략은 여기에만 추가하면 됨)
-const STRATEGY_DEFINITIONS: StrategyDefinition[] = [
+const getStrategyDefinitions = (t: any): StrategyDefinition[] => [
   {
     id: 'rsi_ma_interval',
-    title: 'RSI & 이동평균선 구간 매수',
-    description: '이평선 구간별로 매수종목과 비중을 조절하는 전략입니다.',
+    title: t.strategyMaTitle,
+    description: t.strategyMaDesc,
     tier: 'FREE',
     icon: <TrendingUp size={24} />,
     gradient: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
   },
   {
     id: 'multi_split',
-    title: '다분할 매매법',
-    description: '레버리지 ETF를 규칙대로 사서, 평단가 위에서 기계적으로 파는 분할 매수·매도 전략입니다. 무한매수법 v2.2을 참조하였습니다.',
+    title: t.strategyMultiSplitTitle,
+    description: t.strategyMultiSplitDesc,
     tier: 'FREE',
     icon: <Layers size={24} />,
     gradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
@@ -252,7 +252,8 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
   // 전략 선택 화면 렌더링
   const renderStrategySelection = () => {
     const handleStrategySelect = (strategyId: StrategyType) => {
-      const strategyDef = STRATEGY_DEFINITIONS.find(s => s.id === strategyId);
+      const definitions = getStrategyDefinitions(t);
+      const strategyDef = definitions.find(s => s.id === strategyId);
       if (!strategyDef) return;
       
       // PRO/PREMIUM 전용 전략 체크
@@ -279,7 +280,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
         </div>
 
         <div className="space-y-4">
-          {STRATEGY_DEFINITIONS.map((strategy) => {
+          {getStrategyDefinitions(t).map((strategy) => {
             const isLocked = (strategy.tier === 'PRO' || strategy.tier === 'PREMIUM') && !canAccessPaidStocks;
             const tierColors = {
               FREE: 'bg-slate-200/60 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300',
@@ -356,7 +357,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                       <div className="text-center space-y-2">
                         <Lock className="mx-auto text-slate-400" size={24} />
                         <p className="text-xs font-black text-slate-300 uppercase tracking-widest">
-                          {strategy.tier} 전용
+                          {strategy.tier} {lang === 'ko' ? '전용' : 'Only'}
                         </p>
                       </div>
                     </div>
@@ -393,18 +394,18 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
 
   const renderStep1 = () => (
     <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
-      <div className="bg-slate-900/70 border border-white/5 p-8 rounded-[2rem] space-y-6 backdrop-blur-xl">
+      <div className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-white/5 p-8 rounded-[2rem] space-y-6 backdrop-blur-xl shadow-xl">
         <div className="flex items-center gap-3 mb-2">
            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
               <span className="text-[10px] font-black text-white">0</span>
            </div>
-           <h3 className="text-sm font-black dark:text-white uppercase tracking-widest">
+           <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">
              {lang === 'ko' ? '구간 0: 이동평균선과의 위치를 정하는 주식' : 'Section 0: Base Position Reference'}
            </h3>
         </div>
         
         <div className="space-y-4">
-          <label className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+          <label className="text-[10px] font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest">
             {lang === 'ko' ? '기준 주식 선택:' : 'Select Reference Stock:'}
           </label>
           {isInTossApp && Menu ? (
@@ -415,7 +416,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
               placement="bottom"
             >
               <Menu.Trigger>
-                <button className="w-full px-5 py-4 bg-slate-900/80 border border-white/10 rounded-2xl text-lg font-black text-slate-50 outline-none focus:ring-2 focus:ring-blue-500/60 transition-all cursor-pointer flex items-center justify-between shadow-[0_18px_45px_rgba(15,23,42,0.9)]">
+                <button className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-lg font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-blue-500/60 transition-all cursor-pointer flex items-center justify-between shadow-sm dark:shadow-[0_18px_45px_rgba(15,23,42,0.9)]">
                   <span>{ma0Stock || (lang === 'ko' ? '선택하세요' : 'Select')}</span>
                   <ChevronDown size={16} className="text-slate-500" />
                 </button>
@@ -479,9 +480,9 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
             <div className="space-y-2">
-              <label className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
-                {lang === 'ko' ? '이동평균선 단기 (일)' : 'MA Short (days)'}
-              </label>
+              <label className="text-[10px] font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest">
+                  {lang === 'ko' ? '이동평균선 단기 (일)' : 'MA Short (days)'}
+                </label>
               <div className="relative">
                 <input
                   type="number"
@@ -496,7 +497,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                     const v = normalizeMaPeriod(e.target.value);
                     if (v !== -1) setMaAPeriod(v);
                   }}
-                  className="w-full pr-10 p-4 bg-slate-900/80 border border-white/10 rounded-2xl text-sm font-black text-slate-50 outline-none focus:ring-2 focus:ring-blue-500/60 transition-all"
+                  className="w-full pr-10 p-4 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-blue-500/60 transition-all shadow-sm"
                 />
                 <span className="absolute inset-y-0 right-3 flex items-center text-[10px] font-bold text-slate-500">
                   {lang === 'ko' ? '일' : 'd'}
@@ -504,9 +505,9 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
-                {lang === 'ko' ? '이동평균선 장기 (일)' : 'MA Long (days)'}
-              </label>
+              <label className="text-[10px] font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest">
+                  {lang === 'ko' ? '이동평균선 장기 (일)' : 'MA Long (days)'}
+                </label>
               <div className="relative">
                 <input
                   type="number"
@@ -521,7 +522,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                     const v = normalizeMaPeriod(e.target.value);
                     if (v !== -1) setMaBPeriod(v);
                   }}
-                  className="w-full pr-10 p-4 bg-slate-900/80 border border-white/10 rounded-2xl text-sm font-black text-slate-50 outline-none focus:ring-2 focus:ring-blue-500/60 transition-all"
+                  className="w-full pr-10 p-4 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-blue-500/60 transition-all shadow-sm"
                 />
                 <span className="absolute inset-y-0 right-3 flex items-center text-[10px] font-bold text-slate-500">
                   {lang === 'ko' ? '일' : 'd'}
@@ -539,20 +540,20 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
         <div className="flex flex-col gap-3 pt-4 border-t border-slate-200 dark:border-white/5">
           {/* RSI 지표 카드 */}
           <div
-            className={`group rounded-2xl border px-4 py-3 sm:px-5 sm:py-4 bg-slate-900/40 flex flex-col gap-2 cursor-pointer transition-all ${
+            className={`group rounded-2xl border px-4 py-3 sm:px-5 sm:py-4 bg-slate-50 dark:bg-slate-900/40 flex flex-col gap-2 cursor-pointer transition-all ${
               rsiEnabled
                 ? 'border-blue-500/60 bg-blue-500/5 shadow-[0_0_0_1px_rgba(59,130,246,0.35)]'
-                : 'border-slate-700/60 hover:border-blue-500/40'
+                : 'border-slate-200 dark:border-slate-700/60 hover:border-blue-500/40'
             }`}
             onClick={() => setRsiEnabled(!rsiEnabled)}
           >
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-blue-500/15 flex items-center justify-center text-blue-400">
+                <div className="w-8 h-8 rounded-xl bg-blue-500/15 flex items-center justify-center text-blue-500 dark:text-blue-400">
                   <Zap size={16} />
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-[11px] font-black text-slate-50 tracking-widest">
+                  <span className="text-[11px] font-black text-slate-900 dark:text-slate-50 tracking-widest">
                     {lang === 'ko' ? 'RSI 지표 사용' : 'Use RSI Filter'}
                   </span>
                   <span className="text-[11px] text-slate-400">
@@ -586,7 +587,9 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
           {/* RSI 활성화 시: 임계값 게이지 (보수적 10 ~ 공격적 60) */}
           {rsiEnabled && (
             <div
-              className="rounded-2xl border border-slate-700/60 px-4 py-3 sm:px-5 sm:py-4 bg-slate-900/40 flex flex-col gap-3 animate-in fade-in slide-in-from-top-2"
+              className={`rounded-2xl border px-4 py-3 sm:px-5 sm:py-4 bg-slate-50 dark:bg-slate-900/40 flex flex-col gap-3 animate-in fade-in slide-in-from-top-2 ${
+                rsiEnabled ? 'border-blue-500/60 shadow-[0_0_0_1px_rgba(59,130,246,0.35)]' : 'border-slate-200 dark:border-slate-700/60'
+              }`}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between gap-3">
@@ -595,7 +598,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                     <BarChart2 size={16} />
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-[11px] font-black text-slate-50 tracking-widest">
+                    <span className="text-[11px] font-black text-slate-900 dark:text-slate-50 tracking-widest">
                       {lang === 'ko' ? 'RSI 임계값 설정' : 'RSI Threshold'}
                     </span>
                     <span className="text-[11px] text-slate-400">
@@ -603,7 +606,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                     </span>
                   </div>
                 </div>
-                <span className="text-sm font-black text-white tabular-nums">
+                <span className="text-sm font-black text-slate-900 dark:text-white tabular-nums">
                   {Math.min(ma1Rsi, 60)} {lang === 'ko' ? '이하' : 'or below'}
                 </span>
               </div>
@@ -634,22 +637,21 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
             </div>
           )}
 
-          {/* 정배열 매수 카드 */}
           <div
-            className={`group rounded-2xl border px-4 py-3 sm:px-5 sm:py-4 bg-slate-900/40 flex flex-col gap-2 cursor-pointer transition-all ${
+            className={`group rounded-2xl border px-4 py-3 sm:px-5 sm:py-4 bg-slate-50 dark:bg-slate-900/40 flex flex-col gap-2 cursor-pointer transition-all ${
               alignmentEnabled
                 ? 'border-emerald-500/60 bg-emerald-500/5 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]'
-                : 'border-slate-700/60 hover:border-emerald-500/40'
+                : 'border-slate-200 dark:border-slate-700/60 hover:border-emerald-500/40'
             }`}
             onClick={() => setAlignmentEnabled(!alignmentEnabled)}
           >
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-emerald-500/15 flex items-center justify-center text-emerald-400">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/15 flex items-center justify-center text-emerald-500 dark:text-emerald-400">
                   <TrendingUp size={16} />
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-[11px] font-black text-slate-50 tracking-widest">
+                  <span className="text-[11px] font-black text-slate-900 dark:text-slate-50 tracking-widest">
                     {lang === 'ko' ? '정배열 매수' : 'Buy in MA Alignment'}
                   </span>
                   <span className="text-[11px] text-slate-400">
@@ -687,9 +689,9 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
   const renderStep2 = () => (
     <div className="space-y-6 animate-in slide-in-from-right-8 duration-500 relative">
       {/* Section 1 */}
-      <div className="bg-slate-900/80 border border-white/5 p-8 rounded-[2rem] space-y-5 shadow-xl shadow-slate-900/60">
-        <h3 className="text-xs font-black dark:text-white uppercase tracking-widest flex items-center gap-2">
-          <div className="w-6 h-6 bg-white/10 rounded flex items-center justify-center text-[10px]">1</div>
+      <div className="bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/5 p-8 rounded-[2rem] space-y-5 shadow-xl dark:shadow-slate-900/60">
+        <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-widest flex items-center gap-2">
+          <div className="w-6 h-6 bg-slate-100 dark:bg-white/10 rounded flex items-center justify-center text-[10px]">1</div>
           {lang === 'ko' ? '구간 1: 종가 > Max(단기, 장기)' : 'Section 1: Close > Max(MA short, MA long)'}
         </h3>
         <div className="space-y-2">
@@ -776,13 +778,13 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
         {/* 구간 1: 중간 이익 실현 - 긴 박스 */}
         <div className="flex flex-col gap-3 pt-4 border-t border-slate-200 dark:border-white/5">
           <div
-            className={`rounded-2xl border px-4 py-3 sm:px-5 sm:py-4 bg-slate-900/40 flex items-center justify-between gap-3 transition-all ${
-              ma1TakePartialProfit ? 'border-blue-500/60 bg-blue-500/5 shadow-[0_0_0_1px_rgba(59,130,246,0.35)]' : 'border-slate-700/60'
+            className={`rounded-2xl border px-4 py-3 sm:px-5 sm:py-4 bg-slate-50 dark:bg-slate-900/40 flex items-center justify-between gap-3 transition-all ${
+              ma1TakePartialProfit ? 'border-blue-500/60 bg-blue-500/5 shadow-[0_0_0_1px_rgba(59,130,246,0.35)]' : 'border-slate-200 dark:border-slate-700/60'
             }`}
           >
             <div className="flex items-center gap-3">
-              <span className="text-[11px] font-black text-slate-50">%</span>
-              <span className="text-[11px] font-black text-slate-50 tracking-widest">
+              <span className="text-[11px] font-black text-blue-600 dark:text-slate-50">%</span>
+              <span className="text-[11px] font-black text-slate-900 dark:text-slate-50 tracking-widest">
                 {lang === 'ko' ? '중간 이익 실현 (익절)' : 'Take Partial Profit (Take Profit)'}
               </span>
             </div>
@@ -801,8 +803,8 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
             </button>
           </div>
           {ma1TakePartialProfit && (
-            <div className="rounded-2xl border border-slate-700/60 px-4 py-3 sm:px-5 sm:py-4 bg-slate-800/50 flex items-center justify-between gap-3 animate-in fade-in">
-              <span className="text-[11px] font-bold text-slate-400">
+            <div className="rounded-2xl border border-blue-500/60 px-4 py-3 sm:px-5 sm:py-4 bg-slate-50 dark:bg-slate-900/40 flex items-center justify-between gap-3 animate-in fade-in shadow-[0_0_0_1px_rgba(59,130,246,0.35)]">
+              <span className="text-[11px] font-black text-slate-900 dark:text-slate-400 tracking-widest uppercase">
                 {lang === 'ko' ? '목표 수익률' : 'Target profit rate'}
               </span>
               <div className="flex items-center gap-2">
@@ -812,9 +814,9 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                   onChange={(e) => setMa1PartialProfitPct(Number(e.target.value) || 10)}
                   min={1}
                   max={100}
-                  className="w-16 text-right p-2 rounded-lg border border-white/10 bg-slate-900/80 text-sm font-black text-white outline-none focus:ring-2 focus:ring-blue-500/50"
+                  className="w-16 text-right p-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/80 text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 shadow-sm"
                 />
-                <span className="text-[11px] font-bold text-slate-400">%</span>
+                <span className="text-[11px] font-black text-slate-900 dark:text-slate-400">%</span>
               </div>
             </div>
           )}
@@ -829,9 +831,9 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
         <div className="h-8 border-l border-dashed border-slate-700/70" />
       </div>
       {/* Section 2 */}
-      <div className="bg-slate-900/80 border border-white/5 p-8 rounded-[2rem] space-y-5 shadow-xl shadow-slate-900/60">
-        <h3 className="text-xs font-black dark:text-white uppercase tracking-widest flex items-center gap-2">
-          <div className="w-6 h-6 bg-white/10 rounded flex items-center justify-center text-[10px]">2</div>
+      <div className="bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/5 p-8 rounded-[2rem] space-y-5 shadow-xl dark:shadow-slate-900/60">
+        <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-widest flex items-center gap-2">
+          <div className="w-6 h-6 bg-slate-100 dark:bg-white/10 rounded flex items-center justify-center text-[10px]">2</div>
           {lang === 'ko' ? '구간 2: Min(단기, 장기) ≤ 종가 ≤ Max(단기, 장기)' : 'Section 2: Min ≤ Close ≤ Max'}
         </h3>
         <div className="space-y-2">
@@ -918,13 +920,13 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
         {/* 구간 2: 중간 이익 실현 - 긴 박스 */}
         <div className="flex flex-col gap-3 pt-4 border-t border-slate-200 dark:border-white/5">
           <div
-            className={`rounded-2xl border px-4 py-3 sm:px-5 sm:py-4 bg-slate-900/40 flex items-center justify-between gap-3 transition-all ${
-              ma2TakePartialProfit ? 'border-blue-500/60 bg-blue-500/5 shadow-[0_0_0_1px_rgba(59,130,246,0.35)]' : 'border-slate-700/60'
+            className={`rounded-2xl border px-4 py-3 sm:px-5 sm:py-4 bg-slate-50 dark:bg-slate-900/40 flex items-center justify-between gap-3 transition-all ${
+              ma2TakePartialProfit ? 'border-blue-500/60 bg-blue-500/5 shadow-[0_0_0_1px_rgba(59,130,246,0.35)]' : 'border-slate-200 dark:border-slate-700/60'
             }`}
           >
             <div className="flex items-center gap-3">
-              <span className="text-[11px] font-black text-slate-50">%</span>
-              <span className="text-[11px] font-black text-slate-50 tracking-widest">
+              <span className="text-[11px] font-black text-blue-600 dark:text-slate-50">%</span>
+              <span className="text-[11px] font-black text-slate-900 dark:text-slate-50 tracking-widest">
                 {lang === 'ko' ? '중간 이익 실현 (익절)' : 'Take Partial Profit (Take Profit)'}
               </span>
             </div>
@@ -943,8 +945,8 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
             </button>
           </div>
           {ma2TakePartialProfit && (
-            <div className="rounded-2xl border border-slate-700/60 px-4 py-3 sm:px-5 sm:py-4 bg-slate-800/50 flex items-center justify-between gap-3 animate-in fade-in">
-              <span className="text-[11px] font-bold text-slate-400">
+            <div className="rounded-2xl border border-blue-500/60 px-4 py-3 sm:px-5 sm:py-4 bg-slate-50 dark:bg-slate-900/40 flex items-center justify-between gap-3 animate-in fade-in shadow-[0_0_0_1px_rgba(59,130,246,0.35)]">
+              <span className="text-[11px] font-black text-slate-900 dark:text-slate-400 tracking-widest uppercase">
                 {lang === 'ko' ? '목표 수익률' : 'Target profit rate'}
               </span>
               <div className="flex items-center gap-2">
@@ -954,9 +956,9 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                   onChange={(e) => setMa2PartialProfitPct(Number(e.target.value) || 10)}
                   min={1}
                   max={100}
-                  className="w-16 text-right p-2 rounded-lg border border-white/10 bg-slate-900/80 text-sm font-black text-white outline-none focus:ring-2 focus:ring-blue-500/50"
+                  className="w-16 text-right p-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/80 text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 shadow-sm"
                 />
-                <span className="text-[11px] font-bold text-slate-400">%</span>
+                <span className="text-[11px] font-black text-slate-900 dark:text-slate-400">%</span>
               </div>
             </div>
           )}
@@ -971,9 +973,9 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
         <div className="h-8 border-l border-dashed border-slate-700/70" />
       </div>
       {/* Section 3 */}
-      <div className="bg-slate-900/80 border border-white/5 p-8 rounded-[2rem] space-y-5 shadow-xl shadow-slate-900/60">
-        <h3 className="text-xs font-black dark:text-white uppercase tracking-widest flex items-center gap-2">
-          <div className="w-6 h-6 bg-white/10 rounded flex items-center justify-center text-[10px]">3</div>
+      <div className="bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/5 p-8 rounded-[2rem] space-y-5 shadow-xl dark:shadow-slate-900/60">
+        <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-widest flex items-center gap-2">
+          <div className="w-6 h-6 bg-slate-100 dark:bg-white/10 rounded flex items-center justify-center text-[10px]">3</div>
           {lang === 'ko' ? '구간 3: 종가 < Min(단기, 장기)' : 'Section 3: Close < Min(MA short, MA long)'}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1064,13 +1066,13 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
         {/* 구간 3: 중간 이익 실현 - 긴 박스 */}
         <div className="flex flex-col gap-3 pt-4 border-t border-slate-200 dark:border-white/5">
           <div
-            className={`rounded-2xl border px-4 py-3 sm:px-5 sm:py-4 bg-slate-900/40 flex items-center justify-between gap-3 transition-all ${
-              ma3TakePartialProfit ? 'border-blue-500/60 bg-blue-500/5 shadow-[0_0_0_1px_rgba(59,130,246,0.35)]' : 'border-slate-700/60'
+            className={`rounded-2xl border px-4 py-3 sm:px-5 sm:py-4 bg-slate-50 dark:bg-slate-900/40 flex items-center justify-between gap-3 transition-all ${
+              ma3TakePartialProfit ? 'border-blue-500/60 bg-blue-500/5 shadow-[0_0_0_1px_rgba(59,130,246,0.35)]' : 'border-slate-200 dark:border-slate-700/60'
             }`}
           >
             <div className="flex items-center gap-3">
-              <span className="text-[11px] font-black text-slate-50">%</span>
-              <span className="text-[11px] font-black text-slate-50 tracking-widest">
+              <span className="text-[11px] font-black text-blue-600 dark:text-slate-50">%</span>
+              <span className="text-[11px] font-black text-slate-900 dark:text-slate-50 tracking-widest">
                 {lang === 'ko' ? '중간 이익 실현 (익절)' : 'Take Partial Profit (Take Profit)'}
               </span>
             </div>
@@ -1089,8 +1091,8 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
             </button>
           </div>
           {ma3TakePartialProfit && (
-            <div className="rounded-2xl border border-slate-700/60 px-4 py-3 sm:px-5 sm:py-4 bg-slate-800/50 flex items-center justify-between gap-3 animate-in fade-in">
-              <span className="text-[11px] font-bold text-slate-400">
+            <div className="rounded-2xl border border-blue-500/60 px-4 py-3 sm:px-5 sm:py-4 bg-slate-50 dark:bg-slate-900/40 flex items-center justify-between gap-3 animate-in fade-in shadow-[0_0_0_1px_rgba(59,130,246,0.35)]">
+              <span className="text-[11px] font-black text-slate-900 dark:text-slate-400 tracking-widest uppercase">
                 {lang === 'ko' ? '목표 수익률' : 'Target profit rate'}
               </span>
               <div className="flex items-center gap-2">
@@ -1100,9 +1102,9 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                   onChange={(e) => setMa3PartialProfitPct(Number(e.target.value) || 10)}
                   min={1}
                   max={100}
-                  className="w-16 text-right p-2 rounded-lg border border-white/10 bg-slate-900/80 text-sm font-black text-white outline-none focus:ring-2 focus:ring-blue-500/50"
+                  className="w-16 text-right p-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/80 text-sm font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/50 shadow-sm"
                 />
-                <span className="text-[11px] font-bold text-slate-400">%</span>
+                <span className="text-[11px] font-black text-slate-900 dark:text-slate-400">%</span>
               </div>
             </div>
           )}
@@ -1134,10 +1136,10 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
     return (
       <div className="space-y-8 animate-in fade-in slide-in-from-right-8 duration-500">
         {/* V2.2 PARAMETERS 카드 */}
-        <div className="bg-gradient-to-br from-teal-500/10 via-emerald-500/10 to-green-500/10 border border-teal-500/30 dark:border-emerald-500/20 p-8 rounded-[2rem] space-y-6 backdrop-blur-xl shadow-xl">
+        <div className="bg-gradient-to-br from-teal-500/5 via-emerald-500/5 to-green-500/5 dark:from-teal-500/10 dark:via-emerald-500/10 dark:to-green-500/10 border border-teal-500/20 dark:border-emerald-500/20 p-8 rounded-[2rem] space-y-6 backdrop-blur-xl shadow-xl">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-10 h-10 bg-emerald-500/20 rounded-full flex items-center justify-center border border-emerald-500/40">
-              <Target className="text-emerald-400" size={20} />
+              <Target className="text-emerald-500 dark:text-emerald-400" size={20} />
             </div>
             <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-widest">
               V2.2 PARAMETERS
@@ -1162,10 +1164,10 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                 placement="bottom"
               >
                 <Menu.Trigger>
-                  <button className="w-full p-5 bg-slate-900/60 dark:bg-slate-800/80 border border-slate-700/50 dark:border-slate-600/50 rounded-xl text-base font-black text-slate-100 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all cursor-pointer flex items-center justify-between backdrop-blur-sm">
-                    <span>{multiSplitStock}</span>
-                    <ChevronDown size={18} className="text-slate-400" />
-                  </button>
+                <button className="w-full p-5 bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-600/50 rounded-xl text-base font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all cursor-pointer flex items-center justify-between backdrop-blur-sm shadow-sm">
+                  <span>{multiSplitStock}</span>
+                  <ChevronDown size={18} className="text-slate-500 dark:text-slate-400" />
+                </button>
                 </Menu.Trigger>
                 <Menu.Dropdown>
                   <Menu.Header>{lang === 'ko' ? '종목 선택' : 'Select Stock'}</Menu.Header>
@@ -1242,7 +1244,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                 }}
                 min="5"
                 max="30"
-                className="w-full p-5 bg-slate-900/60 dark:bg-slate-800/80 border border-slate-700/50 dark:border-slate-600/50 rounded-xl text-lg font-black text-slate-100 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all backdrop-blur-sm"
+                className="w-full p-5 bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-600/50 rounded-xl text-lg font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all backdrop-blur-sm shadow-sm"
               />
               <p className="text-[9px] text-slate-500 dark:text-slate-400 font-medium">
                 5 ~ 30%
@@ -1270,7 +1272,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                 }}
                 min="20"
                 max="80"
-                className="w-full p-5 bg-slate-900/60 dark:bg-slate-800/80 border border-slate-700/50 dark:border-slate-600/50 rounded-xl text-lg font-black text-slate-100 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all backdrop-blur-sm"
+                className="w-full p-5 bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-600/50 rounded-xl text-lg font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all backdrop-blur-sm shadow-sm"
               />
               <p className="text-[9px] text-slate-500 dark:text-slate-400 font-medium">
                 20 ~ 80회
@@ -1279,11 +1281,11 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
           </div>
 
           {/* 전략 로직 설명 */}
-          <div className="mt-6 p-4 bg-slate-900/40 dark:bg-slate-800/40 border border-slate-700/30 dark:border-slate-600/30 rounded-xl space-y-2">
-            <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-2">
+          <div className="mt-6 p-4 bg-slate-100/50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-600/30 rounded-xl space-y-2">
+            <p className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mb-2">
               {lang === 'ko' ? '전략 로직 요약' : 'Strategy Logic Summary'}
             </p>
-            <ul className="text-[10px] text-slate-300 dark:text-slate-400 space-y-1.5 font-medium leading-relaxed">
+            <ul className="text-[10px] text-slate-600 dark:text-slate-400 space-y-1.5 font-medium leading-relaxed">
               <li>• {lang === 'ko' ? 'B: 감소 계수 (a / 2A)' : 'B: Reduction Coefficient (a / 2A)'}</li>
               <li>• {lang === 'ko' ? 'LOC 기준점 = A - (T/B × 40/a)' : 'LOC Point = A - (T/B × 40/a)'}</li>
               <li>• {lang === 'ko' ? '전반전: 0.5 ≤ T < a/2 (전체 회차의 절반 미만)' : 'First Half: 0.5 ≤ T < a/2 (Less than half of total rounds)'}</li>
@@ -1449,14 +1451,14 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 font-['Pretendard','Inter',system-ui]">
-      <div className="absolute inset-0 bg-slate-900/60 dark:bg-black/80 backdrop-blur-2xl" onClick={onClose}></div>
+      <div className="absolute inset-0 bg-slate-900/40 dark:bg-black/80 backdrop-blur-2xl" onClick={onClose}></div>
       <div 
-        className="relative w-full max-w-2xl bg-[#0B0F19] rounded-[2.5rem] md:rounded-[3rem] shadow-[0_40px_120px_rgba(15,23,42,0.9)] overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)] border border-white/5"
+        className="relative w-full max-w-2xl bg-white dark:bg-[#0B0F19] rounded-[2.5rem] md:rounded-[3rem] shadow-[0_40px_120px_rgba(15,23,42,0.15)] dark:shadow-[0_40px_120px_rgba(15,23,42,0.9)] overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)] border border-slate-200 dark:border-white/5"
         style={{ touchAction: 'pan-y' }}
       >
         
         {/* Header - 고정 */}
-        <div className="p-6 md:p-8 border-b border-white/5 flex justify-between items-center bg-gradient-to-r from-slate-900/90 via-slate-900/80 to-slate-900/60 shrink-0">
+        <div className="p-6 md:p-8 border-b border-slate-100 dark:border-white/5 flex justify-between items-center bg-white dark:bg-gradient-to-r dark:from-slate-900/90 dark:via-slate-900/80 dark:to-slate-900/60 shrink-0">
           <div className="flex items-center gap-4">
              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-3xl flex items-center justify-center shadow-lg shadow-blue-500/40">
                 {step === 0 ? (
@@ -1468,7 +1470,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                 )}
              </div>
              <div>
-                <h2 className="text-2xl md:text-[1.6rem] font-black text-white tracking-tight">
+                <h2 className="text-2xl md:text-[1.6rem] font-black text-slate-900 dark:text-white tracking-tight">
                   {step === 0 
                     ? (lang === 'ko' ? '전략 엔진 선택' : 'Strategy Engine Selection')
                     : step === 3 
@@ -1502,13 +1504,13 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                 )}
              </div>
           </div>
-          <button onClick={onClose} className="p-3 hover:bg-slate-800/80 rounded-full transition-colors text-slate-400">
+          <button onClick={onClose} className="p-3 hover:bg-slate-100 dark:hover:bg-slate-800/80 rounded-full transition-colors text-slate-400">
             <X size={24} />
           </button>
         </div>
 
         {/* Content Area - 스크롤 가능 */}
-        <div className="flex-1 overflow-y-auto overscroll-contain p-6 md:p-8 scrollbar-hide bg-gradient-to-b from-slate-900/80 via-slate-950/80 to-slate-950">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-6 md:p-8 scrollbar-hide bg-slate-50/50 dark:bg-gradient-to-b dark:from-slate-900/80 dark:via-slate-950/80 dark:to-slate-950">
           {step === 0 && renderStrategySelection()}
           {step === 1 && selectedStrategy === 'rsi_ma_interval' && renderStep1()}
           {step === 2 && selectedStrategy === 'rsi_ma_interval' && renderStep2()}
@@ -1518,7 +1520,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
         </div>
 
         {/* Footer - 하단 고정 */}
-        <div className="p-6 md:p-8 border-t border-white/5 flex gap-4 bg-slate-900/80 shrink-0">
+        <div className="p-6 md:p-8 border-t border-slate-100 dark:border-white/5 flex gap-4 bg-white dark:bg-slate-900/80 shrink-0">
           {step === 0 ? (
             <button 
               onClick={onClose}

@@ -111,7 +111,7 @@ const TradeExecutionModal: React.FC<TradeExecutionModalProps> = ({ lang, portfol
           {type === 'sell' && (
             <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-white/5 gap-4">
               <div className="flex-1">
-                <div className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-1">MOC 매도</div>
+                <div className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-1">{t.mocSell}</div>
                 <div className="text-[9px] text-slate-500 dark:text-slate-400 leading-relaxed">
                   {lang === 'ko' 
                     ? '쿼터 손절 모드를 시작하는 보유량 25% 종가 매도입니다.' 

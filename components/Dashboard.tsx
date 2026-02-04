@@ -1048,25 +1048,22 @@ const PortfolioCard: React.FC<{
                    : 'text-amber-600 dark:text-amber-400 bg-amber-100/50 dark:bg-amber-500/20'
                }`}>
                  {multiSplitPhase === 'first' 
-                   ? (lang === 'ko' ? '전반전' : 'First Half')
+                   ? t.firstHalf
                    : multiSplitPhase === 'second'
-                   ? (lang === 'ko' ? '후반전' : 'Second Half')
-                   : (lang === 'ko' ? '쿼터 손절' : 'Quarter Stop-Loss')
+                   ? t.secondHalf
+                   : t.quarterStopLoss
                  }
                </span>
              )}
              {portfolio.strategy.multiSplit && (
-               <HoverTip
-                 text={isInQuarterMode
-                   ? (lang === 'ko' ? '쿼터손절 → 복귀 : LOC 매도 또는 지정가 매도가 체결될 때.' : 'Quarter Stop-Loss → Return: When LOC sell or limit sell is executed.')
-                   : (lang === 'ko' ? '정규 → 쿼터손절 : T > a-1 이면 자동 진입.' : 'Normal → Quarter Stop-Loss: Auto when T > a-1.')
-                 }
-                 className="ml-auto"
-               >
-                 <span className="text-[9px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">
-                   {lang === 'ko' ? '쿼터 손절' : 'Quarter Stop-Loss'}
-                 </span>
-               </HoverTip>
+                <HoverTip
+                  text={isInQuarterMode ? t.quarterReturnTip : t.quarterEntryTip}
+                  className="ml-auto"
+                >
+                  <span className="text-[9px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">
+                    {t.quarterStopLoss}
+                  </span>
+                </HoverTip>
              )}
           </div>
           {portfolio.strategy.multiSplit ? (
@@ -1099,7 +1096,7 @@ const PortfolioCard: React.FC<{
                       </div>
                       {quarterStopLossData.locBuy && (
                         <div className="text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium">
-                          <span className="font-black">{lang === 'ko' ? 'LOC 매수:' : 'LOC Buy:'}</span>{' '}
+                          <span className="font-black">{t.locBuy1}:</span>{' '}
                           ${quarterStopLossData.locBuy.price.toFixed(2)} / {quarterStopLossData.locBuy.quantity}
                           <span className="text-[10px] text-slate-500 dark:text-slate-400 ml-2">
                             ({lang === 'ko' ? '현재 평균 단가 × 0.9 - 0.01' : 'Avg Price × 0.9 - 0.01'})
@@ -1109,7 +1106,7 @@ const PortfolioCard: React.FC<{
                       <div className="grid grid-cols-2 gap-2 text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium">
                         {quarterStopLossData.locSell && (
                           <div>
-                            <span className="font-black">{lang === 'ko' ? 'LOC 매도:' : 'LOC Sell:'}</span>{' '}
+                            <span className="font-black">{t.locSell}:</span>{' '}
                             ${quarterStopLossData.locSell.price.toFixed(2)} / {quarterStopLossData.locSell.quantity}
                             <div className="text-[10px] text-slate-500 dark:text-slate-400">
                               ({lang === 'ko' ? '현재 평균 단가 × 0.9' : 'Avg Price × 0.9'})
@@ -1118,7 +1115,7 @@ const PortfolioCard: React.FC<{
                         )}
                         {quarterStopLossData.limitSell && (
                           <div>
-                            <span className="font-black">{lang === 'ko' ? '지정가:' : 'Limit:'}</span>{' '}
+                            <span className="font-black">{t.limitSell}:</span>{' '}
                             ${quarterStopLossData.limitSell.price.toFixed(2)} / {quarterStopLossData.limitSell.quantity}
                             <div className="text-[10px] text-slate-500 dark:text-slate-400">
                               ({lang === 'ko' ? `현재 평균 단가 × (1 + ${portfolio.strategy.multiSplit?.targetReturnRate || 0}/100)` : `Avg Price × (1 + ${portfolio.strategy.multiSplit?.targetReturnRate || 0}/100)`})
@@ -1142,22 +1139,22 @@ const PortfolioCard: React.FC<{
                   <div className="grid grid-cols-2 gap-2 text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium">
                     {multiSplitExecutionData.locBuy1 ? (
                       <div>
-                        <span className="font-black">{lang === 'ko' ? 'LOC매수1:' : 'LOC Buy1:'}</span>{' '}
+                        <span className="font-black">{t.locBuy1}:</span>{' '}
                         ${multiSplitExecutionData.locBuy1.price.toFixed(2)} / {multiSplitExecutionData.locBuy1.quantity}
                       </div>
                     ) : (
                       <div className="text-slate-400 dark:text-slate-500 text-[10px]">
-                        {lang === 'ko' ? 'LOC매수1: 계산 중...' : 'LOC Buy1: Calculating...'}
+                        {t.locBuy1}: {lang === 'ko' ? '계산 중...' : 'Calculating...'}
                       </div>
                     )}
                     {multiSplitExecutionData.locBuy2 ? (
                       <div>
-                        <span className="font-black">{lang === 'ko' ? 'LOC매수2:' : 'LOC Buy2:'}</span>{' '}
+                        <span className="font-black">{t.locBuy2}:</span>{' '}
                         ${multiSplitExecutionData.locBuy2.price.toFixed(2)} / {multiSplitExecutionData.locBuy2.quantity}
                       </div>
                     ) : (
                       <div className="text-slate-400 dark:text-slate-500 text-[10px]">
-                        {lang === 'ko' ? 'LOC매수2: 계산 중...' : 'LOC Buy2: Calculating...'}
+                        {t.locBuy2}: {lang === 'ko' ? '계산 중...' : 'Calculating...'}
                       </div>
                     )}
                   </div>
@@ -1165,22 +1162,22 @@ const PortfolioCard: React.FC<{
                   <div className="grid grid-cols-2 gap-2 text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium">
                     {multiSplitExecutionData.locSell ? (
                       <div>
-                        <span className="font-black">{lang === 'ko' ? 'LOC매도:' : 'LOC Sell:'}</span>{' '}
+                        <span className="font-black">{t.locSell}:</span>{' '}
                         ${multiSplitExecutionData.locSell.price.toFixed(2)} / {multiSplitExecutionData.locSell.quantity}
                       </div>
                     ) : (
                       <div className="text-slate-400 dark:text-slate-500 text-[10px]">
-                        {lang === 'ko' ? 'LOC매도: 보유 없음' : 'LOC Sell: No holdings'}
+                        {t.locSell}: {lang === 'ko' ? '보유 없음' : 'No holdings'}
                       </div>
                     )}
                     {multiSplitExecutionData.limitSell ? (
                       <div>
-                        <span className="font-black">{lang === 'ko' ? '지정가:' : 'Limit:'}</span>{' '}
+                        <span className="font-black">{t.limitSell}:</span>{' '}
                         ${multiSplitExecutionData.limitSell.price.toFixed(2)} / {multiSplitExecutionData.limitSell.quantity}
                       </div>
                     ) : (
                       <div className="text-slate-400 dark:text-slate-500 text-[10px]">
-                        {lang === 'ko' ? '지정가: 보유 없음' : 'Limit: No holdings'}
+                        {t.limitSell}: {lang === 'ko' ? '보유 없음' : 'No holdings'}
                       </div>
                     )}
                   </div>
@@ -1192,12 +1189,12 @@ const PortfolioCard: React.FC<{
                   <div className="text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium mb-2">
                     {multiSplitExecutionData.locBuy2 ? (
                       <div>
-                        <span className="font-black">{lang === 'ko' ? 'LOC매수:' : 'LOC Buy:'}</span>{' '}
+                        <span className="font-black">{t.locBuy2}:</span>{' '}
                         ${multiSplitExecutionData.locBuy2.price.toFixed(2)} / {multiSplitExecutionData.locBuy2.quantity}
                       </div>
                     ) : (
                       <div className="text-slate-400 dark:text-slate-500 text-[10px]">
-                        {lang === 'ko' ? 'LOC매수: 계산 중...' : 'LOC Buy: Calculating...'}
+                        {t.locBuy2}: {lang === 'ko' ? '계산 중...' : 'Calculating...'}
                       </div>
                     )}
                   </div>
@@ -1205,22 +1202,22 @@ const PortfolioCard: React.FC<{
                   <div className="grid grid-cols-2 gap-2 text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium">
                     {multiSplitExecutionData.locSell ? (
                       <div>
-                        <span className="font-black">{lang === 'ko' ? 'LOC매도:' : 'LOC Sell:'}</span>{' '}
+                        <span className="font-black">{t.locSell}:</span>{' '}
                         ${multiSplitExecutionData.locSell.price.toFixed(2)} / {multiSplitExecutionData.locSell.quantity}
                       </div>
                     ) : (
                       <div className="text-slate-400 dark:text-slate-500 text-[10px]">
-                        {lang === 'ko' ? 'LOC매도: 보유 없음' : 'LOC Sell: No holdings'}
+                        {t.locSell}: {lang === 'ko' ? '보유 없음' : 'No holdings'}
                       </div>
                     )}
                     {multiSplitExecutionData.limitSell ? (
                       <div>
-                        <span className="font-black">{lang === 'ko' ? '지정가:' : 'Limit:'}</span>{' '}
+                        <span className="font-black">{t.limitSell}:</span>{' '}
                         ${multiSplitExecutionData.limitSell.price.toFixed(2)} / {multiSplitExecutionData.limitSell.quantity}
                       </div>
                     ) : (
                       <div className="text-slate-400 dark:text-slate-500 text-[10px]">
-                        {lang === 'ko' ? '지정가: 보유 없음' : 'Limit: No holdings'}
+                        {t.limitSell}: {lang === 'ko' ? '보유 없음' : 'No holdings'}
                       </div>
                     )}
                   </div>
@@ -1229,18 +1226,22 @@ const PortfolioCard: React.FC<{
               {multiSplitPhase === 'quarter' && (
                 <>
                   <div className="text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium space-y-2">
-                    <div className="font-black">{lang === 'ko' ? 'MOC 매도' : 'MOC Sell'}</div>
+                    <div className="font-black">{t.mocSell}</div>
                     <div className="grid grid-cols-2 gap-2">
-                      <div>{lang === 'ko' ? 'LOC 매수 -10%' : 'LOC Buy -10%'}</div>
-                      <div>{lang === 'ko' ? 'LOC 매도 -10%' : 'LOC Sell -10%'}</div>
+                      <div>{t.locBuy1} -10%</div>
+                      <div>{t.locSell} -10%</div>
                     </div>
-                    <div>{lang === 'ko' ? '지정가 +A%' : 'Limit +A%'}</div>
+                    <div>{t.limitSell} +A%</div>
                   </div>
                 </>
               )}
               {!multiSplitPhase && (
-                <div className="text-[9px] text-blue-600/70 dark:text-blue-400/70 font-medium">
-                  {lang === 'ko' ? '전략 준비 중' : 'Strategy preparing'}
+                <div className="text-[12px] text-blue-600/70 dark:text-blue-400/70 font-medium">
+                  {currentRound < 0.5 
+                    ? t.firstRoundStartHint 
+                    : (currentRound > (portfolio.strategy.multiSplit?.totalSplitCount ?? 0) 
+                        ? t.overLimit 
+                        : t.strategyPreparing)}
                 </div>
               )}
                 </>

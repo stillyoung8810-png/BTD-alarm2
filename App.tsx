@@ -1651,6 +1651,7 @@ const App: React.FC = () => {
             lang={lang}
             portfolio={currentAIImagePortfolio}
             geminiApiKey={geminiApiKey}
+            isPaidUser={currentTier === 'pro' || currentTier === 'premium'}
             onClose={() => setAiImageTargetId(null)}
             onSave={async (trades) => {
               for (const trade of trades) {

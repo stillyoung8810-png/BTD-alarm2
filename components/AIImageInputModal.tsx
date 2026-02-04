@@ -9,13 +9,14 @@ interface AIImageInputModalProps {
   lang: 'ko' | 'en';
   portfolio: Portfolio;
   geminiApiKey?: string | null;
+  isPaidUser: boolean;
   onClose: () => void;
   onSave: (trades: Trade[]) => void;
 }
 
 type Step = 'upload' | 'scanning' | 'result' | 'error';
 
-const AIImageInputModal: React.FC<AIImageInputModalProps> = ({ lang, portfolio, geminiApiKey, onClose, onSave }) => {
+const AIImageInputModal: React.FC<AIImageInputModalProps> = ({ lang, portfolio, geminiApiKey, isPaidUser, onClose, onSave }) => {
   const t = I18N[lang];
   const [step, setStep] = useState<Step>('upload');
   const [imageData, setImageData] = useState<string | null>(null);
@@ -72,15 +73,15 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({ lang, portfolio, 
     setErrorMessage(null);
     try {
       const base64 = imageData.includes(',') ? imageData.split(',')[1] : imageData;
-      // Cloudflare Worker에서 유료/무료 티어별로 키를 선택하도록 넘기는 옵션 (현재는 isPaidUser 여부만 전달)
+      // Cloudflare Worker에서 유료/무료 티어별로 키를 선택하도록 넘기는 옵션
       const result = await analyzeTradeScreenshot(base64, imageMime, {
-        // TODO: 멤버십 상태 연동 시 실제 isPaidUser 값으로 교체
-        isPaidUser: false,
+        isPaidUser,
       });
 
       if (result && result.trades.length > 0) {
-        // 이평선 전략: 구간 1~3 (ma1~ma3), 다분할 매매 전략: multiSplit.targetStock 만 허용
         const strategyStocks = [
+          // MA 기반 전략 공통
+          portfolio.strategy.ma0?.stock,
           // MA 구간 1~3
           portfolio.strategy.ma1?.stock,
           portfolio.strategy.ma2?.stock,
@@ -91,10 +92,14 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({ lang, portfolio, 
           .filter((s): s is string => !!s)
           .map((s) => s.toUpperCase().trim());
 
+        console.log('[AIImageInputModal] Gemini raw result:', result.trades);
+        console.log('[AIImageInputModal] Strategy stocks (tickers):', strategyStocks);
+
         const allowedSet = new Set(strategyStocks);
         const filteredTrades = result.trades.filter((r) =>
           allowedSet.has(r.stock.toUpperCase().trim())
         );
+        console.log('[AIImageInputModal] Filtered trades:', filteredTrades);
 
         if (filteredTrades.length > 0) {
           setRecognizedTrades(filteredTrades);

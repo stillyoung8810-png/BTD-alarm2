@@ -124,7 +124,7 @@ const App: React.FC = () => {
       : 'text-free-matte';
 
   const TierIcon =
-    currentTier === 'premium' ? Sparkles : currentTier === 'pro' ? Star : Zap;
+    currentTier === 'premium' ? Crown : currentTier === 'pro' ? Star : Zap;
 
   const tierIconClassName =
     currentTier === 'premium'

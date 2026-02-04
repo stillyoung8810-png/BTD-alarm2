@@ -78,6 +78,8 @@ const Pricing: React.FC<PricingProps> = ({ lang, currentTier }) => {
         isKo ? '포트폴리오 최대 2개' : 'Up to 2 portfolios',
         isKo ? '알람 슬롯 2개' : '2 alert slots',
         isKo ? '기본 13개 ETF' : '13 core ETFs',
+        isKo ? 'AI 매매 인식 (1회/일)' : 'AI Trade Recognition (1/day)',
+        isKo ? '백테스트 (2회/일, 제한된 정보)' : 'Backtesting (2/day, limited info)',
         isKo ? '기본 알람 · 기록 기능' : 'Core alerts & history',
         isKo ? '광고 포함' : 'Includes ads',
       ],
@@ -93,9 +95,11 @@ const Pricing: React.FC<PricingProps> = ({ lang, currentTier }) => {
       theme: 'pro',
       badge: isKo ? '가장 인기 있는 선택' : 'Most popular',
       features: [
-        isKo ? '포트폴리오 최대 4개' : 'Up to 4 portfolios',
-        isKo ? '알람 슬롯 4개' : '4 alert slots',
+        isKo ? '포트폴리오 최대 5개' : 'Up to 5 portfolios',
+        isKo ? '알람 슬롯 10개' : '10 alert slots',
         isKo ? '기본 13개 + PRO 전용 종목' : 'Core + PRO tickers (TSLA, NVDA, MSTR …)',
+        isKo ? 'AI 매매 인식 (50회/월)' : 'AI Trade Recognition (50/month)',
+        isKo ? '백테스트 (5회/일)' : 'Backtesting (5/day)',
         isKo ? '텔레그램 상세 알림' : 'Detailed Telegram alerts',
         isKo ? '광고 제거' : 'No ads',
       ],
@@ -111,11 +115,13 @@ const Pricing: React.FC<PricingProps> = ({ lang, currentTier }) => {
       theme: 'premium',
       badge: isKo ? 'COMING SOON' : 'COMING SOON',
       features: [
-        isKo ? '포트폴리오 개수 무제한 (예정)' : 'Unlimited portfolios (planned)',
-        isKo ? '알람 슬롯 무제한 (예정)' : 'Unlimited alerts (planned)',
-        isKo ? '모든 종목 + 베타 종목 (예정)' : 'All tickers + beta (planned)',
-        isKo ? '신규 전략 선공개 (예정)' : 'Early access to strategies',
-        isKo ? 'VIP 전용 고객 지원 (예정)' : 'VIP priority support',
+        isKo ? '포트폴리오 최대 20개' : 'Up to 20 portfolios',
+        isKo ? '알람 슬롯 40개' : '40 alert slots',
+        isKo ? '모든 종목 + 베타 종목' : 'All tickers + beta',
+        isKo ? 'AI 매매 인식 (무제한)' : 'Unlimited AI Recognition',
+        isKo ? '백테스트 (10회/일)' : 'Backtesting (10/day)',
+        isKo ? '신규 전략 선공개' : 'Early access to strategies',
+        isKo ? 'VIP 전용 고객 지원' : 'VIP priority support',
       ],
     },
   ];
@@ -196,7 +202,7 @@ const Pricing: React.FC<PricingProps> = ({ lang, currentTier }) => {
                       <div className="text-xs font-black tracking-[0.2em] uppercase text-slate-300">
                         {tier.label}
                         {isCurrent && !disabled && (
-                          <span className="ml-2 text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-400/30">
+                          <span className="ml-2 text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-400/30 whitespace-nowrap">
                             {isKo ? '현재 등급' : 'Current plan'}
                           </span>
                         )}
@@ -207,7 +213,7 @@ const Pricing: React.FC<PricingProps> = ({ lang, currentTier }) => {
 
                   {tier.badge && (
                     <div
-                      className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${
+                      className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border whitespace-nowrap ${
                         tier.theme === 'premium'
                           ? 'bg-slate-900/80 text-amber-300 border-amber-500/40'
                           : 'bg-blue-500/10 text-blue-200 border-blue-400/40'
@@ -272,7 +278,159 @@ const Pricing: React.FC<PricingProps> = ({ lang, currentTier }) => {
           })}
         </div>
 
-        {/* 텔레그램 알람 미리보기 – 인터랙티브 스택 카드 */}
+        {/* AI 스마트 매매 인식 섹션 */}
+        <section className="mt-24 bg-gradient-to-br from-slate-900/50 to-indigo-950/30 rounded-[3rem] border border-white/5 p-8 md:p-16 overflow-hidden relative">
+          {/* Background effects */}
+          <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-indigo-500/10 rounded-full blur-[100px] -mr-64 -mt-32 pointer-events-none" />
+          
+          <div className="grid md:grid-cols-2 gap-12 items-center relative z-10">
+            {/* Left: Content */}
+            <div className="space-y-8">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-400/20 text-indigo-300 text-[10px] font-black uppercase tracking-wider">
+                <Sparkles size={12} />
+                {isKo ? '스마트 매매 인식' : 'Smart Trade Recognition'}
+              </div>
+
+              <h3 className="text-4xl md:text-5xl font-black text-white leading-[1.15] tracking-tight">
+                {isKo ? (
+                  <>
+                    스크린샷 한 장으로<br />
+                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">매매</span> 기록 끝.
+                  </>
+                ) : (
+                  <>
+                    Trade logging done<br />
+                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">with one</span> screenshot.
+                  </>
+                )}
+              </h3>
+
+              <p className="text-slate-400 text-sm md:text-base leading-relaxed max-w-md">
+                {isKo 
+                  ? '증권사 앱의 체결 내역을 캡쳐해서 올리거나 붙여넣기만 하세요. AI가 종목, 단가, 수량을 자동으로 추출하여 포트폴리오에 반영합니다.'
+                  : 'Simply capture and upload or paste your trade details from any brokerage app. AI automatically extracts the ticker, price, and quantity to sync with your portfolio.'}
+              </p>
+
+              {/* Usage limits per tier */}
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { id: 'free', label: 'FREE', limit: isKo ? '1회 / 일' : '1/day', bg: 'bg-slate-800/50', border: 'border-slate-700/50', text: 'text-slate-300' },
+                  { id: 'pro', label: 'PRO', limit: isKo ? '50회 / 월' : '50/month', bg: 'bg-blue-900/40', border: 'border-blue-500/30', text: 'text-blue-200' },
+                  { id: 'premium', label: 'PREMIUM', limit: isKo ? '무제한' : 'Unlimited', bg: 'bg-amber-900/20', border: 'border-amber-500/30', text: 'text-amber-200' },
+                ].map((item) => (
+                  <div key={item.id} className={`p-4 rounded-2xl border ${item.border} ${item.bg} flex flex-col items-center justify-center gap-1`}>
+                    <span className="text-[10px] font-black text-slate-500 tracking-tighter uppercase">{item.label}</span>
+                    <span className={`text-[12px] md:text-[13px] font-bold ${item.text} whitespace-nowrap`}>{item.limit}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Right: Visual Mockup */}
+            <div className="relative h-[450px] md:h-[500px] flex items-center justify-center group scale-[0.85] md:scale-100">
+              {/* Back card: Scanning UI (Input Modal Style) */}
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[310px] h-[400px] bg-[#1a1d24] rounded-[1.5rem] border border-white/5 shadow-2xl transition-transform duration-700 group-hover:-translate-x-[65%] group-hover:-rotate-6 overflow-hidden">
+                {/* Modal Header */}
+                <div className="p-4 flex items-center justify-between border-b border-white/5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-indigo-500 flex items-center justify-center shadow-[0_0_10px_rgba(99,102,241,0.5)]">
+                      <Sparkles size={14} className="text-white" />
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-black text-white leading-none">AI 매매 인식</div>
+                      <div className="text-[8px] text-slate-500 font-bold mt-1">스크린샷 자동 분석</div>
+                    </div>
+                  </div>
+                  <div className="text-slate-500 text-xs">✕</div>
+                </div>
+                
+                {/* Modal Body (Dashed Area with Screenshot) */}
+                <div className="p-4 space-y-4">
+                  <div className="relative aspect-[9/12] rounded-xl border-2 border-dashed border-white/10 bg-black/20 flex flex-col items-center justify-center overflow-hidden">
+                    {/* Actual Screenshot (Kiwoom) */}
+                    <div className="absolute inset-1 rounded-lg bg-white overflow-hidden opacity-90">
+                      <img 
+                        src="/images/kiwoom_screenshot.jpg" 
+                        alt="Kiwoom Screenshot" 
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+
+                    {/* Laser Scan Line */}
+                    <div className="absolute inset-x-0 h-[2px] bg-indigo-500 shadow-[0_0_20px_rgba(99,102,241,1)] animate-scan-refined z-20" />
+                  </div>
+
+                  <div className="flex gap-2">
+                    <div className="flex-1 h-9 rounded-xl bg-slate-800 flex items-center justify-center text-[10px] font-black text-slate-400">취소</div>
+                    <div className="flex-[2] h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-[10px] font-black text-white shadow-lg shadow-indigo-900/40">
+                      <Sparkles size={12} className="mr-1.5" />
+                      AI 스캔 시작
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Front card: Success UI (Result Modal Style) */}
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 translate-x-12 translate-y-12 w-[290px] h-[360px] bg-[#1a1d24] rounded-[1.5rem] border border-white/10 shadow-[-20px_20px_50px_rgba(0,0,0,0.5)] transition-transform duration-700 group-hover:translate-x-[45%] group-hover:rotate-6 z-30 overflow-hidden">
+                 {/* Modal Header */}
+                 <div className="p-4 flex items-center justify-between border-b border-white/5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-indigo-500 flex items-center justify-center shadow-[0_0_10px_rgba(99,102,241,0.5)]">
+                      <Sparkles size={14} className="text-white" />
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-black text-white leading-none">AI 매매 인식</div>
+                      <div className="text-[8px] text-slate-500 font-bold mt-1">스크린샷 자동 분석</div>
+                    </div>
+                  </div>
+                  <div className="text-slate-500 text-xs">✕</div>
+                </div>
+
+                <div className="p-5 h-full flex flex-col pt-4">
+                  <div className="text-[12px] font-black text-white mb-4">인식된 매매 내역</div>
+
+                  <div className="space-y-2.5 flex-1">
+                    {[
+                      { t: 'TQQQ', date: '2026-01-09', p: '$54.50', q: '10', fee: '$0.16', side: '매도' },
+                      { t: 'TQQQ', date: '2026-01-09', p: '$54.14', q: '9', fee: '$0.14', side: '매도' },
+                    ].map((tx, i) => (
+                      <div key={i} className="bg-[#242932] rounded-xl p-3 px-4 border border-white/5 flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9px] font-black text-rose-400">{tx.side}</span>
+                          <span className="text-[11px] font-black text-white">{tx.t}</span>
+                        </div>
+                        <div className="text-[9px] text-slate-400 font-bold">
+                          {tx.date} · {tx.p} × {tx.q} · fee {tx.fee}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-auto mb-8 flex gap-2">
+                    <div className="flex-1 h-10 rounded-xl bg-[#242932] flex items-center justify-center text-[10px] font-black text-slate-400">취소</div>
+                    <div className="flex-[2] h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-[10px] font-black text-white shadow-lg shadow-indigo-900/40">
+                      확인 후 저장 〉
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Custom Animation Styles */}
+          <style dangerouslySetInnerHTML={{ __html: `
+            @keyframes scanRefined {
+              0% { top: 10%; opacity: 0; }
+              10% { opacity: 1; }
+              90% { opacity: 1; }
+              100% { top: 90%; opacity: 0; }
+            }
+            .animate-scan-refined {
+              animation: scanRefined 2.5s ease-in-out infinite;
+            }
+          `}} />
+        </section>
+
         <section className="mt-24 md:mt-32 scroll-mt-20">
           <div className="text-center mb-8">
             <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-900/80 border border-slate-700 text-[10px] font-black uppercase tracking-[0.2em] text-slate-200">

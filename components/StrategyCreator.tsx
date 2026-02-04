@@ -58,9 +58,18 @@ interface StrategyCreatorProps {
   onClose: () => void;
   onSave: (p: Omit<Portfolio, 'id'>) => void;
   canAccessPaidStocks?: boolean;
+  maxPortfolios: number;
+  currentPortfolioCount: number;
 }
 
-const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave, canAccessPaidStocks = false }) => {
+const StrategyCreator: React.FC<StrategyCreatorProps> = ({ 
+  lang, 
+  onClose, 
+  onSave, 
+  canAccessPaidStocks = false,
+  maxPortfolios,
+  currentPortfolioCount
+}) => {
   const { isInTossApp } = useTossApp();
   const [step, setStep] = useState(0); // 0: 전략 선택, 1-3: 기존 단계
   const [selectedStrategy, setSelectedStrategy] = useState<StrategyType | null>(null);
@@ -180,6 +189,13 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({ lang, onClose, onSave
 
   const handleSave = async () => {
     if (!selectedStrategy) return;
+
+    if (currentPortfolioCount >= maxPortfolios) {
+      alert(lang === 'ko' 
+        ? `포트폴리오 생성 한도(${maxPortfolios}개)에 도달했습니다. 더 많은 포트폴리오를 만들려면 업그레이드를 고려해 보세요.` 
+        : `Portfolio limit (${maxPortfolios}) reached. Please upgrade to create more.`);
+      return;
+    }
 
     // 전략별로 다른 strategy 객체 생성
     let strategy: Strategy;

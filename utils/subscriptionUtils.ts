@@ -1,3 +1,5 @@
+import { supabase } from "../services/supabase";
+
 /**
  * 구독 및 광고 관련 유틸리티 함수
  */
@@ -8,8 +10,8 @@
  */
 export interface UserProfile {
   id: string;
-  subscription_tier: 'free' | 'pro' | 'premium' | 'enterprise';
-  subscription_status: 'active' | 'cancelled' | 'expired' | 'trial' | null;
+  subscription_tier: "free" | "pro" | "premium" | "enterprise";
+  subscription_status: "active" | "cancelled" | "expired" | "trial" | null;
   subscription_started_at: string | null; // ISO date string
   subscription_expires_at: string | null; // ISO date string
   stripe_customer_id: string | null;
@@ -21,14 +23,20 @@ export interface UserProfile {
   updated_at?: string;
 
   // 알림 관련 설정 (user_profiles 확장 컬럼과 매핑)
-  app_notification_enabled?: boolean;   // 기본 앱 내 알림 사용 여부 (default true)
-  telegram_enabled?: boolean;           // 텔레그램 알림 사용 여부 (default false)
-  telegram_chat_id?: string | null;     // 연결된 텔레그램 chat_id
-  telegram_last_error?: string | null;  // 최근 텔레그램 에러 메시지 (옵션)
+  app_notification_enabled?: boolean; // 기본 앱 내 알림 사용 여부 (default true)
+  telegram_enabled?: boolean; // 텔레그램 알림 사용 여부 (default false)
+  telegram_chat_id?: string | null; // 연결된 텔레그램 chat_id
+  telegram_last_error?: string | null; // 최근 텔레그램 에러 메시지 (옵션)
   telegram_connected_at?: string | null; // 텔레그램 연결 시각 (ISO, 옵션)
 
   // 언어 설정
-  preferred_language?: 'ko' | 'en' | null; // 알림/기본 UI 언어
+  preferred_language?: "ko" | "en" | null; // 알림/기본 UI 언어
+
+  // 사용량 추적 관련 (user_profiles 확장 컬럼과 매핑)
+  ai_daily_usage?: number;
+  ai_monthly_usage?: number;
+  backtest_daily_usage?: number;
+  last_usage_reset_at?: string | null;
 }
 
 /**
@@ -43,16 +51,22 @@ export interface SimpleUserProfile {
 /**
  * 유료 구독 티어 목록
  */
-export const PAID_TIERS: readonly string[] = ['pro', 'premium', 'enterprise'] as const;
+export const PAID_TIERS: readonly string[] = [
+  "pro",
+  "premium",
+  "enterprise",
+] as const;
 
 /**
  * 사용자가 유료 구독 중인지 확인
  * @param profile 사용자 프로필 (null 가능)
  * @returns 유료 구독 중이면 true
  */
-export const isPaidSubscription = (profile: UserProfile | SimpleUserProfile | null): boolean => {
+export const isPaidSubscription = (
+  profile: UserProfile | SimpleUserProfile | null,
+): boolean => {
   if (!profile) return false;
-  
+
   const tier = profile.subscription_tier?.toLowerCase();
   return PAID_TIERS.includes(tier);
 };
@@ -61,7 +75,7 @@ export const isPaidSubscription = (profile: UserProfile | SimpleUserProfile | nu
  * 사용자의 구독이 활성 상태인지 확인
  * @param profile 사용자 프로필
  * @returns 구독이 활성 상태면 true
- * 
+ *
  * 참고: subscription_status 가능한 값
  * - 'active': 활성 구독
  * - 'cancelled': 취소됨
@@ -70,14 +84,15 @@ export const isPaidSubscription = (profile: UserProfile | SimpleUserProfile | nu
  */
 export const isActiveSubscription = (profile: UserProfile | null): boolean => {
   if (!profile) return false;
-  
+
   // SimpleUserProfile에는 subscription_status가 없으므로 tier만 확인
-  if (!('subscription_status' in profile)) {
+  if (!("subscription_status" in profile)) {
     return isPaidSubscription(profile);
   }
-  
+
   // 'active' 또는 'trial' 상태를 활성으로 간주
-  return profile.subscription_status === 'active' || profile.subscription_status === 'trial';
+  return profile.subscription_status === "active" ||
+    profile.subscription_status === "trial";
 };
 
 /**
@@ -87,17 +102,17 @@ export const isActiveSubscription = (profile: UserProfile | null): boolean => {
  */
 export const isNotExpired = (profile: UserProfile | null): boolean => {
   if (!profile) return true; // 프로필이 없으면 만료되지 않은 것으로 간주
-  
+
   // SimpleUserProfile에는 subscription_expires_at이 없으므로 true 반환
-  if (!('subscription_expires_at' in profile)) {
+  if (!("subscription_expires_at" in profile)) {
     return true;
   }
-  
+
   if (!profile.subscription_expires_at) {
     // 만료일이 없으면 무한 유지로 간주 (또는 비즈니스 로직에 따라 조정)
     return true;
   }
-  
+
   const expiresAt = new Date(profile.subscription_expires_at);
   const now = new Date();
   return expiresAt > now;
@@ -107,33 +122,38 @@ export const isNotExpired = (profile: UserProfile | null): boolean => {
  * 사용자가 광고를 봐야 하는지 판단
  * @param profile 사용자 프로필 (null 가능)
  * @returns 광고를 표시해야 하면 true
- * 
+ *
  * 광고 제거 조건:
  * - 유료 티어 (pro, premium, enterprise)
  * - 구독 상태가 활성 (active 또는 trial)
  * - 구독이 만료되지 않음 (subscription_expires_at이 없거나 미래 날짜)
  */
-export const shouldShowAds = (profile: UserProfile | SimpleUserProfile | null): boolean => {
+export const shouldShowAds = (
+  profile: UserProfile | SimpleUserProfile | null,
+): boolean => {
   if (!profile) return true; // 로그아웃 상태면 광고 노출
-  
+
   // 유료 티어인지 확인
   const isPaidTier = isPaidSubscription(profile);
-  
+
   // SimpleUserProfile인 경우 (기존 코드 호환)
   // subscription_status와 subscription_expires_at 정보가 없으므로
   // 유료 티어인지만 확인
-  if (!('subscription_status' in profile) || !('subscription_expires_at' in profile)) {
+  if (
+    !("subscription_status" in profile) ||
+    !("subscription_expires_at" in profile)
+  ) {
     // 유료 티어면 광고 제거 (기본적으로 활성 상태로 간주)
     return !isPaidTier;
   }
-  
+
   // UserProfile인 경우 (전체 정보 확인)
   const isActive = isActiveSubscription(profile);
   const isNotExpiredSubscription = isNotExpired(profile);
-  
+
   // 유료 티어 + 활성 상태 + 만료되지 않음 = 광고 제거
   const shouldHideAds = isPaidTier && isActive && isNotExpiredSubscription;
-  
+
   return !shouldHideAds;
 };
 
@@ -148,14 +168,17 @@ export const shouldShowAds = (profile: UserProfile | SimpleUserProfile | null): 
  * - Pro/Premium 티어   → 기본 5개
  * - 그 외(Free 등)     → 기본 2개
  */
-export const getMaxPortfolios = (profile: UserProfile | SimpleUserProfile | null): number => {
+export const getMaxPortfolios = (
+  profile: UserProfile | SimpleUserProfile | null,
+): number => {
   if (!profile) return 2; // Free 기본값
 
-  const explicit = profile.max_portfolios;
-  if (typeof explicit === 'number') return explicit;
+  const tier = profile.subscription_tier?.toLowerCase?.() || "free";
+  if (tier === "premium") return 20;
+  if (tier === "pro") return 5;
 
-  const tier = profile.subscription_tier?.toLowerCase?.() || 'free';
-  if (tier === 'pro' || tier === 'premium') return 4;
+  const explicit = profile.max_portfolios;
+  if (typeof explicit === "number") return explicit;
 
   return 2;
 };
@@ -171,16 +194,69 @@ export const getMaxPortfolios = (profile: UserProfile | SimpleUserProfile | null
  * - Pro/Premium 티어   → 기본 5개
  * - 그 외(Free 등)     → 기본 2개
  */
-export const getMaxAlarms = (profile: UserProfile | SimpleUserProfile | null): number => {
+export const getMaxAlarms = (
+  profile: UserProfile | SimpleUserProfile | null,
+): number => {
   if (!profile) return 2; // Free 기본값
 
-  const explicit = profile.max_alarms;
-  if (typeof explicit === 'number') return explicit;
+  const tier = profile.subscription_tier?.toLowerCase?.() || "free";
+  if (tier === "premium") return 40;
+  if (tier === "pro") return 10;
 
-  const tier = profile.subscription_tier?.toLowerCase?.() || 'free';
-  if (tier === 'pro' || tier === 'premium') return 4;
+  const explicit = profile.max_alarms;
+  if (typeof explicit === "number") return explicit;
 
   return 2;
+};
+
+/**
+ * 사용량 확인 및 증가 (서버 RPC 호출)
+ * @param usageType 'ai' 또는 'backtest'
+ * @param tier 현재 사용자 티어
+ * @returns 성공 여부 및 결과 메시지
+ */
+export const incrementUsage = async (
+  usageType: "ai" | "backtest",
+  tier: string,
+): Promise<{ success: boolean; message?: string; currentUsage?: any }> => {
+  const limits = getUsageLimits(tier);
+  const maxDaily = usageType === "ai" ? limits.aiDaily : limits.backtestDaily;
+  const maxMonthly = usageType === "ai" ? (limits.aiMonthly || 999) : undefined;
+
+  try {
+    const { data, error } = await supabase.rpc("check_and_increment_usage", {
+      p_usage_type: usageType,
+      p_max_daily: maxDaily,
+      p_max_monthly: maxMonthly,
+    });
+
+    if (error) {
+      console.error(`[Usage] Error incrementing ${usageType} usage:`, error);
+      return { success: false, message: error.message };
+    }
+
+    const result = data as {
+      success: boolean;
+      error?: string;
+      daily_usage?: number;
+      monthly_usage?: number;
+    };
+
+    if (!result.success) {
+      return { success: false, message: result.error };
+    }
+
+    return {
+      success: true,
+      currentUsage: {
+        daily: result.daily_usage,
+        monthly: result.monthly_usage,
+      },
+    };
+  } catch (err) {
+    console.error(`[Usage] Unexpected error for ${usageType}:`, err);
+    return { success: false, message: "Unexpected server error" };
+  }
 };
 
 /**
@@ -189,15 +265,18 @@ export const getMaxAlarms = (profile: UserProfile | SimpleUserProfile | null): n
  * @param lang 언어 ('ko' | 'en')
  * @returns 표시 이름
  */
-export const getTierDisplayName = (tier: string, lang: 'ko' | 'en' = 'ko'): string => {
+export const getTierDisplayName = (
+  tier: string,
+  lang: "ko" | "en" = "ko",
+): string => {
   const tierMap: Record<string, { ko: string; en: string }> = {
-    free: { ko: '무료', en: 'Free' },
-    pro: { ko: '프로', en: 'Pro' },
-    premium: { ko: '프리미엄', en: 'Premium' },
-    enterprise: { ko: '엔터프라이즈', en: 'Enterprise' }
+    free: { ko: "무료", en: "Free" },
+    pro: { ko: "프로", en: "Pro" },
+    premium: { ko: "프리미엄", en: "Premium" },
+    enterprise: { ko: "엔터프라이즈", en: "Enterprise" },
   };
-  
-  const normalizedTier = tier?.toLowerCase() || 'free';
+
+  const normalizedTier = tier?.toLowerCase() || "free";
   return tierMap[normalizedTier]?.[lang] || tier;
 };
 
@@ -206,22 +285,64 @@ export const getTierDisplayName = (tier: string, lang: 'ko' | 'en' = 'ko'): stri
  * @param status 구독 상태
  * @param lang 언어 ('ko' | 'en')
  * @returns 표시 이름
- * 
+ *
  * 참고: subscription_status 가능한 값
  * - 'active': 활성 구독
  * - 'cancelled': 취소됨
  * - 'expired': 만료됨
  * - 'trial': trial 기간 중
  */
-export const getStatusDisplayName = (status: string | null, lang: 'ko' | 'en' = 'ko'): string => {
-  if (!status) return lang === 'ko' ? '없음' : 'None';
-  
+export const getStatusDisplayName = (
+  status: string | null,
+  lang: "ko" | "en" = "ko",
+): string => {
+  if (!status) return lang === "ko" ? "없음" : "None";
+
   const statusMap: Record<string, { ko: string; en: string }> = {
-    active: { ko: '활성', en: 'Active' },
-    cancelled: { ko: '취소됨', en: 'Cancelled' },
-    expired: { ko: '만료됨', en: 'Expired' },
-    trial: { ko: '체험 중', en: 'Trial' }
+    active: { ko: "활성", en: "Active" },
+    cancelled: { ko: "취소됨", en: "Cancelled" },
+    expired: { ko: "만료됨", en: "Expired" },
+    trial: { ko: "체험 중", en: "Trial" },
   };
-  
+
   return statusMap[status]?.[lang] || status;
+};
+/**
+ * 티어별 일일/월간 사용량 한도 가져오기
+ */
+export interface UsageLimits {
+  aiDaily: number;
+  aiMonthly?: number;
+  backtestDaily: number;
+}
+
+export const getUsageLimits = (tier: string): UsageLimits => {
+  const normalizedTier = tier?.toLowerCase() || "free";
+
+  if (normalizedTier === "premium") {
+    return { aiDaily: 999, backtestDaily: 10 };
+  }
+
+  if (normalizedTier === "pro") {
+    return { aiDaily: 999, aiMonthly: 50, backtestDaily: 5 };
+  }
+
+  // Free
+  return { aiDaily: 1, backtestDaily: 2 };
+};
+
+/**
+ * 티어별 종목 접근 권한 확인
+ */
+export const canAccessStock = (
+  ticker: string,
+  tier: string,
+  paidStocks: string[],
+): boolean => {
+  const normalizedTier = tier?.toLowerCase() || "free";
+  if (normalizedTier === "premium") return true;
+  if (normalizedTier === "pro") return true; // Pro handles its own list in some components, but logically can access Pro tickers
+
+  // Free
+  return !paidStocks.includes(ticker);
 };

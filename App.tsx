@@ -33,8 +33,17 @@ import {
   Sparkles,
   Star,
   Zap,
-  Crown
+  Crown,
+  Hammer
 } from 'lucide-react';
+import { 
+  getMaxPortfolios, 
+  getMaxAlarms, 
+  UserProfile, 
+  SimpleUserProfile,
+  isActiveSubscription,
+  isNotExpired
+} from './utils/subscriptionUtils';
 
 const Backtest = React.lazy(() => import('./components/Backtest'));
 
@@ -56,6 +65,10 @@ const App: React.FC = () => {
     telegram_connected_at?: string | null;
     telegram_last_error?: string | null;
     preferred_language?: 'ko' | 'en' | null;
+    ai_daily_usage?: number;
+    ai_monthly_usage?: number;
+    backtest_daily_usage?: number;
+    last_usage_reset_at?: string | null;
   } | null>(null);
   const [authModal, setAuthModal] = useState<'login' | 'signup' | 'profile' | 'reset-password' | 'change-password' | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -162,20 +175,24 @@ const App: React.FC = () => {
     try {
       const { data: profileData, error: profileError } = await supabase
         .from('user_profiles')
-        .select('subscription_tier, max_portfolios, max_alarms, subscription_status, subscription_expires_at, telegram_enabled, telegram_connected_at, telegram_last_error, preferred_language')
+        .select('subscription_tier, max_portfolios, max_alarms, subscription_status, subscription_expires_at, telegram_enabled, telegram_connected_at, telegram_last_error, preferred_language, ai_daily_usage, ai_monthly_usage, backtest_daily_usage, last_usage_reset_at')
         .eq('id', userId)
         .single();
       if (!profileError && profileData) {
         setUserProfile({
           subscription_tier: profileData.subscription_tier || 'free',
-          max_portfolios: profileData.max_portfolios ?? 3,
-          max_alarms: profileData.max_alarms ?? 2,
+          max_portfolios: profileData.max_portfolios,
+          max_alarms: profileData.max_alarms,
           subscription_status: profileData.subscription_status ?? null,
           subscription_expires_at: profileData.subscription_expires_at ?? null,
           telegram_enabled: profileData.telegram_enabled ?? false,
           telegram_connected_at: profileData.telegram_connected_at ?? null,
           telegram_last_error: profileData.telegram_last_error ?? null,
           preferred_language: profileData.preferred_language ?? 'ko',
+          ai_daily_usage: profileData.ai_daily_usage ?? 0,
+          ai_monthly_usage: profileData.ai_monthly_usage ?? 0,
+          backtest_daily_usage: profileData.backtest_daily_usage ?? 0,
+          last_usage_reset_at: profileData.last_usage_reset_at ?? null,
         });
       }
     } catch (err) {
@@ -1503,7 +1520,15 @@ const App: React.FC = () => {
                 onClosePortfolio={(id) => setTerminateTargetId(id)}
                 onDeletePortfolio={handleDeletePortfolio}
                 onUpdatePortfolio={handleUpdatePortfolio}
-                onOpenCreator={() => setIsCreatorOpen(true)}
+                onOpenCreator={() => {
+                  if (activePortfolios.length >= getMaxPortfolios(userProfile)) {
+                    alert(lang === 'ko' 
+                      ? `포트폴리오 생성 한도(${getMaxPortfolios(userProfile)}개)에 도달했습니다. 더 많은 포트폴리오를 만들려면 업그레이드를 고려해 보세요.` 
+                      : `Portfolio limit (${getMaxPortfolios(userProfile)}) reached. Please upgrade for more.`);
+                    return;
+                  }
+                  setIsCreatorOpen(true);
+                }}
                 onOpenAlarm={(id) => setAlarmTargetId(id)}
                 onOpenDetails={(id) => setDetailsTargetId(id)}
                 onOpenQuickInput={(id, activeSection) => {
@@ -1528,7 +1553,10 @@ const App: React.FC = () => {
           {activeTab === 'markets' && <Markets lang={lang} portfolios={portfolios} canAccessPaidStocks={canAccessPaidStocks} />}
           {activeTab === 'backtest' && (
             <React.Suspense fallback={<div className="flex items-center justify-center min-h-[50vh] text-slate-500 dark:text-slate-400 font-bold">백테스트 로딩 중…</div>}>
-              <Backtest lang={lang} />
+              <Backtest 
+                lang={lang} 
+                currentTier={currentTier === 'premium' || currentTier === 'pro' ? currentTier : 'free'} 
+              />
             </React.Suspense>
           )}
           {activeTab === 'pricing' && (
@@ -1626,15 +1654,16 @@ const App: React.FC = () => {
               disabled
               tooltip={
                 lang === 'ko'
-                  ? '더 나은 백테스트 경험을 위해 세밀하게 다듬는 중이니 조금만 기다려 주세요.'
-                  : 'We are carefully polishing this backtest experience, please check back soon.'
+                  ? '더 나은 백테스트 경험을 위해\n다듬는 중이니 조금만 기다려 주세요.'
+                  : 'Polishing for a better backtest experience.\nPlease wait a bit.'
               }
+              tooltipIcon={<Hammer size={16} className="text-indigo-400" />}
             />
           </nav>
         </div>
 
-        {isCreatorOpen && <StrategyCreator lang={lang} onClose={() => setIsCreatorOpen(false)} onSave={handleAddPortfolio} canAccessPaidStocks={canAccessPaidStocks} />}
-        {currentAlarmPortfolio && <AlarmModal lang={lang} portfolio={currentAlarmPortfolio} onClose={() => setAlarmTargetId(null)} onSave={(config) => { handleUpdatePortfolio({ ...currentAlarmPortfolio, alarmconfig: config }); setAlarmTargetId(null); }} />}
+        {isCreatorOpen && <StrategyCreator lang={lang} onClose={() => setIsCreatorOpen(false)} onSave={handleAddPortfolio} canAccessPaidStocks={canAccessPaidStocks} maxPortfolios={getMaxPortfolios(userProfile)} currentPortfolioCount={activePortfolios.length} />}
+        {currentAlarmPortfolio && <AlarmModal lang={lang} portfolio={currentAlarmPortfolio} onClose={() => setAlarmTargetId(null)} onSave={(config) => { handleUpdatePortfolio({ ...currentAlarmPortfolio, alarmconfig: config }); setAlarmTargetId(null); }} maxAlarms={getMaxAlarms(userProfile)} />}
         {currentDetailsPortfolio && (
           <PortfolioDetailsModal 
             lang={lang} 
@@ -1652,6 +1681,7 @@ const App: React.FC = () => {
             portfolio={currentAIImagePortfolio}
             geminiApiKey={geminiApiKey}
             isPaidUser={currentTier === 'pro' || currentTier === 'premium'}
+            currentTier={currentTier === 'premium' || currentTier === 'pro' ? currentTier : 'free'}
             onClose={() => setAiImageTargetId(null)}
             onSave={async (trades) => {
               for (const trade of trades) {
@@ -1783,23 +1813,23 @@ interface NavIconProps {
   label: string;
   disabled?: boolean;
   tooltip?: string;
+  tooltipIcon?: React.ReactNode;
 }
 
-const NavIcon: React.FC<NavIconProps> = ({ active, onClick, icon, label, disabled, tooltip }) => {
+const NavIcon: React.FC<NavIconProps> = ({ active, onClick, icon, label, disabled, tooltip, tooltipIcon }) => {
   const [showTooltip, setShowTooltip] = React.useState(false);
   const hideTimeoutRef = React.useRef<number | null>(null);
 
   const handleClick = () => {
     if (disabled) {
       if (tooltip) {
-        // 모바일/클릭용 말풍선 표시 (2초)
         if (hideTimeoutRef.current) {
           window.clearTimeout(hideTimeoutRef.current);
         }
         setShowTooltip(true);
         hideTimeoutRef.current = window.setTimeout(() => {
           setShowTooltip(false);
-        }, 2000);
+        }, 3000);
       }
       return;
     }
@@ -1812,12 +1842,25 @@ const NavIcon: React.FC<NavIconProps> = ({ active, onClick, icon, label, disable
     <div className="relative flex flex-col items-center group">
       {tooltip && (
         <div
-          className={`pointer-events-none absolute -top-12 z-50 max-w-[220px] rounded-2xl bg-slate-900/95 px-3 py-2 text-[11px] leading-snug text-slate-50 shadow-xl border border-white/10 transition-opacity duration-200 ${
-            showTooltip ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          className={`pointer-events-none absolute -top-16 z-50 flex items-center gap-3 rounded-2xl bg-[#0F172A] px-4 py-3 shadow-2xl border border-white/10 transition-all duration-300 ${
+            showTooltip 
+              ? 'opacity-100 translate-y-0 scale-100' 
+              : 'opacity-0 translate-y-2 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100'
           }`}
+          style={{ width: 'max-content', minWidth: '220px' }}
         >
-          {tooltip}
-          <div className="absolute left-1/2 -bottom-1.5 h-3 w-3 -translate-x-1/2 rotate-45 bg-slate-900/95 border-r border-b border-white/10" />
+          {tooltipIcon && (
+            <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30">
+              <div className="animate-pulse">
+                {tooltipIcon}
+              </div>
+            </div>
+          )}
+          <div className="text-[11px] font-bold leading-tight text-slate-100 whitespace-pre-line">
+            {tooltip}
+          </div>
+          {/* Arrow */}
+          <div className="absolute left-1/2 -bottom-1.5 h-3 w-3 -translate-x-1/2 rotate-45 bg-[#0F172A] border-r border-b border-white/10" />
         </div>
       )}
       <button

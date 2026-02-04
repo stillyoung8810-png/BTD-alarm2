@@ -4,19 +4,29 @@ import { Portfolio, Trade } from '../types';
 import { I18N } from '../constants';
 import { X, Camera, Upload, Clipboard, Sparkles, ChevronRight } from 'lucide-react';
 import { analyzeTradeScreenshot, RecognizedTradeItem } from '../services/geminiService';
+import { incrementUsage } from '../utils/subscriptionUtils';
 
 interface AIImageInputModalProps {
   lang: 'ko' | 'en';
   portfolio: Portfolio;
   geminiApiKey?: string | null;
   isPaidUser: boolean;
+  currentTier: string;
   onClose: () => void;
   onSave: (trades: Trade[]) => void;
 }
 
 type Step = 'upload' | 'scanning' | 'result' | 'error';
 
-const AIImageInputModal: React.FC<AIImageInputModalProps> = ({ lang, portfolio, geminiApiKey, isPaidUser, onClose, onSave }) => {
+const AIImageInputModal: React.FC<AIImageInputModalProps> = ({ 
+  lang, 
+  portfolio, 
+  geminiApiKey, 
+  isPaidUser, 
+  currentTier,
+  onClose, 
+  onSave 
+}) => {
   const t = I18N[lang];
   const [step, setStep] = useState<Step>('upload');
   const [imageData, setImageData] = useState<string | null>(null);
@@ -72,6 +82,22 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({ lang, portfolio, 
     setStep('scanning');
     setErrorMessage(null);
     try {
+      // 1. 사용량 체크 및 증가 호출
+      const usageResult = await incrementUsage('ai', currentTier);
+      if (!usageResult.success) {
+        setErrorMessage(
+          lang === 'ko' 
+            ? usageResult.message === 'DAILY_LIMIT_REACHED' 
+              ? '일일 AI 분석 한도에 도달했습니다. 내일 다시 시도하거나 멤버십을 업그레이드하세요.'
+              : usageResult.message === 'MONTHLY_LIMIT_REACHED'
+                ? '월간 AI 분석 한도(50회)에 도달했습니다. 프리미엄 업그레이드를 고려해 보세요.'
+                : usageResult.message || '사용량 확인 중 오류가 발생했습니다.'
+            : usageResult.message || 'Usage limit reached or verification failed.'
+        );
+        setStep('error');
+        return;
+      }
+
       const base64 = imageData.includes(',') ? imageData.split(',')[1] : imageData;
       // Cloudflare Worker에서 유료/무료 티어별로 키를 선택하도록 넘기는 옵션
       const result = await analyzeTradeScreenshot(base64, imageMime, {

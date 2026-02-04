@@ -22,13 +22,13 @@ interface AlarmModalProps {
   portfolio: Portfolio;
   onClose: () => void;
   onSave: (config: AlarmConfig) => void;
+  maxAlarms: number;
 }
 
 // 유료화 대비 확장 가능한 상수
 const MINUTE_STEP = 10; // 무료: 10분 단위, 프리미엄: 1분 단위로 변경 가능
-const MAX_SLOTS = 2; // 무료: 2개, 프리미엄: 3개 이상으로 확장 가능
 
-const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSave }) => {
+const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSave, maxAlarms }) => {
   const { isInTossApp } = useTossApp();
   const initialConfig = portfolio.alarmconfig || {
     enabled: false,
@@ -37,7 +37,7 @@ const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSav
 
   const [enabled, setEnabled] = useState(initialConfig.enabled);
   const [selectedHours, setSelectedHours] = useState<string[]>(
-    initialConfig.selectedHours?.slice(0, MAX_SLOTS) || []
+    initialConfig.selectedHours?.slice(0, maxAlarms) || []
   );
 
   // AM/PM 선택 상태
@@ -118,7 +118,7 @@ const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSav
       return;
     }
 
-    if (selectedHours.length >= MAX_SLOTS) {
+    if (selectedHours.length >= maxAlarms) {
       // 프리미엄 안내
       alert(lang === 'ko' ? '프리미엄 전용 기능입니다.' : 'This is a premium feature.');
       return;
@@ -139,7 +139,7 @@ const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSav
     onSave({ enabled: effectiveEnabled, selectedHours: effectiveEnabled ? selectedHours : [] });
   };
 
-  const isAllSlotsFilled = selectedHours.length >= MAX_SLOTS;
+  const isAllSlotsFilled = selectedHours.length >= maxAlarms;
 
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
@@ -158,7 +158,7 @@ const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSav
             <div>
               <h2 className="text-xl font-black text-slate-900 dark:text-white">{lang === 'ko' ? '알람 설정' : 'Alarm Settings'}</h2>
               <p className="text-[10px] font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest mt-0.5">
-                DUAL SLOT SYSTEM
+                {maxAlarms} SLOT SYSTEM
               </p>
             </div>
           </div>
@@ -206,7 +206,7 @@ const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSav
                     {lang === 'ko' ? '설정된 시간' : 'Set Time'}
                   </span>
                   <span className="text-xs font-black text-blue-600 dark:text-blue-400">
-                    ({selectedHours.length}/{MAX_SLOTS})
+                    ({selectedHours.length}/{maxAlarms})
                   </span>
                 </div>
 

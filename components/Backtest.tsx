@@ -7,6 +7,7 @@ import { I18N, ALL_STOCKS } from '../constants';
 import { TrendingUp, Layers, Zap, ChevronLeft, Calendar, DollarSign, Percent, Crown, Info } from 'lucide-react';
 import CustomDropdown from './CustomDropdown';
 import Toggle from './Toggle';
+import { incrementUsage } from '../utils/subscriptionUtils';
 
 const BacktestResultsCharts = lazy(() => import('./BacktestResultsCharts'));
 
@@ -122,9 +123,10 @@ const stockOptions = ALL_STOCKS.map((s) => ({ value: s, label: s, disabled: fals
 
 interface BacktestProps {
   lang: 'ko' | 'en';
+  currentTier: string;
 }
 
-const Backtest: React.FC<BacktestProps> = ({ lang }) => {
+const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
   const t = I18N[lang];
   const [step, setStep] = useState<Step>('strategy');
   const [strategyId, setStrategyId] = useState<BacktestStrategyId | null>(null);
@@ -139,6 +141,21 @@ const Backtest: React.FC<BacktestProps> = ({ lang }) => {
   };
 
   const handleRunBacktest = async () => {
+    // 1. 사용량 체크 및 증가 호출
+    const usageResult = await incrementUsage('backtest', currentTier);
+    if (!usageResult.success) {
+      setBacktestError(
+        lang === 'ko' 
+          ? usageResult.message === 'DAILY_LIMIT_REACHED' 
+            ? '일일 백테스트 한도에 도달했습니다. 내일 다시 시도하거나 멤버십을 업그레이드하세요.'
+            : usageResult.message || '사용량 확인 중 오류가 발생했습니다.'
+          : usageResult.message || 'Usage limit reached or verification failed.'
+      );
+      setResult(null);
+      setStep('results');
+      return;
+    }
+
     if (strategyId === 'multi_split') {
       const apiUrl = (import.meta as any).env?.VITE_BACKTEST_MULTI_URL;
       if (apiUrl) {
@@ -617,16 +634,25 @@ const Backtest: React.FC<BacktestProps> = ({ lang }) => {
                 drawdownHint={t.drawdownHint}
               />
             </Suspense>
-            <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-white/80 dark:bg-slate-900/90 backdrop-blur-sm pointer-events-none">
-              <div className="pointer-events-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-2xl p-8 shadow-2xl max-w-sm text-center">
-                <Crown size={32} className="mx-auto text-amber-500 mb-3" />
-                <h4 className="text-lg font-black text-slate-900 dark:text-white mb-2">{t.benchmarkCompare}</h4>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">{t.benchmarkCompareUpgrade}</p>
-                <button type="button" className="w-full py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black shadow-lg">
-                  {t.upgradeNow}
-                </button>
+            {(currentTier === 'free' || !currentTier) && (
+              <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-white/80 dark:bg-slate-900/90 backdrop-blur-sm pointer-events-none">
+                <div className="pointer-events-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-2xl p-8 shadow-2xl max-w-sm text-center">
+                  <Crown size={32} className="mx-auto text-amber-500 mb-3" />
+                  <h4 className="text-lg font-black text-slate-900 dark:text-white mb-2">{t.benchmarkCompare}</h4>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">{t.benchmarkCompareUpgrade}</p>
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                        const pricingTab = document.querySelector('[data-tab="pricing"]');
+                        if (pricingTab instanceof HTMLElement) pricingTab.click();
+                    }}
+                    className="w-full py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black shadow-lg hover:scale-[1.02] active:scale-95 transition-all"
+                  >
+                    {t.upgradeNow}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* 낙폭 차트 */}

@@ -14,8 +14,9 @@ const LOGO_URLS = import.meta.glob(
     '../src/assets/logos/*.jpeg',
   ],
   {
-  eager: true,
-  as: 'url',
+    eager: true,
+    query: '?url',
+    import: 'default',
   }
 ) as Record<string, string>;
 

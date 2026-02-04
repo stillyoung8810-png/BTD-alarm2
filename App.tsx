@@ -516,7 +516,6 @@ const App: React.FC = () => {
 
           // INITIAL_SESSION: 초기 세션 로드 완료 - checkUser에서 처리하므로 여기서는 플래그만 설정
           if (event === 'INITIAL_SESSION') {
-            console.log('[onAuthStateChange] INITIAL_SESSION - checkUser에서 처리됨');
             initialSessionLoaded = true;
             return;
           }
@@ -529,38 +528,25 @@ const App: React.FC = () => {
 
           // SIGNED_IN: 로그인 성공
           if (event === 'SIGNED_IN') {
-            console.log('[onAuthStateChange] SIGNED_IN 이벤트');
             if (typeof window !== 'undefined') {
-              // 로그인 성공 시에만 URL 해시 정리
               window.history.replaceState(null, '', window.location.pathname + window.location.search);
             }
-            
-            // 초기 로드 중이면 checkUser가 처리하므로 스킵
-            if (!initialSessionLoaded) {
-              console.log('[onAuthStateChange] 초기 로드 중, fetchUserData 스킵');
-              return;
-            }
+            if (!initialSessionLoaded || justLoggedInRef.current) return;
           }
 
-          // SIGNED_OUT: 로그아웃됨 (수동 또는 세션 만료)
+          // SIGNED_OUT: 로그아웃됨
           if (event === 'SIGNED_OUT') {
-            console.log('[Auth] User signed out');
             setUser(null);
             setUserProfile(null);
             setPortfolios([]);
-            // SIGNED_OUT 이벤트 시에는 이미 로그아웃된 상태이므로 추가 처리 불필요
             return;
           }
 
-          // 초기 로드 완료 후에만 fetchUserData 호출 (모달 로그인 직후는 스킵 → portfolios 중복 조회 방지)
           if (currentUser && initialSessionLoaded) {
             if (justLoggedInRef.current) {
               justLoggedInRef.current = false;
-              console.log('[onAuthStateChange] 모달 로그인 직후, fetchUserData 스킵');
             } else {
-              console.log('[onAuthStateChange] currentUser 있음, fetchUserData 호출:', currentUser.id);
               await fetchUserData(currentUser);
-              console.log('[onAuthStateChange] fetchUserData 완료');
             }
 
             // 로그인 성공 시 FCM 토큰 저장 (SIGNED_IN 이벤트일 때만)

@@ -75,13 +75,13 @@ const Pricing: React.FC<PricingProps> = ({ lang, currentTier }) => {
       disabled: false,
       theme: 'free',
       features: [
-        isKo ? '포트폴리오 최대 2개' : 'Up to 2 portfolios',
-        isKo ? '알람 슬롯 2개' : '2 alert slots',
-        isKo ? '기본 13개 ETF' : '13 core ETFs',
-        isKo ? 'AI 매매 인식 (1회/일)' : 'AI Trade Recognition (1/day)',
-        isKo ? '백테스트 (2회/일, 제한된 정보)' : 'Backtesting (2/day, limited info)',
-        isKo ? '기본 알람 · 기록 기능' : 'Core alerts & history',
-        isKo ? '광고 포함' : 'Includes ads',
+        { text: isKo ? '포트폴리오 최대 2개' : 'Up to 2 portfolios' },
+        { text: isKo ? '알람 슬롯 2개' : '2 alert slots' },
+        { text: isKo ? '기본 13개 ETF' : '13 core ETFs' },
+        { text: isKo ? 'AI 매매 인식 (1회/일)' : 'AI Trade Recognition (1/day)' },
+        { text: isKo ? '백테스트 (2회/일)' : 'Backtesting (2/day)', disabled: true },
+        { text: isKo ? '기본 알람 · 기록 기능' : 'Core alerts & history' },
+        { text: isKo ? '광고 포함' : 'Includes ads' },
       ],
     },
     {
@@ -95,13 +95,13 @@ const Pricing: React.FC<PricingProps> = ({ lang, currentTier }) => {
       theme: 'pro',
       badge: isKo ? '가장 인기 있는 선택' : 'Most popular',
       features: [
-        isKo ? '포트폴리오 최대 5개' : 'Up to 5 portfolios',
-        isKo ? '알람 슬롯 10개' : '10 alert slots',
-        isKo ? '기본 13개 + PRO 전용 종목' : 'Core + PRO tickers (TSLA, NVDA, MSTR …)',
-        isKo ? 'AI 매매 인식 (50회/월)' : 'AI Trade Recognition (50/month)',
-        isKo ? '백테스트 (5회/일)' : 'Backtesting (5/day)',
-        isKo ? '텔레그램 상세 알림' : 'Detailed Telegram alerts',
-        isKo ? '광고 제거' : 'No ads',
+        { text: isKo ? '포트폴리오 최대 5개' : 'Up to 5 portfolios' },
+        { text: isKo ? '알람 슬롯 10개' : '10 alert slots' },
+        { text: isKo ? '기본 13개 + PRO 전용 종목' : 'Core + PRO tickers (TSLA, NVDA, MSTR …)' },
+        { text: isKo ? 'AI 매매 인식 (50회/월)' : 'AI Trade Recognition (50/month)' },
+        { text: isKo ? '백테스트 (5회/일)' : 'Backtesting (5/day)', disabled: true },
+        { text: isKo ? '텔레그램 상세 알림' : 'Detailed Telegram alerts' },
+        { text: isKo ? '광고 제거' : 'No ads' },
       ],
     },
     {
@@ -115,13 +115,13 @@ const Pricing: React.FC<PricingProps> = ({ lang, currentTier }) => {
       theme: 'premium',
       badge: isKo ? 'COMING SOON' : 'COMING SOON',
       features: [
-        isKo ? '포트폴리오 최대 20개' : 'Up to 20 portfolios',
-        isKo ? '알람 슬롯 40개' : '40 alert slots',
-        isKo ? '모든 종목 + 베타 종목' : 'All tickers + beta',
-        isKo ? 'AI 매매 인식 (무제한)' : 'Unlimited AI Recognition',
-        isKo ? '백테스트 (10회/일)' : 'Backtesting (10/day)',
-        isKo ? '신규 전략 선공개' : 'Early access to strategies',
-        isKo ? 'VIP 전용 고객 지원' : 'VIP priority support',
+        { text: isKo ? '포트폴리오 최대 20개' : 'Up to 20 portfolios' },
+        { text: isKo ? '알람 슬롯 40개' : '40 alert slots' },
+        { text: isKo ? '모든 종목 + 베타 종목' : 'All tickers + beta' },
+        { text: isKo ? 'AI 매매 인식 (무제한)' : 'Unlimited AI Recognition' },
+        { text: isKo ? '백테스트 (10회/일)' : 'Backtesting (10/day)', disabled: true },
+        { text: isKo ? '신규 전략 선공개' : 'Early access to strategies' },
+        { text: isKo ? 'VIP 전용 고객 지원' : 'VIP priority support' },
       ],
     },
   ];
@@ -234,10 +234,21 @@ const Pricing: React.FC<PricingProps> = ({ lang, currentTier }) => {
 
                 {/* Features */}
                 <ul className="relative space-y-2 mb-6 text-xs text-slate-200">
-                  {tier.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2">
-                      <Check size={13} className="mt-0.5 text-emerald-300" />
-                      <span>{f}</span>
+                  {tier.features.map((f, idx) => (
+                    <li key={idx} className={`flex items-start gap-2 ${f.disabled ? 'opacity-40' : ''}`}>
+                      {f.disabled ? (
+                        <Lock size={12} className="mt-0.5 text-slate-500" />
+                      ) : (
+                        <Check size={13} className="mt-0.5 text-emerald-300" />
+                      )}
+                      <span className="flex items-center gap-1.5 flex-wrap">
+                        {f.text}
+                        {f.disabled && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-medium uppercase tracking-tighter">
+                            {isKo ? '준비 중' : 'Coming Soon'}
+                          </span>
+                        )}
+                      </span>
                     </li>
                   ))}
                 </ul>

@@ -64,6 +64,40 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
     [handleFile]
   );
 
+  const handlePasteFromClipboard = useCallback(async () => {
+    setErrorMessage(null);
+    try {
+      if (!navigator.clipboard) {
+        setErrorMessage(t.pasteImageUnsupported);
+        setStep('error');
+        return;
+      }
+      const clipboard = navigator.clipboard as typeof navigator.clipboard & {
+        read?: () => Promise<any[]>;
+      };
+      if (!clipboard.read) {
+        setErrorMessage(t.pasteImageUnsupported);
+        setStep('error');
+        return;
+      }
+      const items = await clipboard.read();
+      for (const item of items) {
+        const imageType = item.types?.find((type: string) => type.startsWith('image/'));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          const file = new File([blob], 'clipboard-image', { type: blob.type || imageType });
+          handleFile(file);
+          return;
+        }
+      }
+      setErrorMessage(t.pasteImageNotFound);
+      setStep('error');
+    } catch (err) {
+      setErrorMessage(t.pasteImageError);
+      setStep('error');
+    }
+  }, [handleFile, t]);
+
   useEffect(() => {
     document.addEventListener('paste', handlePaste);
     return () => document.removeEventListener('paste', handlePaste);
@@ -250,6 +284,14 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
                   </div>
                 )}
               </div>
+              <button
+                type="button"
+                onClick={handlePasteFromClipboard}
+                className="w-full py-3 md:py-3.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-2xl font-black uppercase text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-2"
+              >
+                <Clipboard size={16} />
+                {t.pasteImageButton}
+              </button>
               <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500 dark:text-slate-400">
                 <Sparkles size={14} className="text-amber-500 shrink-0" />
                 <span>{t.aiScanHint}</span>

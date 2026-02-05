@@ -65,6 +65,7 @@ const App: React.FC = () => {
     telegram_connected_at?: string | null;
     telegram_last_error?: string | null;
     preferred_language?: 'ko' | 'en' | null;
+    timezone?: string | null;
     ai_daily_usage?: number;
     ai_monthly_usage?: number;
     backtest_daily_usage?: number;
@@ -87,6 +88,14 @@ const App: React.FC = () => {
   const [totalValuationChangePct, setTotalValuationChangePct] = useState<number>(0);
   /** Dashboard에서 만든 상세 daily execution 요약 (LOC/MOC 등 포함). 있으면 DB 저장 시 이걸 사용. */
   const [dailyExecutionSummaryFromDashboard, setDailyExecutionSummaryFromDashboard] = useState<string | null>(null);
+
+  const getDeviceTimeZone = (): string => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Seoul';
+    } catch {
+      return 'Asia/Seoul';
+    }
+  };
 
   const onDailyExecutionSummaryChange = useCallback((summary: string | null) => {
     setDailyExecutionSummaryFromDashboard(summary ?? null);
@@ -175,10 +184,18 @@ const App: React.FC = () => {
     try {
       const { data: profileData, error: profileError } = await supabase
         .from('user_profiles')
-        .select('subscription_tier, max_portfolios, max_alarms, subscription_status, subscription_expires_at, telegram_enabled, telegram_connected_at, telegram_last_error, preferred_language, ai_daily_usage, ai_monthly_usage, backtest_daily_usage, last_usage_reset_at')
+        .select('subscription_tier, max_portfolios, max_alarms, subscription_status, subscription_expires_at, telegram_enabled, telegram_connected_at, telegram_last_error, preferred_language, timezone, ai_daily_usage, ai_monthly_usage, backtest_daily_usage, last_usage_reset_at')
         .eq('id', userId)
         .single();
       if (!profileError && profileData) {
+        const detectedTimezone = getDeviceTimeZone();
+        const profileTimezone = (profileData.timezone ?? '').trim();
+        if (!profileTimezone || profileTimezone !== detectedTimezone) {
+          await supabase
+            .from('user_profiles')
+            .update({ timezone: detectedTimezone })
+            .eq('id', userId);
+        }
         setUserProfile({
           subscription_tier: profileData.subscription_tier || 'free',
           max_portfolios: profileData.max_portfolios,
@@ -189,6 +206,7 @@ const App: React.FC = () => {
           telegram_connected_at: profileData.telegram_connected_at ?? null,
           telegram_last_error: profileData.telegram_last_error ?? null,
           preferred_language: profileData.preferred_language ?? 'ko',
+          timezone: profileTimezone || detectedTimezone,
           ai_daily_usage: profileData.ai_daily_usage ?? 0,
           ai_monthly_usage: profileData.ai_monthly_usage ?? 0,
           backtest_daily_usage: profileData.backtest_daily_usage ?? 0,
@@ -378,6 +396,7 @@ const App: React.FC = () => {
           max_portfolios: 2,
           max_alarms: 2,
           preferred_language: 'ko',
+          timezone: getDeviceTimeZone(),
         });
         fetchUserProfile(currentUser.id);
         fetchPortfolios(currentUser.id);
@@ -1321,7 +1340,7 @@ const App: React.FC = () => {
       return;
     }
 
-    // 쿼터 손절 모드 해제: 다분할 포트폴리오에서 매도로 보유수량 24% 이상 감소 또는 99% 이상 감소(수량 0) 시
+    // 쿼터 손절 모드 해제: 다분할 포트폴리오에서 매도로 보유수량 20% 이상 감소 또는 99% 이상 감소(수량 0) 시
     let nextIsQuarterMode = target.isQuarterMode ?? false;
     if (target.strategy.multiSplit && nextIsQuarterMode && trade.type === 'sell') {
       const holdingsBefore = calculateHoldings(target);
@@ -1330,7 +1349,7 @@ const App: React.FC = () => {
       const qtyAfter = holdingsAfter.find(h => h.stock === trade.stock)?.quantity ?? 0;
       if (qtyBefore > 0) {
         const dropPct = (qtyBefore - qtyAfter) / qtyBefore;
-        if (dropPct >= 0.24 || dropPct >= 0.99 || qtyAfter <= 0) {
+        if (dropPct >= 0.2 || dropPct >= 0.99 || qtyAfter <= 0) {
           nextIsQuarterMode = false;
           await supabase
             .from('portfolios')
@@ -1649,7 +1668,20 @@ const App: React.FC = () => {
         </div>
 
         {isCreatorOpen && <StrategyCreator lang={lang} onClose={() => setIsCreatorOpen(false)} onSave={handleAddPortfolio} canAccessPaidStocks={canAccessPaidStocks} maxPortfolios={getMaxPortfolios(userProfile)} currentPortfolioCount={activePortfolios.length} />}
-        {currentAlarmPortfolio && <AlarmModal lang={lang} portfolio={currentAlarmPortfolio} onClose={() => setAlarmTargetId(null)} onSave={(config) => { handleUpdatePortfolio({ ...currentAlarmPortfolio, alarmconfig: config }); setAlarmTargetId(null); }} maxAlarms={getMaxAlarms(userProfile)} />}
+        {currentAlarmPortfolio && (
+          <AlarmModal
+            lang={lang}
+            portfolio={currentAlarmPortfolio}
+            onClose={() => setAlarmTargetId(null)}
+            onSave={(config) => {
+              const tz = userProfile?.timezone || getDeviceTimeZone();
+              const nextConfig = { ...config, timezone: config.timezone || tz };
+              handleUpdatePortfolio({ ...currentAlarmPortfolio, alarmconfig: nextConfig });
+              setAlarmTargetId(null);
+            }}
+            maxAlarms={getMaxAlarms(userProfile)}
+          />
+        )}
         {currentDetailsPortfolio && (
           <PortfolioDetailsModal 
             lang={lang} 

@@ -31,6 +31,7 @@ export interface UserProfile {
 
   // 언어 설정
   preferred_language?: "ko" | "en" | null; // 알림/기본 UI 언어
+  timezone?: string | null; // 사용자 타임존 (IANA)
 
   // 사용량 추적 관련 (user_profiles 확장 컬럼과 매핑)
   ai_daily_usage?: number;
@@ -341,8 +342,6 @@ export const canAccessStock = (
 ): boolean => {
   const normalizedTier = tier?.toLowerCase() || "free";
   if (normalizedTier === "premium") return true;
-  if (normalizedTier === "pro") return true; // Pro handles its own list in some components, but logically can access Pro tickers
-
-  // Free
+  if (normalizedTier === "pro") return true; // Pro handles its own list in some components, but logically can access Pro tickers  // Free
   return !paidStocks.includes(ticker);
 };

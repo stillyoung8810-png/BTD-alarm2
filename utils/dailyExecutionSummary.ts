@@ -37,7 +37,7 @@ const STRINGS: Record<Lang, {
   ko: {
     strategyMultiSplit: '다분할 매매법',
     strategyMa: '이평선 구간매수',
-    alarmTimes: '알람 시간 (KST)',
+    alarmTimes: '알람 시간',
     noOrder: '오늘 주문 요약은 앱에서 확인해 주세요.',
     overLimit: '매매 내역을 확인하세요. 총투자금을 초과했습니다.',
     section: '구간',
@@ -61,7 +61,7 @@ const STRINGS: Record<Lang, {
   en: {
     strategyMultiSplit: 'Multi-Split Strategy',
     strategyMa: 'Moving Average Strategy',
-    alarmTimes: 'Alarm times (KST)',
+    alarmTimes: 'Alarm times',
     noOrder: 'Please check today\'s orders in the app.',
     overLimit: 'Check your trades. Total invested has exceeded the limit.',
     section: 'Section',
@@ -139,12 +139,13 @@ export function formatPortfolioDailyExecutionBlock(
 ): string {
   const s = STRINGS[lang] ?? STRINGS.ko;
   const hours = (portfolio.alarmconfig?.selectedHours ?? []).join(', ');
+  const tzLabel = portfolio.alarmconfig?.timezone || 'Asia/Seoul';
   const lines: string[] = [];
   const portfolioName = portfolio?.name ?? '';
 
   lines.push(`📌 ${portfolioName}`);
   lines.push(portfolio.strategy.multiSplit ? `- ${s.strategyMultiSplit}` : `- ${s.strategyMa}`);
-  lines.push(`- ${s.alarmTimes}: ${hours || '-'}`);
+  lines.push(`- ${s.alarmTimes} (${tzLabel}): ${hours || '-'}`);
 
   // 이평선 구간매수: 구간은 ma0.maAPeriod/maBPeriod 2개만 사용(백테스트와 동일). 계산은 Dashboard에서 수행.
   // RSI/정배열 관망 문구는 ma0.rsiEnabled / ma0.alignmentEnabled 가 true일 때만 출력.

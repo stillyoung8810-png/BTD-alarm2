@@ -59,13 +59,19 @@ function formatTelegramAlarmMessage(
   data?: Record<string, string>,
   dailyExecutionSummary?: string,
 ): string {
+  const timeLocal = data?.time_local;
+  const timezone = data?.timezone;
   const timeKst = data?.time_kst;
   const parts = [
     "🔔 " + (title || "BTD 매매 알람"),
     "",
     body || "설정하신 매매 알람 시간입니다. 포트폴리오 전략을 확인해 주세요.",
   ];
-  if (timeKst) {
+  if (timeLocal) {
+    const tzLabel = timezone || "Asia/Seoul";
+    parts.push("");
+    parts.push(`⏰ ${tzLabel} ${timeLocal}`);
+  } else if (timeKst) {
     parts.push("");
     parts.push(`⏰ KST ${timeKst}`);
   }
@@ -333,6 +339,9 @@ serve(async (req) => {
     // 알람 메타 정보 (이력 기록용)
     const alarmType = data?.type ?? null;
     const alarmTimeKst = data?.time_kst ?? null;
+    const alarmTimeLocal = data?.time_local ?? null;
+    const alarmTimezone = data?.timezone ?? null;
+    const alarmLocalDate = data?.local_date ?? null;
     if (tokens.length === 0) {
       console.warn(`No active FCM devices for user ${user_id}; will still try Telegram if enabled.`);
     }
@@ -440,6 +449,9 @@ serve(async (req) => {
         error_message?: string | null;
         alarm_type?: string | null;
         time_kst?: string | null;
+        time_local?: string | null;
+        timezone?: string | null;
+        local_date?: string | null;
         payload_snapshot?: Record<string, unknown>;
       }> = [];
 
@@ -458,10 +470,16 @@ serve(async (req) => {
           error_message: fcmError,
           alarm_type: alarmType ?? undefined,
           time_kst: alarmTimeKst ?? undefined,
+          time_local: alarmTimeLocal ?? undefined,
+          timezone: alarmTimezone ?? undefined,
+          local_date: alarmLocalDate ?? undefined,
           payload_snapshot: {
             title: localizedTitle,
             body: localizedBody,
             time_kst: alarmTimeKst,
+            time_local: alarmTimeLocal,
+            timezone: alarmTimezone,
+            local_date: alarmLocalDate,
           },
         });
       }
@@ -479,10 +497,16 @@ serve(async (req) => {
           error_message: tgError,
           alarm_type: alarmType ?? undefined,
           time_kst: alarmTimeKst ?? undefined,
+          time_local: alarmTimeLocal ?? undefined,
+          timezone: alarmTimezone ?? undefined,
+          local_date: alarmLocalDate ?? undefined,
           payload_snapshot: {
             title: localizedTitle,
             body: localizedBody,
             time_kst: alarmTimeKst,
+            time_local: alarmTimeLocal,
+            timezone: alarmTimezone,
+            local_date: alarmLocalDate,
           },
         });
       }

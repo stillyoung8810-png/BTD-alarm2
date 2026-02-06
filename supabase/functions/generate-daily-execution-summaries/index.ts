@@ -131,6 +131,14 @@ const RECENT_TRADING_DAYS = 11;
 const PORTFOLIO_USER_CHUNK = 200;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
+// --- 다분할 매매법 공용 상수 (utils/multiSplitCalc.ts 와 동일) ---
+const LOC_SELL_RATIO = 0.25;
+const QUARTER_LOC_PRICE_FACTOR = 0.9;
+const LOC_PRICE_OFFSET = 0.01;
+const QUARTER_SPLIT_COUNT = 10;
+const FIRST_HALF_BUY_RATIO = 0.5;
+const MIN_PRICE = 0.01;
+
 function getCurrentKSTDateString(): string {
   const nowUtc = new Date();
   const kstTime = new Date(nowUtc.getTime() + KST_OFFSET_MS);
@@ -384,6 +392,7 @@ async function getRecentTradingDays(
   return sorted.slice(0, days);
 }
 
+// T 계산 (utils/multiSplitCalc.ts calcT 와 동일 로직)
 function getCurrentRound(portfolio: Portfolio): number {
   if (!portfolio.strategy.multiSplit) return 0;
   const holdings = calculateHoldings(portfolio);
@@ -400,7 +409,9 @@ function getMultiSplitPhase(
   if (!portfolio.strategy.multiSplit) return null;
   const a = portfolio.strategy.multiSplit.totalSplitCount;
   if (currentRound >= 0.5 && currentRound < a / 2) return "first";
-  if (currentRound >= a / 2 && currentRound < a - 1) return "second";
+  if (currentRound >= a / 2 && currentRound <= a - 1) return "second";
+  // quarter: 쿼터모드 진입 구간. calculateMultiSplitExecutionData에서는 별도 처리하지 않고,
+  // calculateQuarterStopLossData가 별도 경로로 주문 데이터를 생성함.
   if (currentRound > a - 1 && currentRound <= a) return "quarter";
   return null;
 }
@@ -420,6 +431,7 @@ function checkRecentMOCSell(
   return { hasMOC: true, mocDate: sorted[0].date };
 }
 
+// 쿼터모드 1회 매수금 재계산 (utils/multiSplitCalc.ts calcNewOneTimeAmount 와 동일 로직)
 function calculateNewOneTimeAmount(portfolio: Portfolio, mocDate: string): number {
   if (!portfolio.strategy.multiSplit) return portfolio.dailyBuyAmount;
   const a = portfolio.strategy.multiSplit.totalSplitCount;
@@ -434,16 +446,16 @@ function calculateNewOneTimeAmount(portfolio: Portfolio, mocDate: string): numbe
 
   const remainingRounds = a - T_atMOC;
 
-  const tradesUpToMOC = portfolio.trades.filter((t) => t.date <= mocDate);
+  // 중간 매매 손익 계산 (음수 포함)
   const tradesAfterMOC = portfolio.trades.filter((t) =>
     t.date > mocDate && t.type === "sell"
   );
 
   let intermediateProfit = 0;
-  const tempPortfolio: Portfolio = { ...portfolio, trades: [...tradesUpToMOC] };
+  const tempTrades = [...tradesBeforeMOC];
 
   tradesAfterMOC.forEach((sellTrade) => {
-    const holdingsAtSell = calculateHoldings(tempPortfolio);
+    const holdingsAtSell = calculateHoldings({ ...portfolio, trades: tempTrades });
     const holdingAtSell = holdingsAtSell.find((h) => h.stock === sellTrade.stock);
     const avgPriceAtSell = holdingAtSell?.avgPrice || 0;
 
@@ -452,11 +464,11 @@ function calculateNewOneTimeAmount(portfolio: Portfolio, mocDate: string): numbe
       intermediateProfit += profit;
     }
 
-    tempPortfolio.trades.push(sellTrade);
+    tempTrades.push(sellTrade);
   });
 
   const remainingFunds = portfolio.dailyBuyAmount * remainingRounds;
-  const newOneTimeAmount = (remainingFunds + intermediateProfit) / 10;
+  const newOneTimeAmount = (remainingFunds + intermediateProfit) / QUARTER_SPLIT_COUNT;
   return Math.max(0, newOneTimeAmount);
 }
 
@@ -479,7 +491,7 @@ async function calculateQuarterStopLossData(
   const feeRate = portfolio.feeRate || 0.25;
 
   if (!mocCheck.hasMOC) {
-    const mocQuantity = currentQuantity * 0.25;
+    const mocQuantity = currentQuantity * LOC_SELL_RATIO;
     return {
       hasMOC: false,
       mocQuantity: Math.round(mocQuantity * 100) / 100,
@@ -493,16 +505,17 @@ async function calculateQuarterStopLossData(
   const newOneTimeAmount = calculateNewOneTimeAmount(portfolio, mocCheck.mocDate);
   const A = portfolio.strategy.multiSplit.targetReturnRate;
 
-  const locBuyPrice = Math.max(0.01, avgPrice * 0.9 - 0.01);
+  const locBuyPrice = Math.max(MIN_PRICE, avgPrice * QUARTER_LOC_PRICE_FACTOR - LOC_PRICE_OFFSET);
   const locBuyQty = newOneTimeAmount > 0 && locBuyPrice > 0
     ? Math.floor(newOneTimeAmount / (locBuyPrice * (1 + feeRate / 100)))
     : 0;
 
-  const locSellPrice = avgPrice * 0.9;
-  const locSellQty = Math.floor(currentQuantity * 0.25);
+  const locSellPrice = avgPrice * QUARTER_LOC_PRICE_FACTOR;
+  // 25% 먼저 정수화 → 잔량이 지정가 (utils/multiSplitCalc.ts calcSellSplitQuantities 와 동일)
+  const locSellQty = Math.floor(currentQuantity * LOC_SELL_RATIO);
 
   const limitSellPrice = avgPrice * (1 + A / 100);
-  const limitSellQty = Math.floor(currentQuantity * 0.75);
+  const limitSellQty = currentQuantity - locSellQty;
 
   return {
     hasMOC: true,
@@ -555,9 +568,10 @@ async function calculateMultiSplitExecutionData(
 
   const locFactor = 1 + (A * (1 - (2 * T) / a)) / 100;
   const rawLocSellPrice = basePrice * locFactor;
-  const locSellBasePrice = Math.max(0.01, rawLocSellPrice);
-  const locBuyBasePrice = Math.max(0.01, locSellBasePrice - 0.01);
+  const locSellBasePrice = Math.max(MIN_PRICE, rawLocSellPrice);
+  const locBuyBasePrice = Math.max(MIN_PRICE, locSellBasePrice - LOC_PRICE_OFFSET);
 
+  // safeCalculate: utils/multiSplitCalc.ts safeOrder 와 동일
   const safeCalculate = (price: number, qty: number) => {
     if (isNaN(price) || isNaN(qty) || price <= 0) return null;
     const finalQty = Math.max(0, Math.floor(qty));
@@ -565,42 +579,40 @@ async function calculateMultiSplitExecutionData(
     return { price: Number(price.toFixed(2)), quantity: finalQty };
   };
 
+  // 25% 먼저 정수화 → 잔량이 지정가 (utils/multiSplitCalc.ts calcSellSplitQuantities 와 동일)
+  const locSellQtyBase = Math.floor(currentQuantity * LOC_SELL_RATIO);
+  const limitSellQtyBase = currentQuantity - locSellQtyBase;
+
   const result: MultiSplitExecutionData = { phase: multiSplitPhase };
 
   if (multiSplitPhase === "first") {
+    const half = oneTimeAmount * FIRST_HALF_BUY_RATIO;
+
     const locBuy1Price = basePrice;
-    const locBuy1Qty = oneTimeAmount > 0 && locBuy1Price > 0
-      ? (oneTimeAmount * 0.5) / (locBuy1Price * (1 + feeRate / 100))
+    const locBuy1Qty = half > 0 && locBuy1Price > 0
+      ? half / (locBuy1Price * (1 + feeRate / 100))
       : 0;
     result.locBuy1 = safeCalculate(locBuy1Price, locBuy1Qty) || undefined;
 
-    const locBuy2Price = locBuyBasePrice;
-    const locBuy2Qty = oneTimeAmount > 0 && locBuy2Price > 0
-      ? (oneTimeAmount * 0.5) / (locBuy2Price * (1 + feeRate / 100))
+    const locBuy2Qty = half > 0 && locBuyBasePrice > 0
+      ? half / (locBuyBasePrice * (1 + feeRate / 100))
       : 0;
-    result.locBuy2 = safeCalculate(locBuy2Price, locBuy2Qty) || undefined;
+    result.locBuy2 = safeCalculate(locBuyBasePrice, locBuy2Qty) || undefined;
 
-    const locSellPrice = locSellBasePrice;
-    const locSellQty = currentQuantity * 0.25;
-    result.locSell = safeCalculate(locSellPrice, locSellQty) || undefined;
+    result.locSell = safeCalculate(locSellBasePrice, locSellQtyBase) || undefined;
 
     const limitSellPrice = basePrice * (1 + A / 100);
-    const limitSellQty = currentQuantity * 0.75;
-    result.limitSell = safeCalculate(limitSellPrice, limitSellQty) || undefined;
+    result.limitSell = safeCalculate(limitSellPrice, limitSellQtyBase) || undefined;
   } else if (multiSplitPhase === "second") {
-    const locBuyPrice = locBuyBasePrice;
-    const locBuyQty = oneTimeAmount > 0 && locBuyPrice > 0
-      ? oneTimeAmount / (locBuyPrice * (1 + feeRate / 100))
+    const locBuyQty = oneTimeAmount > 0 && locBuyBasePrice > 0
+      ? oneTimeAmount / (locBuyBasePrice * (1 + feeRate / 100))
       : 0;
-    result.locBuy2 = safeCalculate(locBuyPrice, locBuyQty) || undefined;
+    result.locBuy2 = safeCalculate(locBuyBasePrice, locBuyQty) || undefined;
 
-    const locSellPrice = locSellBasePrice;
-    const locSellQty = currentQuantity * 0.25;
-    result.locSell = safeCalculate(locSellPrice, locSellQty) || undefined;
+    result.locSell = safeCalculate(locSellBasePrice, locSellQtyBase) || undefined;
 
     const limitSellPrice = basePrice * (1 + A / 100);
-    const limitSellQty = currentQuantity * 0.75;
-    result.limitSell = safeCalculate(limitSellPrice, limitSellQty) || undefined;
+    result.limitSell = safeCalculate(limitSellPrice, limitSellQtyBase) || undefined;
   }
 
   return result;

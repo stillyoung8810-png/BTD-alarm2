@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Portfolio } from '../types';
-import { I18N, CUSTOM_GRADIENT_LOGOS, PAID_STOCKS } from '../constants';
+import { I18N, PAID_STOCKS } from '../constants';
 import StockLogo from './StockLogo';
 import { 
   Plus, 
@@ -17,8 +17,8 @@ import {
 import { calculateInvestedAmount, calculateYield, determineActiveSection, calculateAlreadyRealized, calculateHoldings, getMaPeriods, getMAValuesForAlignment } from '../utils/portfolioCalculations';
 import { fetchStockPrices } from '../services/stockService';
 import HoverTip from './HoverTip';
-import { getStockPrices, initDatabase } from '../services/db';
 import { formatPortfolioDailyExecutionBlock, joinDailyExecutionBlocks } from '../utils/dailyExecutionSummary';
+import { useMultiSplitExecution } from '../hooks/useMultiSplitExecution';
 
 interface DashboardProps {
   lang: 'ko' | 'en';
@@ -201,7 +201,6 @@ const PortfolioCard: React.FC<{
   const t = I18N[lang];
   // 다분할 매매법일 때는 multiSplit.targetStock을 사용, 아니면 ma0.stock 사용
   const ma0Ticker = portfolio.strategy.multiSplit?.targetStock || portfolio.strategy.ma0.stock;
-  const gradientInfo = CUSTOM_GRADIENT_LOGOS[ma0Ticker] || { gradient: 'linear-gradient(135deg, #2563eb, #1e40af)', label: 'STOCK' };
   const isAlarmEnabled = portfolio.alarmconfig?.enabled;
 
   // 콜백을 ref에 보관해 effect 의존성에서 제외 → 부모 리렌더 시 콜백 참조 변경으로 인한 반복 실행 방지
@@ -321,19 +320,16 @@ const PortfolioCard: React.FC<{
     return () => { cancelled = true; };
   }, [portfolio.id, portfolio.trades.length, portfolio.strategy.multiSplit, maSectionDepsKey]);
 
-  // 쿼터 손절 모드: DB 플래그 또는 T > a-1 (신규 진입 시 플래그 갱신)
-  const T = portfolio.strategy.multiSplit
-    ? (() => {
-        const holdings = calculateHoldings(portfolio);
-        const totalInvested = holdings.reduce((sum, h) => sum + h.totalCost, 0);
-        const oneTime = portfolio.dailyBuyAmount;
-        if (oneTime === 0) return 0;
-        return Math.ceil((totalInvested / oneTime) * 100) / 100;
-      })()
-    : 0;
-  const a = portfolio.strategy.multiSplit?.totalSplitCount ?? 0;
-  const isInQuarterModeByT = T > a - 1 && T <= a; // 신규 쿼터 진입 조건 (플래그 갱신용)
-  const isInQuarterMode = portfolio.isQuarterMode === true; // 표시/계산은 DB 플래그만 사용 (해제 후 복귀 시 T>a-1이어도 false)
+  // 다분할 매매법 통합 계산 훅 (cascade useEffect 제거)
+  const {
+    currentRound,
+    multiSplitPhase,
+    isInQuarterMode,
+    isInQuarterModeByT,
+    quarterStopLossData,
+    multiSplitExecutionData,
+    multiSplitInsufficientAmount,
+  } = useMultiSplitExecution(portfolio);
 
   // T > a-1 이고 플래그가 아직 false면 DB에 true로 갱신 (신규 쿼터 진입, 1회만)
   const quarterModeUpdateSentRef = React.useRef(false);
@@ -361,438 +357,8 @@ const PortfolioCard: React.FC<{
 
   const strategyInfo = getStrategyInfo();
 
-  // 다분할 매매법의 현재 시행 회차(T) – 포트폴리오가 바뀔 때만 계산
-  const currentRound = useMemo(() => {
-    if (!portfolio.strategy.multiSplit) return 0;
+  // recentTradingDays, quarterStopLossData, multiSplitExecution: useMultiSplitExecution 훅에서 통합 계산
 
-    // 현재 보유 중인 종목의 매수금액만 계산 (매도된 부분은 제외)
-    const holdings = calculateHoldings(portfolio);
-    const totalInvested = holdings.reduce((sum, h) => sum + h.totalCost, 0);
-
-    const oneTimeAmount = portfolio.dailyBuyAmount;
-    if (oneTimeAmount === 0) return 0;
-
-    // T = 현재 보유 중인 매수금액 / 1회 매수액, 소수점 둘째 자리 올림
-    return Math.ceil((totalInvested / oneTimeAmount) * 100) / 100;
-  }, [portfolio]);
-
-  // 다분할 매매법의 현재 구간 판별 (전반전: T >= 0.5)
-  const getMultiSplitPhase = (): 'first' | 'second' | 'quarter' | null => {
-    if (!portfolio.strategy.multiSplit) return null;
-    
-    const T = currentRound;
-    const a = portfolio.strategy.multiSplit.totalSplitCount;
-    
-    if (T >= 0.5 && T < a / 2) return 'first';
-    if (T >= a / 2 && T < a - 1) return 'second';
-    if (T > a - 1 && T <= a) return 'quarter';
-    
-    return null;
-  };
-
-  const multiSplitPhase = getMultiSplitPhase();
-
-  // IndexedDB에서 최근 N 영업일 가져오기 (실제 거래가 있었던 날짜만)
-  const getRecentTradingDays = async (days: number): Promise<string[]> => {
-    if (!portfolio.strategy.multiSplit) return [];
-    
-    try {
-      await initDatabase();
-      const targetStock = portfolio.strategy.multiSplit.targetStock;
-      
-      // IndexedDB에서 최근 데이터 가져오기 (충분히 많은 날짜를 가져와서 필터링)
-      const records = await getStockPrices(targetStock, days * 2); // 여유있게 가져오기
-      
-      if (records.length === 0) return [];
-      
-      // 날짜 기준으로 정렬 (최신순)
-      const sortedRecords = records.sort((a, b) => b.date.localeCompare(a.date));
-      
-      // 최근 N개 날짜만 반환
-      return sortedRecords.slice(0, days).map(r => r.date);
-    } catch (error) {
-      console.error('Error fetching recent trading days from IndexedDB:', error);
-      return [];
-    }
-  };
-
-  // 최근 11 영업일 동안 MOC 매도 기록 확인
-  const [recentTradingDays, setRecentTradingDays] = useState<string[]>([]);
-  
-  useEffect(() => {
-    if (!portfolio.strategy.multiSplit) return;
-
-    let cancelled = false;
-
-    const fetchTradingDays = async () => {
-      const days = await getRecentTradingDays(11);
-      if (cancelled) return;
-
-      // 이전 값과 완전히 동일하면 setState 생략 → 불필요한 재렌더 및 루프 방지
-      setRecentTradingDays((prev) => {
-        if (prev.length === days.length && prev.every((d, i) => d === days[i])) {
-          return prev;
-        }
-        return days;
-      });
-    };
-
-    fetchTradingDays();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [portfolio.id, portfolio.strategy.multiSplit?.targetStock]);
-
-  const checkRecentMOCSell = (): { hasMOC: boolean; mocDate?: string } => {
-    if (!portfolio.strategy.multiSplit || recentTradingDays.length === 0) return { hasMOC: false };
-    
-    const mocSells = portfolio.trades.filter(t => 
-      t.type === 'sell' && 
-      t.isMOC === true && 
-      recentTradingDays.includes(t.date)
-    );
-
-    if (mocSells.length > 0) {
-      // 가장 최근 MOC 매도 날짜 반환
-      const sortedMOCSells = mocSells.sort((a, b) => b.date.localeCompare(a.date));
-      return { hasMOC: true, mocDate: sortedMOCSells[0].date };
-    }
-
-    return { hasMOC: false };
-  };
-
-  // 쿼터 손절 모드 활성화 시 새로운 1회 매수금 계산
-  const calculateNewOneTimeAmount = (mocDate: string): number => {
-    if (!portfolio.strategy.multiSplit) return portfolio.dailyBuyAmount;
-
-    const a = portfolio.strategy.multiSplit.totalSplitCount;
-    
-    // MOC 매도가 이루어진 시점의 T 계산
-    const tradesBeforeMOC = portfolio.trades.filter(t => t.date <= mocDate);
-    const portfolioBeforeMOC = { ...portfolio, trades: tradesBeforeMOC };
-    const holdingsBeforeMOC = calculateHoldings(portfolioBeforeMOC);
-    const totalInvestedBeforeMOC = holdingsBeforeMOC.reduce((sum, h) => sum + h.totalCost, 0);
-    const T_atMOC = portfolio.dailyBuyAmount > 0 
-      ? Math.ceil((totalInvestedBeforeMOC / portfolio.dailyBuyAmount) * 100) / 100 
-      : 0;
-
-    // 남은 회차
-    const remainingRounds = a - T_atMOC;
-
-    // 중간 수익금 계산 (MOC 매도 이후의 모든 매도 거래)
-    // MOC 매도 시점까지의 거래로 포트폴리오 상태 재구성
-    const tradesUpToMOC = portfolio.trades.filter(t => t.date <= mocDate);
-    const portfolioUpToMOC = { ...portfolio, trades: tradesUpToMOC };
-    
-    // MOC 매도 이후의 매도 거래들
-    const tradesAfterMOC = portfolio.trades.filter(t => t.date > mocDate && t.type === 'sell');
-    
-    // 각 매도 거래의 수익/손실 계산
-    let intermediateProfit = 0;
-    const tempPortfolio = { ...portfolio, trades: [...tradesUpToMOC] };
-    
-    tradesAfterMOC.forEach(sellTrade => {
-      // 매도 시점의 평단가 계산
-      const holdingsAtSell = calculateHoldings(tempPortfolio);
-      const holdingAtSell = holdingsAtSell.find(h => h.stock === sellTrade.stock);
-      const avgPriceAtSell = holdingAtSell?.avgPrice || 0;
-      
-      if (avgPriceAtSell > 0) {
-        // 수익/손실 = (매도가 - 평단가) * 수량 - 수수료
-        const profit = (sellTrade.price - avgPriceAtSell) * sellTrade.quantity - sellTrade.fee;
-        intermediateProfit += profit;
-      }
-      
-      // 임시 포트폴리오에 매도 거래 추가 (다음 계산을 위해)
-      tempPortfolio.trades.push(sellTrade);
-    });
-
-    // 잔금 계산
-    const remainingFunds = portfolio.dailyBuyAmount * remainingRounds;
-
-    // 새로운 1회 매수금 = (잔금 + 중간 수익금) / 10
-    const newOneTimeAmount = (remainingFunds + intermediateProfit) / 10;
-
-    return Math.max(0, newOneTimeAmount);
-  };
-
-  // 쿼터 손절 모드 활성화 시 계산 데이터
-  const [quarterStopLossData, setQuarterStopLossData] = useState<{
-    hasMOC: boolean;
-    mocQuantity?: number;
-    newOneTimeAmount?: number;
-    locBuy?: { price: number; quantity: number };
-    locSell?: { price: number; quantity: number };
-    limitSell?: { price: number; quantity: number };
-  } | null>(null);
-
-  // 쿼터 손절 모드 계산
-  useEffect(() => {
-    if (!portfolio.strategy.multiSplit || !isInQuarterMode || recentTradingDays.length === 0) {
-      setQuarterStopLossData(null);
-      return;
-    }
-
-    const calculateQuarterStopLoss = async () => {
-      const mocCheck = checkRecentMOCSell();
-      const holdings = calculateHoldings(portfolio);
-      const targetStock = portfolio.strategy.multiSplit.targetStock;
-      const targetHolding = holdings.find(h => h.stock === targetStock);
-      const avgPrice = targetHolding?.avgPrice || 0;
-      const currentQuantity = targetHolding?.quantity || 0;
-      const feeRate = portfolio.feeRate || 0.25;
-
-      if (!mocCheck.hasMOC) {
-        // MOC 매도 기록 없음
-        const mocQuantity = currentQuantity * 0.25;
-        const next = {
-          hasMOC: false,
-          mocQuantity: Math.round(mocQuantity * 100) / 100, // 소수점 2자리
-        };
-        setQuarterStopLossData((prev) => {
-          if (prev && JSON.stringify(prev) === JSON.stringify(next)) return prev;
-          return next;
-        });
-      } else {
-        // MOC 매도 기록 있음
-        if (!mocCheck.mocDate || avgPrice <= 0 || currentQuantity <= 0) {
-          setQuarterStopLossData((prev) => (prev === null ? prev : null));
-          return;
-        }
-
-        const newOneTimeAmount = calculateNewOneTimeAmount(mocCheck.mocDate);
-        const A = portfolio.strategy.multiSplit.targetReturnRate;
-
-        // LOC 매수: 현재 평균 단가 * 0.9 - 0.01
-        const locBuyPrice = Math.max(0.01, avgPrice * 0.9 - 0.01);
-        const locBuyQty =
-          newOneTimeAmount > 0 && locBuyPrice > 0
-            ? Math.floor(newOneTimeAmount / (locBuyPrice * (1 + feeRate / 100)))
-            : 0;
-
-        // LOC 매도: 현재 평균 단가 * 0.9, 보유 수량의 25%
-        const locSellPrice = avgPrice * 0.9;
-        const locSellQty = Math.floor(currentQuantity * 0.25);
-
-        // 지정가 매도: 현재 평균 단가 * (1 + A/100), 보유 수량의 75%
-        const limitSellPrice = avgPrice * (1 + A / 100);
-        const limitSellQty = Math.floor(currentQuantity * 0.75);
-
-        const next = {
-          hasMOC: true as const,
-          newOneTimeAmount,
-          locBuy:
-            locBuyQty > 0
-              ? { price: Math.round(locBuyPrice * 100) / 100, quantity: locBuyQty }
-              : undefined,
-          locSell:
-            locSellQty > 0
-              ? { price: Math.round(locSellPrice * 100) / 100, quantity: locSellQty }
-              : undefined,
-          limitSell:
-            limitSellQty > 0
-              ? { price: Math.round(limitSellPrice * 100) / 100, quantity: limitSellQty }
-              : undefined,
-        };
-
-        setQuarterStopLossData((prev) => {
-          if (prev && JSON.stringify(prev) === JSON.stringify(next)) return prev;
-          return next;
-        });
-      }
-    };
-
-    calculateQuarterStopLoss();
-  }, [portfolio.id, portfolio.trades.length, portfolio.strategy.multiSplit?.targetStock, portfolio.feeRate, isInQuarterMode, recentTradingDays]);
-
-  // 다분할 매매법의 일별 매매 실행 계산 (effect 의존성에 multiSplitExecutionData 넣지 않음 → setState→블록 effect→report→부모 리렌더 시 재실행/무한루프 방지)
-  const [multiSplitExecutionData, setMultiSplitExecutionData] = useState<{
-    phase: 'first' | 'second' | 'quarter' | null;
-    locBuy1?: { price: number; quantity: number };
-    locBuy2?: { price: number; quantity: number };
-    locSell?: { price: number; quantity: number };
-    limitSell?: { price: number; quantity: number };
-    mocSell?: { quantity: number };
-  } | null>(null);
-  /** 다분할: 1회 매수금 < 1주 가격이면 true → 주문 생성 불가 알림 */
-  const [multiSplitInsufficientAmount, setMultiSplitInsufficientAmount] = useState(false);
-
-  const lastMultiSplitExecutionKeyRef = useRef<string | null>(null);
-
-  // 다분할 매매법: 1회 매수금이 1주 가격보다 적은지 확인 (알림/요약 문구용)
-  useEffect(() => {
-    if (!portfolio.strategy.multiSplit) {
-      setMultiSplitInsufficientAmount(false);
-      return;
-    }
-    const targetStock = portfolio.strategy.multiSplit.targetStock;
-    const oneTimeAmount = portfolio.dailyBuyAmount;
-    let cancelled = false;
-    fetchStockPrices([targetStock]).then((prices) => {
-      if (cancelled) return;
-      const currentPrice = prices[targetStock]?.price ?? 0;
-      setMultiSplitInsufficientAmount(currentPrice > 0 && oneTimeAmount < currentPrice);
-    }).catch(() => {
-      if (!cancelled) setMultiSplitInsufficientAmount(false);
-    });
-    return () => { cancelled = true; };
-  }, [portfolio.id, !!portfolio.strategy.multiSplit, portfolio.strategy.multiSplit?.targetStock, portfolio.dailyBuyAmount]);
-
-  useEffect(() => {
-    const calculateMultiSplitExecution = async () => {
-      if (!portfolio.strategy.multiSplit || !multiSplitPhase) {
-        setMultiSplitExecutionData((prev) => (prev === null ? prev : null));
-        return;
-      }
-
-      try {
-        // multiSplit 파라미터 매핑
-        const { targetReturnRate, totalSplitCount, targetStock } = portfolio.strategy.multiSplit;
-        const A = targetReturnRate;      // 목표 수익률 (%)
-        const a = totalSplitCount;      // 총 분할 횟수
-        const T = currentRound;
-        
-        // LOC 계산 전 유효성 검사
-        if (A <= 0 || a <= 0 || T <= 0) {
-          setMultiSplitExecutionData(null);
-          return;
-        }
-
-        // 현재 보유 내역 및 평단가 계산
-        const holdings = calculateHoldings(portfolio);
-        let targetHolding = holdings.find(h => h.stock === targetStock);
-        
-        // targetStock이 없으면 첫 번째 보유 종목 사용 (fallback)
-        if (!targetHolding && holdings.length > 0) {
-          targetHolding = holdings[0];
-          console.warn(`[Multi-Split] Target stock "${targetStock}" not found in holdings. Using first holding: ${targetHolding.stock}`);
-        }
-        
-        const avgPrice = targetHolding?.avgPrice || 0;
-        const currentQuantity = targetHolding?.quantity || 0;
-        
-        // 현재 주가 가져오기
-        const stockPrices = await fetchStockPrices([targetStock]);
-        const currentPrice = stockPrices[targetStock]?.price || 0;
-        
-        // 평단가가 없으면 현재 주가 사용, 그것도 없으면 계산 불가
-        const basePrice = avgPrice > 0 ? avgPrice : (currentPrice > 0 ? currentPrice : 0);
-        if (basePrice <= 0) {
-          setMultiSplitExecutionData(null);
-          return;
-        }
-        
-        const oneTimeAmount = portfolio.dailyBuyAmount;
-        const feeRate = portfolio.feeRate || 0.25;
-        
-        // LOC 기준점 공통 계산
-        // LOC 매도 가격 = 평단가 × ( 1 + A × (1 - 2T/a) / 100 )
-        // LOC 매수 가격 = LOC 매도 가격 - 0.01
-        const locFactor = 1 + (A * (1 - (2 * T) / a)) / 100;
-        const rawLocSellPrice = basePrice * locFactor;
-        const locSellBasePrice = Math.max(0.01, rawLocSellPrice);
-        const locBuyBasePrice = Math.max(0.01, locSellBasePrice - 0.01);
-
-        // 유효성 검사 헬퍼 함수 (수량이 0이어도 가격은 계산 가능하도록 수정)
-        const safeCalculate = (price: number, qty: number) => {
-          if (isNaN(price) || isNaN(qty) || price <= 0) return null;
-          // 수량이 0이어도 가격은 반환 (매수는 가능, 매도는 수량이 0이면 null)
-          const finalQty = Math.max(0, Math.floor(qty));
-          if (finalQty <= 0) return null; // 수량이 0 이하면 null 반환
-          return { price: Number(price.toFixed(2)), quantity: finalQty };
-        };
-        
-        const result: typeof multiSplitExecutionData = {
-          phase: multiSplitPhase,
-        };
-
-        if (multiSplitPhase === 'first') {
-          // 전반전
-          // LOC 매수 1: 현재 평단가(0% LOC)에 0.5회분
-          const locBuy1Price = basePrice;
-          const locBuy1Qty = oneTimeAmount > 0 && locBuy1Price > 0 
-            ? (oneTimeAmount * 0.5) / (locBuy1Price * (1 + feeRate / 100))
-            : 0;
-          result.locBuy1 = safeCalculate(locBuy1Price, locBuy1Qty) || undefined;
-
-          // LOC 매수 2: LOC 매수 공식 적용가 (LOC 매도 기준 -0.01$), 0.5회분
-          const locBuy2Price = locBuyBasePrice;
-          const locBuy2Qty = oneTimeAmount > 0 && locBuy2Price > 0
-            ? (oneTimeAmount * 0.5) / (locBuy2Price * (1 + feeRate / 100))
-            : 0;
-          result.locBuy2 = safeCalculate(locBuy2Price, locBuy2Qty) || undefined;
-
-          // LOC 매도: 현재 보유 물량의 25%
-          const locSellPrice = locSellBasePrice;
-          const locSellQty = currentQuantity * 0.25;
-          result.locSell = safeCalculate(locSellPrice, locSellQty) || undefined;
-
-          // 지정가 매도: 현재 보유 물량의 75%, 평단가 기준 A% 상방
-          const limitSellPrice = basePrice * (1 + A / 100);
-          const limitSellQty = currentQuantity * 0.75;
-          result.limitSell = safeCalculate(limitSellPrice, limitSellQty) || undefined;
-        } else if (multiSplitPhase === 'second') {
-          // 후반전
-          // LOC 매수: LOC 매수 공식 적용가 (LOC 매도 기준 -0.01$), 1회분
-          const locBuyPrice = locBuyBasePrice;
-          const locBuyQty = oneTimeAmount > 0 && locBuyPrice > 0
-            ? oneTimeAmount / (locBuyPrice * (1 + feeRate / 100))
-            : 0;
-          result.locBuy2 = safeCalculate(locBuyPrice, locBuyQty) || undefined;
-
-          // LOC 매도: 현재 보유 물량의 25%
-          const locSellPrice = locSellBasePrice;
-          const locSellQty = currentQuantity * 0.25;
-          result.locSell = safeCalculate(locSellPrice, locSellQty) || undefined;
-
-          // 지정가 매도: 현재 보유 물량의 75%, 평단가 기준 A% 상방
-          const limitSellPrice = basePrice * (1 + A / 100);
-          const limitSellQty = currentQuantity * 0.75;
-          result.limitSell = safeCalculate(limitSellPrice, limitSellQty) || undefined;
-        }
-
-        // 동일한 입력 조합에 대해 이미 계산했다면 다시 계산/업데이트하지 않음
-        const inputKey = [
-          portfolio.id,
-          portfolio.strategy.multiSplit.targetStock,
-          portfolio.strategy.multiSplit.totalSplitCount,
-          portfolio.dailyBuyAmount,
-          portfolio.feeRate,
-          portfolio.trades.length,
-          multiSplitPhase,
-          currentRound,
-        ].join('|');
-
-        if (lastMultiSplitExecutionKeyRef.current === inputKey) {
-          return;
-        }
-        lastMultiSplitExecutionKeyRef.current = inputKey;
-
-        setMultiSplitExecutionData((prev) => {
-          const prevJson = prev ? JSON.stringify(prev) : null;
-          const nextJson = result ? JSON.stringify(result) : null;
-          if (prevJson === nextJson) return prev;
-          return result;
-        });
-      } catch (err) {
-        console.error('Error calculating multi-split execution:', err);
-        setMultiSplitExecutionData((prev) => (prev === null ? prev : null));
-      }
-    };
-
-    if (portfolio.strategy.multiSplit) {
-      calculateMultiSplitExecution();
-    }
-  }, [
-    portfolio.id,
-    portfolio.strategy.multiSplit?.targetStock,
-    portfolio.strategy.multiSplit?.totalSplitCount,
-    portfolio.dailyBuyAmount,
-    portfolio.feeRate,
-    portfolio.trades.length,
-    multiSplitPhase,
-  ]);
 
   // 마지막으로 전달한 daily execution 블록을 기억 (동일 문자열 반복 전달 방지)
   const lastDailyExecutionBlockRef = React.useRef<string | null>(null);

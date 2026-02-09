@@ -47,7 +47,7 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, serviceKey);
 
     const update = (await req.json()) as TelegramUpdate;
-    console.log("Received Telegram update:", JSON.stringify(update));
+    console.log("Received Telegram update type:", update.message ? "message" : "other");
 
     const message = update.message;
     const chatId = message?.chat?.id;
@@ -76,7 +76,7 @@ serve(async (req) => {
     }
 
     const token = startMatch[1];
-    console.log("Parsed token from /start:", token);
+    console.log("Parsed /start command with token (length:", token.length, ")");
 
     // 1) token → user_id 조회
     const { data: linkRow, error: linkError } = await supabase

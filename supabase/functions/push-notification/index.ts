@@ -5,8 +5,10 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4'
 import { SignJWT, importPKCS8 } from 'https://deno.land/x/jose@v5.2.0/index.ts'
 
 // CORS 헤더 설정
+const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") || "https://btd-alarm2.pages.dev";
+
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
@@ -67,7 +69,7 @@ Deno.serve(async (req) => {
     const payload = await req.json()
     const record = payload.record || payload // DB 트리거 또는 직접 호출 지원
     
-    console.log('푸시 알림 요청:', JSON.stringify(record, null, 2))
+    console.log('푸시 알림 요청 수신')
 
     // 필수 필드 검증
     if (!record.user_id) {
@@ -100,9 +102,9 @@ Deno.serve(async (req) => {
     }
 
     if (!devices || devices.length === 0) {
-      console.log('발송할 토큰이 없습니다. user_id:', record.user_id)
+      console.log('발송할 토큰이 없습니다.')
       return new Response(
-        JSON.stringify({ message: '발송할 토큰이 없습니다.', user_id: record.user_id }),
+        JSON.stringify({ message: '발송할 토큰이 없습니다.' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
@@ -165,7 +167,7 @@ Deno.serve(async (req) => {
         const fcmResult = await fcmResponse.json()
         
         if (fcmResponse.ok) {
-          console.log(`알림 전송 성공 (${device.device_name}):`, fcmResult)
+          console.log(`알림 전송 성공 (${device.device_name})`)
           results.push({
             device: device.device_name || 'unknown',
             success: true,
@@ -181,7 +183,7 @@ Deno.serve(async (req) => {
               d.errorCode === 'UNREGISTERED' || d.errorCode === 'INVALID_ARGUMENT'
             )
           ) {
-            console.log('유효하지 않은 토큰 비활성화:', device.fcm_token.substring(0, 20) + '...')
+            console.log('유효하지 않은 토큰 비활성화 처리')
             await supabase
               .from('user_devices')
               .update({ is_active: false })
@@ -207,24 +209,7 @@ Deno.serve(async (req) => {
     const successCount = results.filter(r => r.success).length
     const failCount = results.filter(r => !r.success).length
 
-    // 7. 푸시 발송 성공 시 notifications 테이블 업데이트
-    if (successCount > 0 && record.id) {
-      const { error: updateError } = await supabase
-        .from('notifications')
-        .update({
-          is_pushed: true,
-          pushed_at: new Date().toISOString(),
-        })
-        .eq('id', record.id)
-      
-      if (updateError) {
-        console.warn('notifications 테이블 업데이트 실패:', updateError)
-      } else {
-        console.log('notifications 테이블 is_pushed 업데이트 완료')
-      }
-    }
-
-    // 8. user_devices의 last_notification_sent_at 업데이트
+    // 7. user_devices의 last_notification_sent_at 업데이트
     if (successCount > 0) {
       const successfulTokens = devices
         .filter((_, idx) => results[idx]?.success)
@@ -249,10 +234,7 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error('푸시 알림 에러:', error)
     return new Response(
-      JSON.stringify({ 
-        error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
-      }),
+      JSON.stringify({ error: 'Internal server error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }
@@ -276,7 +258,5 @@ Deno.serve(async (req) => {
        "portfolio_id": "portfolio-uuid"
      }'
 
-3. DB 트리거로 호출 시:
-   - notifications 테이블에 INSERT 시 자동 호출
-   - record 객체에 user_id, title, content 등 포함
+3. DB 트리거 또는 다른 Edge Function에서 직접 호출 가능
 */

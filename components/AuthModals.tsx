@@ -38,6 +38,10 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
 
   const [telegramLinkToken, setTelegramLinkToken] = useState<string | null>(null);
   const [telegramLinkLoading, setTelegramLinkLoading] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [termsConsent, setTermsConsent] = useState(false);
+  const [privacyConsent, setPrivacyConsent] = useState(false);
 
   useEffect(() => {
     if (type !== 'profile') setTelegramLinkToken(null);
@@ -49,6 +53,16 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
       : currentTier === 'pro'
       ? 'PRO'
       : 'FREE';
+
+  // 비밀번호 강도 검증 (최소 8자, 대문자, 소문자, 숫자, 특수문자 포함)
+  const validatePassword = (pw: string): string | null => {
+    if (pw.length < 8) return lang === 'ko' ? '비밀번호는 최소 8자 이상이어야 합니다.' : 'Password must be at least 8 characters.';
+    if (!/[A-Z]/.test(pw)) return lang === 'ko' ? '대문자를 1개 이상 포함해야 합니다.' : 'Must include at least 1 uppercase letter.';
+    if (!/[a-z]/.test(pw)) return lang === 'ko' ? '소문자를 1개 이상 포함해야 합니다.' : 'Must include at least 1 lowercase letter.';
+    if (!/[0-9]/.test(pw)) return lang === 'ko' ? '숫자를 1개 이상 포함해야 합니다.' : 'Must include at least 1 number.';
+    if (!/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(pw)) return lang === 'ko' ? '특수문자를 1개 이상 포함해야 합니다.' : 'Must include at least 1 special character.';
+    return null;
+  };
 
   // 베이스 URL과 경로를 안전하게 합쳐서 슬래시 중복/누락을 방지하는 헬퍼
   const buildRedirectUrl = (path: string) => {
@@ -71,10 +85,8 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
         setError(lang === 'ko' ? '새 비밀번호가 일치하지 않습니다.' : 'New passwords do not match.');
         return;
       }
-      if (newPassword.length < 6) {
-        setError(lang === 'ko' ? '비밀번호는 최소 6자 이상이어야 합니다.' : 'Password must be at least 6 characters.');
-        return;
-      }
+      const pwError = validatePassword(newPassword);
+      if (pwError) { setError(pwError); return; }
 
       setLoading(true);
       setError(null);
@@ -104,7 +116,8 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
         });
 
         if (updateError) {
-          setError(updateError.message || (lang === 'ko' ? '비밀번호 변경에 실패했습니다.' : 'Failed to update password.'));
+          console.error('[Auth] Password update error:', updateError.message);
+          setError(lang === 'ko' ? '비밀번호 변경에 실패했습니다.' : 'Failed to update password.');
         } else {
           setCurrentPassword('');
           setNewPassword('');
@@ -117,7 +130,8 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
           onSwitchType('profile');
         }
       } catch (err: any) {
-        setError(err?.message || (lang === 'ko' ? '비밀번호 변경에 실패했습니다.' : 'Failed to update password.'));
+        console.error('[Auth] Password change error:', err?.message);
+        setError(lang === 'ko' ? '비밀번호 변경에 실패했습니다.' : 'Failed to update password.');
       } finally {
         setLoading(false);
       }
@@ -135,10 +149,8 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
         return;
       }
       
-      if (newPassword.length < 6) {
-        setError(lang === 'ko' ? '비밀번호는 최소 6자 이상이어야 합니다.' : 'Password must be at least 6 characters.');
-        return;
-      }
+      const pwError2 = validatePassword(newPassword);
+      if (pwError2) { setError(pwError2); return; }
       
       setLoading(true);
       setError(null);
@@ -150,10 +162,9 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
         });
         
         if (error) {
-          // Supabase에서 반환된 구체적인 에러 메시지를 화면에 표시
-          setError(error.message || (lang === 'ko' ? '비밀번호 변경에 실패했습니다.' : 'Failed to update password.'));
+          console.error('[Auth] Password reset update error:', error.message);
+          setError(lang === 'ko' ? '비밀번호 변경에 실패했습니다.' : 'Failed to update password.');
         } else {
-          // 소셜 로그인 사용자가 처음 비밀번호를 설정하는 경우도 동일하게 처리됨
           setNewPassword('');
           setConfirmPassword('');
           setInfo(null);
@@ -162,13 +173,12 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
             alert(lang === 'ko' ? '비밀번호가 성공적으로 변경되었습니다. 다시 로그인해주세요.' : 'Password updated successfully. Please log in again.');
           }
 
-          // 모달 닫기 (상위에서 authModal을 null로 설정)
           onSwitchType('login');
           onClose();
         }
       } catch (err: any) {
-        // 예외 발생 시에도 구체적인 메시지 표시
-        setError(err?.message || (lang === 'ko' ? '비밀번호 변경에 실패했습니다.' : 'Failed to update password.'));
+        console.error('[Auth] Password reset error:', err?.message);
+        setError(lang === 'ko' ? '비밀번호 변경에 실패했습니다.' : 'Failed to update password.');
       } finally {
         setLoading(false);
       }
@@ -183,18 +193,34 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
 
     try {
       if (type === 'signup') {
+        // 동의 검증
+        if (!termsConsent || !privacyConsent) {
+          setError(lang === 'ko' ? '이용약관과 개인정보 처리방침에 동의해야 합니다.' : 'You must agree to the Terms of Service and Privacy Policy.');
+          setLoading(false);
+          return;
+        }
+
+        const consentTimestamp = new Date().toISOString();
         const emailRedirectTo = buildRedirectUrl('/auth/callback');
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
             emailRedirectTo,
+            data: {
+              terms_consent_at: consentTimestamp,
+              privacy_consent_at: consentTimestamp,
+            },
           },
         });
 
         if (error) {
-          // 에러를 사용자에게 명확하게 표시
-          const errorMessage = error.message || (lang === 'ko' ? '회원가입에 실패했습니다.' : 'Sign up failed.');
+          console.error('[Auth] Signup error:', error.message);
+          // 이미 가입된 이메일인 경우만 구체적으로 안내
+          const isAlreadyRegistered = error.message?.toLowerCase().includes('already registered');
+          const errorMessage = isAlreadyRegistered
+            ? (lang === 'ko' ? '이미 가입된 이메일입니다.' : 'This email is already registered.')
+            : (lang === 'ko' ? '회원가입에 실패했습니다.' : 'Sign up failed.');
           setError(errorMessage);
           setLoading(false);
           return;
@@ -246,8 +272,9 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
         return;
       }
       
-      // 에러 메시지를 사용자 친화적으로 표시
-      let errorMessage = err?.message || (lang === 'ko' ? '인증 중 오류가 발생했습니다.' : 'Authentication error occurred.');
+      console.error('[Auth] Auth error:', err?.message);
+      // 에러 메시지를 사용자 친화적으로 표시 (내부 정보 노출 방지)
+      let errorMessage = lang === 'ko' ? '인증 중 오류가 발생했습니다.' : 'Authentication error occurred.';
       
       // Supabase 에러 메시지를 한국어로 번역 (주요 에러들)
       if (err?.message) {
@@ -297,10 +324,25 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
   };
 
   const handleSocialLogin = async (provider: 'google' | 'github' | 'kakao') => {
+    // 회원가입 모드에서는 동의 필수
+    if (type === 'signup' && (!termsConsent || !privacyConsent)) {
+      setError(lang === 'ko' ? '이용약관과 개인정보 처리방침에 동의해야 합니다.' : 'You must agree to the Terms of Service and Privacy Policy.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setInfo(null);
     try {
+      // 소셜 로그인 리다이렉트 전에 동의 시점을 localStorage에 저장
+      if (type === 'signup') {
+        const consentTimestamp = new Date().toISOString();
+        localStorage.setItem('btd_pending_consent', JSON.stringify({
+          terms_consent_at: consentTimestamp,
+          privacy_consent_at: consentTimestamp,
+        }));
+      }
+
       const redirectTo = buildRedirectUrl('/auth/callback');
       console.log(`Attempting ${provider} login with redirect: ${redirectTo}`);
       
@@ -682,6 +724,92 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                   >
                     <LogOut size={18} /> {t.logout}
                   </button>
+
+                  {/* 회원 탈퇴 */}
+                  <div className="pt-4 border-t border-slate-200 dark:border-white/5">
+                    {!showDeleteConfirm ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowDeleteConfirm(true)}
+                        disabled={loading}
+                        className="w-full py-3 text-[11px] font-bold text-slate-400 hover:text-rose-500 transition-colors uppercase tracking-widest underline-offset-4 disabled:opacity-60"
+                      >
+                        {lang === 'ko' ? '회원 탈퇴' : 'Delete Account'}
+                      </button>
+                    ) : (
+                      <div className="space-y-3 p-4 bg-rose-50 dark:bg-rose-950/30 rounded-2xl border border-rose-200 dark:border-rose-800/50">
+                        <p className="text-xs font-bold text-rose-600 dark:text-rose-400">
+                          {lang === 'ko'
+                            ? '⚠️ 회원 탈퇴 시 모든 데이터(포트폴리오, 매매기록, 알람 설정 등)가 영구 삭제되며 복구할 수 없습니다.'
+                            : '⚠️ Deleting your account will permanently remove all data (portfolios, trades, alarms, etc.) and cannot be undone.'}
+                        </p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          {lang === 'ko'
+                            ? '확인을 위해 아래에 "탈퇴합니다"를 입력해주세요.'
+                            : 'Type "DELETE" below to confirm.'}
+                        </p>
+                        <input
+                          type="text"
+                          value={deleteConfirmText}
+                          onChange={(e) => setDeleteConfirmText(e.target.value)}
+                          placeholder={lang === 'ko' ? '탈퇴합니다' : 'DELETE'}
+                          className="w-full p-3 bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-700 rounded-xl text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-rose-500/50"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowDeleteConfirm(false);
+                              setDeleteConfirmText('');
+                            }}
+                            className="flex-1 py-3 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl font-bold text-xs uppercase tracking-widest"
+                          >
+                            {lang === 'ko' ? '취소' : 'Cancel'}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={
+                              loading ||
+                              (lang === 'ko' ? deleteConfirmText !== '탈퇴합니다' : deleteConfirmText !== 'DELETE')
+                            }
+                            onClick={async () => {
+                              setLoading(true);
+                              setError(null);
+                              try {
+                                const { data: { session } } = await supabase.auth.getSession();
+                                if (!session?.access_token) {
+                                  setError(lang === 'ko' ? '인증 세션이 만료되었습니다. 다시 로그인해주세요.' : 'Session expired. Please log in again.');
+                                  return;
+                                }
+                                const res = await supabase.functions.invoke('delete-account', {
+                                  headers: { Authorization: `Bearer ${session.access_token}` },
+                                });
+                                if (res.error) {
+                                  throw new Error(res.error.message || 'Account deletion failed');
+                                }
+                                // 성공 — 로컬 상태 정리 후 로그아웃
+                                alert(lang === 'ko' ? '회원 탈퇴가 완료되었습니다.' : 'Your account has been deleted.');
+                                await onLogout();
+                              } catch (err: any) {
+                                setError(
+                                  lang === 'ko'
+                                    ? `회원 탈퇴 실패: ${err?.message || '알 수 없는 오류'}`
+                                    : `Account deletion failed: ${err?.message || 'Unknown error'}`
+                                );
+                              } finally {
+                                setLoading(false);
+                              }
+                            }}
+                            className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed hover:bg-rose-700 transition-colors"
+                          >
+                            {loading
+                              ? (lang === 'ko' ? '처리 중...' : 'Processing...')
+                              : (lang === 'ko' ? '영구 삭제' : 'Delete Forever')}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                </div>
             </div>
           ) : (
@@ -714,6 +842,53 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                     />
                  </div>
               </div>
+
+              {/* 회원가입 시 필수 동의 체크박스 */}
+              {type === 'signup' && (
+                <div className="space-y-2 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-white/5">
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
+                    {lang === 'ko' ? '필수 동의' : 'Required Agreements'}
+                  </p>
+                  <label className="flex items-start gap-3 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={termsConsent}
+                      onChange={(e) => setTermsConsent(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 accent-blue-600 rounded"
+                    />
+                    <span className="text-xs text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
+                      <span className="text-blue-500 font-bold">[{lang === 'ko' ? '필수' : 'Required'}]</span>{' '}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); window.open('#terms', '_blank'); }}
+                        className="underline underline-offset-2 hover:text-blue-500"
+                      >
+                        {lang === 'ko' ? '이용약관' : 'Terms of Service'}
+                      </button>
+                      {lang === 'ko' ? '에 동의합니다' : ' - I agree'}
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-3 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={privacyConsent}
+                      onChange={(e) => setPrivacyConsent(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 accent-blue-600 rounded"
+                    />
+                    <span className="text-xs text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
+                      <span className="text-blue-500 font-bold">[{lang === 'ko' ? '필수' : 'Required'}]</span>{' '}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); window.open('#privacy', '_blank'); }}
+                        className="underline underline-offset-2 hover:text-blue-500"
+                      >
+                        {lang === 'ko' ? '개인정보 처리방침' : 'Privacy Policy'}
+                      </button>
+                      {lang === 'ko' ? '에 동의합니다' : ' - I agree'}
+                    </span>
+                  </label>
+                </div>
+              )}
 
               {error && (
                 <p className="text-xs font-bold text-rose-500 bg-rose-500/10 border border-rose-500/30 rounded-2xl px-4 py-3">

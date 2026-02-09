@@ -1,8 +1,22 @@
+import { supabase } from './supabase';
+
 const FALLBACK_ADVISOR_TEXT =
   "The QQQ-based technical strategy shows strong historical momentum. Ensure rigorous drawdown management is active for leveraged positions.";
 
 // Supabase Edge Function base URL, e.g. https://xxxx.functions.supabase.co/gemini
 const EDGE_BASE_URL = import.meta.env.VITE_GEMINI_EDGE_URL || "";
+
+// 인증 헤더를 가져오는 헬퍼
+const getAuthHeaders = async (): Promise<Record<string, string>> => {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.access_token) {
+    return {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${session.access_token}`,
+    };
+  }
+  return { "Content-Type": "application/json" };
+};
 
 type Tier = "free" | "paid";
 
@@ -18,11 +32,10 @@ export const getStrategyAdvisor = async (
     return FALLBACK_ADVISOR_TEXT;
   }
   try {
+    const headers = await getAuthHeaders();
     const res = await fetch(EDGE_BASE_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers,
       body: JSON.stringify({
         mode: "advisor",
         strategyDescription,
@@ -65,11 +78,10 @@ export const analyzeTradeScreenshot = async (
     return { trades: [] };
   }
   try {
+    const headers = await getAuthHeaders();
     const res = await fetch(EDGE_BASE_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers,
       body: JSON.stringify({
         mode: "analyze-trades",
         imageBase64,

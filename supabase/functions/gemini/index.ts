@@ -1,7 +1,9 @@
 // Supabase Edge Function: Gemini 호출을 이 함수에서만 수행.
 // 배포: supabase functions deploy gemini --no-verify-jwt
+// JWT 인증은 함수 내부에서 수동으로 수행 (anon key + Authorization header)
 
 import { serve } from "std/http/server.ts";
+import { createClient } from "@supabase/supabase-js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { GenerationConfig } from "@google/generative-ai";
 
@@ -36,8 +38,10 @@ const getApiKey = (tier: Tier): string | null => {
   return freeKey ?? null;
 };
 
+const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") || "https://btd-alarm2.pages.dev";
+
 const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -53,6 +57,34 @@ serve(async (req) => {
     return new Response("Method Not Allowed", {
       status: 405,
       headers: CORS_HEADERS,
+    });
+  }
+
+  // JWT 인증: 인증된 사용자만 Gemini API 사용 가능
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+    });
+  }
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const userClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { authorization: authHeader } },
+    });
+    const { data: { user }, error: authError } = await userClient.auth.getUser();
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      });
+    }
+  } catch {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
     });
   }
 

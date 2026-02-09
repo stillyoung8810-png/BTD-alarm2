@@ -19,9 +19,13 @@ const TOSS_CS_URL = 'https://service.toss.im/apps/support';
 interface FooterProps {
   /** 토스 앱 내부 접속 여부 */
   isInTossApp?: boolean;
+  /** 이용약관 탭으로 이동 */
+  onNavigateTerms?: () => void;
+  /** 개인정보처리방침 탭으로 이동 */
+  onNavigatePrivacy?: () => void;
 }
 
-const Footer: React.FC<FooterProps> = ({ isInTossApp = false }) => {
+const Footer: React.FC<FooterProps> = ({ isInTossApp = false, onNavigateTerms, onNavigatePrivacy }) => {
   const isTossAgent =
     isInTossApp ||
     (typeof navigator !== 'undefined' && /TossApp|TossIt/i.test(navigator.userAgent));
@@ -46,19 +50,19 @@ const Footer: React.FC<FooterProps> = ({ isInTossApp = false }) => {
       <div className="px-5 py-6 space-y-4">
         {/* 이용약관 / 개인정보처리방침 */}
         <div className="flex items-center gap-3 text-[12px] font-medium">
-          <a
-            href="/terms"
-            className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+          <button
+            onClick={() => { onNavigateTerms?.(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+            className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors underline underline-offset-2"
           >
             이용약관
-          </a>
+          </button>
           <span className="text-slate-300 dark:text-slate-600">|</span>
-          <a
-            href="/privacy"
-            className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+          <button
+            onClick={() => { onNavigatePrivacy?.(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+            className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors underline underline-offset-2"
           >
             개인정보처리방침
-          </a>
+          </button>
         </div>
 
         {/* 법인 정보 */}

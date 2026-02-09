@@ -8,6 +8,8 @@ import History from './components/History';
 import StrategyCreator from './components/StrategyCreator';
 import AlarmModal from './components/AlarmModal';
 import Footer from './components/Footer';
+import Privacy from './components/Privacy';
+import Terms from './components/Terms';
 import PortfolioDetailsModal from './components/PortfolioDetailsModal';
 import QuickInputModal from './components/QuickInputModal';
 import TradeExecutionModal from './components/TradeExecutionModal';
@@ -50,7 +52,7 @@ const Backtest = React.lazy(() => import('./components/Backtest'));
 
 const App: React.FC = () => {
   const [lang, setLang] = useState<'ko' | 'en'>('ko');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'markets' | 'history' | 'backtest' | 'pricing'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'markets' | 'history' | 'backtest' | 'pricing' | 'privacy' | 'terms'>('dashboard');
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [isCreatorOpen, setIsCreatorOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
@@ -191,10 +193,27 @@ const App: React.FC = () => {
       if (!profileError && profileData) {
         const detectedTimezone = getDeviceTimeZone();
         const profileTimezone = (profileData.timezone ?? '').trim();
+        const updatePayload: Record<string, string> = {};
+
         if (!profileTimezone || profileTimezone !== detectedTimezone) {
+          updatePayload.timezone = detectedTimezone;
+        }
+
+        // 소셜 로그인 후 동의 기록 처리 (localStorage에 저장된 pending consent)
+        const pendingConsent = localStorage.getItem('btd_pending_consent');
+        if (pendingConsent) {
+          try {
+            const consent = JSON.parse(pendingConsent);
+            if (consent.terms_consent_at) updatePayload.terms_consent_at = consent.terms_consent_at;
+            if (consent.privacy_consent_at) updatePayload.privacy_consent_at = consent.privacy_consent_at;
+          } catch { /* ignore parse error */ }
+          localStorage.removeItem('btd_pending_consent');
+        }
+
+        if (Object.keys(updatePayload).length > 0) {
           await supabase
             .from('user_profiles')
-            .update({ timezone: detectedTimezone })
+            .update(updatePayload)
             .eq('id', userId);
         }
         setUserProfile({
@@ -279,7 +298,7 @@ const App: React.FC = () => {
           console.warn('[DailyExecution] upsert error:', error.message);
         } else {
           lastSavedSummaryRef.current = summaryToSave;
-          console.log('[DailyExecution] summary upserted for', user.id, summaryDate);
+          console.log('[DailyExecution] summary upserted for', summaryDate);
         }
       } catch (err) {
         console.warn('[DailyExecution] upsert failed:', err);
@@ -385,7 +404,7 @@ const App: React.FC = () => {
 
     // 세션 기반 유저/포트폴리오 로딩 (세션 복구 시 단일 진입점)
     const fetchUserData = async (sessionUser: { id: string; email?: string | null }) => {
-      console.log('[fetchUserData] 시작:', sessionUser?.id);
+      console.log('[fetchUserData] 시작');
       if (!sessionUser?.id || !isMounted) return;
 
       try {
@@ -448,8 +467,6 @@ const App: React.FC = () => {
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         console.log('[checkUser] getSession 결과:', { 
           hasSession: !!session, 
-          userId: session?.user?.id,
-          email: session?.user?.email,
           error: sessionError?.message 
         });
 
@@ -485,7 +502,7 @@ const App: React.FC = () => {
           
           // 기존 세션 복구 시에도 FCM 토큰 저장 시도 (로그인 상태 유지 중)
           if (session.user.id) {
-            console.log('[FCM] Session restore detected. Trying to save FCM token for user:', session.user.id);
+            console.log('[FCM] Session restore detected. Trying to save FCM token.');
             saveFCMToken(session.user.id).catch((err) => {
               console.debug('[FCM] FCM token save attempt on session restore completed with error (can be null):', err);
             });
@@ -530,7 +547,7 @@ const App: React.FC = () => {
         if (!isMounted) return;
 
         try {
-          console.log('[onAuthStateChange] 이벤트:', event, session?.user?.email);
+          console.log('[onAuthStateChange] 이벤트:', event);
 
           const currentUser = session?.user ?? null;
 
@@ -571,7 +588,7 @@ const App: React.FC = () => {
 
             // 로그인 성공 시 FCM 토큰 저장 (SIGNED_IN 이벤트일 때만)
             if (event === 'SIGNED_IN' && currentUser.id) {
-              console.log('[FCM] SIGNED_IN event detected. Trying to save FCM token for user:', currentUser.id);
+              console.log('[FCM] SIGNED_IN event detected. Trying to save FCM token.');
               saveFCMToken(currentUser.id).catch((err) => {
                 // 에러는 이미 saveFCMToken 내부에서 처리되므로 여기서는 조용히 처리
                 console.debug('[FCM] FCM token save attempt on SIGNED_IN completed with error (can be null):', err);
@@ -723,12 +740,12 @@ const App: React.FC = () => {
       return;
     }
     if (saveFCMTokenInProgressRef.current === userId) {
-      console.log('[FCM] saveFCMToken already in progress for user:', userId);
+      console.log('[FCM] saveFCMToken already in progress.');
       return;
     }
     saveFCMTokenInProgressRef.current = userId;
 
-    console.log('[FCM] saveFCMToken called for user:', userId);
+    console.log('[FCM] saveFCMToken called.');
 
     try {
       // 알림 권한이 이미 거부된 경우 조용히 처리
@@ -743,7 +760,7 @@ const App: React.FC = () => {
       // FCM 토큰 요청
       console.log('[FCM] Requesting FCM token via requestForToken()...');
       const token = await requestForToken();
-      console.log('[FCM] requestForToken() resolved. Token:', token);
+      console.log('[FCM] requestForToken() resolved. Token exists:', !!token);
       
       if (!token) {
         // 권한이 거부되었거나 토큰을 가져올 수 없는 경우 조용히 처리
@@ -756,10 +773,7 @@ const App: React.FC = () => {
       console.log('[FCM] Parsed device info:', deviceInfo);
 
       // Supabase에 upsert (user_id와 fcm_token 기준)
-      console.log('[FCM] Upserting token into user_devices...', {
-        user_id: userId,
-        fcm_token: token,
-      });
+      console.log('[FCM] Upserting token into user_devices...');
       const { error } = await supabase
         .from('user_devices')
         .upsert(
@@ -795,7 +809,7 @@ const App: React.FC = () => {
   const normalizePortfolioData = (data: any[]): Portfolio[] => {
     return (data as any[]).map((item) => ({
       ...item,
-      dailyBuyAmount: item.daily_buy_amount ?? item.dailyBuyAmount ?? 0,
+      dailyBuyAmount: item.daily_buy_amount ?? 0,
       startDate: item.start_date ?? item.startDate ?? '',
       feeRate: item.fee_rate ?? item.feeRate ?? 0.25,
       isClosed: item.is_closed ?? item.isClosed ?? false,
@@ -835,7 +849,7 @@ const App: React.FC = () => {
     
     // 중복 요청 방지: 이미 진행 중인 요청이 있으면 취소하고 새로 시작
     if (fetchingPortfoliosRef.current.has(userId)) {
-      console.log('[fetchPortfoliosFromSupabase] 이미 진행 중인 요청이 있음, 이전 요청 취소:', userId);
+      console.log('[fetchPortfoliosFromSupabase] 이미 진행 중인 요청이 있음, 이전 요청 취소');
       const existingController = fetchPortfoliosAbortControllersRef.current.get(userId);
       if (existingController) {
         existingController.abort();
@@ -851,7 +865,7 @@ const App: React.FC = () => {
     
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
-      console.log('[fetchPortfoliosFromSupabase] Supabase 쿼리 실행 (백그라운드), userId:', userId);
+      console.log('[fetchPortfoliosFromSupabase] Supabase 쿼리 실행 (백그라운드)');
 
       // 타임아웃 설정 (10초)
       timeoutId = setTimeout(() => {
@@ -867,27 +881,24 @@ const App: React.FC = () => {
         .order('created_at', { ascending: false })
         .abortSignal(controller.signal);
       
-      console.log('[fetchPortfoliosFromSupabase] Supabase 쿼리 완료, userId:', userId);
+      console.log('[fetchPortfoliosFromSupabase] Supabase 쿼리 완료');
 
       if (error) {
         // AbortError는 정상적인 취소이므로 에러로 처리하지 않음
         if (error.name === 'AbortError' || error.message?.includes('aborted')) {
-          console.log('[fetchPortfoliosFromSupabase] 요청 취소됨 (정상):', userId);
+          console.log('[fetchPortfoliosFromSupabase] 요청 취소됨 (정상)');
           return;
         }
         
         console.error('[fetchPortfoliosFromSupabase] 데이터 로드 에러:', {
-          userId,
           message: error.message,
           code: error.code,
-          details: error.details,
-          hint: error.hint
         });
         // 에러가 나도 로컬 데이터가 있으면 화면은 유지됨
         return;
       }
 
-      console.log('[fetchPortfoliosFromSupabase] 응답 데이터 개수:', data?.length ?? 0, 'userId:', userId);
+      console.log('[fetchPortfoliosFromSupabase] 응답 데이터 개수:', data?.length ?? 0);
 
       if (data) {
         // DB의 snake_case를 UI에서 사용하는 camelCase 구조로 변환
@@ -896,25 +907,23 @@ const App: React.FC = () => {
         // 로컬 저장소에 저장 (다음 로드 시 사용)
         try {
           localStorage.setItem(cacheKey, JSON.stringify(data));
-          console.log('[fetchPortfoliosFromSupabase] 로컬 저장소에 데이터 저장 완료, userId:', userId);
+          console.log('[fetchPortfoliosFromSupabase] 로컬 저장소에 데이터 저장 완료');
         } catch (saveError) {
           console.warn('[fetchPortfoliosFromSupabase] 로컬 저장소 저장 실패:', saveError);
         }
 
         // 화면 업데이트 (최신 데이터로)
         setPortfolios(formattedData);
-        console.log('[fetchPortfoliosFromSupabase] 포트폴리오 상태 업데이트 완료, userId:', userId);
+        console.log('[fetchPortfoliosFromSupabase] 포트폴리오 상태 업데이트 완료');
       }
     } catch (err: any) {
       // AbortError는 정상적인 취소이므로 에러로 처리하지 않음
       if (err?.name === 'AbortError' || err?.message?.includes('aborted')) {
-        console.log('[fetchPortfoliosFromSupabase] 요청 취소됨 (정상):', userId);
+        console.log('[fetchPortfoliosFromSupabase] 요청 취소됨 (정상)');
         return;
       }
       
       console.error('[fetchPortfoliosFromSupabase] 예기치 못한 에러:', {
-        userId,
-        error: err,
         message: err?.message,
         name: err?.name
       });
@@ -932,7 +941,7 @@ const App: React.FC = () => {
 
   // 포트폴리오 데이터 가져오기 (로컬 우선, 백그라운드 업데이트)
   const fetchPortfolios = (userId: string): void => {
-    console.log('[fetchPortfolios] 함수 시작, userId:', userId);
+    console.log('[fetchPortfolios] 함수 시작');
     
     // 1단계: 로컬 저장소에서 즉시 데이터 로드 (동기적)
     const hasCachedData = loadPortfoliosFromCache(userId);
@@ -1118,6 +1127,32 @@ const App: React.FC = () => {
       ...rest
     } = newP;
 
+    // 입력 유효성 검증
+    if (!rest.name || rest.name.trim().length === 0) {
+      alert(lang === 'ko' ? '포트폴리오 이름을 입력해주세요.' : 'Please enter a portfolio name.');
+      return;
+    }
+    if (rest.name.length > 100) {
+      alert(lang === 'ko' ? '포트폴리오 이름은 100자 이내여야 합니다.' : 'Portfolio name must be 100 characters or less.');
+      return;
+    }
+    if (typeof dailyBuyAmount !== 'number' || !isFinite(dailyBuyAmount) || dailyBuyAmount <= 0) {
+      alert(lang === 'ko' ? '매일 매수 금액은 0보다 큰 값이어야 합니다.' : 'Daily buy amount must be greater than 0.');
+      return;
+    }
+    if (dailyBuyAmount > 1_000_000) {
+      alert(lang === 'ko' ? '매일 매수 금액은 $1,000,000 이하여야 합니다.' : 'Daily buy amount must be $1,000,000 or less.');
+      return;
+    }
+    if (typeof feeRate !== 'number' || !isFinite(feeRate) || feeRate < 0 || feeRate > 10) {
+      alert(lang === 'ko' ? '수수료율은 0% ~ 10% 사이여야 합니다.' : 'Fee rate must be between 0% and 10%.');
+      return;
+    }
+    if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+      alert(lang === 'ko' ? '시작일을 올바른 형식(YYYY-MM-DD)으로 입력해주세요.' : 'Please enter a valid start date (YYYY-MM-DD).');
+      return;
+    }
+
     // 1. 데이터 준비
     const payload = {
       ...rest,
@@ -1132,7 +1167,7 @@ const App: React.FC = () => {
       alarm_config: alarmconfig || null,
     };
 
-    console.log('전송 직전 최종 확인:', payload);
+    console.log('[Portfolio] 전송 직전 최종 확인: payload ready');
     
     try {
       // 2. 여기서 브라우저가 일시정지되는지 확인하세요
@@ -1149,13 +1184,13 @@ const App: React.FC = () => {
         return;
       }
 
-      console.log('서버 응답 데이터:', data);
+      console.log('[Portfolio] 서버 응답 데이터 수신 완료, count:', data?.length ?? 0);
       if (data && data.length > 0) {
         // Supabase 컬럼명이 snake_case이므로 모든 필드를 camelCase로 정규화
         // DB 컬럼명(daily_buy_amount)을 우선적으로 사용
         const normalized = (data as any[]).map((row) => ({
           ...row,
-          dailyBuyAmount: row.daily_buy_amount ?? row.dailyBuyAmount ?? 0,
+          dailyBuyAmount: row.daily_buy_amount ?? 0,
           startDate: row.start_date ?? row.startDate ?? '',
           feeRate: row.fee_rate ?? row.feeRate ?? 0.25,
           isClosed: row.is_closed ?? row.isClosed ?? false,
@@ -1362,6 +1397,20 @@ const App: React.FC = () => {
   };
 
   const handleUpdatePortfolio = async (updated: Portfolio) => {
+    // 입력 유효성 검증
+    if (!updated.name || updated.name.trim().length === 0 || updated.name.length > 100) {
+      alert(lang === 'ko' ? '포트폴리오 이름은 1~100자여야 합니다.' : 'Portfolio name must be 1-100 characters.');
+      return;
+    }
+    if (typeof updated.dailyBuyAmount !== 'number' || !isFinite(updated.dailyBuyAmount) || updated.dailyBuyAmount <= 0 || updated.dailyBuyAmount > 1_000_000) {
+      alert(lang === 'ko' ? '매일 매수 금액은 $0 초과 ~ $1,000,000 이하여야 합니다.' : 'Daily buy amount must be between $0 and $1,000,000.');
+      return;
+    }
+    if (typeof updated.feeRate !== 'number' || !isFinite(updated.feeRate) || updated.feeRate < 0 || updated.feeRate > 10) {
+      alert(lang === 'ko' ? '수수료율은 0% ~ 10% 사이여야 합니다.' : 'Fee rate must be between 0% and 10%.');
+      return;
+    }
+
     const { error } = await supabase
       .from('portfolios')
       .update({
@@ -1645,6 +1694,13 @@ const App: React.FC = () => {
               onClearHistory={handleClearHistory}
             />
           )}
+
+          {activeTab === 'privacy' && (
+            <Privacy lang={lang} onBack={() => setActiveTab('dashboard')} />
+          )}
+          {activeTab === 'terms' && (
+            <Terms lang={lang} onBack={() => setActiveTab('dashboard')} />
+          )}
         </main>
 
         {/* Unified Floating Navigation Bar - center '+' button */}
@@ -1796,7 +1852,11 @@ const App: React.FC = () => {
       </div>
 
       {/* Footer — 법인 필수 정보 */}
-      <Footer isInTossApp={isInTossApp} />
+      <Footer
+        isInTossApp={isInTossApp}
+        onNavigateTerms={() => setActiveTab('terms')}
+        onNavigatePrivacy={() => setActiveTab('privacy')}
+      />
       </div>
   );
 

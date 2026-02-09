@@ -250,9 +250,11 @@ async function sendFCMNotification(
   }
 }
 
+const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") || "https://btd-alarm2.pages.dev";
+
 serve(async (req) => {
   const corsHeaders = {
-    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-internal-alarm-secret",
   };
 
@@ -307,7 +309,7 @@ serve(async (req) => {
       );
     }
 
-    console.log(`Processing alarm for user: ${user_id}, title: ${title}`);
+    console.log(`Processing alarm, title: ${title}`);
 
     // Supabase 클라이언트 생성
     const supabase = createClient(supabaseUrl, serviceKey);
@@ -562,7 +564,7 @@ serve(async (req) => {
       {
         status: 500,
         headers: {
-          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
           "Content-Type": "application/json",
         },
       },

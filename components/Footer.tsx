@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTossApp } from '../contexts/TossAppContext';
 
 // ---------------------------------------------------------------------------
 // 법인 필수 정보
@@ -17,7 +18,7 @@ const TOSS_CS_URL = 'https://service.toss.im/apps/support';
 // Footer
 // ---------------------------------------------------------------------------
 interface FooterProps {
-  /** 토스 앱 내부 접속 여부 */
+  /** 토스 앱 내부 접속 여부 (Context에서도 감지하지만 외부 override 가능) */
   isInTossApp?: boolean;
   /** 이용약관 탭으로 이동 */
   onNavigateTerms?: () => void;
@@ -25,13 +26,22 @@ interface FooterProps {
   onNavigatePrivacy?: () => void;
 }
 
-const Footer: React.FC<FooterProps> = ({ isInTossApp = false, onNavigateTerms, onNavigatePrivacy }) => {
+const Footer: React.FC<FooterProps> = ({ isInTossApp: isInTossAppProp, onNavigateTerms, onNavigatePrivacy }) => {
+  const { isInTossApp: isInTossAppCtx, safeAreaInsets } = useTossApp();
+
   const isTossAgent =
-    isInTossApp ||
+    isInTossAppProp ||
+    isInTossAppCtx ||
     (typeof navigator !== 'undefined' && /TossApp|TossIt/i.test(navigator.userAgent));
 
+  // 토스 앱 내 Safe Area bottom 여백 (홈 인디케이터 영역)
+  const safeBottom = isTossAgent ? safeAreaInsets.bottom : 0;
+
   return (
-    <footer className="w-full bg-slate-100 dark:bg-slate-900/80 border-t border-slate-200 dark:border-white/5 mt-auto">
+    <footer
+      className="w-full bg-slate-100 dark:bg-slate-900/80 border-t border-slate-200 dark:border-white/5 mt-auto"
+      style={safeBottom > 0 ? { paddingBottom: `${safeBottom}px` } : undefined}
+    >
       {/* 토스 미니앱 고객센터 버튼 */}
       {isTossAgent && (
         <div className="px-5 pt-5 pb-2">

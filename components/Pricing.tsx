@@ -14,6 +14,8 @@ const PREMIUM_GLOW_STYLE = `
 interface PricingProps {
   lang: 'ko' | 'en';
   currentTier: 'free' | 'pro' | 'premium' | string;
+  /** 업그레이드 버튼 클릭 시 호출 — planId를 전달 */
+  onUpgrade?: (planId: 'pro' | 'premium') => void;
 }
 
 const MOCK_TRADES = (isKo: boolean) => [
@@ -71,7 +73,7 @@ const TELEGRAM_PREVIEW_CARDS = (isKo: boolean) => [
   },
 ];
 
-const Pricing: React.FC<PricingProps> = ({ lang, currentTier }) => {
+const Pricing: React.FC<PricingProps> = ({ lang, currentTier, onUpgrade }) => {
   const isKo = lang === 'ko';
   const [telegramCardIndex, setTelegramCardIndex] = useState(0);
   const [aiCardIndex, setAiCardIndex] = useState(0);
@@ -262,7 +264,13 @@ const Pricing: React.FC<PricingProps> = ({ lang, currentTier }) => {
                   </ul>
 
                   <button
-                    className={`w-full py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all duration-300 flex items-center justify-center gap-2 group/btn ${
+                    onClick={() => {
+                      if (!isCurrent && tier.id !== 'free' && onUpgrade) {
+                        onUpgrade(tier.id as 'pro' | 'premium');
+                      }
+                    }}
+                    disabled={isCurrent || isDisabled}
+                    className={`w-full py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all duration-300 flex items-center justify-center gap-2 group/btn disabled:opacity-60 disabled:cursor-not-allowed ${
                       tier.theme === 'premium' ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-lg shadow-amber-500/20' : tier.theme === 'pro' ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/20' : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white'
                     }`}
                   >

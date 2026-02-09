@@ -18,12 +18,13 @@ import { TerminationInput, Result as SettlementResult } from './components/Settl
 import AuthModals from './components/AuthModals';
 import Landing from './components/Landing';
 import Pricing from './components/Pricing';
+import CheckoutModal from './components/CheckoutModal';
 import { supabase, clearAuthStorage } from './services/supabase';
 import { calculateTotalInvested, calculateAlreadyRealized, calculateHoldings } from './utils/portfolioCalculations';
 import { fetchStockPricesWithPrev, loadInitialStockData, loadPaidStockData } from './services/stockService';
 import { getUSSelectionHolidays } from './utils/marketUtils';
 import { requestForToken, getNotificationPermission } from './services/firebase';
-import { initializeTossApp, isTossApp } from './services/tossAppBridge';
+import { isTossApp } from './services/tossAppBridge';
 import { TossAppProvider } from './contexts/TossAppContext';
 import { buildDailyExecutionSummary } from './utils/dailyExecutionSummary';
 import { 
@@ -75,6 +76,7 @@ const App: React.FC = () => {
     last_usage_reset_at?: string | null;
   } | null>(null);
   const [authModal, setAuthModal] = useState<'login' | 'signup' | 'profile' | 'reset-password' | 'change-password' | null>(null);
+  const [checkoutPlan, setCheckoutPlan] = useState<'pro' | 'premium' | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const authModalRef = useRef(authModal);
 
@@ -252,13 +254,8 @@ const App: React.FC = () => {
 
   const t = I18N[lang];
 
-  // 토스 앱 환경 여부 확인
-  const [isInTossApp, setIsInTossApp] = useState<boolean>(false);
-
-  // 토스 앱 환경 확인 (마운트 시 한 번만)
-  useEffect(() => {
-    setIsInTossApp(isTossApp());
-  }, []);
+  // 토스 앱 환경 여부 — 동기적 감지 (TDSProvider 조건 판단용, Context는 하위에서 사용)
+  const isInTossApp = isTossApp();
 
   // 알람이 켜진 포트폴리오 기준 daily execution 요약을 Supabase에 캐싱
   // - summaryToSave(useMemo)로 계산된 값을, 변경 후 일정 시간(디바운스) 뒤에 한 번만 upsert
@@ -369,12 +366,7 @@ const App: React.FC = () => {
     }
   }, [isDarkMode]);
 
-  // 토스 앱 브릿지 초기화 (앱 시작 시 한 번만 실행)
-  useEffect(() => {
-    initializeTossApp().catch((error) => {
-      console.warn('[App] 토스 앱 브릿지 초기화 실패 (일반 웹 환경일 수 있음):', error);
-    });
-  }, []);
+  // 토스 앱 브릿지 초기화는 TossAppProvider 내부에서 자동으로 수행됩니다.
 
   // IndexedDB 초기 데이터 로딩 (앱 시작 시 한 번만 실행)
   useEffect(() => {
@@ -1683,6 +1675,13 @@ const App: React.FC = () => {
             <Pricing 
               lang={lang} 
               currentTier={currentTier === 'premium' || currentTier === 'pro' ? currentTier : 'free'}
+              onUpgrade={(planId) => {
+                if (!user) {
+                  setAuthModal('login');
+                  return;
+                }
+                setCheckoutPlan(planId);
+              }}
             />
           )}
           {activeTab === 'history' && (
@@ -1851,45 +1850,85 @@ const App: React.FC = () => {
         )}
       </div>
 
-      {/* Footer — 법인 필수 정보 */}
+      {/* ── 결제 모달 ─────────────────────────────── */}
+      {checkoutPlan && (
+        <CheckoutModal
+          isOpen={!!checkoutPlan}
+          onClose={() => setCheckoutPlan(null)}
+          lang={lang}
+          plan={checkoutPlan === 'pro' ? {
+            id: 'pro',
+            label: 'PRO',
+            subtitle: lang === 'ko' ? '전문 투자자' : 'Active Investor',
+            price: 5900,
+            priceFormatted: '₩5,900',
+            features: lang === 'ko'
+              ? ['포트폴리오 최대 5개', '알람 슬롯 10개', '기본 13개 + PRO 전용 종목', 'AI 매매 인식 (50회/월)', '텔레그램 상세 알림', '광고 제거']
+              : ['Up to 5 portfolios', '10 alert slots', 'Core + PRO tickers', 'AI Trade Recognition (50/mo)', 'Detailed Telegram alerts', 'No ads'],
+          } : {
+            id: 'premium',
+            label: 'PREMIUM',
+            subtitle: lang === 'ko' ? '슈퍼 고래' : 'Power User',
+            price: 9900,
+            priceFormatted: '₩9,900',
+            features: lang === 'ko'
+              ? ['포트폴리오 최대 20개', '알람 슬롯 40개', '모든 종목 + 베타 종목', 'AI 매매 인식 (무제한)', '신규 전략 선공개', 'VIP 전용 고객 지원']
+              : ['Up to 20 portfolios', '40 alert slots', 'All tickers + beta', 'Unlimited AI Recognition', 'Early access to strategies', 'VIP priority support'],
+          }}
+          customerEmail={user?.email}
+          customerId={user?.id}
+          onPaymentSuccess={() => {
+            setCheckoutPlan(null);
+            if (user?.id) fetchUserProfile(user.id);
+          }}
+        />
+      )}
+
+      {/* Footer — 법인 필수 정보 (토스 환경은 Footer 내부에서 자동 감지) */}
       <Footer
-        isInTossApp={isInTossApp}
         onNavigateTerms={() => setActiveTab('terms')}
         onNavigatePrivacy={() => setActiveTab('privacy')}
       />
       </div>
   );
 
-  // 토스 앱 환경에서만 TDSMobileAITProvider로 감싸기
-  // 일반 웹 환경에서는 기존 디자인 유지
-  const [TDSProvider, setTDSProvider] = useState<React.ComponentType<{ children: React.ReactNode }> | null>(null);
-
-  useEffect(() => {
-    if (isInTossApp) {
-      // 토스 앱 환경에서만 동적으로 로드
-      import('@toss/tds-mobile-ait')
-        .then((module) => {
-          setTDSProvider(() => module.TDSMobileAITProvider);
-        })
-        .catch((error) => {
-          console.warn('[App] TDSMobileAITProvider 로드 실패:', error);
-        });
-    }
-  }, [isInTossApp]);
-
   return (
     <TossAppProvider>
-      {isInTossApp && TDSProvider ? (
-        <TDSProvider>
-          <MainContent />
-        </TDSProvider>
-      ) : (
+      <TDSWrapper isInTossApp={isInTossApp}>
         <MainContent />
-      )}
+      </TDSWrapper>
     </TossAppProvider>
   );
 };
 
+// ---------------------------------------------------------------------------
+// TDSWrapper: 토스 앱 환경에서만 TDSMobileAITProvider로 감싸는 래퍼
+// TossAppProvider 하위에 위치하므로 useTossApp() 사용 가능
+// ---------------------------------------------------------------------------
+const TDSWrapper: React.FC<{ isInTossApp: boolean; children: React.ReactNode }> = ({ isInTossApp, children }) => {
+  const [TDSProvider, setTDSProvider] = useState<React.ComponentType<{ children: React.ReactNode }> | null>(null);
+
+  useEffect(() => {
+    if (!isInTossApp) return;
+
+    import('@toss/tds-mobile-ait')
+      .then((module) => {
+        setTDSProvider(() => module.TDSMobileAITProvider);
+      })
+      .catch((error) => {
+        console.warn('[TDSWrapper] TDSMobileAITProvider 로드 실패:', error);
+      });
+  }, [isInTossApp]);
+
+  if (isInTossApp && TDSProvider) {
+    return <TDSProvider>{children}</TDSProvider>;
+  }
+  return <>{children}</>;
+};
+
+// ---------------------------------------------------------------------------
+// NavIcon
+// ---------------------------------------------------------------------------
 interface NavIconProps {
   active: boolean;
   onClick: () => void;

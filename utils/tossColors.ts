@@ -36,7 +36,7 @@ export const tossColors = {
   background: colors.background, // #FFFFFF
   greyBackground: colors.greyBackground,
   layeredBackground: colors.layeredBackground,
-  floatedBackground: colors.floatedBackground,
+  floatedBackground: colors.floatBackground,
   
   // Text colors
   textPrimary: colors.grey900, // #191f28

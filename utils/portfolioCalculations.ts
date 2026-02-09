@@ -1,5 +1,6 @@
 import { Portfolio, Trade } from '../types';
-import { fetchStockPrices, fetchStockPriceHistory, calculateMA } from '../services/stockService';
+import { fetchStockPrices, fetchStockPriceHistory } from '../services/stockService';
+import { calculateMA } from './technicalIndicators';
 
 /**
  * 포트폴리오의 현재 보유 내역을 계산합니다

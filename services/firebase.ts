@@ -1,5 +1,5 @@
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
-import { getMessaging, getToken, Messaging, onMessage } from 'firebase/messaging';
+import { getMessaging, getToken, Messaging, onMessage, MessagePayload } from 'firebase/messaging';
 import { isSupported } from 'firebase/messaging';
 
 // Firebase 설정 - 환경변수에서 가져오기
@@ -75,8 +75,6 @@ export const requestForToken = async (): Promise<string | null> => {
     return null;
   }
 
-  console.log('[FCM] requestForToken called');
-
   try {
     // Messaging 초기화
     const messagingInstance = await initializeMessaging();
@@ -84,7 +82,6 @@ export const requestForToken = async (): Promise<string | null> => {
       console.warn('[FCM] Messaging is not supported or failed to initialize');
       return null;
     }
-    console.log('[FCM] Messaging initialized');
 
     // 서비스 워커 지원 여부 확인
     if (!('serviceWorker' in navigator)) {
@@ -92,53 +89,30 @@ export const requestForToken = async (): Promise<string | null> => {
       return null;
     }
 
-    console.log('[FCM] Checking/ registering service worker...');
-
     // 기존 등록된 서비스 워커가 있는지 확인 후, 없으면 새로 등록
     let registration = await navigator.serviceWorker.getRegistration('/firebase-messaging-sw.js');
-
     if (!registration) {
-      console.log('[FCM] No existing firebase-messaging-sw.js registration found. Registering now...');
-      registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
-        scope: '/',
-      });
-      console.log('[FCM] Service worker registered (installing):', registration);
-    } else {
-      console.log('[FCM] Existing service worker registration found:', registration);
+      registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' });
     }
 
     // 서비스 워커가 실제로 활성(activated)될 때까지 대기
     const readyRegistration = await navigator.serviceWorker.ready;
-    console.log('[FCM] Service worker ready (active):', readyRegistration);
 
     // 알림 권한 요청
-    console.log('[FCM] Requesting Notification permission...');
     const permission = await Notification.requestPermission();
-    
+
     if (permission === 'granted') {
-      console.log('[FCM] Notification permission granted');
-      
-      // FCM 토큰 가져오기
-      console.log('[FCM] Requesting FCM token with explicit service worker registration (ready)...');
       const currentToken = await getToken(messagingInstance, {
         vapidKey: VAPID_KEY,
         serviceWorkerRegistration: readyRegistration,
       });
-
-      if (currentToken) {
-        console.log('[FCM] FCM token retrieved successfully:', currentToken);
-        return currentToken;
-      } else {
-        console.warn('[FCM] No registration token available. Request permission to generate one.');
-        return null;
-      }
-    } else if (permission === 'denied') {
-      console.warn('[FCM] Notification permission denied by user');
-      return null;
-    } else {
-      console.warn('[FCM] Notification permission default (not granted or denied)');
+      if (currentToken) return currentToken;
+      console.warn('[FCM] No registration token available');
       return null;
     }
+
+    console.warn(`[FCM] Notification permission: ${permission}`);
+    return null;
   } catch (error) {
     console.error('[FCM] An error occurred while retrieving token:', error);
     return null;
@@ -148,29 +122,34 @@ export const requestForToken = async (): Promise<string | null> => {
 /**
  * 포그라운드에서 메시지를 받았을 때 처리하는 함수
  * @param callback 메시지를 받았을 때 실행할 콜백 함수
+ * @returns cleanup 함수. 비동기 초기화가 필요한 경우에도 cleanup이 올바르게 작동합니다.
  */
-export const onMessageListener = (callback: (payload: any) => void): (() => void) | null => {
+export const onMessageListener = (callback: (payload: MessagePayload) => void): (() => void) => {
+  // 비동기 초기화 경로에서도 unsubscribe 가 누락되지 않도록 클로저 변수에 저장
+  let unsubscribeFn: (() => void) | null = null;
+
+  const subscribe = (instance: Messaging) => {
+    try {
+      unsubscribeFn = onMessage(instance, callback);
+    } catch (error) {
+      console.error('Error setting up message listener:', error);
+    }
+  };
+
   if (typeof window === 'undefined') {
-    return null;
+    return () => {};
   }
 
-  if (!messaging) {
-    initializeMessaging().then((messagingInstance) => {
-      if (messagingInstance) {
-        const unsubscribe = onMessage(messagingInstance, callback);
-        return unsubscribe;
-      }
+  if (messaging) {
+    subscribe(messaging);
+  } else {
+    initializeMessaging().then((instance) => {
+      if (instance) subscribe(instance);
     });
-    return null;
   }
 
-  try {
-    const unsubscribe = onMessage(messaging, callback);
-    return unsubscribe;
-  } catch (error) {
-    console.error('Error setting up message listener:', error);
-    return null;
-  }
+  // cleanup: 비동기 초기화 후에도 안전하게 unsubscribe
+  return () => { unsubscribeFn?.(); };
 };
 
 /**

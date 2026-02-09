@@ -112,7 +112,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
           setInfo(null);
 
           if (typeof window !== 'undefined') {
-            alert(lang === '코' ? '비밀번호가 성공적으로 변경되었습니다.' : 'Password updated successfully.');
+            alert(lang === 'ko' ? '비밀번호가 성공적으로 변경되었습니다.' : 'Password updated successfully.');
           }
           onSwitchType('profile');
         }

@@ -1,8 +1,22 @@
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Portfolio } from '../types';
 import { I18N } from '../constants';
 import { Calendar, CheckCircle2, ChevronRight, Trash2 } from 'lucide-react';
+import { calculateTotalInvested } from '../utils/portfolioCalculations';
+
+/** 포트폴리오 1건의 invested / profit / yieldRate 계산 */
+const calcPortfolioStats = (p: Portfolio) => {
+  const invested = calculateTotalInvested(p);
+  const profit = (p.finalSellAmount || 0) - invested;
+  const yieldRate = invested > 0 ? (profit / invested) * 100 : 0;
+  return { invested, profit, yieldRate };
+};
+
+/** 삭제 확인 다이얼로그 후 콜백 실행 */
+const confirmAndRun = (msg: string, fn: () => void) => {
+  if (window.confirm(msg)) fn();
+};
 
 interface HistoryProps {
   lang: 'ko' | 'en';
@@ -15,27 +29,30 @@ interface HistoryProps {
 const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails, onDeleteHistory, onClearHistory }) => {
   const t = I18N[lang];
 
-  // 종료일 기준 내림차순 정렬 (최근 종료된 포트폴리오가 맨 위로 오도록)
-  const sortedPortfolios = [...portfolios].sort((a, b) => {
-    const aDate = a.closedAt ? new Date(a.closedAt).getTime() : 0;
-    const bDate = b.closedAt ? new Date(b.closedAt).getTime() : 0;
-    return bDate - aDate;
-  });
+  // 종료일 기준 내림차순 정렬
+  const sortedPortfolios = useMemo(() =>
+    [...portfolios].sort((a, b) => {
+      const aDate = a.closedAt ? new Date(a.closedAt).getTime() : 0;
+      const bDate = b.closedAt ? new Date(b.closedAt).getTime() : 0;
+      return bDate - aDate;
+    }),
+    [portfolios]
+  );
 
-  // Calculate overall stats (using sorted list so it matches visible items)
-  const totalProfit = sortedPortfolios.reduce((sum, p) => {
-    const invested = p.trades.reduce((tSum, tr) => tSum + (tr.price * tr.quantity + tr.fee), 0);
-    const profit = (p.finalSellAmount || 0) - invested;
-    return sum + profit;
-  }, 0);
-
-  const averageYield = sortedPortfolios.length > 0 
-    ? sortedPortfolios.reduce((sum, p) => {
-        const invested = p.trades.reduce((tSum, tr) => tSum + (tr.price * tr.quantity + tr.fee), 0);
-        const profit = (p.finalSellAmount || 0) - invested;
-        return sum + (invested > 0 ? (profit / invested) * 100 : 0);
-      }, 0) / sortedPortfolios.length
-    : 0;
+  // 전체 통계 (한 번만 계산)
+  const { totalProfit, averageYield } = useMemo(() => {
+    let profitSum = 0;
+    let yieldSum = 0;
+    for (const p of sortedPortfolios) {
+      const { profit, yieldRate } = calcPortfolioStats(p);
+      profitSum += profit;
+      yieldSum += yieldRate;
+    }
+    return {
+      totalProfit: profitSum,
+      averageYield: sortedPortfolios.length > 0 ? yieldSum / sortedPortfolios.length : 0,
+    };
+  }, [sortedPortfolios]);
   
   return (
     <div className="space-y-10 animate-in fade-in duration-700">
@@ -47,14 +64,10 @@ const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails, onDe
         <div className="flex gap-3 flex-wrap justify-end">
           {onClearHistory && (
             <button
-              onClick={() => {
-                const msg = lang === 'ko'
-                  ? '삭제되면 되돌릴 수 없습니다. 삭제하시겠습니까?'
-                  : 'Clear all history records? This will not delete the original portfolios.';
-                if (window.confirm(msg)) {
-                  onClearHistory();
-                }
-              }}
+              onClick={() => confirmAndRun(
+                lang === 'ko' ? '삭제되면 되돌릴 수 없습니다. 삭제하시겠습니까?' : 'Clear all history records? This will not delete the original portfolios.',
+                onClearHistory,
+              )}
               className="glass px-6 py-3 rounded-full text-[11px] font-black uppercase tracking-widest text-rose-500 border border-rose-500/40 hover:bg-rose-500/10 flex flex-row items-center justify-center gap-2"
             >
               <Trash2 size={14} className="shrink-0" />
@@ -65,7 +78,11 @@ const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails, onDe
       </header>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-        <StatCard label={t.totalProfit} value={`+$${totalProfit.toLocaleString()}`} color="text-emerald-500" />
+        <StatCard
+          label={t.totalProfit}
+          value={`${totalProfit >= 0 ? '+' : '-'}$${Math.abs(totalProfit).toLocaleString()}`}
+          color={totalProfit >= 0 ? 'text-emerald-500' : 'text-rose-500'}
+        />
         <StatCard label={t.yield} value={`${averageYield.toFixed(2)}%`} color="text-blue-500" />
         <StatCard label={t.closedStrategies} value={portfolios.length.toString()} color="text-slate-500" />
       </div>
@@ -78,9 +95,7 @@ const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails, onDe
           </div>
         ) : (
           sortedPortfolios.map(p => {
-            const invested = p.trades.reduce((tSum, tr) => tSum + (tr.price * tr.quantity + tr.fee), 0);
-            const profit = (p.finalSellAmount || 0) - invested;
-            const yieldRate = invested > 0 ? (profit / invested) * 100 : 0;
+            const { invested, profit, yieldRate } = calcPortfolioStats(p);
 
             return (
               <div key={p.id} className="bg-white dark:glass p-7 rounded-[2.5rem] flex flex-col md:flex-row md:items-center justify-between gap-6 hover:translate-x-1 transition-transform border border-slate-200 dark:border-white/5 shadow-md dark:bg-slate-900/20">
@@ -129,14 +144,10 @@ const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails, onDe
                   <div className="flex items-center justify-end gap-2">
                     {onDeleteHistory && (
                       <button
-                        onClick={() => {
-                          const msg = lang === 'ko'
-                            ? '삭제되면 되돌릴 수 없습니다. 삭제하시겠습니까?'
-                            : 'Delete this history record? (This will also delete it from Supabase and cannot be undone.)';
-                          if (window.confirm(msg)) {
-                            onDeleteHistory(p.id);
-                          }
-                        }}
+                        onClick={() => confirmAndRun(
+                          lang === 'ko' ? '삭제되면 되돌릴 수 없습니다. 삭제하시겠습니까?' : 'Delete this history record? (This will also delete it from Supabase and cannot be undone.)',
+                          () => onDeleteHistory(p.id),
+                        )}
                         className="flex items-center gap-1 text-[9px] font-bold text-rose-500 uppercase tracking-widest hover:text-rose-400"
                       >
                         <Trash2 size={10} /> {lang === 'ko' ? '기록 삭제' : 'Delete'}

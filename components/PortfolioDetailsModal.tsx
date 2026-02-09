@@ -2,9 +2,34 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Portfolio, Trade } from '../types';
 import { X, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
-import { PAID_STOCKS, CUSTOM_GRADIENT_LOGOS, I18N } from '../constants';
+import { PAID_STOCKS, I18N } from '../constants';
 import { fetchStockPrices } from '../services/stockService';
+import { calculateHoldings } from '../utils/portfolioCalculations';
 import StockLogo from './StockLogo';
+
+// ---------------------------------------------------------------------------
+// 순수 헬퍼 (렌더링 외부 — 매 렌더마다 재생성 방지)
+// ---------------------------------------------------------------------------
+
+/** YYYY-MM-DD 날짜 키 생성 (로컬 타임 기준) */
+const getDateKey = (date: Date): string => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+/** YYYY-MM-DD 문자열 → 로컬 Date 변환 */
+const dateKeyToLocalDate = (dateKey: string): Date => {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+};
+
+/** 요일 헤더 (i18n) */
+const WEEKDAY_HEADERS: Record<'ko' | 'en', string[]> = {
+  ko: ['월', '화', '수', '목', '금'],
+  en: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+};
 
 interface PortfolioDetailsModalProps {
   lang: 'ko' | 'en';
@@ -15,20 +40,6 @@ interface PortfolioDetailsModalProps {
 }
 
 const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, portfolio, onClose, onDeleteTrade, isHistory }) => {
-  // Helper for consistent date keys (YYYY-MM-DD) based on Local Time
-  const getDateKey = (date: Date) => {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  };
-
-  // Parse YYYY-MM-DD into a local Date (avoid UTC parsing quirks)
-  const dateKeyToLocalDate = (dateKey: string): Date => {
-    const [y, m, d] = dateKey.split('-').map(Number);
-    return new Date(y, (m || 1) - 1, d || 1);
-  };
-
   const [selectedDate, setSelectedDate] = useState<string>(getDateKey(new Date()));
   const [currentMonth, setCurrentMonth] = useState(new Date()); 
 
@@ -37,12 +48,10 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
   const [stockPrices, setStockPrices] = useState<Record<string, number>>({});
   const isReadOnly = isHistory ?? !!portfolio.isClosed;
 
-  // History/closed portfolio: 기본 선택 날짜를 "마지막 거래일"로 맞춰서
-  // 최종 정산 매도(있다면)가 바로 보이도록 함.
+  // History/closed portfolio: 기본 선택 날짜를 "마지막 거래일"로 맞춤
   const latestTradeDate = useMemo(() => {
-    const dates = portfolio.trades.map(t => t.date).filter(Boolean);
+    const dates = portfolio.trades.map(tr => tr.date).filter(Boolean);
     if (dates.length === 0) return null;
-    // YYYY-MM-DD는 문자열 비교로도 정렬 가능하지만, 안전하게 Date로 비교
     return dates.reduce((max, cur) => (cur > max ? cur : max), dates[0]);
   }, [portfolio.trades]);
 
@@ -52,67 +61,31 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
     setCurrentMonth(dateKeyToLocalDate(latestTradeDate));
   }, [isReadOnly, latestTradeDate]);
 
-  // Group holdings by stock (진행 중인 포트폴리오에서만 표시)
-  const holdingsSummary = useMemo(() => {
-    if (isReadOnly) return [];
-    const summary: Record<string, { quantity: number; totalCost: number }> = {};
-    
-    portfolio.trades.forEach(tr => {
-      if (!summary[tr.stock]) {
-        summary[tr.stock] = { quantity: 0, totalCost: 0 };
-      }
-      if (tr.type === 'buy') {
-        summary[tr.stock].quantity += tr.quantity;
-        summary[tr.stock].totalCost += (tr.price * tr.quantity + tr.fee);
-      } else {
-        summary[tr.stock].quantity -= tr.quantity;
-        // 매도 시에는 평균 단가를 유지하기 위해 비례적으로 차감
-        const avgPrice = summary[tr.stock].totalCost / (summary[tr.stock].quantity + tr.quantity);
-        summary[tr.stock].totalCost = summary[tr.stock].quantity * avgPrice;
-      }
-    });
+  // 보유 자산 요약 (calculateHoldings 공용 유틸 사용)
+  const holdings = useMemo(() => isReadOnly ? [] : calculateHoldings(portfolio), [portfolio, isReadOnly]);
 
-    return Object.entries(summary)
-      .filter(([_, data]) => data.quantity > 0)
-      .map(([ticker, data]) => ({
-        ticker,
-        quantity: data.quantity,
-        avgPrice: data.totalCost / data.quantity,
-        valuation: data.quantity * (stockPrices[ticker] || 0)
-      }));
-  }, [portfolio.trades, stockPrices, isReadOnly]);
+  const holdingsSummary = useMemo(() =>
+    holdings.map(h => ({
+      ticker: h.stock,
+      quantity: h.quantity,
+      avgPrice: h.avgPrice,
+      valuation: h.quantity * (stockPrices[h.stock] || 0),
+    })),
+    [holdings, stockPrices]
+  );
 
-  // 주가 데이터 가져오기 (진행 중인 포트폴리오의 보유 자산 요약용, 의존성: 원시/식별자만)
+  // 주가 데이터 가져오기 (진행 중인 포트폴리오의 보유 자산 요약용)
   useEffect(() => {
-    if (isReadOnly) return;
-    const fetchPrices = async () => {
-      const holdingsEntries = Object.entries(
-        portfolio.trades.reduce((acc, tr) => {
-          if (tr.type === 'buy') {
-            acc[tr.stock] = (acc[tr.stock] || 0) + tr.quantity;
-          } else {
-            acc[tr.stock] = (acc[tr.stock] || 0) - tr.quantity;
-          }
-          return acc;
-        }, {} as Record<string, number>)
-      ) as [string, number][];
-
-      const holdings = holdingsEntries
-        .filter(([, qty]) => qty > 0)
-        .map(([ticker]) => ticker);
-
-      if (holdings.length > 0) {
-        const prices = await fetchStockPrices(holdings);
-        const priceMap: Record<string, number> = {};
-        Object.entries(prices).forEach(([symbol, data]) => {
-          priceMap[symbol] = data.price;
-        });
-        setStockPrices(priceMap);
+    if (isReadOnly || holdings.length === 0) return;
+    const symbols = holdings.map(h => h.stock);
+    fetchStockPrices(symbols).then(prices => {
+      const priceMap: Record<string, number> = {};
+      for (const [symbol, data] of Object.entries(prices)) {
+        priceMap[symbol] = data.price;
       }
-    };
-
-    fetchPrices();
-  }, [portfolio.id, portfolio.trades.length, isReadOnly]);
+      setStockPrices(priceMap);
+    });
+  }, [portfolio.id, holdings.length, isReadOnly]);
 
   const calendarGrid = useMemo(() => {
     const year = currentMonth.getFullYear();
@@ -162,26 +135,17 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
   const selectedDayTrades = tradesForDay(selectedDate);
 
   const renderStockIcon = (ticker: string, size: 'sm' | 'md' = 'sm', index: number = 0) => {
-    const info = CUSTOM_GRADIENT_LOGOS[ticker] || { gradient: 'linear-gradient(135deg, #2563eb, #1e40af)', label: 'STOCK' };
     const sizeClasses = size === 'sm' ? 'w-8 h-8' : 'w-10 h-10';
-    const textClasses = size === 'sm' ? 'text-[7px]' : 'text-[10px]';
-    const labelClasses = size === 'sm' ? 'text-[4px]' : 'text-[6px]';
 
-    const stackStyle: React.CSSProperties = size === 'sm' ? {
-      marginLeft: index > 0 ? '-1.2rem' : '0',
-      zIndex: 10 + index, 
-      transform: `rotate(${index * 3}deg) translateY(${index * 1}px)`,
-    } : {};
+    const stackStyle: React.CSSProperties = size === 'sm' && index > 0
+      ? { marginLeft: '-1.2rem', zIndex: 10 + index, transform: `rotate(${index * 3}deg) translateY(${index}px)` }
+      : {};
 
     return (
-      <div 
-        key={`${ticker}-${index}`}
-        className={`relative ${sizeClasses} flex-shrink-0`}
-        style={{ ...stackStyle }}
-      >
+      <div key={`${ticker}-${index}`} className={`relative ${sizeClasses} flex-shrink-0`} style={stackStyle}>
         <StockLogo
           ticker={ticker}
-          size={size === 'sm' ? 'sm' : 'md'}
+          size={size}
           shape="circle"
           paidAccent={PAID_STOCKS.includes(ticker)}
           showFallbackText
@@ -264,7 +228,7 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
               </div>
 
               <div className="grid grid-cols-5 mb-4">
-                {['월','화','수','목','금'].map(d => (
+                {WEEKDAY_HEADERS[lang].map(d => (
                   <div key={d} className="text-center text-[10px] font-black text-slate-500 uppercase py-2 tracking-widest">{d}</div>
                 ))}
               </div>

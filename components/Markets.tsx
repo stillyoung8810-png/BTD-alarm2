@@ -6,7 +6,6 @@ import {
   CartesianGrid, 
   Tooltip, 
   ResponsiveContainer, 
-  AreaChart, 
   Area,
   Line,
   ComposedChart
@@ -21,47 +20,51 @@ import StockLogo from './StockLogo';
 import HoverTip from './HoverTip';
 import InfoModal from './InfoModal';
 
+// ---------------------------------------------------------------------------
+// 날짜 포맷 헬퍼 (CustomTooltip 용)
+// ---------------------------------------------------------------------------
+const formatDateKR = (raw: string | undefined): string => {
+  if (!raw) return '';
+  try {
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return raw;
+    return d.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+  } catch {
+    return raw;
+  }
+};
+
+// ---------------------------------------------------------------------------
+// 1배수 종목 상수 (모듈 레벨)
+// ---------------------------------------------------------------------------
+const ONE_X_STOCKS: readonly string[] = [
+  'SPY', 'QQQ', 'SOXX', 'USD', 'STRC', 'BIL', 'ICSH', 'SGOV',
+  'TSLA', 'NVDA', 'GOOGL', 'PLTR', 'COIN', 'MSTR', 'BMNR',
+] as const;
+
+// ---------------------------------------------------------------------------
+// Recharts Tooltip Payload 타입
+// ---------------------------------------------------------------------------
+interface TooltipPayloadItem {
+  dataKey: string;
+  value: number;
+  payload?: { date?: string };
+}
+
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: TooltipPayloadItem[];
+  label?: string;
+}
+
 // Custom Tooltip 컴포넌트
-const CustomTooltip = ({ active, payload, label }: any) => {
+const CustomTooltip: React.FC<CustomTooltipProps> = ({ active, payload, label }) => {
   if (!active || !payload || !payload.length) return null;
 
-  // payload에서 데이터 추출
-  const priceData = payload.find((p: any) => p.dataKey === 'price');
-  
-  // 날짜 포맷팅 (payload에서 date 필드 추출 또는 label 사용)
-  let formattedDate = '';
-  if (priceData?.payload?.date) {
-    try {
-      const date = new Date(priceData.payload.date);
-      if (!isNaN(date.getTime())) {
-        formattedDate = date.toLocaleDateString('ko-KR', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric'
-        });
-      }
-    } catch {
-      // 날짜 파싱 실패 시 label 사용
-      formattedDate = label || '';
-    }
-  } else if (label) {
-    try {
-      const date = new Date(label);
-      if (!isNaN(date.getTime())) {
-        formattedDate = date.toLocaleDateString('ko-KR', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric'
-        });
-      } else {
-        formattedDate = label;
-      }
-    } catch {
-      formattedDate = label;
-    }
-  }
-  const ma20Data = payload.find((p: any) => p.dataKey === 'ma20');
-  const ma60Data = payload.find((p: any) => p.dataKey === 'ma60');
+  const priceData = payload.find((p) => p.dataKey === 'price');
+  const formattedDate = formatDateKR(priceData?.payload?.date ?? label);
+  const ma20Data = payload.find((p) => p.dataKey === 'ma20');
+  const ma60Data = payload.find((p) => p.dataKey === 'ma60');
 
   const price = priceData?.value || 0;
   const ma20 = ma20Data?.value || 0;
@@ -104,6 +107,178 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   );
 };
 
+// ---------------------------------------------------------------------------
+// 토글 스위치 (보유 종목만 보기, 1배수만 보기 공용)
+// ---------------------------------------------------------------------------
+interface ToggleSwitchProps {
+  label: string;
+  checked: boolean;
+  onChange: () => void;
+}
+
+const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ label, checked, onChange }) => (
+  <div className="flex items-center gap-2">
+    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+      {label}
+    </span>
+    <button
+      onClick={onChange}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${
+        checked
+          ? 'bg-blue-500 shadow-lg shadow-blue-500/50'
+          : 'bg-slate-600'
+      }`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${
+          checked ? 'translate-x-6' : 'translate-x-1'
+        }`}
+      />
+    </button>
+  </div>
+);
+
+// ---------------------------------------------------------------------------
+// StockCard 하위 컴포넌트
+// ---------------------------------------------------------------------------
+/** 채권형 ETF 목록 */
+const BOND_ETFS = ['STRC', 'SGOV', 'BIL', 'ICSH'] as const;
+
+interface StockCardProps {
+  ticker: string;
+  data: StockData | undefined;
+  isSelected: boolean;
+  isLocked: boolean;
+  isPaidOnly: boolean;
+  lang: 'ko' | 'en';
+  lockedTooltip: string;
+  isTouch: boolean;
+  onSelect: (ticker: string) => void;
+  onLockedTouch: () => void;
+}
+
+const StockCard: React.FC<StockCardProps> = ({
+  ticker, data, isSelected, isLocked, isPaidOnly, lang,
+  lockedTooltip, isTouch, onSelect, onLockedTouch,
+}) => {
+  const rsiValue = data?.rsi || 50;
+  const rsiBarValue = isLocked ? 0 : rsiValue;
+  const price = data?.price || 0;
+  const changePct = data?.changePercent || 0;
+  const isPositive = changePct >= 0;
+  const isBondEtf = (BOND_ETFS as readonly string[]).includes(ticker);
+  const paidAccent = isPaidOnly && !isLocked;
+
+  const baseRsiColor =
+    rsiValue > 70 ? 'text-rose-500' : rsiValue < 30 ? 'text-emerald-500' : 'text-blue-400';
+  const rsiColor = isBondEtf ? 'text-slate-400' : baseRsiColor;
+  const baseRsiBg =
+    rsiValue > 70 ? 'bg-rose-500' : rsiValue < 30 ? 'bg-emerald-500' : 'bg-blue-500';
+  const rsiBg = isLocked ? 'bg-slate-500/30' : isBondEtf ? 'bg-slate-500/50' : baseRsiBg;
+
+  return (
+    <button
+      onClick={() => {
+        if (isLocked) { if (isTouch) onLockedTouch(); return; }
+        onSelect(ticker);
+      }}
+      className={`relative flex-shrink-0 w-48 bg-white light-card-depth dark:bg-[#080B15] p-6 rounded-[2rem] border transition-all duration-300 text-left group flex flex-col gap-5 snap-center ${
+        isLocked
+          ? 'border-slate-200 dark:border-white/5 opacity-55 grayscale cursor-not-allowed'
+          : 'cursor-grab active:cursor-grabbing'
+      } ${
+        isSelected && !isLocked
+          ? 'border-blue-500 ring-4 ring-blue-500/15 shadow-xl -translate-y-2'
+          : 'border-slate-200 dark:border-white/5 shadow-md hover:border-slate-300 dark:hover:border-white/10'
+      }`}
+    >
+      {/* Lock 배지 */}
+      {isLocked && (
+        <div className="absolute top-4 right-4">
+          <HoverTip text={lockedTooltip}>
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-200/60 dark:bg-white/10 border border-slate-300/40 dark:border-white/10 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">
+              <Lock size={12} /><span>PRO+</span>
+            </span>
+          </HoverTip>
+        </div>
+      )}
+
+      {/* 로고 + 티커 */}
+      <div className="flex items-center gap-3">
+        <div className={`transition-all ${isSelected ? 'scale-110' : 'opacity-80'}`}>
+          <StockLogo ticker={ticker} size="md" shape="squircle" paidAccent={paidAccent} dimmed={isLocked} className="w-10 h-10 shadow-lg" />
+        </div>
+        <div className="flex flex-col">
+          <span className={`font-black text-sm transition-colors ${isSelected && !isLocked ? 'text-blue-500' : 'text-slate-900 dark:text-white'}`}>
+            {ticker}
+          </span>
+          {isLocked && (
+            <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-600">
+              <Lock size={12} /> PRO/PREMIUM 전용
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* 가격 */}
+      <div className="space-y-4">
+        <div>
+          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Price</span>
+          {isLocked ? (
+            <p className="text-lg font-black text-slate-400 dark:text-slate-600 tracking-tighter">—</p>
+          ) : (
+            <>
+              <p className="text-lg font-black dark:text-white tracking-tighter">${price.toFixed(2)}</p>
+              <p className={`text-[10px] font-black mt-1 flex items-center gap-1 uppercase ${isPositive ? 'text-emerald-500' : 'text-rose-500'}`}>
+                {isPositive ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                {isPositive ? '+' : ''}{changePct.toFixed(2)}%
+              </p>
+            </>
+          )}
+        </div>
+
+        {/* RSI */}
+        <div className="pt-3 border-t border-slate-100 dark:border-white/5">
+          <div className="flex justify-between items-center mb-1.5">
+            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">
+              <span>RSI (14)</span>
+              {isBondEtf && (
+                <span
+                  className="inline-flex items-center justify-center rounded-full bg-amber-500/10 border border-amber-400/40 px-1.5 py-0.5 text-[8px] font-bold text-amber-400"
+                  title={lang === 'ko'
+                    ? '해당 종목은 초단기/채권형 ETF로, 가격 변동폭이 작아 RSI 지표의 신뢰도가 낮을 수 있습니다.'
+                    : 'This is a short-duration/bond ETF; very small price moves can make RSI less reliable.'
+                  }
+                >
+                  ⚠︎ {lang === 'ko' ? '주의' : 'Info'}
+                </span>
+              )}
+            </span>
+            <div className="flex items-center gap-1">
+              {isLocked ? (
+                <span className="text-[10px] font-black text-slate-400 dark:text-slate-600">—</span>
+              ) : (
+                <span className={`text-[10px] font-black ${rsiColor}`}>{Math.round(rsiValue)}</span>
+              )}
+              {isBondEtf && (
+                <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">
+                  {lang === 'ko' ? '참고용' : 'Info Only'}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="w-full h-1 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-1000 ${rsiBg}`}
+              style={{ width: `${Math.min(Math.max(rsiBarValue, 0), 100)}%` }}
+            />
+          </div>
+        </div>
+      </div>
+    </button>
+  );
+};
+
 interface MarketsProps {
   lang: 'ko' | 'en';
   portfolios?: Portfolio[];
@@ -133,13 +308,7 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
     );
   }, []);
 
-  // 1배수 종목 정의
-  // - 기존: 인덱스/채권/현금성 위주
-  // - 추가: 1배수 토글에서도 개별 주식(유료 종목) 표시 요청 반영
-  const oneXStocks = useMemo(
-    () => ['SPY', 'QQQ', 'SOXX', 'USD', 'STRC', 'BIL', 'ICSH', 'SGOV', 'TSLA', 'NVDA', 'GOOGL', 'PLTR', 'COIN', 'MSTR', 'BMNR'],
-    []
-  );
+  // 1배수 종목 → 모듈 상수 ONE_X_STOCKS 참조
 
   // 마켓 상태 계산
   const marketStatus = useMemo(() => getMarketStatus(lang), [lang]);
@@ -172,11 +341,11 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
     
     // 1배수만 보기 필터
     if (show1xOnly) {
-      filtered = filtered.filter(ticker => oneXStocks.includes(ticker));
+      filtered = filtered.filter(ticker => ONE_X_STOCKS.includes(ticker));
     }
     
     return filtered;
-  }, [showHoldingsOnly, show1xOnly, holdingsSet, oneXStocks]);
+  }, [showHoldingsOnly, show1xOnly, holdingsSet]);
 
   // 무한 루프용 3중 리스트 (끝/처음 자연 연결). 보유 종목만 보기 시에는 중복 노출 방지를 위해 3중 반복하지 않음
   const loopEnabled = filteredStocks.length >= 2 && !showHoldingsOnly;
@@ -267,31 +436,23 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
     loadChartData();
   }, [selectedStock, lang, canAccessPaidStocks]);
 
-  // 차트 Y축 범위 계산 함수
-  const calculateYAxisDomain = () => {
-    if (chartData.length === 0) return ['auto', 'auto'];
-    
-    // 모든 가격 데이터 수집 (price, ma20, ma60)
+  // 차트 Y축 범위 (useMemo — chartData가 바뀔 때만 재계산)
+  const yAxisDomain = useMemo(() => {
+    if (chartData.length === 0) return ['auto', 'auto'] as const;
+
     const allValues: number[] = [];
-    chartData.forEach(item => {
+    for (const item of chartData) {
       if (item.price > 0) allValues.push(item.price);
       if (item.ma20 > 0) allValues.push(item.ma20);
       if (item.ma60 > 0) allValues.push(item.ma60);
-    });
-    
-    if (allValues.length === 0) return ['auto', 'auto'];
-    
+    }
+    if (allValues.length === 0) return ['auto', 'auto'] as const;
+
     const dataMin = Math.min(...allValues);
     const dataMax = Math.max(...allValues);
-    const dataRange = dataMax - dataMin;
-    
-    // 10% 패딩 추가
-    const padding = dataRange * 0.1;
-    const min = dataMin - padding;
-    const max = dataMax + padding;
-    
-    return [min, max];
-  };
+    const padding = (dataMax - dataMin) * 0.1;
+    return [dataMin - padding, dataMax + padding] as const;
+  }, [chartData]);
 
   const scroll = (direction: 'left' | 'right') => {
     if (scrollRef.current) {
@@ -395,7 +556,7 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
                   interval={Math.floor(chartData.length / 6)}
                 />
                 <YAxis 
-                  domain={calculateYAxisDomain()}
+                  domain={yAxisDomain as [number | string, number | string]}
                   allowDataOverflow={true}
                   hide 
                 />
@@ -454,45 +615,17 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
               </h3>
             </div>
             {/* 보유 종목 필터 스위치 */}
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                {lang === 'ko' ? '보유 종목만 보기' : 'Holdings Only'}
-              </span>
-              <button
-                onClick={() => setShowHoldingsOnly(!showHoldingsOnly)}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${
-                  showHoldingsOnly 
-                    ? 'bg-blue-500 shadow-lg shadow-blue-500/50' 
-                    : 'bg-slate-600'
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${
-                    showHoldingsOnly ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-                />
-              </button>
-            </div>
+            <ToggleSwitch
+              label={lang === 'ko' ? '보유 종목만 보기' : 'Holdings Only'}
+              checked={showHoldingsOnly}
+              onChange={() => setShowHoldingsOnly(!showHoldingsOnly)}
+            />
             {/* 1배수만 보기 필터 스위치 */}
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                {lang === 'ko' ? '1배수만 보기' : '1x Only'}
-              </span>
-              <button
-                onClick={() => setShow1xOnly(!show1xOnly)}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${
-                  show1xOnly 
-                    ? 'bg-blue-500 shadow-lg shadow-blue-500/50' 
-                    : 'bg-slate-600'
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${
-                    show1xOnly ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-                />
-              </button>
-            </div>
+            <ToggleSwitch
+              label={lang === 'ko' ? '1배수만 보기' : '1x Only'}
+              checked={show1xOnly}
+              onChange={() => setShow1xOnly(!show1xOnly)}
+            />
           </div>
           <div className="flex items-center gap-2.5">
             <button 
@@ -524,152 +657,21 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
               </div>
             ) : (
               loopedStocks.map((ticker, idx) => {
-                const isSelected = selectedStock === ticker;
                 const isPaidOnly = PAID_STOCKS.includes(ticker);
-                const isLocked = isPaidOnly && !canAccessPaidStocks;
-                const data = stockData[ticker];
-                const rsiValue = data?.rsi || 50;
-                const rsiBarValue = isLocked ? 0 : rsiValue;
-                const price = data?.price || 0;
-                const changePct = data?.changePercent || 0;
-                const isPositive = changePct >= 0;
-                const isBondEtf = ['STRC', 'SGOV', 'BIL', 'ICSH'].includes(ticker);
-                const baseRsiColor =
-                  rsiValue > 70 ? 'text-rose-500' : rsiValue < 30 ? 'text-emerald-500' : 'text-blue-400';
-                const rsiColor = isBondEtf ? 'text-slate-400' : baseRsiColor;
-                const baseRsiBg =
-                  rsiValue > 70 ? 'bg-rose-500' : rsiValue < 30 ? 'bg-emerald-500' : 'bg-blue-500';
-                const rsiBg = isLocked ? 'bg-slate-500/30' : isBondEtf ? 'bg-slate-500/50' : baseRsiBg;
-                const paidAccent = isPaidOnly && !isLocked;
-
                 return (
-                  <button
+                  <StockCard
                     key={`${ticker}-${idx}`}
-                    onClick={() => {
-                      if (isLocked) {
-                        if (isTouch) setProInfoOpen(true);
-                        return;
-                      }
-                      setSelectedStock(ticker);
-                    }}
-                    className={`relative flex-shrink-0 w-48 bg-white light-card-depth dark:bg-[#080B15] p-6 rounded-[2rem] border transition-all duration-300 text-left group flex flex-col gap-5 snap-center ${
-                      isLocked
-                        ? 'border-slate-200 dark:border-white/5 opacity-55 grayscale cursor-not-allowed'
-                        : 'cursor-grab active:cursor-grabbing'
-                    } ${
-                      isSelected && !isLocked
-                        ? 'border-blue-500 ring-4 ring-blue-500/15 shadow-xl -translate-y-2'
-                        : 'border-slate-200 dark:border-white/5 shadow-md hover:border-slate-300 dark:hover:border-white/10'
-                    }`}
-                  >
-                    {isLocked && (
-                      <div className="absolute top-4 right-4">
-                        <HoverTip text={lockedTooltip}>
-                          <span className="inline-flex items-center gap-1 rounded-full bg-slate-200/60 dark:bg-white/10 border border-slate-300/40 dark:border-white/10 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">
-                            <Lock size={12} />
-                            <span>PRO+</span>
-                          </span>
-                        </HoverTip>
-                      </div>
-                    )}
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`transition-all ${isSelected ? 'scale-110' : 'opacity-80'}`}
-                      >
-                        <StockLogo
-                          ticker={ticker}
-                          size="md"
-                          shape="squircle"
-                          paidAccent={paidAccent}
-                          dimmed={isLocked}
-                          className="w-10 h-10 shadow-lg"
-                        />
-                      </div>
-                      <div className="flex flex-col">
-                        <span
-                          className={`font-black text-sm transition-colors ${
-                            isSelected && !isLocked ? 'text-blue-500' : 'text-slate-900 dark:text-white'
-                          }`}
-                        >
-                          {ticker}
-                        </span>
-                        {isLocked && (
-                          <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-600">
-                            <Lock size={12} />
-                            PRO/PREMIUM 전용
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <div>
-                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">
-                          Price
-                        </span>
-                        {isLocked ? (
-                          <p className="text-lg font-black text-slate-400 dark:text-slate-600 tracking-tighter">
-                            —
-                          </p>
-                        ) : (
-                          <>
-                            <p className="text-lg font-black dark:text-white tracking-tighter">
-                              ${price.toFixed(2)}
-                            </p>
-                            <p
-                              className={`text-[10px] font-black mt-1 flex items-center gap-1 uppercase ${
-                                isPositive ? 'text-emerald-500' : 'text-rose-500'
-                              }`}
-                            >
-                              {isPositive ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                              {isPositive ? '+' : ''}
-                              {changePct.toFixed(2)}%
-                            </p>
-                          </>
-                        )}
-                      </div>
-
-                      <div className="pt-3 border-t border-slate-100 dark:border-white/5">
-                        <div className="flex justify-between items-center mb-1.5">
-                          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                            <span>RSI (14)</span>
-                            {isBondEtf && (
-                              <span
-                                className="inline-flex items-center justify-center rounded-full bg-amber-500/10 border border-amber-400/40 px-1.5 py-0.5 text-[8px] font-bold text-amber-400"
-                                title={
-                                  lang === 'ko'
-                                    ? '해당 종목은 초단기/채권형 ETF로, 가격 변동폭이 작아 RSI 지표의 신뢰도가 낮을 수 있습니다.'
-                                    : 'This is a short-duration/bond ETF; very small price moves can make RSI less reliable.'
-                                }
-                              >
-                                ⚠︎ {lang === 'ko' ? '주의' : 'Info'}
-                              </span>
-                            )}
-                          </span>
-                          <div className="flex items-center gap-1">
-                            {isLocked ? (
-                              <span className="text-[10px] font-black text-slate-400 dark:text-slate-600">—</span>
-                            ) : (
-                              <span className={`text-[10px] font-black ${rsiColor}`}>
-                                {Math.round(rsiValue)}
-                              </span>
-                            )}
-                            {isBondEtf && (
-                              <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">
-                                {lang === 'ko' ? '참고용' : 'Info Only'}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="w-full h-1 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all duration-1000 ${rsiBg}`}
-                            style={{ width: `${Math.min(Math.max(rsiBarValue, 0), 100)}%` }}
-                          ></div>
-                        </div>
-                      </div>
-                    </div>
-                  </button>
+                    ticker={ticker}
+                    data={stockData[ticker]}
+                    isSelected={selectedStock === ticker}
+                    isLocked={isPaidOnly && !canAccessPaidStocks}
+                    isPaidOnly={isPaidOnly}
+                    lang={lang}
+                    lockedTooltip={lockedTooltip}
+                    isTouch={isTouch}
+                    onSelect={setSelectedStock}
+                    onLockedTouch={() => setProInfoOpen(true)}
+                  />
                 );
               })
             )}

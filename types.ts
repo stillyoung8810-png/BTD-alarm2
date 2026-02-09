@@ -9,7 +9,6 @@ export interface AlarmConfig {
   enabled: boolean;
   selectedHours: string[]; // e.g., ["15:00", "16:00"] (최대 2개)
   timezone?: string; // IANA timezone (e.g., "Asia/Seoul")
-  // mode와 repeatCount는 제거됨 (간소화)
 }
 
 export interface Strategy {

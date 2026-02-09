@@ -226,24 +226,11 @@ export function formatPortfolioDailyExecutionBlock(
     return lines.join('\n');
   }
 
-  if (multiSplitExecutionData && multiSplitPhase === 'first') {
-    if (multiSplitExecutionData.locBuy1) {
+  // first / second phase 공통 처리 (first일 때만 locBuy1 추가)
+  if (multiSplitExecutionData && (multiSplitPhase === 'first' || multiSplitPhase === 'second')) {
+    if (multiSplitPhase === 'first' && multiSplitExecutionData.locBuy1) {
       lines.push(linePriceQty(s.locBuy1, multiSplitExecutionData.locBuy1.price, multiSplitExecutionData.locBuy1.quantity, unit));
     }
-    if (multiSplitExecutionData.locBuy2) {
-      lines.push(linePriceQty(s.locBuy2, multiSplitExecutionData.locBuy2!.price, multiSplitExecutionData.locBuy2!.quantity, unit));
-    }
-    if (multiSplitExecutionData.locSell) {
-      lines.push(linePriceQty(s.locSell, multiSplitExecutionData.locSell.price, multiSplitExecutionData.locSell.quantity, unit));
-    }
-    if (multiSplitExecutionData.limitSell) {
-      lines.push(linePriceQty(s.limitSell, multiSplitExecutionData.limitSell.price, multiSplitExecutionData.limitSell.quantity, unit));
-    }
-    if (lines.length <= 3) lines.push(`- ${s.noOrder}`);
-    return lines.join('\n');
-  }
-
-  if (multiSplitExecutionData && multiSplitPhase === 'second') {
     if (multiSplitExecutionData.locBuy2) {
       lines.push(linePriceQty(s.locBuy2, multiSplitExecutionData.locBuy2.price, multiSplitExecutionData.locBuy2.quantity, unit));
     }

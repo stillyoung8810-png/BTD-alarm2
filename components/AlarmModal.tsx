@@ -6,17 +6,67 @@ import Toggle from './Toggle';
 import { useTossApp } from '../contexts/TossAppContext';
 import CustomDropdown from './CustomDropdown';
 
-// 토스 앱 환경에서만 Menu 컴포넌트 import
-let Menu: any = null;
-if (typeof window !== 'undefined') {
-  try {
-    const tossMobile = require('@toss/tds-mobile');
-    Menu = tossMobile.Menu;
-  } catch (e) {
-    // @toss/tds-mobile이 없거나 로드 실패 시 무시
-  }
+// 토스 앱 환경에서만 Menu 컴포넌트 동적 로드
+// NOTE: @toss/tds-mobile 은 선택적 의존성으로, 설치되지 않은 환경에서는 무시됩니다.
+// require() 사용은 동기적 조건부 의존성 탐지를 위한 의도적 선택입니다.
+/* eslint-disable @typescript-eslint/no-var-requires */
+interface TossMenuProps { open: boolean; onOpen: () => void; onClose: () => void; placement?: string; children: React.ReactNode }
+interface TossMenuComponent extends React.FC<TossMenuProps> {
+  Trigger: React.FC<{ children: React.ReactNode }>;
+  Dropdown: React.FC<{ children: React.ReactNode }>;
+  Header: React.FC<{ children: React.ReactNode }>;
+  DropdownCheckItem: React.FC<{ checked: boolean; onCheckedChange: (checked: boolean) => void; children: React.ReactNode }>;
 }
+let TossMenu: TossMenuComponent | null = null;
+if (typeof window !== 'undefined') {
+  try { TossMenu = (require('@toss/tds-mobile') as { Menu: TossMenuComponent }).Menu; } catch { /* not available */ }
+}
+/* eslint-enable @typescript-eslint/no-var-requires */
 
+// ---------------------------------------------------------------------------
+// 상수 (모듈 레벨 — 렌더마다 재생성 방지)
+// ---------------------------------------------------------------------------
+const MINUTE_STEP = 10;
+/** 시간 옵션: 00-11 */
+const HOURS = Array.from({ length: 12 }, (_, i) => i.toString().padStart(2, '0'));
+/** 분 옵션: 00, 10, 20, 30, 40, 50 */
+const MINUTES = Array.from({ length: 60 / MINUTE_STEP }, (_, i) => (i * MINUTE_STEP).toString().padStart(2, '0'));
+
+// ---------------------------------------------------------------------------
+// 시간 변환 유틸 (순수 함수 — 컴포넌트 외부)
+// ---------------------------------------------------------------------------
+
+/** AM/PM + 0-11시 → 24시간 형식 문자열 */
+const convertTo24Hour = (period: 'AM' | 'PM', hour: string): string => {
+  const h = parseInt(hour, 10);
+  if (period === 'AM') return hour.padStart(2, '0');
+  return h === 0 ? '12' : (h + 12).toString().padStart(2, '0');
+};
+
+/** 24시간 형식 → AM/PM 표시 문자열 */
+const formatToAMPM = (time24: string, lang: 'ko' | 'en'): string => {
+  const [hourStr, minuteStr] = time24.split(':');
+  const hour = parseInt(hourStr, 10);
+  const isPM = hour >= 12;
+  const display = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+  const hh = display.toString().padStart(2, '0');
+  if (lang === 'ko') return `${isPM ? '오후' : '오전'} ${hour === 0 ? '00' : hh}:${minuteStr}`;
+  return `${display}:${minuteStr} ${isPM ? 'PM' : 'AM'}`;
+};
+
+// ---------------------------------------------------------------------------
+// 공용 선택 버튼 스타일
+// ---------------------------------------------------------------------------
+const selectableBtnClass = (active: boolean) =>
+  `py-3 rounded-xl text-xs font-black transition-all ${
+    active
+      ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/30'
+      : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-white/5'
+  }`;
+
+// ---------------------------------------------------------------------------
+// 타입
+// ---------------------------------------------------------------------------
 interface AlarmModalProps {
   lang: 'ko' | 'en';
   portfolio: Portfolio;
@@ -24,9 +74,6 @@ interface AlarmModalProps {
   onSave: (config: AlarmConfig) => void;
   maxAlarms: number;
 }
-
-// 유료화 대비 확장 가능한 상수
-const MINUTE_STEP = 10; // 무료: 10분 단위, 프리미엄: 1분 단위로 변경 가능
 
 const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSave, maxAlarms }) => {
   const { isInTossApp } = useTossApp();
@@ -50,11 +97,7 @@ const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSav
   const [selectedMinute, setSelectedMinute] = useState<string>('00');
   const [minuteMenuOpen, setMinuteMenuOpen] = useState(false);
 
-  // Hour 옵션: 0-11
-  const hours = Array.from({ length: 12 }).map((_, i) => i.toString().padStart(2, '0'));
-  
-  // Minute 옵션: 00, 10, 20, 30, 40, 50
-  const minutes = Array.from({ length: 6 }).map((_, i) => (i * MINUTE_STEP).toString().padStart(2, '0'));
+  // HOURS / MINUTES 는 모듈 레벨 상수 사용 (렌더마다 재생성 방지)
 
   // 기존 선택된 시간을 로드할 때 AM/PM과 hour를 추출 (동일 값 반복 setState 방지 → 무한루프 방지)
   const prevSelectedHoursKeyRef = React.useRef<string | null>(null);
@@ -79,34 +122,7 @@ const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSav
     setSelectedMinute(minuteStr || '00');
   }, [selectedHours]);
 
-  // AM/PM과 hour(0-11)를 24시간 형식으로 변환
-  const convertTo24Hour = (period: 'AM' | 'PM', hour: string): string => {
-    const hourNum = parseInt(hour, 10);
-    if (period === 'AM') {
-      return hour === '00' ? '00' : hour.padStart(2, '0');
-    } else {
-      // PM: 12-23
-      if (hourNum === 0) return '12';
-      return (hourNum + 12).toString().padStart(2, '0');
-    }
-  };
-
-  // 24시간 형식을 AM/PM 형식으로 변환 (표시용)
-  const formatToAMPM = (time24: string): string => {
-    const [hourStr, minuteStr] = time24.split(':');
-    const hour = parseInt(hourStr, 10);
-    
-    if (hour === 0) {
-      return lang === 'ko' ? `오전 00:${minuteStr}` : `12:${minuteStr} AM`;
-    } else if (hour < 12) {
-      return lang === 'ko' ? `오전 ${hour.toString().padStart(2, '0')}:${minuteStr}` : `${hour}:${minuteStr} AM`;
-    } else if (hour === 12) {
-      return lang === 'ko' ? `오후 12:${minuteStr}` : `12:${minuteStr} PM`;
-    } else {
-      const pmHour = hour - 12;
-      return lang === 'ko' ? `오후 ${pmHour.toString().padStart(2, '0')}:${minuteStr}` : `${pmHour}:${minuteStr} PM`;
-    }
-  };
+  // convertTo24Hour / formatToAMPM 는 모듈 레벨 순수 함수 사용
 
   const addTime = () => {
     const hour24 = convertTo24Hour(period, selectedHour);
@@ -219,7 +235,7 @@ const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSav
                         className="bg-slate-50 dark:bg-white/5 p-4 rounded-xl border border-slate-200 dark:border-white/5 flex items-center justify-between"
                       >
                         <span className="text-sm font-black text-slate-900 dark:text-white">
-                          {formatToAMPM(time)}
+                          {formatToAMPM(time, lang)}
                         </span>
                         <button
                           onClick={() => removeTime(time)}
@@ -246,26 +262,11 @@ const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSav
                       {lang === 'ko' ? '오전/오후' : 'Period'}
                     </label>
                     <div className="flex gap-2">
-                      <button
-                        onClick={() => setPeriod('AM')}
-                        className={`flex-1 py-3 rounded-xl text-xs font-black transition-all ${
-                          period === 'AM'
-                            ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/30'
-                            : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-white/5'
-                        }`}
-                      >
-                        {lang === 'ko' ? '오전' : 'AM'}
-                      </button>
-                      <button
-                        onClick={() => setPeriod('PM')}
-                        className={`flex-1 py-3 rounded-xl text-xs font-black transition-all ${
-                          period === 'PM'
-                            ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/30'
-                            : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-white/5'
-                        }`}
-                      >
-                        {lang === 'ko' ? '오후' : 'PM'}
-                      </button>
+                      {(['AM', 'PM'] as const).map((p) => (
+                        <button key={p} onClick={() => setPeriod(p)} className={`flex-1 ${selectableBtnClass(period === p)}`}>
+                          {lang === 'ko' ? (p === 'AM' ? '오전' : '오후') : p}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
@@ -275,16 +276,8 @@ const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSav
                       {lang === 'ko' ? '시' : 'Hour'}
                     </label>
                     <div className="grid grid-cols-6 gap-2">
-                      {hours.map((hour) => (
-                        <button
-                          key={hour}
-                          onClick={() => setSelectedHour(hour)}
-                          className={`py-3 rounded-xl text-[11px] font-black transition-all ${
-                            selectedHour === hour
-                              ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
-                              : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-white/5'
-                          }`}
-                        >
+                      {HOURS.map((hour) => (
+                        <button key={hour} onClick={() => setSelectedHour(hour)} className={`text-[11px] ${selectableBtnClass(selectedHour === hour)}`}>
                           {hour}
                         </button>
                       ))}
@@ -296,23 +289,23 @@ const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSav
                     <label className="text-[9px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
                       {lang === 'ko' ? '분' : 'Minute'}
                     </label>
-                    {isInTossApp && Menu ? (
-                      <Menu
+                    {isInTossApp && TossMenu ? (
+                      <TossMenu
                         open={minuteMenuOpen}
                         onOpen={() => setMinuteMenuOpen(true)}
                         onClose={() => setMinuteMenuOpen(false)}
                         placement="bottom"
                       >
-                        <Menu.Trigger>
+                        <TossMenu.Trigger>
                           <button className="w-full p-4 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-xl text-slate-900 dark:text-white text-sm font-black cursor-pointer hover:bg-slate-50 dark:hover:bg-white/10 transition-colors focus:ring-2 focus:ring-blue-500/50 outline-none flex items-center justify-between">
                             <span>{selectedMinute}{lang === 'ko' ? '분' : ' min'}</span>
                             <ChevronDown size={16} className="text-slate-400" />
                           </button>
-                        </Menu.Trigger>
-                        <Menu.Dropdown>
-                          <Menu.Header>{lang === 'ko' ? '10분 단위 설정' : '10-minute Interval'}</Menu.Header>
-                          {minutes.map((minute) => (
-                            <Menu.DropdownCheckItem
+                        </TossMenu.Trigger>
+                        <TossMenu.Dropdown>
+                          <TossMenu.Header>{lang === 'ko' ? '10분 단위 설정' : '10-minute Interval'}</TossMenu.Header>
+                          {MINUTES.map((minute) => (
+                            <TossMenu.DropdownCheckItem
                               key={minute}
                               checked={selectedMinute === minute}
                               onCheckedChange={(checked) => {
@@ -323,14 +316,14 @@ const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSav
                               }}
                             >
                               {minute}{lang === 'ko' ? '분' : ' min'}
-                            </Menu.DropdownCheckItem>
+                            </TossMenu.DropdownCheckItem>
                           ))}
-                        </Menu.Dropdown>
-                      </Menu>
+                        </TossMenu.Dropdown>
+                      </TossMenu>
                     ) : (
                       <CustomDropdown
                         value={selectedMinute}
-                        options={minutes.map(m => ({ value: m, label: `${m}${lang === 'ko' ? '분' : ' min'}` }))}
+                        options={MINUTES.map(m => ({ value: m, label: `${m}${lang === 'ko' ? '분' : ' min'}` }))}
                         onChange={(value) => setSelectedMinute(value)}
                         header={lang === 'ko' ? '10분 단위 설정' : '10-minute Interval'}
                         className="w-full"

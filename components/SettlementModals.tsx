@@ -1,9 +1,9 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { Portfolio } from '../types';
 import { X } from 'lucide-react';
 import { calculateHoldings, calculateTotalInvested, calculateAlreadyRealized } from '../utils/portfolioCalculations';
-import { CUSTOM_GRADIENT_LOGOS, PAID_STOCKS } from '../constants';
+import { PAID_STOCKS } from '../constants';
 import StockLogo from './StockLogo';
 
 export interface FinalSellInput {
@@ -56,18 +56,15 @@ const TerminationInput: React.FC<TerminationInputProps> = ({ lang, portfolio, on
     setFinalSells(updated);
   };
 
-  const calculateFinalSellAmount = () => {
-    return finalSells.reduce((sum, fs) => {
-      const sellAmount = fs.price * fs.quantity;
-      const netAmount = sellAmount - fs.fee;
-      return sum + netAmount;
-    }, 0);
-  };
+  const finalSellTotal = useMemo(
+    () => finalSells.reduce((sum, fs) => sum + (fs.price * fs.quantity - fs.fee), 0),
+    [finalSells]
+  );
 
-  const handleSave = () => {
+  const handleSave = useCallback(() => {
     const totalFee = parseFloat(additionalFee) || 0;
     onSave(finalSells, totalFee);
-  };
+  }, [additionalFee, finalSells, onSave]);
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
@@ -213,7 +210,7 @@ const TerminationInput: React.FC<TerminationInputProps> = ({ lang, portfolio, on
                 {lang === 'ko' ? '최종 매도금 합계:' : 'Total Final Sell Amount:'}
               </span>
               <span className="text-lg font-black text-blue-600 dark:text-blue-400">
-                ${(calculateFinalSellAmount() - parseFloat(additionalFee || '0')).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                ${(finalSellTotal - (parseFloat(additionalFee) || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </span>
             </div>
           </div>
@@ -353,4 +350,4 @@ const Result: React.FC<ResultProps> = ({ lang, result, onClose }) => {
   );
 };
 
-export default { TerminationInput, Result };
+export { TerminationInput, Result };

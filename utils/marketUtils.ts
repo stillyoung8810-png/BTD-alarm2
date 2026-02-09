@@ -1,3 +1,6 @@
+/** localStorage에 저장하는 최신 거래일 키 */
+export const LATEST_TRADE_DATE_KEY = "LATEST_TRADE_DATE";
+
 /**
  * 부활절 제외 주요 미국 휴장일(9개)을 계산하는 함수
  */
@@ -125,7 +128,7 @@ export const getMarketStatus = (lang: 'ko' | 'en' = 'ko'): { isOpen: boolean; me
     // LATEST_TRADE_DATE (예: 2026-01-26)가 localStorage에 저장되어 있으면 해당 날짜를 표시
     let latestLabel = '';
     if (typeof window !== 'undefined') {
-      const latest = window.localStorage.getItem('LATEST_TRADE_DATE');
+      const latest = window.localStorage.getItem(LATEST_TRADE_DATE_KEY);
       if (latest) {
         try {
           const d = new Date(`${latest}T00:00:00Z`);

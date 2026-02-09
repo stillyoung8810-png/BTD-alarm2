@@ -7,11 +7,12 @@ import Markets from './components/Markets';
 import History from './components/History';
 import StrategyCreator from './components/StrategyCreator';
 import AlarmModal from './components/AlarmModal';
+import Footer from './components/Footer';
 import PortfolioDetailsModal from './components/PortfolioDetailsModal';
 import QuickInputModal from './components/QuickInputModal';
 import TradeExecutionModal from './components/TradeExecutionModal';
 import AIImageInputModal from './components/AIImageInputModal';
-import SettlementModals from './components/SettlementModals';
+import { TerminationInput, Result as SettlementResult } from './components/SettlementModals';
 import AuthModals from './components/AuthModals';
 import Landing from './components/Landing';
 import Pricing from './components/Pricing';
@@ -1295,6 +1296,71 @@ const App: React.FC = () => {
     setTerminateTargetId(null);
   };
 
+  // ---------------------------------------------------------------------------
+  // History 탭 핸들러
+  // ---------------------------------------------------------------------------
+
+  const handleDeleteHistory = async (portfolioId: string) => {
+    if (!user) return;
+    try {
+      const { error: histErr } = await supabase
+        .from('portfolio_history')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('portfolio_id', portfolioId);
+
+      const { error: portErr } = await supabase
+        .from('portfolios')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('id', portfolioId);
+
+      if (histErr || portErr) {
+        console.error('Failed to delete history', { histErr, portErr });
+        alert(lang === 'ko' ? '종료 내역 삭제에 실패했습니다. (권한/RLS를 확인해주세요)' : 'Failed to delete history. (Check permissions/RLS)');
+        return;
+      }
+
+      setPortfolios(prev => prev.filter(p => p.id !== portfolioId));
+      setHiddenHistoryIds(prev => [...prev, portfolioId]);
+    } catch (err) {
+      console.error('Unexpected error deleting history record', err);
+      alert(lang === 'ko' ? '종료 내역 삭제 중 오류가 발생했습니다.' : 'Unexpected error while deleting history record.');
+    }
+  };
+
+  const handleClearHistory = async () => {
+    if (!user) return;
+    const msg = lang === 'ko'
+      ? '모든 종료 내역을 삭제하시겠습니까? (Supabase에서도 삭제되며 되돌릴 수 없습니다)'
+      : 'Delete all history records? (This will also delete them from Supabase and cannot be undone.)';
+    if (!window.confirm(msg)) return;
+    try {
+      const { error: histErr } = await supabase
+        .from('portfolio_history')
+        .delete()
+        .eq('user_id', user.id);
+
+      const { error: portErr } = await supabase
+        .from('portfolios')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('is_closed', true);
+
+      if (histErr || portErr) {
+        console.error('Failed to clear history', { histErr, portErr });
+        alert(lang === 'ko' ? '종료 내역 전체 삭제에 실패했습니다. (권한/RLS를 확인해주세요)' : 'Failed to clear history. (Check permissions/RLS)');
+        return;
+      }
+
+      setPortfolios(prev => prev.filter(p => !p.isClosed));
+      setHiddenHistoryIds([]);
+    } catch (err) {
+      console.error('Unexpected error clearing history', err);
+      alert(lang === 'ko' ? '종료 내역 삭제 중 오류가 발생했습니다.' : 'Unexpected error while clearing history.');
+    }
+  };
+
   const handleUpdatePortfolio = async (updated: Portfolio) => {
     const { error } = await supabase
       .from('portfolios')
@@ -1575,71 +1641,8 @@ const App: React.FC = () => {
               lang={lang} 
               portfolios={portfolios.filter(p => p.isClosed && !hiddenHistoryIds.includes(p.id))} 
               onOpenDetails={(id) => setDetailsTargetId(id)}
-              onDeleteHistory={async (portfolioId) => {
-                if (!user) return;
-                try {
-                  // 1) portfolio_history에서도 삭제 (정산 요약 이력)
-                  const { error: histErr } = await supabase
-                    .from('portfolio_history')
-                    .delete()
-                    .eq('user_id', user.id)
-                    .eq('portfolio_id', portfolioId);
-
-                  // 2) portfolios(종료된 포트폴리오)에서도 삭제해야 새로고침 시 다시 나타나지 않음
-                  const { error: portErr } = await supabase
-                    .from('portfolios')
-                    .delete()
-                    .eq('user_id', user.id)
-                    .eq('id', portfolioId);
-
-                  if (histErr || portErr) {
-                    console.error('Failed to delete history (portfolio_history/portfolios)', { histErr, portErr });
-                    alert(lang === 'ko' ? '종료 내역 삭제에 실패했습니다. (권한/RLS를 확인해주세요)' : 'Failed to delete history. (Check permissions/RLS)');
-                    return;
-                  }
-
-                  // 로컬 상태에서도 제거
-                  setPortfolios(prev => prev.filter(p => p.id !== portfolioId));
-                  setHiddenHistoryIds(prev => [...prev, portfolioId]);
-                } catch (err) {
-                  console.error('Unexpected error deleting history record', err);
-                  alert(lang === 'ko' ? '종료 내역 삭제 중 오류가 발생했습니다.' : 'Unexpected error while deleting history record.');
-                }
-              }}
-              onClearHistory={async () => {
-                if (!user) return;
-                const msg = lang === 'ko'
-                  ? '모든 종료 내역을 삭제하시겠습니까? (Supabase에서도 삭제되며 되돌릴 수 없습니다)'
-                  : 'Delete all history records? (This will also delete them from Supabase and cannot be undone.)';
-                if (!window.confirm(msg)) return;
-                try {
-                  // 1) portfolio_history 전체 삭제
-                  const { error: histErr } = await supabase
-                    .from('portfolio_history')
-                    .delete()
-                    .eq('user_id', user.id);
-
-                  // 2) portfolios에서 종료된 포트폴리오 전체 삭제
-                  const { error: portErr } = await supabase
-                    .from('portfolios')
-                    .delete()
-                    .eq('user_id', user.id)
-                    .eq('is_closed', true);
-
-                  if (histErr || portErr) {
-                    console.error('Failed to clear history (portfolio_history/portfolios)', { histErr, portErr });
-                    alert(lang === 'ko' ? '종료 내역 전체 삭제에 실패했습니다. (권한/RLS를 확인해주세요)' : 'Failed to clear history. (Check permissions/RLS)');
-                    return;
-                  }
-
-                  // 로컬 상태에서도 종료된 것 제거
-                  setPortfolios(prev => prev.filter(p => !p.isClosed));
-                  setHiddenHistoryIds([]);
-                } catch (err) {
-                  console.error('Unexpected error clearing history', err);
-                  alert(lang === 'ko' ? '종료 내역 삭제 중 오류가 발생했습니다.' : 'Unexpected error while clearing history.');
-                }
-              }}
+              onDeleteHistory={handleDeleteHistory}
+              onClearHistory={handleClearHistory}
             />
           )}
         </main>
@@ -1712,7 +1715,7 @@ const App: React.FC = () => {
 
         {/* Termination Flow Modals */}
         {currentTerminatePortfolio && (
-          <SettlementModals.TerminationInput 
+          <TerminationInput 
             lang={lang} 
             portfolio={currentTerminatePortfolio} 
             onClose={() => setTerminateTargetId(null)} 
@@ -1720,7 +1723,7 @@ const App: React.FC = () => {
           />
         )}
         {settlementResult && (
-          <SettlementModals.Result 
+          <SettlementResult 
             lang={lang} 
             result={settlementResult} 
             onClose={() => setSettlementResult(null)} 
@@ -1791,6 +1794,9 @@ const App: React.FC = () => {
           />
         )}
       </div>
+
+      {/* Footer — 법인 필수 정보 */}
+      <Footer isInTossApp={isInTossApp} />
       </div>
   );
 

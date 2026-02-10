@@ -22,7 +22,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { PAY_METHOD_OPTIONS, type PayMethod, type EasyPayProvider } from '../services/payment/types';
-import { requestPayment, saveOrderRecord, activateSubscription } from '../services/payment/paymentService';
+import { requestPayment, verifyPaymentOnServer } from '../services/payment/paymentService';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -89,29 +89,23 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
       });
 
       if (result.success) {
-        // 주문 기록 저장 (orders 테이블 필요)
-        if (customerId) {
-          await saveOrderRecord({
-            user_id: customerId,
-            payment_id: result.paymentId,
-            plan_id: plan.id,
-            order_name: `${plan.label} Monthly Plan`,
-            amount: plan.price,
-            currency: 'KRW',
-            pay_method: payMethod,
-            status: 'paid',
-            pg_provider: 'nicepay',
-            pg_tx_id: result.txId,
-            paid_at: new Date().toISOString(),
-          });
+        // ── 서버 측 결제 검증 (핵심 보안) ──
+        // 포트원 V2 API를 서버에서 직접 호출하여
+        // 실제 결제 상태 + 금액 위변조를 검증합니다.
+        const verification = await verifyPaymentOnServer(result.paymentId, plan.id);
 
-          // 구독 활성화
-          await activateSubscription(customerId, plan.id);
+        if (verification.success) {
+          alert(isKo ? '결제가 완료되었습니다! 구독이 활성화됩니다.' : 'Payment complete! Your subscription is now active.');
+          onPaymentSuccess?.();
+          onClose();
+        } else {
+          // 서버 검증 실패 (결제는 이미 됐으므로 안내)
+          alert(isKo
+            ? `결제는 완료되었으나 검증에 실패했습니다. 잠시 후 자동 반영되거나 고객센터에 문의하세요.\n(${verification.error ?? ''})`
+            : `Payment succeeded but verification failed. It will be reflected shortly or contact support.\n(${verification.error ?? ''})`);
+          onPaymentSuccess?.();
+          onClose();
         }
-
-        alert(isKo ? '결제가 완료되었습니다! 구독이 활성화됩니다.' : 'Payment complete! Your subscription is now active.');
-        onPaymentSuccess?.();
-        onClose();
       } else {
         // 사용자 취소 (PAYMENT_USER_CANCEL) 는 조용히 처리
         if (result.code === 'PAYMENT_USER_CANCEL' || result.code === 'USER_CANCEL') {

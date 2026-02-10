@@ -135,6 +135,11 @@ export async function requestPayment(req: PaymentRequest): Promise<PaymentResult
       ...(req.customerEmail ? { email: req.customerEmail } : {}),
       ...(req.customerId ? { customerId: req.customerId } : {}),
     },
+    // Webhook에서 사용자/플랜 식별용 (서버 검증 실패 시 fallback)
+    customData: JSON.stringify({
+      userId: req.customerId,
+      planId: req.planId,
+    }),
   };
 
   // 간편결제 세부 분기
@@ -176,12 +181,79 @@ export async function requestPayment(req: PaymentRequest): Promise<PaymentResult
 }
 
 // ---------------------------------------------------------------------------
-// 주문 기록 저장 (스켈레톤)
+// 서버 측 결제 검증 (핵심 보안 로직)
 // ---------------------------------------------------------------------------
 /**
- * 결제 완료 후 Supabase `orders` 테이블에 주문 기록을 저장합니다.
+ * verify-payment Edge Function을 호출하여 서버에서 결제를 검증합니다.
  *
- * ⚠️ `orders` 테이블이 아직 생성되지 않았다면 마이그레이션을 먼저 실행하세요.
+ * 클라이언트의 결제 성공 응답만으로는 신뢰할 수 없으므로,
+ * 서버가 포트원 V2 API를 직접 호출하여 실제 결제 상태 + 금액을 확인합니다.
+ *
+ * 검증 성공 시 서버가 직접:
+ *  1. orders 테이블에 기록
+ *  2. user_profiles 구독 활성화
+ */
+export interface VerifyPaymentResult {
+  success: boolean;
+  message?: string;
+  subscription?: {
+    tier: string;
+    status: string;
+    expiresAt: string;
+  };
+  error?: string;
+}
+
+export async function verifyPaymentOnServer(
+  paymentId: string,
+  planId: string,
+): Promise<VerifyPaymentResult> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      return { success: false, error: '인증 세션이 없습니다. 다시 로그인해주세요.' };
+    }
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const res = await fetch(`${supabaseUrl}/functions/v1/verify-payment`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ paymentId, planId }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      return {
+        success: false,
+        error: data.error ?? '결제 검증에 실패했습니다.',
+      };
+    }
+
+    return {
+      success: true,
+      message: data.message,
+      subscription: data.subscription,
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : '결제 검증 중 네트워크 오류';
+    return { success: false, error: msg };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 주문 기록 저장 (클라이언트 직접 — fallback용)
+// ---------------------------------------------------------------------------
+/**
+ * verify-payment 서버 검증이 실패할 경우의 fallback으로,
+ * 클라이언트에서 직접 orders 테이블에 기록합니다.
+ *
+ * ⚠️ RLS 정책에 따라 INSERT 권한이 없을 수 있습니다.
+ *    프로덕션에서는 서버 검증(verifyPaymentOnServer)을 우선 사용하세요.
  */
 export async function saveOrderRecord(
   record: Omit<OrderRecord, 'id' | 'created_at'>,
@@ -210,43 +282,6 @@ export async function saveOrderRecord(
     return { success: true };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : '주문 저장 중 오류 발생';
-    return { success: false, error: msg };
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 구독 상태 업데이트 (스켈레톤)
-// ---------------------------------------------------------------------------
-/**
- * 결제 성공 후 `user_profiles` 테이블의 구독 정보를 업데이트합니다.
- */
-export async function activateSubscription(
-  userId: string,
-  planId: string,
-): Promise<{ success: boolean; error?: string }> {
-  try {
-    const now = new Date().toISOString();
-    // 월간 구독: 30일 후 만료
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-
-    const { error } = await supabase
-      .from('user_profiles')
-      .update({
-        subscription_tier: planId,
-        subscription_status: 'active',
-        subscription_expires_at: expiresAt,
-        updated_at: now,
-      })
-      .eq('id', userId);
-
-    if (error) {
-      console.warn('[Payment] 구독 활성화 실패:', error.message);
-      return { success: false, error: error.message };
-    }
-
-    return { success: true };
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : '구독 활성화 중 오류 발생';
     return { success: false, error: msg };
   }
 }

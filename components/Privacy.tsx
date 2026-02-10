@@ -130,7 +130,11 @@ const Privacy: React.FC<PrivacyProps> = ({ lang, onBack }) => {
                   <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">「개인정보 보호법」 제15조제1항제4호 (계약 체결·이행)</td>
                   <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">구독 및 결제</td>
                   <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">구독 상태 관리, 결제 처리</td>
-                  <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">구독 등급, 구독 상태, 구독 시작·만료일, Stripe 고객 식별자</td>
+                  <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">
+                    구독 등급, 구독 상태, 구독 시작·만료일,
+                    결제 수단 정보(카드사명, 카드번호 일부 등),
+                    결제 기록(결제 일시, 결제 금액, 승인·취소·환불 이력 등 결제 이행에 필요한 정보)
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -303,6 +307,15 @@ const Privacy: React.FC<PrivacyProps> = ({ lang, onBack }) => {
                 <tr>
                   <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">Stripe, Inc.</td>
                   <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">구독 결제 처리 및 결제 정보 관리</td>
+                </tr>
+                <tr>
+                  <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">주식회사 코리아포트원 (포트원)</td>
+                  <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">
+                    결제 정보 전달 및 결제 연동 서비스 제공<br />
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                      (위탁 기간: 서비스 회원 탈퇴 시 또는 위탁 계약 종료 시까지)
+                    </span>
+                  </td>
                 </tr>
               </tbody>
             </table>

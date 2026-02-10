@@ -1,4 +1,5 @@
 // supabase/functions/check-and-trigger-alarms/index.ts
+// 배포: supabase functions deploy check-and-trigger-alarms --no-verify-jwt
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { DateTime } from "npm:luxon";

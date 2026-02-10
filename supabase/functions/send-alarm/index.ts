@@ -1,4 +1,5 @@
 // supabase/functions/send-alarm/index.ts
+// 배포: supabase functions deploy send-alarm --no-verify-jwt
 import { serve } from "std/http/server";
 import { createClient } from "@supabase/supabase-js";
 import { SignJWT, importPKCS8 } from "jose";

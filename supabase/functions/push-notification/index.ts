@@ -1,5 +1,6 @@
 // Supabase Edge Function: FCM v1 API를 사용한 푸시 알림 전송
 // Deno 환경에서 google-auth-library 대신 jose를 사용하여 JWT 생성
+// 배포: supabase functions deploy push-notification --no-verify-jwt
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4'
 import { SignJWT, importPKCS8 } from 'https://deno.land/x/jose@v5.2.0/index.ts'

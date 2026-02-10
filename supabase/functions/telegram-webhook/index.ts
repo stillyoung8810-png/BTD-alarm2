@@ -1,5 +1,7 @@
 // supabase/functions/telegram-webhook/index.ts
-// 텔레그램 봇 Webhook 엔드포인트
+// 텔레그램 봇 Webhook 엔드포인트 (텔레그램 서버가 JWT 없이 호출)
+// 배포: supabase functions deploy telegram-webhook --no-verify-jwt
+//
 // 역할:
 // 1) 사용자가 봇에게 `/start <token>` 을 보내면
 // 2) telegram_link_tokens 테이블에서 해당 token → user_id 조회

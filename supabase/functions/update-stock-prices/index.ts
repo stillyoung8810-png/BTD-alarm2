@@ -1,4 +1,5 @@
 // supabase/functions/update-stock-prices/index.ts
+// 배포: supabase functions deploy update-stock-prices --no-verify-jwt
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 

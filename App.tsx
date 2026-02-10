@@ -10,6 +10,7 @@ import AlarmModal from './components/AlarmModal';
 import Footer from './components/Footer';
 import Privacy from './components/Privacy';
 import Terms from './components/Terms';
+import RefundPolicy from './components/RefundPolicy';
 import PortfolioDetailsModal from './components/PortfolioDetailsModal';
 import QuickInputModal from './components/QuickInputModal';
 import TradeExecutionModal from './components/TradeExecutionModal';
@@ -53,7 +54,7 @@ const Backtest = React.lazy(() => import('./components/Backtest'));
 
 const App: React.FC = () => {
   const [lang, setLang] = useState<'ko' | 'en'>('ko');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'markets' | 'history' | 'backtest' | 'pricing' | 'privacy' | 'terms'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'markets' | 'history' | 'backtest' | 'pricing' | 'privacy' | 'terms' | 'refund-policy'>('dashboard');
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [isCreatorOpen, setIsCreatorOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
@@ -1700,6 +1701,9 @@ const App: React.FC = () => {
           {activeTab === 'terms' && (
             <Terms lang={lang} onBack={() => setActiveTab('dashboard')} />
           )}
+          {activeTab === 'refund-policy' && (
+            <RefundPolicy lang={lang} onBack={() => setActiveTab('dashboard')} />
+          )}
         </main>
 
         {/* Unified Floating Navigation Bar - center '+' button */}
@@ -1860,8 +1864,8 @@ const App: React.FC = () => {
             id: 'pro',
             label: 'PRO',
             subtitle: lang === 'ko' ? '전문 투자자' : 'Active Investor',
-            price: 5900,
-            priceFormatted: '₩5,900',
+            price: Number(import.meta.env.VITE_PLAN_AMOUNT_PRO ?? 5900),
+            priceFormatted: `₩${Number(import.meta.env.VITE_PLAN_AMOUNT_PRO ?? 5900).toLocaleString()}`,
             features: lang === 'ko'
               ? ['포트폴리오 최대 5개', '알람 슬롯 10개', '기본 13개 + PRO 전용 종목', 'AI 매매 인식 (50회/월)', '텔레그램 상세 알림', '광고 제거']
               : ['Up to 5 portfolios', '10 alert slots', 'Core + PRO tickers', 'AI Trade Recognition (50/mo)', 'Detailed Telegram alerts', 'No ads'],
@@ -1869,8 +1873,8 @@ const App: React.FC = () => {
             id: 'premium',
             label: 'PREMIUM',
             subtitle: lang === 'ko' ? '슈퍼 고래' : 'Power User',
-            price: 9900,
-            priceFormatted: '₩9,900',
+            price: Number(import.meta.env.VITE_PLAN_AMOUNT_PREMIUM ?? 9900),
+            priceFormatted: `₩${Number(import.meta.env.VITE_PLAN_AMOUNT_PREMIUM ?? 9900).toLocaleString()}`,
             features: lang === 'ko'
               ? ['포트폴리오 최대 20개', '알람 슬롯 40개', '모든 종목 + 베타 종목', 'AI 매매 인식 (무제한)', '신규 전략 선공개', 'VIP 전용 고객 지원']
               : ['Up to 20 portfolios', '40 alert slots', 'All tickers + beta', 'Unlimited AI Recognition', 'Early access to strategies', 'VIP priority support'],
@@ -1888,6 +1892,7 @@ const App: React.FC = () => {
       <Footer
         onNavigateTerms={() => setActiveTab('terms')}
         onNavigatePrivacy={() => setActiveTab('privacy')}
+        onNavigateRefundPolicy={() => setActiveTab('refund-policy')}
       />
       </div>
   );

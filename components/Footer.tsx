@@ -24,9 +24,11 @@ interface FooterProps {
   onNavigateTerms?: () => void;
   /** 개인정보처리방침 탭으로 이동 */
   onNavigatePrivacy?: () => void;
+  /** 환불 및 취소 규정 탭으로 이동 */
+  onNavigateRefundPolicy?: () => void;
 }
 
-const Footer: React.FC<FooterProps> = ({ isInTossApp: isInTossAppProp, onNavigateTerms, onNavigatePrivacy }) => {
+const Footer: React.FC<FooterProps> = ({ isInTossApp: isInTossAppProp, onNavigateTerms, onNavigatePrivacy, onNavigateRefundPolicy }) => {
   const { isInTossApp: isInTossAppCtx, safeAreaInsets } = useTossApp();
 
   const isTossAgent =
@@ -72,6 +74,13 @@ const Footer: React.FC<FooterProps> = ({ isInTossApp: isInTossAppProp, onNavigat
             className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors underline underline-offset-2"
           >
             개인정보처리방침
+          </button>
+          <span className="text-slate-300 dark:text-slate-600">|</span>
+          <button
+            onClick={() => { onNavigateRefundPolicy?.(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+            className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors underline underline-offset-2"
+          >
+            환불규정
           </button>
         </div>
 

@@ -31,16 +31,18 @@ const corsHeaders = {
 
 // ---------------------------------------------------------------------------
 // 플랜별 금액 (서버 측 금액 위변조 검증용)
+// 환경변수(PLAN_AMOUNT_PRO, PLAN_AMOUNT_PREMIUM)로 관리 — 가격 변경 시 한 곳만 수정
+// 환경변수가 없으면 기본값 사용 (개발/테스트 편의)
 // ---------------------------------------------------------------------------
 const PLAN_AMOUNTS: Record<string, number> = {
-  pro: 5900,
-  premium: 9900,
+  pro: Number(Deno.env.get("PLAN_AMOUNT_PRO") ?? 5900),
+  premium: Number(Deno.env.get("PLAN_AMOUNT_PREMIUM") ?? 9900),
 };
 
 // ---------------------------------------------------------------------------
-// 구독 만료일 계산 (30일)
+// 서비스 이용 만료일 계산 (30일)
 // ---------------------------------------------------------------------------
-function getSubscriptionExpiresAt(): string {
+function getServiceExpiresAt(): string {
   return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 }
 
@@ -189,7 +191,7 @@ serve(async (req: Request) => {
       user_id: user.id,
       payment_id: paymentId,
       plan_id: planId,
-      order_name: `${planId.toUpperCase()} Monthly Plan`,
+      order_name: `${planId.toUpperCase()} Plan (30일)`,
       amount: payment.amount.total,
       currency: payment.amount.currency ?? "KRW",
       pay_method: payment.method?.type ?? "CARD",
@@ -221,8 +223,8 @@ serve(async (req: Request) => {
       }
     }
 
-    // 4-c. user_profiles 구독 활성화
-    const expiresAt = getSubscriptionExpiresAt();
+    // 4-c. user_profiles 서비스 활성화
+    const expiresAt = getServiceExpiresAt();
     const { error: profileError } = await adminClient
       .from("user_profiles")
       .update({
@@ -234,21 +236,25 @@ serve(async (req: Request) => {
       .eq("id", user.id);
 
     if (profileError) {
-      console.warn("[verify-payment] 구독 활성화 실패:", profileError.message);
+      console.warn("[verify-payment] 서비스 활성화 실패:", profileError.message);
       return new Response(
         JSON.stringify({
           success: false,
-          error: "결제는 완료되었으나 구독 활성화에 실패했습니다. 고객센터에 문의하세요.",
+          error: "결제는 완료되었으나 서비스 활성화에 실패했습니다. 고객센터에 문의하세요.",
         }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
     // ── 5. 성공 응답 ───────────────────────────────────
+    console.info(
+      `[verify-payment] 결제 검증 성공: paymentId=${paymentId}, userId=${user.id}, plan=${planId}, amount=${payment.amount.total}, expiresAt=${expiresAt}`,
+    );
+
     return new Response(
       JSON.stringify({
         success: true,
-        message: "결제 검증 완료. 구독이 활성화되었습니다.",
+        message: "결제 검증 완료. 서비스가 활성화되었습니다.",
         subscription: {
           tier: planId,
           status: "active",

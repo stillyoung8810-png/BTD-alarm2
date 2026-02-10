@@ -78,8 +78,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setIsProcessing(true);
 
     try {
-      const result = await requestPayment({
-        orderName: `${plan.label} ${isKo ? '월간 구독권' : 'Monthly Plan'}`,
+        const result = await requestPayment({
+        orderName: `${plan.label} ${isKo ? '이용권 (30일)' : 'Plan (30 days)'}`,
         totalAmount: plan.price,
         customerEmail,
         customerId,
@@ -88,24 +88,24 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
         ...(payMethod === 'EASY_PAY' ? { easyPayProvider: 'KAKAOPAY' as EasyPayProvider } : {}),
       });
 
-      if (result.success) {
-        // ── 서버 측 결제 검증 (핵심 보안) ──
-        // 포트원 V2 API를 서버에서 직접 호출하여
-        // 실제 결제 상태 + 금액 위변조를 검증합니다.
-        const verification = await verifyPaymentOnServer(result.paymentId, plan.id);
+        if (result.success) {
+          // ── 서버 측 결제 검증 (핵심 보안) ──
+          // 포트원 V2 API를 서버에서 직접 호출하여
+          // 실제 결제 상태 + 금액 위변조를 검증합니다.
+          const verification = await verifyPaymentOnServer(result.paymentId, plan.id);
 
-        if (verification.success) {
-          alert(isKo ? '결제가 완료되었습니다! 구독이 활성화됩니다.' : 'Payment complete! Your subscription is now active.');
-          onPaymentSuccess?.();
-          onClose();
-        } else {
-          // 서버 검증 실패 (결제는 이미 됐으므로 안내)
-          alert(isKo
-            ? `결제는 완료되었으나 검증에 실패했습니다. 잠시 후 자동 반영되거나 고객센터에 문의하세요.\n(${verification.error ?? ''})`
-            : `Payment succeeded but verification failed. It will be reflected shortly or contact support.\n(${verification.error ?? ''})`);
-          onPaymentSuccess?.();
-          onClose();
-        }
+          if (verification.success) {
+            alert(isKo ? '결제가 완료되었습니다! 서비스가 활성화됩니다.' : 'Payment complete! Your service is now active.');
+            onPaymentSuccess?.();
+            onClose();
+          } else {
+            // 서버 검증 실패 (결제는 이미 됐으므로 안내)
+            alert(isKo
+              ? `결제는 완료되었으나 검증에 실패했습니다. 잠시 후 자동 반영되거나 고객센터에 문의하세요.\n(${verification.error ?? ''})`
+              : `Payment succeeded but verification failed. It will be reflected shortly or contact support.\n(${verification.error ?? ''})`);
+            onPaymentSuccess?.();
+            onClose();
+          }
       } else {
         // 사용자 취소 (PAYMENT_USER_CANCEL) 는 조용히 처리
         if (result.code === 'PAYMENT_USER_CANCEL' || result.code === 'USER_CANCEL') {
@@ -179,7 +179,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <p className={`text-xs font-semibold ${
                   isPro ? 'text-blue-500 dark:text-blue-400' : 'text-amber-600 dark:text-amber-400'
                 }`}>
-                  {isKo ? '월간 구독권' : 'Monthly Plan'}
+                  {isKo ? '이용권 (30일)' : 'Plan (30 days)'}
                 </p>
               </div>
             </div>
@@ -247,7 +247,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
           <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-white/5">
             <div className="flex justify-between items-center">
               <span className="text-sm text-slate-500 dark:text-slate-400 font-medium">
-                {isKo ? '구독 금액' : 'Subscription'}
+                {isKo ? '이용권 금액' : 'Plan Price'}
               </span>
               <span className="text-sm font-bold text-slate-900 dark:text-white">
                 {plan.priceFormatted}
@@ -306,14 +306,43 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
           <div className="text-center space-y-1 pt-2">
             <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed">
               {isKo
-                ? '구독 시작 시 서비스 이용 약관에 동의하는 것으로 간주합니다.'
-                : 'By subscribing, you agree to our Terms of Service.'}
+                ? '결제 시 서비스 이용 약관에 동의하는 것으로 간주합니다.'
+                : 'By purchasing, you agree to our Terms of Service.'}
             </p>
             <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed">
               {isKo
-                ? '월간 구독은 언제든지 해지 가능합니다.'
-                : 'Monthly subscriptions can be cancelled anytime.'}
+                ? '이용권은 결제일로부터 30일간 유효합니다.'
+                : 'This plan is valid for 30 days from the date of purchase.'}
             </p>
+          </div>
+
+          {/* ▸ 환불 및 취소 규정 */}
+          <div className="mt-4 p-4 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5">
+            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+              {isKo ? '환불 및 취소 규정' : 'Refund & Cancellation Policy'}
+            </p>
+            <ul className="text-[9px] text-slate-400 dark:text-slate-500 leading-[1.7] space-y-1 list-disc pl-3.5">
+              <li>
+                {isKo
+                  ? '결제 후 7일 이내에 서비스 이용 기록(AI 매매 인식, 백테스트, 텔레그램 연동 등)이 없는 경우 전액 환불이 가능합니다.'
+                  : 'Full refund available within 7 days if no service usage (AI recognition, backtesting, Telegram sync, etc.) has occurred.'}
+              </li>
+              <li>
+                {isKo
+                  ? '유료 서비스를 1회 이상 이용한 경우, 전자상거래법 제17조 제2항 제5호에 따라 청약철회가 제한됩니다.'
+                  : 'If paid features have been used, withdrawal is restricted per the E-Commerce Act.'}
+              </li>
+              <li>
+                {isKo
+                  ? '본 결제는 단발성 이용권(30일)이며, 자동 갱신되지 않습니다.'
+                  : 'This is a one-time purchase valid for 30 days. No auto-renewal.'}
+              </li>
+              <li>
+                {isKo
+                  ? '환불 문의: grrrvv@naver.com'
+                  : 'Refund inquiries: grrrvv@naver.com'}
+              </li>
+            </ul>
           </div>
         </div>
 

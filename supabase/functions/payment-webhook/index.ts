@@ -30,16 +30,17 @@ const PORTONE_API_BASE = "https://api.portone.io";
 
 // ---------------------------------------------------------------------------
 // 플랜별 금액 (위변조 검증)
+// 환경변수(PLAN_AMOUNT_PRO, PLAN_AMOUNT_PREMIUM)로 관리 — 가격 변경 시 한 곳만 수정
 // ---------------------------------------------------------------------------
 const PLAN_AMOUNTS: Record<string, number> = {
-  pro: 5900,
-  premium: 9900,
+  pro: Number(Deno.env.get("PLAN_AMOUNT_PRO") ?? 5900),
+  premium: Number(Deno.env.get("PLAN_AMOUNT_PREMIUM") ?? 9900),
 };
 
 // ---------------------------------------------------------------------------
-// 구독 만료일 계산 (30일)
+// 서비스 이용 만료일 계산 (30일)
 // ---------------------------------------------------------------------------
-function getSubscriptionExpiresAt(): string {
+function getServiceExpiresAt(): string {
   return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 }
 
@@ -144,9 +145,9 @@ serve(async (req: Request) => {
           })
           .eq("id", existingOrder.id);
 
-        // 구독 활성화
+        // 서비스 활성화
         const planId = existingOrder.plan_id;
-        const expiresAt = getSubscriptionExpiresAt();
+        const expiresAt = getServiceExpiresAt();
 
         await adminClient
           .from("user_profiles")
@@ -195,7 +196,7 @@ serve(async (req: Request) => {
               paid_at: payment.paidAt ?? new Date().toISOString(),
             });
 
-            const expiresAt = getSubscriptionExpiresAt();
+            const expiresAt = getServiceExpiresAt();
             await adminClient
               .from("user_profiles")
               .update({
@@ -215,30 +216,31 @@ serve(async (req: Request) => {
         }
       }
     } else if (type === "Transaction.Cancelled") {
-      // ▸ 결제 취소/환불
+      // ▸ 결제 취소/환불 (단발성 결제)
       const { data: order } = await adminClient
         .from("orders")
-        .select("id, user_id")
+        .select("id, user_id, status")
         .eq("payment_id", paymentId)
         .maybeSingle();
 
-      if (order) {
+      if (order && order.status !== "refunded") {
+        // cancel-subscription 에서 이미 refunded 처리한 경우 중복 방지
         await adminClient
           .from("orders")
-          .update({ status: "cancelled" })
+          .update({ status: "refunded" })
           .eq("id", order.id);
 
-        // 구독 해지
+        // 서비스 권한 즉시 회수
         await adminClient
           .from("user_profiles")
           .update({
             subscription_tier: "free",
-            subscription_status: "cancelled",
+            subscription_status: "refunded",
             updated_at: new Date().toISOString(),
           })
           .eq("id", order.user_id);
 
-        console.info(`[webhook] 결제 취소 처리: paymentId=${paymentId}`);
+        console.info(`[webhook] 결제 환불 처리: paymentId=${paymentId}`);
       }
     } else {
       // 기타 이벤트는 로그만

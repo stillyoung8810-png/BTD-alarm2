@@ -16,11 +16,15 @@ import type {
 } from './types';
 
 // ---------------------------------------------------------------------------
-// 상수 (식별 정보)
+// 상수 (식별 정보 — 환경변수에서 가져옴)
 // ---------------------------------------------------------------------------
-const STORE_ID = 'store-cb0db9eb-1c27-49b4-98ff-d6c07e30bcef';
-const NICEPAY_CHANNEL_KEY = 'channel-key-0f1b9375-7c55-4ff1-986f-69b37566951b';
+const STORE_ID = import.meta.env.VITE_PORTONE_STORE_ID as string;
+const NICEPAY_CHANNEL_KEY = import.meta.env.VITE_PORTONE_CHANNEL_KEY as string;
 const PORTONE_SDK_URL = 'https://cdn.portone.io/v2/browser-sdk.js';
+
+// 런타임 유효성 검사 — 환경변수 누락 시 빠른 실패
+if (!STORE_ID) console.error('[Payment] VITE_PORTONE_STORE_ID 환경변수가 설정되지 않았습니다.');
+if (!NICEPAY_CHANNEL_KEY) console.error('[Payment] VITE_PORTONE_CHANNEL_KEY 환경변수가 설정되지 않았습니다.');
 
 // ---------------------------------------------------------------------------
 // 포트원 V2 SDK 동적 로드
@@ -282,6 +286,57 @@ export async function saveOrderRecord(
     return { success: true };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : '주문 저장 중 오류 발생';
+    return { success: false, error: msg };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 결제 환불 요청
+// ---------------------------------------------------------------------------
+export interface CancelSubscriptionResult {
+  success: boolean;
+  refunded?: boolean;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * cancel-subscription Edge Function을 호출하여 결제 환불을 요청합니다.
+ *
+ * 서버에서 환불 가능 여부를 자동 판단합니다:
+ *  - 7일 이내 + 이용 기록 없음(AI, 백테스트, 텔레그램 연동 미사용) → 전액 환불 + 권한 즉시 회수
+ *  - 그 외 → 환불 거부 안내 (단발성 결제이므로 만료 시 자동 종료)
+ */
+export async function cancelSubscription(): Promise<CancelSubscriptionResult> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      return { success: false, error: '인증 세션이 없습니다. 다시 로그인해주세요.' };
+    }
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const res = await fetch(`${supabaseUrl}/functions/v1/cancel-subscription`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+      },
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      return { success: false, error: data.error ?? '구독 해지에 실패했습니다.' };
+    }
+
+    return {
+      success: true,
+      refunded: data.refunded,
+      message: data.message,
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : '구독 해지 중 네트워크 오류';
     return { success: false, error: msg };
   }
 }

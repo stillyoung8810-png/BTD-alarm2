@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { I18N } from '../constants';
 import { X, Mail, Lock, LogOut, Key, UserCheck, ShieldCheck, Sparkles, Send } from 'lucide-react';
 import { supabase } from '../services/supabase';
+import { cancelSubscription } from '../services/payment/paymentService';
 import Toggle from './Toggle';
 import HoverTip from './HoverTip';
 
@@ -39,6 +40,8 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
   const [telegramLinkToken, setTelegramLinkToken] = useState<string | null>(null);
   const [telegramLinkLoading, setTelegramLinkLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showCancelSub, setShowCancelSub] = useState(false);
+  const [cancelSubLoading, setCancelSubLoading] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [termsConsent, setTermsConsent] = useState(false);
   const [privacyConsent, setPrivacyConsent] = useState(false);
@@ -724,6 +727,73 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                   >
                     <LogOut size={18} /> {t.logout}
                   </button>
+
+                  {/* 결제 환불 — 유료 회원만 표시 */}
+                  {currentTier !== 'free' && (
+                    <div className="pt-4 border-t border-slate-200 dark:border-white/5">
+                      {!showCancelSub ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowCancelSub(true)}
+                          disabled={loading || cancelSubLoading}
+                          className="w-full py-3 text-[11px] font-bold text-slate-400 hover:text-amber-500 transition-colors uppercase tracking-widest disabled:opacity-60"
+                        >
+                          {lang === 'ko' ? '환불 요청' : 'Request Refund'}
+                        </button>
+                      ) : (
+                        <div className="space-y-3 p-4 bg-amber-50 dark:bg-amber-950/20 rounded-2xl border border-amber-200 dark:border-amber-800/40">
+                          <p className="text-xs font-bold text-amber-600 dark:text-amber-400">
+                            {lang === 'ko'
+                              ? '⚠️ 환불을 요청하시겠습니까?'
+                              : '⚠️ Are you sure you want to request a refund?'}
+                          </p>
+                          <ul className="text-[10px] text-slate-500 dark:text-slate-400 space-y-1 list-disc pl-4">
+                            <li>{lang === 'ko' ? '결제 후 7일 이내 & 이용 기록 없음 → 전액 환불 + 서비스 즉시 해제' : 'Within 7 days & no usage → full refund + immediate access revocation'}</li>
+                            <li>{lang === 'ko' ? '그 외 → 환불 불가 (이용 기간 만료 시 자동 종료)' : 'Otherwise → not eligible for refund (expires automatically)'}</li>
+                          </ul>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setShowCancelSub(false)}
+                              className="flex-1 py-3 text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                            >
+                              {lang === 'ko' ? '취소' : 'Cancel'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={cancelSubLoading}
+                              onClick={async () => {
+                                setCancelSubLoading(true);
+                                setError('');
+                                setInfo('');
+                                try {
+                                  const result = await cancelSubscription();
+                                  if (result.success) {
+                                    setInfo(result.message ?? (lang === 'ko' ? '환불 처리가 완료되었습니다.' : 'Refund has been processed.'));
+                                    setShowCancelSub(false);
+                                  } else {
+                                    // 환불 불가 시에도 서버가 success: false + message를 보냄 → 안내 메시지로 표시
+                                    setInfo(result.message ?? '');
+                                    if (result.error) setError(result.error);
+                                    setShowCancelSub(false);
+                                  }
+                                } catch {
+                                  setError(lang === 'ko' ? '환불 처리 중 오류가 발생했습니다.' : 'Error processing refund.');
+                                } finally {
+                                  setCancelSubLoading(false);
+                                }
+                              }}
+                              className="flex-1 py-3 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-xl transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                              {cancelSubLoading
+                                ? (lang === 'ko' ? '처리 중…' : 'Processing…')
+                                : (lang === 'ko' ? '환불 확인' : 'Confirm Refund')}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* 회원 탈퇴 */}
                   <div className="pt-4 border-t border-slate-200 dark:border-white/5">

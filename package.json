@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "granite dev",
-    "build": "vite build",
+    "build": "granite build",
     "preview": "vite preview",
     "deploy": "ait deploy",
     "supabase:deploy": "npx supabase functions deploy check-and-trigger-alarms && npx supabase functions deploy send-alarm",
@@ -13,7 +13,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@apps-in-toss/web-framework": "^1.8.0",
+    "@apps-in-toss/web-framework": "^1.9.4",
     "@emotion/react": "^11.14.0",
     "@google/genai": "^1.35.0",
     "@supabase/supabase-js": "^2.90.1",

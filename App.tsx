@@ -10,7 +10,6 @@ import AlarmModal from './components/AlarmModal';
 import Footer from './components/Footer';
 import Privacy from './components/Privacy';
 import Terms from './components/Terms';
-import RefundPolicy from './components/RefundPolicy';
 import PortfolioDetailsModal from './components/PortfolioDetailsModal';
 import QuickInputModal from './components/QuickInputModal';
 import TradeExecutionModal from './components/TradeExecutionModal';
@@ -55,7 +54,7 @@ const Backtest = React.lazy(() => import('./components/Backtest'));
 
 const App: React.FC = () => {
   const [lang, setLang] = useState<'ko' | 'en'>('ko');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'markets' | 'history' | 'backtest' | 'pricing' | 'privacy' | 'terms' | 'refund-policy'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'markets' | 'history' | 'backtest' | 'pricing' | 'privacy' | 'terms'>('dashboard');
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [isCreatorOpen, setIsCreatorOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
@@ -170,6 +169,18 @@ const App: React.FC = () => {
   const unhandledRejectionHandlerRef = useRef<((e: PromiseRejectionEvent) => void) | null>(null);
   /** 모달 로그인 직후 onAuthStateChange에서 fetchUserData 중복 호출 방지 */
   const justLoggedInRef = useRef(false);
+
+  // 주소창에 #terms / #privacy 가 있을 때만 해당 탭 자동 오픈. 그 외(로그인/로그아웃/새로고침 등)에는 hash 없으면 대시보드 유지.
+  useEffect(() => {
+    const syncTabFromHash = () => {
+      const hash = window.location.hash;
+      if (hash === '#terms') setActiveTab('terms');
+      else if (hash === '#privacy') setActiveTab('privacy');
+    };
+    syncTabFromHash();
+    window.addEventListener('hashchange', syncTabFromHash);
+    return () => window.removeEventListener('hashchange', syncTabFromHash);
+  }, []);
 
   // daily execution 요약 텍스트 (DB 저장용) – 실제 계산은 portfolios/lang/대시보드 요약이 바뀔 때만 수행
   const summaryToSave = useMemo(() => {
@@ -1711,13 +1722,24 @@ const App: React.FC = () => {
           )}
 
           {activeTab === 'privacy' && (
-            <Privacy lang={lang} onBack={() => setActiveTab('dashboard')} />
+            <Privacy
+              lang={lang}
+              onBack={() => {
+                setActiveTab('dashboard');
+                const u = window.location;
+                if (u.hash === '#privacy') window.history.replaceState(null, '', u.pathname + u.search);
+              }}
+            />
           )}
           {activeTab === 'terms' && (
-            <Terms lang={lang} onBack={() => setActiveTab('dashboard')} />
-          )}
-          {activeTab === 'refund-policy' && (
-            <RefundPolicy lang={lang} onBack={() => setActiveTab('dashboard')} />
+            <Terms
+              lang={lang}
+              onBack={() => {
+                setActiveTab('dashboard');
+                const u = window.location;
+                if (u.hash === '#terms') window.history.replaceState(null, '', u.pathname + u.search);
+              }}
+            />
           )}
         </main>
 
@@ -1907,9 +1929,21 @@ const App: React.FC = () => {
 
       {/* Footer — 법인 필수 정보 (토스 환경은 Footer 내부에서 자동 감지) */}
       <Footer
-        onNavigateTerms={() => setActiveTab('terms')}
-        onNavigatePrivacy={() => setActiveTab('privacy')}
-        onNavigateRefundPolicy={() => setActiveTab('refund-policy')}
+        onNavigateTerms={() => {
+          setActiveTab('terms');
+          const u = window.location;
+          window.history.replaceState(null, '', u.pathname + u.search + '#terms');
+        }}
+        onNavigatePrivacy={() => {
+          setActiveTab('privacy');
+          const u = window.location;
+          window.history.replaceState(null, '', u.pathname + u.search + '#privacy');
+        }}
+        onNavigateRefundPolicy={() => {
+          setActiveTab('terms');
+          const u = window.location;
+          window.history.replaceState(null, '', u.pathname + u.search + '#terms');
+        }}
       />
       </div>
   );

@@ -176,6 +176,96 @@ const Terms: React.FC<TermsProps> = ({ lang, onBack }) => {
           </ol>
         </Section>
 
+        {/* 제15조 환불 규정: 적용 대상 */}
+        <Section num={15} title={lang === 'ko' ? '환불 및 취소 규정 (적용 대상)' : 'Refund & Cancellation (Scope)'}>
+          <p className="text-[13px]">
+            {lang === 'ko'
+              ? '본 조항은 유한회사 두리여유(이하 "회사")가 운영하는 "바이더딥 알람" 서비스(이하 "서비스")의 유료 이용권 결제에 대한 환불 및 취소 절차를 규정합니다.'
+              : 'This section governs the refund and cancellation procedures for paid plan purchases of the "Buy The Dip Alarm" service operated by Duriyeoyu LLC.'}
+          </p>
+        </Section>
+
+        {/* 제16조 청약 철회 및 환불 */}
+        <Section num={16} title={lang === 'ko' ? '청약 철회 및 환불' : 'Withdrawal & Refund'}>
+          <ol className="list-decimal list-inside space-y-2 text-[13px] pl-1">
+            <li>
+              <strong>{lang === 'ko' ? '전액 환불 가능 조건' : 'Full Refund Conditions'}</strong>
+              <br />
+              {lang === 'ko'
+                ? '결제일로부터 7일 이내에 유료 서비스(AI 매매 인식, 백테스트, 텔레그램 연동 등)를 1회도 이용하지 않은 경우, 전액 환불이 가능합니다.'
+                : 'Full refund is available within 7 days of payment if no paid features (AI trade recognition, backtesting, Telegram integration, etc.) have been used.'}
+            </li>
+            <li>
+              <strong>{lang === 'ko' ? '환불 제한' : 'Refund Restrictions'}</strong>
+              <br />
+              {lang === 'ko'
+                ? '유료 서비스를 1회 이상 이용한 경우, 「전자상거래 등에서의 소비자보호에 관한 법률」 제17조 제2항 제5호에 따라 청약철회가 제한됩니다.'
+                : 'If paid features have been used even once, withdrawal is restricted in accordance with Article 17(2)(5) of the Consumer Protection Act for E-Commerce.'}
+            </li>
+            <li>
+              <strong>{lang === 'ko' ? '환불 처리 기간' : 'Refund Processing Time'}</strong>
+              <br />
+              {lang === 'ko' ? '환불 승인 후 결제 수단에 따라 3~7영업일 이내에 환불 금액이 반영됩니다.' : 'Refunds are processed within 3-7 business days after approval, depending on the payment method.'}
+            </li>
+          </ol>
+        </Section>
+
+        {/* 제17조 이용 기간 및 만료 */}
+        <Section num={17} title={lang === 'ko' ? '이용 기간 및 만료' : 'Service Period & Expiry'}>
+          <ol className="list-decimal list-inside space-y-2 text-[13px] pl-1">
+            <li>
+              {lang === 'ko'
+                ? '본 서비스는 단발성 결제 방식이며, 자동 갱신(정기 구독)은 적용되지 않습니다.'
+                : 'This service uses one-time payments. There is no automatic renewal or recurring subscription.'}
+            </li>
+            <li>
+              {lang === 'ko'
+                ? '이용권은 결제일로부터 30일간 유효하며, 만료 후에는 무료(FREE) 플랜으로 자동 전환됩니다.'
+                : 'Each plan is valid for 30 days from the date of purchase and reverts to the FREE plan upon expiry.'}
+            </li>
+            <li>
+              {lang === 'ko'
+                ? '환불이 불가한 경우에도 이용 기간 만료 시까지 유료 서비스를 계속 이용할 수 있습니다.'
+                : 'Even if a refund is not eligible, paid features remain accessible until the service period expires.'}
+            </li>
+          </ol>
+        </Section>
+
+        {/* 제18조 환불 절차 */}
+        <Section num={18} title={lang === 'ko' ? '환불 절차' : 'Refund Procedure'}>
+          <ol className="list-decimal list-inside space-y-2 text-[13px] pl-1">
+            <li>
+              {lang === 'ko'
+                ? '앱 내 [프로필] → [환불 요청] 버튼을 통해 환불을 신청할 수 있습니다.'
+                : 'Refund requests can be made via the [Profile] → [Request Refund] button in the app.'}
+            </li>
+            <li>
+              {lang === 'ko'
+                ? '자동 환불 처리가 불가능한 경우, 회사 지정 이메일로 환불을 요청하실 수 있습니다.'
+                : 'If automatic refund is not possible, you may contact us via the company email below.'}
+            </li>
+          </ol>
+        </Section>
+
+        {/* 제19조 환불 관련 면책 */}
+        <Section num={19} title={lang === 'ko' ? '환불 관련 면책' : 'Refund Disclaimer'}>
+          <p className="text-[13px]">
+            {lang === 'ko'
+              ? '본 서비스는 투자 정보 제공 목적이며, 투자 손실에 대한 책임은 이용자에게 있습니다. 서비스 제공 과정에서 발생한 기술적 장애로 인한 손해는 회사의 고의 또는 중과실이 없는 한 책임을 지지 않습니다.'
+              : 'This service provides investment information only. The user bears responsibility for investment decisions. The company is not liable for damages from technical issues unless caused by willful misconduct or gross negligence.'}
+          </p>
+        </Section>
+
+        {/* 제20조 환불 문의처 */}
+        <Section num={20} title={lang === 'ko' ? '환불 문의처' : 'Refund Contact'}>
+          <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-white/5 text-[13px] space-y-1">
+            <p><strong>{lang === 'ko' ? '상호' : 'Company'}:</strong> 유한회사 두리여유</p>
+            <p><strong>{lang === 'ko' ? '대표자' : 'CEO'}:</strong> 여태영</p>
+            <p><strong>{lang === 'ko' ? '사업자등록번호' : 'Business No.'}:</strong> 344-87-02345</p>
+            <p><strong>{lang === 'ko' ? '환불 문의 이메일' : 'Refund Email'}:</strong> grrrvv@naver.com</p>
+          </div>
+        </Section>
+
         {/* 부칙 */}
         <div className="mt-12 pt-6 border-t border-slate-200 dark:border-white/10">
           <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-3">부칙</h2>

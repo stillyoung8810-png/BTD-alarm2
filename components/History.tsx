@@ -21,7 +21,7 @@ const confirmAndRun = (msg: string, fn: () => void) => {
 interface HistoryProps {
   lang: 'ko' | 'en';
   portfolios: Portfolio[];
-  onOpenDetails: (id: string) => void;
+  onOpenDetails: (id: string) => void | Promise<void>;
   onDeleteHistory?: (portfolioId: string) => void;
   onClearHistory?: () => void;
 }

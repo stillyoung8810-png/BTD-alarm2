@@ -22,7 +22,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { PAY_METHOD_OPTIONS, type PayMethod, type EasyPayProvider } from '../services/payment/types';
-import { requestPayment, verifyPaymentOnServer } from '../services/payment/paymentService';
+import { requestPayment, verifyPaymentOnServer, verifyTossPaymentOnServer } from '../services/payment/paymentService';
+import { isTossApp } from '../services/tossAppBridge';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -90,9 +91,10 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
         if (result.success) {
           // ── 서버 측 결제 검증 (핵심 보안) ──
-          // 포트원 V2 API를 서버에서 직접 호출하여
-          // 실제 결제 상태 + 금액 위변조를 검증합니다.
-          const verification = await verifyPaymentOnServer(result.paymentId, plan.id);
+          // 토스: BFF(Railway) 경유 mTLS 검증. 포트원: Supabase Edge Function 검증.
+          const verification = isTossApp()
+            ? await verifyTossPaymentOnServer(result.paymentId, plan.id)
+            : await verifyPaymentOnServer(result.paymentId, plan.id);
 
           if (verification.success) {
             alert(isKo ? '결제가 완료되었습니다! 서비스가 활성화됩니다.' : 'Payment complete! Your service is now active.');

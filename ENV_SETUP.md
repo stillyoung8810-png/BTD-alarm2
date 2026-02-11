@@ -34,6 +34,10 @@ VITE_FIREBASE_STORAGE_BUCKET=your_project_id.appspot.com
 VITE_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
 VITE_FIREBASE_APP_ID=your_firebase_app_id
 VITE_FIREBASE_VAPID_KEY=your_vapid_key
+
+# 토스 미니앱 BFF (Railway, mTLS·인증·결제 검증)
+# 토스 로그인 code 교환, 토스페이 결제 검증 등 서버 간 통신용. 토스 미니앱 연동 시 필수.
+VITE_RAILWAY_BFF_URL=https://your-bff.railway.app
 ```
 
 ---

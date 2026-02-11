@@ -26,6 +26,7 @@ import { fetchStockPricesWithPrev, loadInitialStockData, loadPaidStockData } fro
 import { getUSSelectionHolidays } from './utils/marketUtils';
 import { requestForToken, getNotificationPermission } from './services/firebase';
 import { isTossApp } from './services/tossAppBridge';
+import { showRewardBeforeAction, showInterstitialBeforeAction, AdPlacement } from './services/ads/adService';
 import { TossAppProvider } from './contexts/TossAppContext';
 import { buildDailyExecutionSummary } from './utils/dailyExecutionSummary';
 import { 
@@ -732,6 +733,10 @@ const App: React.FC = () => {
       console.warn('[FCM] saveFCMToken called on non-browser environment. Skipping.');
       return;
     }
+    if (isTossApp()) {
+      saveFCMTokenInProgressRef.current = null;
+      return;
+    }
     if (saveFCMTokenInProgressRef.current === userId) {
       console.log('[FCM] saveFCMToken already in progress.');
       return;
@@ -1094,6 +1099,8 @@ const App: React.FC = () => {
       alert("로그인 세션이 만료되었습니다. 다시 로그인해주세요.");
       return;
     }
+
+    await showRewardBeforeAction(AdPlacement.REWARD_STRATEGY_SAVE);
 
     // 포트폴리오 개수 제한 체크 (진행 중인 포트폴리오만 카운트)
     const activePortfolios = portfolios.filter(p => !p.isClosed);
@@ -1472,6 +1479,11 @@ const App: React.FC = () => {
     ));
   };
 
+  const handleAddTradeWithReward = async (portfolioId: string, trade: Trade) => {
+    await showRewardBeforeAction(AdPlacement.REWARD_TRADE_SAVE);
+    await handleAddTrade(portfolioId, trade);
+  };
+
   const handleDeleteTrade = async (portfolioId: string, tradeId: string) => {
     const target = portfolios.find(p => p.id === portfolioId);
     if (!target) return;
@@ -1689,7 +1701,10 @@ const App: React.FC = () => {
             <History 
               lang={lang} 
               portfolios={portfolios.filter(p => p.isClosed && !hiddenHistoryIds.includes(p.id))} 
-              onOpenDetails={(id) => setDetailsTargetId(id)}
+              onOpenDetails={async (id) => {
+                await showInterstitialBeforeAction(AdPlacement.INTERSTITIAL_SETTLEMENT_DETAIL);
+                setDetailsTargetId(id);
+              }}
               onDeleteHistory={handleDeleteHistory}
               onClearHistory={handleClearHistory}
             />
@@ -1735,7 +1750,8 @@ const App: React.FC = () => {
             lang={lang}
             portfolio={currentAlarmPortfolio}
             onClose={() => setAlarmTargetId(null)}
-            onSave={(config) => {
+            onSave={async (config) => {
+              await showRewardBeforeAction(AdPlacement.REWARD_ALARM_SAVE);
               const tz = userProfile?.timezone || getDeviceTimeZone();
               const nextConfig = { ...config, timezone: config.timezone || tz };
               handleUpdatePortfolio({ ...currentAlarmPortfolio, alarmconfig: nextConfig });
@@ -1753,8 +1769,8 @@ const App: React.FC = () => {
             isHistory={currentDetailsPortfolio.isClosed}
           />
         )}
-        {currentQuickInputPortfolio && <QuickInputModal lang={lang} portfolio={currentQuickInputPortfolio} activeSection={quickInputActiveSection} onClose={() => { setQuickInputTargetId(null); setQuickInputActiveSection(undefined); }} onSave={(trade) => { handleAddTrade(currentQuickInputPortfolio.id, trade); setQuickInputTargetId(null); setQuickInputActiveSection(undefined); }} />}
-        {currentExecutionPortfolio && <TradeExecutionModal lang={lang} portfolio={currentExecutionPortfolio} onClose={() => setExecutionTargetId(null)} onSave={(trade) => { handleAddTrade(currentExecutionPortfolio.id, trade); setExecutionTargetId(null); }} />}
+        {currentQuickInputPortfolio && <QuickInputModal lang={lang} portfolio={currentQuickInputPortfolio} activeSection={quickInputActiveSection} onClose={() => { setQuickInputTargetId(null); setQuickInputActiveSection(undefined); }} onSave={(trade) => { handleAddTradeWithReward(currentQuickInputPortfolio.id, trade); setQuickInputTargetId(null); setQuickInputActiveSection(undefined); }} />}
+        {currentExecutionPortfolio && <TradeExecutionModal lang={lang} portfolio={currentExecutionPortfolio} onClose={() => setExecutionTargetId(null)} onSave={(trade) => { handleAddTradeWithReward(currentExecutionPortfolio.id, trade); setExecutionTargetId(null); }} />}
         {currentAIImagePortfolio && (
           <AIImageInputModal
             lang={lang}
@@ -1764,6 +1780,7 @@ const App: React.FC = () => {
             currentTier={currentTier === 'premium' || currentTier === 'pro' ? currentTier : 'free'}
             onClose={() => setAiImageTargetId(null)}
             onSave={async (trades) => {
+              await showRewardBeforeAction(AdPlacement.REWARD_TRADE_SAVE);
               for (const trade of trades) {
                 await handleAddTrade(currentAIImagePortfolio.id, trade);
               }

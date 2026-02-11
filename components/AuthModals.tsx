@@ -1,11 +1,12 @@
-
 import React, { useState, useEffect } from 'react';
 import { I18N } from '../constants';
 import { X, Mail, Lock, LogOut, Key, UserCheck, ShieldCheck, Sparkles, Send } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { cancelSubscription } from '../services/payment/paymentService';
+import { isTossApp } from '../services/tossAppBridge';
 import Toggle from './Toggle';
 import HoverTip from './HoverTip';
+import TossLoginView from './TossLoginView';
 
 interface AuthModalsProps {
   lang: 'ko' | 'en';
@@ -427,7 +428,21 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
 
         {/* Content - 스크롤 가능 */}
         <div className="p-6 md:p-10 space-y-6 md:space-y-8 flex-1 overflow-y-auto overscroll-contain">
-          {type === 'reset-password' ? (
+          {(type === 'login' || type === 'signup') && isTossApp() ? (
+            <>
+              {error && (
+                <p className="text-xs font-bold text-rose-500 bg-rose-500/10 border border-rose-500/30 rounded-2xl px-4 py-3">
+                  {error}
+                </p>
+              )}
+              <TossLoginView
+                lang={lang}
+                onSuccess={onLogin}
+                onError={setError}
+                onClose={onClose}
+              />
+            </>
+          ) : type === 'reset-password' ? (
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">{lang === 'ko' ? '새 비밀번호' : 'New Password'}</label>

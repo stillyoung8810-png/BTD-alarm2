@@ -15,9 +15,19 @@
 | `PORT` | Railway가 자동 설정. 없으면 3000 사용 |
 | `TOSS_CLIENT_CERT` | mTLS 클라이언트 인증서 (PEM 전체) |
 | `TOSS_CLIENT_KEY` | mTLS 클라이언트 비밀키 (PEM 전체) |
-| `TOSS_API_BASE_URL` | 토스 API 베이스 URL (개발/운영 구분) |
+| `TOSS_API_BASE_URL` | 토스 로그인 API 베이스 (기본: `https://apps-in-toss-api.toss.im`) |
+| `TOSS_PAY_API_BASE_URL` | 토스페이 API 베이스 (기본: `https://pay-apps-in-toss-api.toss.im`) |
 
-인증서·키는 여러 줄이므로 Railway에서 Multiline 또는 한 줄로 이스케이프해서 입력합니다.
+인증서·키는 여러 줄이므로 Railway에서 Multiline 또는 `\n`으로 줄바꿈 입력 가능합니다.
+
+### API 엔드포인트
+
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| GET | `/health` | 서버 상태 확인 |
+| POST | `/auth/toss/code` | 인가 코드 → Access Token 교환. Body: `{ authorizationCode, referrer }` |
+| POST | `/payment/toss/verify` | 결제 상태 조회. Header: `x-toss-user-key`, Body: `{ payToken, orderNo, isTestPayment }` |
+| POST | `/payment/toss/execute` | 결제 실행(승인). Header: `x-toss-user-key`, Body: `{ payToken, orderNo?, isTestPayment }` |
 
 ## 로컬 실행
 

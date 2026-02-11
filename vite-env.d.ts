@@ -17,6 +17,8 @@ interface ImportMetaEnv {
   readonly VITE_FIREBASE_MESSAGING_SENDER_ID?: string
   readonly VITE_FIREBASE_APP_ID?: string
   readonly VITE_FIREBASE_VAPID_KEY?: string
+  /** Railway BFF base URL (토스 mTLS·인증·결제 검증용). 예: https://your-app.railway.app */
+  readonly VITE_RAILWAY_BFF_URL?: string
 }
 
 interface ImportMeta {

@@ -57,8 +57,8 @@ export const isTossApp = (): boolean => {
   if (typeof window === 'undefined') return false;
 
   return !!(
-    (window as any).TossApp ||
-    (window as any).__TOSS_APP__ ||
+    window.TossApp ||
+    window.__TOSS_APP__ ||
     /TossApp|TossIt/i.test(navigator.userAgent)
   );
 };

@@ -8,12 +8,15 @@
 
 import { supabase } from '../supabase';
 import { isTossApp } from '../tossAppBridge';
+import { requestTossPayment } from '../toss/tossPayment';
 import type {
   PayMethod,
   PaymentRequest,
   PaymentResult,
   OrderRecord,
 } from './types';
+
+const BFF_URL = import.meta.env.VITE_RAILWAY_BFF_URL as string | undefined;
 
 // ---------------------------------------------------------------------------
 // 상수 (식별 정보 — 환경변수에서 가져옴)
@@ -110,18 +113,15 @@ function generatePaymentId(): string {
 export async function requestPayment(req: PaymentRequest): Promise<PaymentResult> {
   const paymentId = generatePaymentId();
 
-  // ── 토스 미니앱 환경 ──────────────────────────────────────
+  // ── 토스 미니앱 환경: 토스페이 브릿지 사용. 검증은 호출부에서 verifyTossPaymentOnServer로 BFF 경유 필수.
   if (isTossApp()) {
-    // TODO: 토스 브릿지 결제 최적화 로직
-    // 토스 미니앱 내에서는 포트원 대신 토스페이 브릿지를 통해
-    // 보다 네이티브한 결제 경험을 제공할 수 있습니다.
-    // 예시:
-    //   const bridge = await loadWebFramework();
-    //   const result = await bridge.partner.requestPayment({ ... });
-    //   return { success: true, paymentId, ... };
-    //
-    // 현재는 아래 포트원 표준 결제창을 동일하게 사용합니다.
-    console.info('[Payment] 토스 미니앱 환경 — 포트원 표준 결제창 사용');
+    return requestTossPayment({
+      paymentId,
+      orderName: req.orderName,
+      totalAmount: req.totalAmount,
+      planId: req.planId,
+      customerId: req.customerId,
+    });
   }
 
   // ── 포트원 V2 표준 결제창 ──────────────────────────────────
@@ -235,6 +235,55 @@ export async function verifyPaymentOnServer(
       return {
         success: false,
         error: data.error ?? '결제 검증에 실패했습니다.',
+      };
+    }
+
+    return {
+      success: true,
+      message: data.message,
+      subscription: data.subscription,
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : '결제 검증 중 네트워크 오류';
+    return { success: false, error: msg };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 토스페이 결제 검증 (Railway BFF 경유, mTLS)
+// ---------------------------------------------------------------------------
+/**
+ * 토스 미니앱 결제 후 반드시 BFF를 통해 토스 API로 최종 성공 여부를 검증한 뒤 구독 활성화.
+ */
+export async function verifyTossPaymentOnServer(
+  paymentId: string,
+  planId: string,
+): Promise<VerifyPaymentResult> {
+  if (!BFF_URL?.trim()) {
+    return { success: false, error: 'BFF URL이 설정되지 않았습니다.' };
+  }
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      return { success: false, error: '인증 세션이 없습니다. 다시 로그인해주세요.' };
+    }
+
+    const base = BFF_URL.replace(/\/+$/, '');
+    const res = await fetch(`${base}/payment/toss/verify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ paymentId, planId }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      return {
+        success: false,
+        error: data?.message ?? data?.error ?? '토스 결제 검증에 실패했습니다.',
       };
     }
 

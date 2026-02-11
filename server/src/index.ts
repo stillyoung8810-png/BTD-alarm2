@@ -3,6 +3,7 @@ import cors from "@fastify/cors";
 import dotenv from "dotenv";
 import { authRoutes } from "./routes/auth";
 import { paymentRoutes } from "./routes/payment";
+import { tossWebhookRoutes } from "./routes/tossWebhook";
 
 dotenv.config();
 
@@ -20,6 +21,7 @@ const start = async () => {
 
         await server.register(authRoutes);
         await server.register(paymentRoutes);
+        await server.register(tossWebhookRoutes);
 
         server.get("/health", async () => ({ status: "ok" }));
 

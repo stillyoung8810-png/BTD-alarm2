@@ -17,6 +17,7 @@ import { getUSSelectionHolidays } from './utils/marketUtils';
 import { getCurrentKSTDateString, getDeviceTimeZone } from './utils/dateUtils';
 import { parseDeviceInfo } from './utils/deviceInfo';
 import { normalizePortfolioData } from './utils/portfolioNormalize';
+import { useFCMToken } from './hooks/useFCMToken';
 import { isTossApp } from './services/tossAppBridge';
 import { showRewardBeforeAction, showInterstitialBeforeAction, AdPlacement } from './services/ads/adService';
 import { TossAppProvider } from './contexts/TossAppContext';
@@ -142,6 +143,8 @@ const App: React.FC = () => {
   const justLoggedInRef = useRef(false);
   /** 탭 포커스 복귀 시 동일 사용자로 SIGNED_IN이 올 때 데이터 재요청(refetchOnWindowFocus) 방지용 */
   const userIdRef = useRef<string | null>(null);
+
+  const { saveFCMToken } = useFCMToken();
 
   // 주소창에 #terms / #privacy 가 있을 때만 해당 탭 자동 오픈. 그 외(로그인/로그아웃/새로고침 등)에는 hash 없으면 대시보드 유지.
   useEffect(() => {
@@ -647,87 +650,6 @@ const App: React.FC = () => {
       }
     };
   }, [lang]);
-
-  const saveFCMTokenInProgressRef = useRef<string | null>(null);
-
-  // FCM 토큰을 Supabase에 저장하는 함수 (디버깅 로그 포함, user당 중복 호출 방지)
-  const saveFCMToken = async (userId: string): Promise<void> => {
-    if (typeof window === 'undefined') {
-      console.warn('[FCM] saveFCMToken called on non-browser environment. Skipping.');
-      return;
-    }
-    if (isTossApp()) {
-      saveFCMTokenInProgressRef.current = null;
-      return;
-    }
-    if (saveFCMTokenInProgressRef.current === userId) {
-      console.log('[FCM] saveFCMToken already in progress.');
-      return;
-    }
-    saveFCMTokenInProgressRef.current = userId;
-
-    console.log('[FCM] saveFCMToken called.');
-
-    try {
-      // Firebase(FCM)는 필요 시점에만 로드 — 초기 번들에서 제외
-      const { getNotificationPermission, requestForToken } = await import('./services/firebase');
-
-      // 알림 권한이 이미 거부된 경우 조용히 처리
-      const permission = getNotificationPermission();
-      console.log('[FCM] Current Notification.permission:', permission);
-
-      if (permission === 'denied') {
-        console.warn('[FCM] Notification permission was previously denied. Skipping FCM token request.');
-        return;
-      }
-
-      // FCM 토큰 요청
-      console.log('[FCM] Requesting FCM token via requestForToken()...');
-      const token = await requestForToken();
-      console.log('[FCM] requestForToken() resolved. Token exists:', !!token);
-      
-      if (!token) {
-        // 권한이 거부되었거나 토큰을 가져올 수 없는 경우 조용히 처리
-        console.warn('[FCM] Token is null/undefined. Aborting save.');
-        return;
-      }
-
-      // 브라우저 정보 파싱
-      const deviceInfo = parseDeviceInfo();
-      console.log('[FCM] Parsed device info:', deviceInfo);
-
-      // Supabase에 upsert (user_id와 fcm_token 기준)
-      console.log('[FCM] Upserting token into user_devices...');
-      const { error } = await supabase
-        .from('user_devices')
-        .upsert(
-          {
-            user_id: userId,
-            fcm_token: token,
-            device_type: deviceInfo.deviceType,
-            device_name: deviceInfo.deviceName,
-            user_agent: deviceInfo.userAgent,
-            is_active: true,
-            // updated_at은 트리거에 의해 자동으로 갱신됨
-          },
-          {
-            onConflict: 'user_id,fcm_token',
-            ignoreDuplicates: false,
-          }
-        );
-
-      if (error) {
-        console.error('[FCM] Failed to save FCM token:', error);
-      } else {
-        console.log('[FCM] FCM token saved successfully');
-      }
-    } catch (error) {
-      // 에러 발생 시에도 사용자 경험을 해치지 않도록 조용히 처리
-      console.error('[FCM] Error saving FCM token:', error);
-    } finally {
-      saveFCMTokenInProgressRef.current = null;
-    }
-  };
 
   // 로컬 저장소에서 포트폴리오 데이터 로드 (동기적, 즉시 실행)
   const loadPortfoliosFromCache = (userId: string): boolean => {

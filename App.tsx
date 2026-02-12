@@ -14,6 +14,9 @@ import { supabase, clearAuthStorage } from './services/supabase';
 import { calculateTotalInvested, calculateAlreadyRealized, calculateHoldings } from './utils/portfolioCalculations';
 import { fetchStockPricesWithPrev, loadInitialStockData, loadPaidStockData } from './services/stockService';
 import { getUSSelectionHolidays } from './utils/marketUtils';
+import { getCurrentKSTDateString, getDeviceTimeZone } from './utils/dateUtils';
+import { parseDeviceInfo } from './utils/deviceInfo';
+import { normalizePortfolioData } from './utils/portfolioNormalize';
 import { isTossApp } from './services/tossAppBridge';
 import { showRewardBeforeAction, showInterstitialBeforeAction, AdPlacement } from './services/ads/adService';
 import { TossAppProvider } from './contexts/TossAppContext';
@@ -92,14 +95,6 @@ const App: React.FC = () => {
   const [totalValuationChangePct, setTotalValuationChangePct] = useState<number>(0);
   /** Dashboard에서 만든 상세 daily execution 요약 (LOC/MOC 등 포함). 있으면 DB 저장 시 이걸 사용. */
   const [dailyExecutionSummaryFromDashboard, setDailyExecutionSummaryFromDashboard] = useState<string | null>(null);
-
-  const getDeviceTimeZone = (): string => {
-    try {
-      return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Seoul';
-    } catch {
-      return 'Asia/Seoul';
-    }
-  };
 
   const onDailyExecutionSummaryChange = useCallback((summary: string | null) => {
     setDailyExecutionSummaryFromDashboard(summary ?? null);
@@ -335,16 +330,6 @@ const App: React.FC = () => {
       setAuthModal('reset-password');
     }
   }, []);
-
-  // KST(Asia/Seoul) 기준 YYYY-MM-DD 문자열 (서버와 동일한 방식)
-  const getCurrentKSTDateString = () => {
-    const nowUtc = new Date();
-    const kstTime = new Date(nowUtc.getTime() + 9 * 60 * 60 * 1000);
-    const year = kstTime.getUTCFullYear();
-    const month = String(kstTime.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(kstTime.getUTCDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
 
   // 프로필 모달이 열릴 때: 전역 상태(userProfile)가 있으면 캐시 사용(select 생략), 없을 때만 서버 조회(폴백)
   useEffect(() => {
@@ -663,65 +648,6 @@ const App: React.FC = () => {
     };
   }, [lang]);
 
-  // 브라우저 정보 파싱 함수
-  const parseDeviceInfo = (): { deviceName: string; userAgent: string; deviceType: string } => {
-    if (typeof window === 'undefined' || !navigator) {
-      return {
-        deviceName: 'Unknown',
-        userAgent: '',
-        deviceType: 'web',
-      };
-    }
-
-    const ua = navigator.userAgent;
-    let browserName = 'Unknown Browser';
-    let osName = 'Unknown OS';
-
-    // 브라우저 감지
-    if (ua.includes('Chrome') && !ua.includes('Edg') && !ua.includes('OPR')) {
-      browserName = 'Chrome';
-    } else if (ua.includes('Firefox')) {
-      browserName = 'Firefox';
-    } else if (ua.includes('Safari') && !ua.includes('Chrome')) {
-      browserName = 'Safari';
-    } else if (ua.includes('Edg')) {
-      browserName = 'Edge';
-    } else if (ua.includes('OPR')) {
-      browserName = 'Opera';
-    }
-
-    // OS 감지
-    if (ua.includes('Windows')) {
-      if (ua.includes('Windows NT 10.0')) {
-        osName = 'Windows 10/11';
-      } else if (ua.includes('Windows NT 6.3')) {
-        osName = 'Windows 8.1';
-      } else if (ua.includes('Windows NT 6.2')) {
-        osName = 'Windows 8';
-      } else if (ua.includes('Windows NT 6.1')) {
-        osName = 'Windows 7';
-      } else {
-        osName = 'Windows';
-      }
-    } else if (ua.includes('Mac OS X') || ua.includes('Macintosh')) {
-      osName = 'macOS';
-    } else if (ua.includes('Linux')) {
-      osName = 'Linux';
-    } else if (ua.includes('Android')) {
-      osName = 'Android';
-    } else if (ua.includes('iOS') || (ua.includes('iPhone') || ua.includes('iPad'))) {
-      osName = 'iOS';
-    }
-
-    const deviceName = `${browserName} on ${osName}`;
-
-    return {
-      deviceName,
-      userAgent: ua,
-      deviceType: 'web',
-    };
-  };
-
   const saveFCMTokenInProgressRef = useRef<string | null>(null);
 
   // FCM 토큰을 Supabase에 저장하는 함수 (디버깅 로그 포함, user당 중복 호출 방지)
@@ -801,22 +727,6 @@ const App: React.FC = () => {
     } finally {
       saveFCMTokenInProgressRef.current = null;
     }
-  };
-
-  // 포트폴리오 데이터 정규화 함수
-  const normalizePortfolioData = (data: any[]): Portfolio[] => {
-    return (data as any[]).map((item) => ({
-      ...item,
-      dailyBuyAmount: item.daily_buy_amount ?? 0,
-      startDate: item.start_date ?? item.startDate ?? '',
-      feeRate: item.fee_rate ?? item.feeRate ?? 0.25,
-      isClosed: item.is_closed ?? item.isClosed ?? false,
-      closedAt: item.closed_at ?? item.closedAt ?? undefined,
-      finalSellAmount: item.final_sell_amount ?? item.finalSellAmount ?? undefined,
-      alarmconfig: item.alarm_config ?? item.alarmconfig ?? undefined,
-      isQuarterMode: item.is_quarter_mode ?? item.isQuarterMode ?? false,
-      strategy: item.strategy, // strategy 컬럼은 이미 일치
-    })) as Portfolio[];
   };
 
   // 로컬 저장소에서 포트폴리오 데이터 로드 (동기적, 즉시 실행)

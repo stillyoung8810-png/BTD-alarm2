@@ -18,6 +18,7 @@ import { getCurrentKSTDateString, getDeviceTimeZone } from './utils/dateUtils';
 import { parseDeviceInfo } from './utils/deviceInfo';
 import { normalizePortfolioData } from './utils/portfolioNormalize';
 import { useFCMToken } from './hooks/useFCMToken';
+import { useAuth } from './hooks/useAuth';
 import { isTossApp } from './services/tossAppBridge';
 import { showRewardBeforeAction, showInterstitialBeforeAction, AdPlacement } from './services/ads/adService';
 import { TossAppProvider } from './contexts/TossAppContext';
@@ -60,28 +61,8 @@ const App: React.FC = () => {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [isCreatorOpen, setIsCreatorOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
-  
-  const [user, setUser] = useState<{ id: string; email: string } | null>(null);
-  const [userProfile, setUserProfile] = useState<{ 
-    subscription_tier: string; 
-    max_portfolios: number; 
-    max_alarms: number;
-    subscription_status?: string | null;
-    subscription_expires_at?: string | null;
-    telegram_enabled?: boolean;
-    telegram_connected_at?: string | null;
-    telegram_last_error?: string | null;
-    preferred_language?: 'ko' | 'en' | null;
-    timezone?: string | null;
-    ai_daily_usage?: number;
-    ai_monthly_usage?: number;
-    backtest_daily_usage?: number;
-    last_usage_reset_at?: string | null;
-  } | null>(null);
-  const [authModal, setAuthModal] = useState<'login' | 'signup' | 'profile' | 'reset-password' | 'change-password' | null>(null);
   const [checkoutPlan, setCheckoutPlan] = useState<'pro' | 'premium' | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const authModalRef = useRef(authModal);
+  const fetchPortfoliosRef = useRef<(userId: string) => void>(() => {});
 
   const [alarmTargetId, setAlarmTargetId] = useState<string | null>(null);
   const [detailsTargetId, setDetailsTargetId] = useState<string | null>(null);
@@ -95,39 +76,12 @@ const App: React.FC = () => {
   const [totalValuationChange, setTotalValuationChange] = useState<number>(0);
   const [totalValuationChangePct, setTotalValuationChangePct] = useState<number>(0);
   /** Dashboard에서 만든 상세 daily execution 요약 (LOC/MOC 등 포함). 있으면 DB 저장 시 이걸 사용. */
-  const [dailyExecutionSummaryFromDashboard, setDailyExecutionSummaryFromDashboard] = useState<string | null>(null);
+  const [dailyExecutionSummaryFromDashboard, setDailyExecutionSummaryFromDashboard] =
+    useState<string | null>(null);
 
   const onDailyExecutionSummaryChange = useCallback((summary: string | null) => {
     setDailyExecutionSummaryFromDashboard(summary ?? null);
   }, []);
-
-  // 현재 유저의 구독 티어 (default: free)
-  const currentTier = (userProfile?.subscription_tier || 'free').toLowerCase();
-
-  // PRO/PREMIUM만 유료 종목 접근 허용 (만료/비활성 상태면 차단)
-  const canAccessPaidStocks = useMemo(() => {
-    const tierOk = currentTier === 'pro' || currentTier === 'premium';
-    if (!tierOk) return false;
-
-    const status = userProfile?.subscription_status;
-    const isActive = status === 'active' || status === 'trial' || status == null;
-
-    const expiresAt = userProfile?.subscription_expires_at;
-    const notExpired = !expiresAt || new Date(expiresAt) > new Date();
-
-    return isActive && notExpired;
-  }, [currentTier, userProfile?.subscription_status, userProfile?.subscription_expires_at]);
-
-  const { tierLabel, tierClassName, TierIcon, tierIconClassName } = useTierDisplay(currentTier);
-
-  // AI 매매 인식: 무료/유료 티어별 Gemini API 키 (무료: VITE_GEMINI_API_KEY_FREE, 유료: VITE_GEMINI_API_KEY_PAID, 미설정 시 VITE_GEMINI_API_KEY 또는 GEMINI_API_KEY 사용)
-  const geminiApiKey = useMemo(() => {
-    const isPaid = currentTier === 'pro' || currentTier === 'premium';
-    const paid = import.meta.env.VITE_GEMINI_API_KEY_PAID;
-    const free = import.meta.env.VITE_GEMINI_API_KEY_FREE;
-    const fallback = import.meta.env.VITE_GEMINI_API_KEY || (process as { env?: { API_KEY?: string } }).env?.API_KEY;
-    return (isPaid ? paid : free) || fallback || undefined;
-  }, [currentTier]);
 
   // 주가 캐싱 관련 상수
   const STOCK_PRICE_CACHE_KEY = 'STOCK_PRICE_CACHE_V1';
@@ -138,13 +92,6 @@ const App: React.FC = () => {
   // 중복 요청 방지를 위한 ref
   const fetchingPortfoliosRef = useRef<Set<string>>(new Set());
   const fetchPortfoliosAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
-  const unhandledRejectionHandlerRef = useRef<((e: PromiseRejectionEvent) => void) | null>(null);
-  /** 모달 로그인 직후 onAuthStateChange에서 fetchUserData 중복 호출 방지 */
-  const justLoggedInRef = useRef(false);
-  /** 탭 포커스 복귀 시 동일 사용자로 SIGNED_IN이 올 때 데이터 재요청(refetchOnWindowFocus) 방지용 */
-  const userIdRef = useRef<string | null>(null);
-
-  const { saveFCMToken } = useFCMToken();
 
   // 주소창에 #terms / #privacy 가 있을 때만 해당 탭 자동 오픈. 그 외(로그인/로그아웃/새로고침 등)에는 hash 없으면 대시보드 유지.
   useEffect(() => {
@@ -172,62 +119,53 @@ const App: React.FC = () => {
   const dailyExecutionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedSummaryRef = useRef<string | null>(null);
 
-  // user_profiles만 조회해 setUserProfile 갱신 (fetchUserData / onLogin 공용)
-  const fetchUserProfile = useCallback(async (userId: string): Promise<void> => {
-    if (!userId) return;
-    try {
-      const { data: profileData, error: profileError } = await supabase
-        .from('user_profiles')
-        .select('subscription_tier, max_portfolios, max_alarms, subscription_status, subscription_expires_at, telegram_enabled, telegram_connected_at, telegram_last_error, preferred_language, timezone, ai_daily_usage, ai_monthly_usage, backtest_daily_usage, last_usage_reset_at')
-        .eq('id', userId)
-        .single();
-      if (!profileError && profileData) {
-        const detectedTimezone = getDeviceTimeZone();
-        const profileTimezone = (profileData.timezone ?? '').trim();
-        const updatePayload: Record<string, string> = {};
+  const { saveFCMToken } = useFCMToken();
 
-        if (!profileTimezone || profileTimezone !== detectedTimezone) {
-          updatePayload.timezone = detectedTimezone;
-        }
+  const {
+    user,
+    setUser,
+    userProfile,
+    setUserProfile,
+    authModal,
+    setAuthModal,
+    fetchUserProfile,
+    justLoggedInRef,
+  } = useAuth({
+    lang,
+    setPortfolios,
+    saveFCMToken,
+    fetchPortfoliosRef,
+  });
 
-        // 소셜 로그인 후 동의 기록 처리 (localStorage에 저장된 pending consent)
-        const pendingConsent = localStorage.getItem('btd_pending_consent');
-        if (pendingConsent) {
-          try {
-            const consent = JSON.parse(pendingConsent);
-            if (consent.terms_consent_at) updatePayload.terms_consent_at = consent.terms_consent_at;
-            if (consent.privacy_consent_at) updatePayload.privacy_consent_at = consent.privacy_consent_at;
-          } catch { /* ignore parse error */ }
-          localStorage.removeItem('btd_pending_consent');
-        }
+  // 현재 유저의 구독 티어 (default: free)
+  const currentTier = (userProfile?.subscription_tier || 'free').toLowerCase();
 
-        if (Object.keys(updatePayload).length > 0) {
-          await supabase
-            .from('user_profiles')
-            .update(updatePayload)
-            .eq('id', userId);
-        }
-        setUserProfile({
-          subscription_tier: profileData.subscription_tier || 'free',
-          max_portfolios: profileData.max_portfolios,
-          max_alarms: profileData.max_alarms,
-          subscription_status: profileData.subscription_status ?? null,
-          subscription_expires_at: profileData.subscription_expires_at ?? null,
-          telegram_enabled: profileData.telegram_enabled ?? false,
-          telegram_connected_at: profileData.telegram_connected_at ?? null,
-          telegram_last_error: profileData.telegram_last_error ?? null,
-          preferred_language: profileData.preferred_language ?? 'ko',
-          timezone: profileTimezone || detectedTimezone,
-          ai_daily_usage: profileData.ai_daily_usage ?? 0,
-          ai_monthly_usage: profileData.ai_monthly_usage ?? 0,
-          backtest_daily_usage: profileData.backtest_daily_usage ?? 0,
-          last_usage_reset_at: profileData.last_usage_reset_at ?? null,
-        });
-      }
-    } catch (err) {
-      console.warn('[fetchUserProfile] 조회 실패:', err);
-    }
-  }, []);
+  // PRO/PREMIUM만 유료 종목 접근 허용 (만료/비활성 상태면 차단)
+  const canAccessPaidStocks = useMemo(() => {
+    const tierOk = currentTier === 'pro' || currentTier === 'premium';
+    if (!tierOk) return false;
+
+    const status = userProfile?.subscription_status;
+    const isActive = status === 'active' || status === 'trial' || status == null;
+
+    const expiresAt = userProfile?.subscription_expires_at;
+    const notExpired = !expiresAt || new Date(expiresAt) > new Date();
+
+    return isActive && notExpired;
+  }, [currentTier, userProfile?.subscription_status, userProfile?.subscription_expires_at]);
+
+  const { tierLabel, tierClassName, TierIcon, tierIconClassName } = useTierDisplay(currentTier);
+
+  // AI 매매 인식: 무료/유료 티어별 Gemini API 키 (무료: VITE_GEMINI_API_KEY_FREE, 유료: VITE_GEMINI_API_KEY_PAID, 미설정 시 VITE_GEMINI_API_KEY 또는 GEMINI_API_KEY 사용)
+  const geminiApiKey = useMemo(() => {
+    const isPaid = currentTier === 'pro' || currentTier === 'premium';
+    const paid = import.meta.env.VITE_GEMINI_API_KEY_PAID;
+    const free = import.meta.env.VITE_GEMINI_API_KEY_FREE;
+    const fallback =
+      import.meta.env.VITE_GEMINI_API_KEY ||
+      (process as { env?: { API_KEY?: string } }).env?.API_KEY;
+    return (isPaid ? paid : free) || fallback || undefined;
+  }, [currentTier]);
 
   // States for the 2-step termination flow
   const [terminateTargetId, setTerminateTargetId] = useState<string | null>(null);
@@ -306,22 +244,12 @@ const App: React.FC = () => {
     if (!canAccessPaidStocks) return;
     if (paidStocksLoadedRef.current) return;
     paidStocksLoadedRef.current = true;
-
+  
     const run = async () => {
       await loadPaidStockData();
     };
     run();
   }, [canAccessPaidStocks]);
-
-  // authModal의 최신 값을 ref에 동기화
-  useEffect(() => {
-    authModalRef.current = authModal;
-  }, [authModal]);
-
-  // 탭 포커스 시 동일 사용자 SIGNED_IN으로 인한 불필요한 fetchUserData 방지용
-  useEffect(() => {
-    userIdRef.current = user?.id ?? null;
-  }, [user?.id]);
 
   // 비밀번호 재설정 링크(/auth/reset-password)로 진입했을 때 초기 진입 시점에 모달 자동 오픈
   useEffect(() => {
@@ -374,282 +302,6 @@ const App: React.FC = () => {
       isMounted = false;
     };
   }, []);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    // 세션 기반 유저/포트폴리오 로딩 (세션 복구 시 단일 진입점)
-    const fetchUserData = async (sessionUser: { id: string; email?: string | null }) => {
-      console.log('[fetchUserData] 시작');
-      if (!sessionUser?.id || !isMounted) return;
-
-      try {
-        const currentUser = { id: sessionUser.id, email: sessionUser.email || '' };
-        if (!isMounted) return;
-        setUser(currentUser);
-        setUserProfile({
-          subscription_tier: 'free',
-          max_portfolios: 2,
-          max_alarms: 2,
-          preferred_language: 'ko',
-          timezone: getDeviceTimeZone(),
-        });
-        fetchUserProfile(currentUser.id);
-        fetchPortfolios(currentUser.id);
-      } catch (err) {
-        console.error('[fetchUserData] catch 에러:', err);
-      }
-    };
-
-    // 세션 에러 발생 시 로컬 스토리지 정리 및 상태 초기화 헬퍼 함수
-    const clearAuthState = async (showAlert: boolean = true) => {
-      if (!isMounted) return;
-      
-      console.log('[Auth] Clearing auth state due to session error');
-      
-      // Supabase 로컬 스토리지 키 정리 (공통 헬퍼 함수 사용)
-      clearAuthStorage();
-      
-      // 강제 로그아웃 (에러 무시 - 이미 세션이 깨진 상태일 수 있음)
-      try {
-        await supabase.auth.signOut({ scope: 'local' });
-      } catch (e) {
-        console.warn('[Auth] signOut during clearAuthState failed (expected):', e);
-      }
-      
-      // 상태 초기화
-      setUser(null);
-      setUserProfile(null);
-      setPortfolios([]);
-      
-      if (showAlert) {
-        alert(lang === 'ko' 
-          ? '세션이 만료되었습니다. 다시 로그인해 주세요.' 
-          : 'Session expired. Please log in again.');
-      }
-    };
-
-    // 1. 현재 세션을 직접 확인하여 user 상태를 즉시 복구 시도 (새로고침 시 중요)
-    const checkUser = async () => {
-      console.log('[checkUser] 시작');
-      if (!isMounted) {
-        console.log('[checkUser] isMounted=false, 종료');
-        return;
-      }
-      
-      try {
-        setIsLoading(true);
-        console.log('[checkUser] getSession 호출 중...');
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        console.log('[checkUser] getSession 결과:', { 
-          hasSession: !!session, 
-          error: sessionError?.message 
-        });
-
-        if (!isMounted) {
-          console.log('[checkUser] isMounted=false (getSession 후), 종료');
-          return;
-        }
-
-        if (sessionError) {
-          if (sessionError.name !== 'AbortError') {
-            console.error('[checkUser] Session error:', sessionError);
-            
-            // Invalid Refresh Token 등 세션 관련 에러 처리
-            const errorMessage = sessionError.message?.toLowerCase() || '';
-            if (
-              errorMessage.includes('refresh token') ||
-              errorMessage.includes('invalid') ||
-              errorMessage.includes('expired') ||
-              errorMessage.includes('not found')
-            ) {
-              console.warn('[checkUser] Session validation failed, clearing auth state');
-              await clearAuthState(false); // 초기 로딩 시에는 알림 표시 안 함
-              return;
-            }
-          }
-        }
-
-        if (session?.user) {
-          console.log('[checkUser] 세션 있음, fetchUserData 호출');
-          // 세션이 있으면 즉시 사용자 정보와 포트폴리오 로드
-          await fetchUserData(session.user);
-          console.log('[checkUser] fetchUserData 완료');
-          
-          // 기존 세션 복구 시에도 FCM 토큰 저장 시도 (로그인 상태 유지 중)
-          if (session.user.id) {
-            console.log('[FCM] Session restore detected. Trying to save FCM token.');
-            saveFCMToken(session.user.id).catch((err) => {
-              console.debug('[FCM] FCM token save attempt on session restore completed with error (can be null):', err);
-            });
-          }
-        } else {
-          console.log('[checkUser] 세션 없음, 상태 초기화');
-          setUser(null);
-          setUserProfile(null);
-          setPortfolios([]);
-        }
-      } catch (err: any) {
-        console.error('[checkUser] catch 블록 에러:', err);
-        if (err?.name !== 'AbortError' && isMounted) {
-          console.error('[checkUser] Init auth error:', err);
-          
-          // AuthApiError 등 인증 관련 에러 처리
-          const errorMessage = err?.message?.toLowerCase() || '';
-          if (
-            errorMessage.includes('refresh token') ||
-            errorMessage.includes('invalid') ||
-            err?.name === 'AuthApiError'
-          ) {
-            await clearAuthState(false);
-          }
-        }
-      } finally {
-        console.log('[checkUser] finally 블록');
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    checkUser();
-
-    // 초기 세션 로드 완료 여부 플래그
-    let initialSessionLoaded = false;
-
-    // 2. 인증 상태 변화 감지 (로그인, 로그아웃, 토큰 갱신 등)
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (!isMounted) return;
-
-        try {
-          console.log('[onAuthStateChange] 이벤트:', event);
-
-          const currentUser = session?.user ?? null;
-
-          // INITIAL_SESSION: 초기 세션 로드 완료 - checkUser에서 처리하므로 여기서는 플래그만 설정
-          if (event === 'INITIAL_SESSION') {
-            initialSessionLoaded = true;
-            return;
-          }
-
-          // TOKEN_REFRESHED: 토큰이 성공적으로 갱신됨
-          if (event === 'TOKEN_REFRESHED') {
-            console.log('[Auth] Token refreshed successfully');
-            return; // 토큰 갱신은 데이터 리로드 불필요
-          }
-
-          // SIGNED_IN: 로그인 성공
-          if (event === 'SIGNED_IN') {
-            if (typeof window !== 'undefined') {
-              window.history.replaceState(null, '', window.location.pathname + window.location.search);
-            }
-            if (!initialSessionLoaded || justLoggedInRef.current) return;
-          }
-
-          // SIGNED_OUT: 로그아웃됨
-          if (event === 'SIGNED_OUT') {
-            setUser(null);
-            setUserProfile(null);
-            setPortfolios([]);
-            return;
-          }
-
-          if (currentUser && initialSessionLoaded) {
-            if (justLoggedInRef.current) {
-              justLoggedInRef.current = false;
-            } else if (event === 'SIGNED_IN' && currentUser.id === userIdRef.current) {
-              // 탭 포커스 복귀 시 토큰 갱신으로 SIGNED_IN이 오는 경우 — 실시간 연동 불필요하므로 데이터 재요청 생략
-              return;
-            } else {
-              await fetchUserData(currentUser);
-            }
-
-            // 로그인 성공 시 FCM 토큰 저장 (SIGNED_IN 이벤트일 때만)
-            if (event === 'SIGNED_IN' && currentUser.id) {
-              console.log('[FCM] SIGNED_IN event detected. Trying to save FCM token.');
-              saveFCMToken(currentUser.id).catch((err) => {
-                // 에러는 이미 saveFCMToken 내부에서 처리되므로 여기서는 조용히 처리
-                console.debug('[FCM] FCM token save attempt on SIGNED_IN completed with error (can be null):', err);
-              });
-            }
-
-            if (event === 'PASSWORD_RECOVERY' && isMounted) {
-              // 비밀번호 재설정 모달 열기
-              setAuthModal('reset-password');
-            }
-
-            if (event === 'USER_UPDATED' && isMounted) {
-              // 비밀번호 변경 등 사용자 정보 업데이트 시 모달 닫기 및 성공 메시지
-              if (authModalRef.current === 'reset-password') {
-                setAuthModal(null);
-                alert(lang === 'ko' ? '비밀번호가 성공적으로 변경되었습니다.' : 'Password updated successfully.');
-              }
-            }
-          } else if (initialSessionLoaded && !currentUser) {
-            // 초기 로드 완료 후 사용자가 없는 경우에만 상태 초기화
-            console.log('[onAuthStateChange] 사용자 없음, 상태 초기화');
-            setUser(null);
-            setUserProfile(null);
-            setPortfolios([]);
-          }
-        } catch (err: any) {
-          if (err?.name !== 'AbortError' && isMounted) {
-            console.error('Auth state change error:', err);
-            
-            // AuthApiError (Invalid Refresh Token 등) 처리
-            const errorMessage = err?.message?.toLowerCase() || '';
-            if (
-              errorMessage.includes('refresh token') ||
-              errorMessage.includes('invalid') ||
-              errorMessage.includes('expired') ||
-              err?.name === 'AuthApiError'
-            ) {
-              console.warn('[Auth] Auth error detected in onAuthStateChange, clearing auth state');
-              await clearAuthState(true);
-            }
-          }
-        }
-      },
-    );
-
-    // 3. Supabase 내부 에러 이벤트 리스너 (토큰 갱신 실패 등)
-    // _recoverAndRefresh 에러를 잡기 위한 전역 에러 핸들러 (등록/해제 시 동일 참조 사용)
-    const handleAuthError = async (event: PromiseRejectionEvent) => {
-      if (!isMounted) return;
-
-      const errorMessage = event.reason?.message?.toLowerCase() || '';
-      const errorName = event.reason?.name || '';
-
-      if (
-        errorName === 'AuthApiError' ||
-        errorMessage.includes('refresh token') ||
-        errorMessage.includes('invalid refresh token')
-      ) {
-        console.warn('[Auth] Unhandled auth error detected:', event.reason);
-        event.preventDefault();
-        await clearAuthState(true);
-      }
-    };
-    const handler = (e: PromiseRejectionEvent) => {
-      handleAuthError(e);
-    };
-    unhandledRejectionHandlerRef.current = handler;
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('unhandledrejection', handler);
-    }
-
-    return () => {
-      isMounted = false;
-      listener.subscription.unsubscribe();
-
-      if (typeof window !== 'undefined' && unhandledRejectionHandlerRef.current) {
-        window.removeEventListener('unhandledrejection', unhandledRejectionHandlerRef.current);
-        unhandledRejectionHandlerRef.current = null;
-      }
-    };
-  }, [lang]);
 
   // 로컬 저장소에서 포트폴리오 데이터 로드 (동기적, 즉시 실행)
   const loadPortfoliosFromCache = (userId: string): boolean => {
@@ -783,6 +435,11 @@ const App: React.FC = () => {
       // 에러가 나도 로컬 데이터가 있으면 화면은 유지됨
     });
   };
+
+  // useAuth가 세션 복구 시 사용할 포트폴리오 로딩 함수 레퍼런스 동기화
+  useEffect(() => {
+    fetchPortfoliosRef.current = fetchPortfolios;
+  }, [fetchPortfolios]);
 
 
   // 전체 보유 수량 집계 (포트폴리오/거래 변경시에만 재계산)

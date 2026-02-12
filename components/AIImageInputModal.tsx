@@ -32,6 +32,7 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
   const [imageData, setImageData] = useState<string | null>(null);
   const [imageMime, setImageMime] = useState<string>('image/png');
   const [recognizedTrades, setRecognizedTrades] = useState<RecognizedTradeItem[]>([]);
+  const [selectedIndexes, setSelectedIndexes] = useState<Set<number>>(new Set());
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -163,9 +164,12 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
 
         if (filteredTrades.length > 0) {
           setRecognizedTrades(filteredTrades);
+          // 기본값: 인식된 모든 매매가 선택된 상태
+          setSelectedIndexes(new Set(filteredTrades.map((_, idx) => idx)));
           setStep('result');
         } else {
           setRecognizedTrades([]);
+          setSelectedIndexes(new Set());
           setErrorMessage(
             lang === 'ko'
               ? '현재 포트폴리오에서 매매하기로 선택한 종목과 일치하는 매매 기록이 없습니다.'
@@ -207,7 +211,15 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
   };
 
   const handleConfirmSave = () => {
-    const trades = recognizedTrades.map((r, i) => toTrade(r, i));
+    if (selectedIndexes.size === 0) {
+      // 선택된 항목이 없다면 아무 것도 저장하지 않고 조용히 리턴
+      onClose();
+      return;
+    }
+    const trades = recognizedTrades
+      .map((r, i) => ({ r, i }))
+      .filter(({ i }) => selectedIndexes.has(i))
+      .map(({ r, i }) => toTrade(r, i));
     onSave(trades);
     onClose();
   };
@@ -216,6 +228,7 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
     setStep('upload');
     setImageData(null);
     setRecognizedTrades([]);
+    setSelectedIndexes(new Set());
     setErrorMessage(null);
   };
 
@@ -327,8 +340,26 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
                 {recognizedTrades.map((r, i) => (
                   <div
                     key={i}
-                    className="bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-white/5 p-4 flex items-center justify-between"
+                    className="bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-white/5 p-4 flex items-center justify-between gap-3"
                   >
+                    <div className="flex items-start">
+                      <input
+                        type="checkbox"
+                        className="mt-1 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        checked={selectedIndexes.has(i)}
+                        onChange={() => {
+                          setSelectedIndexes((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(i)) {
+                              next.delete(i);
+                            } else {
+                              next.add(i);
+                            }
+                            return next;
+                          });
+                        }}
+                      />
+                    </div>
                     <div className="flex-1 min-w-0">
                       <span
                         className={`text-xs font-black uppercase ${r.type === 'buy' ? 'text-blue-600 dark:text-blue-400' : 'text-rose-600 dark:text-rose-400'}`}
@@ -345,7 +376,9 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
                 ))}
               </div>
               <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                {lang === 'ko' ? '위 내용이 맞다면 아래에서 확인 후 저장해주세요.' : 'If the above is correct, confirm and save below.'}
+                {lang === 'ko'
+                  ? '실제로 포트폴리오에 반영할 매매만 선택한 뒤, 아래에서 확인 후 저장해주세요.'
+                  : 'Select only the trades you want to apply to this portfolio, then confirm and save below.'}
               </p>
             </>
           )}
@@ -392,7 +425,8 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
               </button>
               <button
                 onClick={handleConfirmSave}
-                className="flex-[2] py-4 md:py-5 bg-indigo-600 dark:bg-indigo-500 text-white rounded-2xl font-black uppercase text-xs shadow-xl dark:shadow-indigo-500/20 flex items-center justify-center gap-2 hover:scale-[1.02] transition-all"
+                disabled={selectedIndexes.size === 0}
+                className="flex-[2] py-4 md:py-5 bg-indigo-600 dark:bg-indigo-500 text-white rounded-2xl font-black uppercase text-xs shadow-xl dark:shadow-indigo-500/20 flex items-center justify-center gap-2 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:pointer-events-none"
               >
                 {t.aiConfirmSave}
                 <ChevronRight size={16} />

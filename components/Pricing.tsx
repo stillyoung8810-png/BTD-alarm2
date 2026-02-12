@@ -354,13 +354,13 @@ const Pricing: React.FC<PricingProps> = ({ lang, currentTier, onUpgrade }) => {
         <section className="mt-40 mb-20">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
             <div className="relative group">
-              <div className="relative w-full max-w-[320px] mx-auto aspect-[9/18.5] bg-[#1a1c23] rounded-[3rem] border-8 border-slate-800 shadow-2xl overflow-hidden ring-1 ring-white/10">
-                <div className="absolute inset-4 rounded-[2rem] bg-[#0e1117] overflow-hidden">
+              <div className="relative w-full max-w-[320px] mx-auto bg-[#1a1c23] rounded-[3rem] border-8 border-slate-800 shadow-2xl overflow-hidden ring-1 ring-white/10">
+                <div className="rounded-[2rem] bg-[#0e1117] overflow-hidden m-2">
                   <div className="flex items-center gap-3 px-5 py-4 bg-slate-900/80 border-b border-white/5">
                     <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-black">B</div>
                     <div className="text-xs font-black text-white">BTD Alarm Bot</div>
                   </div>
-                  <div className="p-4 space-y-4 overflow-y-auto h-[calc(100%-60px)]" onClick={cycleTelegram}>
+                  <div className="p-4 space-y-4 overflow-y-auto max-h-[360px]" onClick={cycleTelegram}>
                     {previewCards.map((card, idx) => (
                       <div key={idx} className={`p-4 rounded-2xl bg-slate-800 border border-white/5 transition-all duration-300 ${idx === telegramCardIndex ? 'opacity-100' : 'hidden'}`}>
                         <div className="flex justify-between items-center mb-2">

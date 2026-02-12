@@ -69,7 +69,6 @@ const App: React.FC = () => {
   const [quickInputActiveSection, setQuickInputActiveSection] = useState<1 | 2 | 3 | undefined>(undefined);
   const [executionTargetId, setExecutionTargetId] = useState<string | null>(null);
   const [aiImageTargetId, setAiImageTargetId] = useState<string | null>(null);
-  const [hiddenHistoryIds, setHiddenHistoryIds] = useState<string[]>([]);
   const [totalValuation, setTotalValuation] = useState<number>(0);
   const [totalValuationPrev, setTotalValuationPrev] = useState<number>(0);
   const [totalValuationChange, setTotalValuationChange] = useState<number>(0);
@@ -626,7 +625,7 @@ const App: React.FC = () => {
             <React.Suspense fallback={<div className="flex items-center justify-center min-h-[50vh] text-slate-500 dark:text-slate-400 font-bold">{lang === 'ko' ? '히스토리 로딩 중…' : 'Loading history…'}</div>}>
               <History 
                 lang={lang} 
-                portfolios={portfolios.filter(p => p.isClosed && !hiddenHistoryIds.includes(p.id))} 
+                portfolios={portfolios.filter(p => p.isClosed)} 
                 onOpenDetails={async (id) => {
                   await showInterstitialBeforeAction(AdPlacement.INTERSTITIAL_SETTLEMENT_DETAIL);
                   setDetailsTargetId(id);

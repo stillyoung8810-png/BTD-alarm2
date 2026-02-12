@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "granite dev",
     "build": "granite build",
+    "build:analyze": "vite build --mode analyze",
     "preview": "vite preview",
     "deploy": "ait deploy",
     "supabase:deploy": "npx supabase functions deploy check-and-trigger-alarms && npx supabase functions deploy send-alarm",
@@ -29,9 +30,14 @@
     "recharts": "^3.6.0"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.0",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "rollup-plugin-visualizer": "^6.0.5",
     "supabase": "^2.0.0",
+    "tailwindcss": "^4.0.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
     "vitest": "^4.0.18"

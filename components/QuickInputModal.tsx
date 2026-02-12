@@ -4,8 +4,7 @@ import { Portfolio, Trade } from '../types';
 import { I18N, CUSTOM_GRADIENT_LOGOS, PAID_STOCKS } from '../constants';
 import { X, Zap, ChevronRight, AlertCircle } from 'lucide-react';
 import StockLogo from './StockLogo';
-import { fetchStockPrices } from '../services/stockService';
-import { getStockPrices } from '../services/db';
+import { getLatestLocalTradeDateFromDb } from '../services/stockService';
 import { calculateHoldings } from '../utils/portfolioCalculations';
 
 interface QuickInputModalProps {
@@ -44,36 +43,24 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
   const targetStockForDate = portfolio.strategy.multiSplit?.targetStock ?? portfolio.strategy.ma0?.stock;
   useEffect(() => {
     const fetchLatestDate = async () => {
+      const targetStock = portfolio.strategy.multiSplit
+        ? portfolio.strategy.multiSplit.targetStock
+        : portfolio.strategy.ma0.stock;
+
       try {
-        const targetStock = portfolio.strategy.multiSplit
-          ? portfolio.strategy.multiSplit.targetStock
-          : portfolio.strategy.ma0.stock;
-
-        // IndexedDB에서 최신 데이터 가져오기
-        const { getStockPrices, initDatabase } = await import('../services/db');
-        await initDatabase();
-        const records = await getStockPrices(targetStock, 1);
-
-        if (records.length > 0) {
-          const latestDate = records[records.length - 1].date;
-          setLatestTradeDate(latestDate);
-        } else {
-          // IndexedDB에 없으면 오늘 날짜 사용
-          const today = new Date();
-          const year = today.getFullYear();
-          const month = String(today.getMonth() + 1).padStart(2, '0');
-          const day = String(today.getDate()).padStart(2, '0');
-          setLatestTradeDate(`${year}-${month}-${day}`);
+        const latest = await getLatestLocalTradeDateFromDb(targetStock);
+        if (latest) {
+          setLatestTradeDate(latest);
+          return;
         }
       } catch (err) {
         console.error('Error fetching latest trade date:', err);
-        // 에러 시 오늘 날짜 사용
-        const today = new Date();
-        const year = today.getFullYear();
-        const month = String(today.getMonth() + 1).padStart(2, '0');
-        const day = String(today.getDate()).padStart(2, '0');
-        setLatestTradeDate(`${year}-${month}-${day}`);
       }
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const day = String(today.getDate()).padStart(2, '0');
+      setLatestTradeDate(`${year}-${month}-${day}`);
     };
 
     fetchLatestDate();

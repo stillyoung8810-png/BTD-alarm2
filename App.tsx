@@ -2,28 +2,18 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Portfolio, Trade } from './types';
 import { I18N } from './constants';
-import Dashboard from './components/Dashboard';
-import Markets from './components/Markets';
-import History from './components/History';
-import StrategyCreator from './components/StrategyCreator';
-import AlarmModal from './components/AlarmModal';
 import Footer from './components/Footer';
 import Privacy from './components/Privacy';
 import Terms from './components/Terms';
-import PortfolioDetailsModal from './components/PortfolioDetailsModal';
-import QuickInputModal from './components/QuickInputModal';
 import TradeExecutionModal from './components/TradeExecutionModal';
-import AIImageInputModal from './components/AIImageInputModal';
 import { TerminationInput, Result as SettlementResult } from './components/SettlementModals';
 import AuthModals from './components/AuthModals';
 import Landing from './components/Landing';
 import Pricing from './components/Pricing';
-import CheckoutModal from './components/CheckoutModal';
 import { supabase, clearAuthStorage } from './services/supabase';
 import { calculateTotalInvested, calculateAlreadyRealized, calculateHoldings } from './utils/portfolioCalculations';
 import { fetchStockPricesWithPrev, loadInitialStockData, loadPaidStockData } from './services/stockService';
 import { getUSSelectionHolidays } from './utils/marketUtils';
-import { requestForToken, getNotificationPermission } from './services/firebase';
 import { isTossApp } from './services/tossAppBridge';
 import { showRewardBeforeAction, showInterstitialBeforeAction, AdPlacement } from './services/ads/adService';
 import { TossAppProvider } from './contexts/TossAppContext';
@@ -45,6 +35,20 @@ import {
 import { useTierDisplay } from './hooks/useTierDisplay';
 
 const Backtest = React.lazy(() => import('./components/Backtest'));
+const Dashboard = React.lazy(() => import('./components/Dashboard'));
+const Markets = React.lazy(() => import('./components/Markets'));
+const History = React.lazy(() => import('./components/History'));
+const QuickInputModal = React.lazy(() => import('./components/QuickInputModal'));
+const CheckoutModal = React.lazy(() => import('./components/CheckoutModal'));
+const StrategyCreator = React.lazy(() => import('./components/StrategyCreator'));
+const AlarmModal = React.lazy(() => import('./components/AlarmModal'));
+const PortfolioDetailsModal = React.lazy(() => import('./components/PortfolioDetailsModal'));
+const AIImageInputModal = React.lazy(() => import('./components/AIImageInputModal'));
+
+/** Lazy-loaded 모달 공통 Suspense fallback — DRY */
+const LAZY_MODAL_FALLBACK = (
+  <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/50 dark:bg-slate-950/80 text-slate-400 font-bold">…</div>
+);
 
 const App: React.FC = () => {
   const [lang, setLang] = useState<'ko' | 'en'>('ko');
@@ -739,6 +743,9 @@ const App: React.FC = () => {
     console.log('[FCM] saveFCMToken called.');
 
     try {
+      // Firebase(FCM)는 필요 시점에만 로드 — 초기 번들에서 제외
+      const { getNotificationPermission, requestForToken } = await import('./services/firebase');
+
       // 알림 권한이 이미 거부된 경우 조용히 처리
       const permission = getNotificationPermission();
       console.log('[FCM] Current Notification.permission:', permission);
@@ -1632,34 +1639,36 @@ const App: React.FC = () => {
         <main className="max-w-7xl mx-auto px-6 md:px-16 py-10">
           {activeTab === 'dashboard' && (
             user ? (
-              <Dashboard 
-                lang={lang}
-                portfolios={activePortfolios} 
-                onClosePortfolio={(id) => setTerminateTargetId(id)}
-                onDeletePortfolio={handleDeletePortfolio}
-                onUpdatePortfolio={handleUpdatePortfolio}
-                onOpenCreator={() => {
-                  if (activePortfolios.length >= getMaxPortfolios(userProfile)) {
-                    alert(lang === 'ko' 
-                      ? `포트폴리오 생성 한도(${getMaxPortfolios(userProfile)}개)에 도달했습니다. 더 많은 포트폴리오를 만들려면 업그레이드를 고려해 보세요.` 
-                      : `Portfolio limit (${getMaxPortfolios(userProfile)}) reached. Please upgrade for more.`);
-                    return;
-                  }
-                  setIsCreatorOpen(true);
-                }}
-                onOpenAlarm={(id) => setAlarmTargetId(id)}
-                onOpenDetails={(id) => setDetailsTargetId(id)}
-                onOpenQuickInput={(id, activeSection) => {
-                  setQuickInputTargetId(id);
-                  setQuickInputActiveSection(activeSection);
-                }}
-                onOpenExecution={(id) => setExecutionTargetId(id)}
-                onOpenAIImage={(id) => setAiImageTargetId(id)}
-                totalValuation={totalValuation}
-                totalValuationChange={totalValuationChange}
-                totalValuationChangePct={totalValuationChangePct}
-                onDailyExecutionSummaryChange={onDailyExecutionSummaryChange}
-              />
+              <React.Suspense fallback={<div className="flex items-center justify-center min-h-[50vh] text-slate-500 dark:text-slate-400 font-bold">{lang === 'ko' ? '대시보드 로딩 중…' : 'Loading dashboard…'}</div>}>
+                <Dashboard 
+                  lang={lang}
+                  portfolios={activePortfolios} 
+                  onClosePortfolio={(id) => setTerminateTargetId(id)}
+                  onDeletePortfolio={handleDeletePortfolio}
+                  onUpdatePortfolio={handleUpdatePortfolio}
+                  onOpenCreator={() => {
+                    if (activePortfolios.length >= getMaxPortfolios(userProfile)) {
+                      alert(lang === 'ko' 
+                        ? `포트폴리오 생성 한도(${getMaxPortfolios(userProfile)}개)에 도달했습니다. 더 많은 포트폴리오를 만들려면 업그레이드를 고려해 보세요.` 
+                        : `Portfolio limit (${getMaxPortfolios(userProfile)}) reached. Please upgrade for more.`);
+                      return;
+                    }
+                    setIsCreatorOpen(true);
+                  }}
+                  onOpenAlarm={(id) => setAlarmTargetId(id)}
+                  onOpenDetails={(id) => setDetailsTargetId(id)}
+                  onOpenQuickInput={(id, activeSection) => {
+                    setQuickInputTargetId(id);
+                    setQuickInputActiveSection(activeSection);
+                  }}
+                  onOpenExecution={(id) => setExecutionTargetId(id)}
+                  onOpenAIImage={(id) => setAiImageTargetId(id)}
+                  totalValuation={totalValuation}
+                  totalValuationChange={totalValuationChange}
+                  totalValuationChangePct={totalValuationChangePct}
+                  onDailyExecutionSummaryChange={onDailyExecutionSummaryChange}
+                />
+              </React.Suspense>
             ) : (
               <Landing 
                 lang={lang}
@@ -1668,7 +1677,11 @@ const App: React.FC = () => {
               />
             )
           )}
-          {activeTab === 'markets' && <Markets lang={lang} portfolios={portfolios} canAccessPaidStocks={canAccessPaidStocks} />}
+          {activeTab === 'markets' && (
+            <React.Suspense fallback={<div className="flex items-center justify-center min-h-[50vh] text-slate-500 dark:text-slate-400 font-bold">{lang === 'ko' ? '시장 로딩 중…' : 'Loading markets…'}</div>}>
+              <Markets lang={lang} portfolios={portfolios} canAccessPaidStocks={canAccessPaidStocks} />
+            </React.Suspense>
+          )}
           {activeTab === 'backtest' && (
             <React.Suspense fallback={<div className="flex items-center justify-center min-h-[50vh] text-slate-500 dark:text-slate-400 font-bold">백테스트 로딩 중…</div>}>
               <Backtest 
@@ -1691,16 +1704,18 @@ const App: React.FC = () => {
             />
           )}
           {activeTab === 'history' && (
-            <History 
-              lang={lang} 
-              portfolios={portfolios.filter(p => p.isClosed && !hiddenHistoryIds.includes(p.id))} 
-              onOpenDetails={async (id) => {
-                await showInterstitialBeforeAction(AdPlacement.INTERSTITIAL_SETTLEMENT_DETAIL);
-                setDetailsTargetId(id);
-              }}
-              onDeleteHistory={handleDeleteHistory}
-              onClearHistory={handleClearHistory}
-            />
+            <React.Suspense fallback={<div className="flex items-center justify-center min-h-[50vh] text-slate-500 dark:text-slate-400 font-bold">{lang === 'ko' ? '히스토리 로딩 중…' : 'Loading history…'}</div>}>
+              <History 
+                lang={lang} 
+                portfolios={portfolios.filter(p => p.isClosed && !hiddenHistoryIds.includes(p.id))} 
+                onOpenDetails={async (id) => {
+                  await showInterstitialBeforeAction(AdPlacement.INTERSTITIAL_SETTLEMENT_DETAIL);
+                  setDetailsTargetId(id);
+                }}
+                onDeleteHistory={handleDeleteHistory}
+                onClearHistory={handleClearHistory}
+              />
+            </React.Suspense>
           )}
 
           {activeTab === 'privacy' && (
@@ -1748,49 +1763,63 @@ const App: React.FC = () => {
           </nav>
         </div>
 
-        {isCreatorOpen && <StrategyCreator lang={lang} onClose={() => setIsCreatorOpen(false)} onSave={handleAddPortfolio} canAccessPaidStocks={canAccessPaidStocks} maxPortfolios={getMaxPortfolios(userProfile)} currentPortfolioCount={activePortfolios.length} />}
+        {isCreatorOpen && (
+          <React.Suspense fallback={LAZY_MODAL_FALLBACK}>
+            <StrategyCreator lang={lang} onClose={() => setIsCreatorOpen(false)} onSave={handleAddPortfolio} canAccessPaidStocks={canAccessPaidStocks} maxPortfolios={getMaxPortfolios(userProfile)} currentPortfolioCount={activePortfolios.length} />
+          </React.Suspense>
+        )}
         {currentAlarmPortfolio && (
-          <AlarmModal
-            lang={lang}
-            portfolio={currentAlarmPortfolio}
-            onClose={() => setAlarmTargetId(null)}
-            onSave={async (config) => {
-              await showRewardBeforeAction(AdPlacement.REWARD_ALARM_SAVE);
-              const tz = userProfile?.timezone || getDeviceTimeZone();
-              const nextConfig = { ...config, timezone: config.timezone || tz };
-              handleUpdatePortfolio({ ...currentAlarmPortfolio, alarmconfig: nextConfig });
-              setAlarmTargetId(null);
-            }}
-            maxAlarms={getMaxAlarms(userProfile)}
-          />
+          <React.Suspense fallback={LAZY_MODAL_FALLBACK}>
+            <AlarmModal
+              lang={lang}
+              portfolio={currentAlarmPortfolio}
+              onClose={() => setAlarmTargetId(null)}
+              onSave={async (config) => {
+                await showRewardBeforeAction(AdPlacement.REWARD_ALARM_SAVE);
+                const tz = userProfile?.timezone || getDeviceTimeZone();
+                const nextConfig = { ...config, timezone: config.timezone || tz };
+                handleUpdatePortfolio({ ...currentAlarmPortfolio, alarmconfig: nextConfig });
+                setAlarmTargetId(null);
+              }}
+              maxAlarms={getMaxAlarms(userProfile)}
+            />
+          </React.Suspense>
         )}
         {currentDetailsPortfolio && (
-          <PortfolioDetailsModal 
-            lang={lang} 
-            portfolio={currentDetailsPortfolio} 
-            onClose={() => setDetailsTargetId(null)} 
-            onDeleteTrade={(tid) => handleDeleteTrade(currentDetailsPortfolio.id, tid)} 
-            isHistory={currentDetailsPortfolio.isClosed}
-          />
+          <React.Suspense fallback={LAZY_MODAL_FALLBACK}>
+            <PortfolioDetailsModal 
+              lang={lang} 
+              portfolio={currentDetailsPortfolio} 
+              onClose={() => setDetailsTargetId(null)} 
+              onDeleteTrade={(tid) => handleDeleteTrade(currentDetailsPortfolio.id, tid)} 
+              isHistory={currentDetailsPortfolio.isClosed}
+            />
+          </React.Suspense>
         )}
-        {currentQuickInputPortfolio && <QuickInputModal lang={lang} portfolio={currentQuickInputPortfolio} activeSection={quickInputActiveSection} onClose={() => { setQuickInputTargetId(null); setQuickInputActiveSection(undefined); }} onSave={(trade) => { handleAddTradeWithReward(currentQuickInputPortfolio.id, trade); setQuickInputTargetId(null); setQuickInputActiveSection(undefined); }} />}
+        {currentQuickInputPortfolio && (
+          <React.Suspense fallback={LAZY_MODAL_FALLBACK}>
+            <QuickInputModal lang={lang} portfolio={currentQuickInputPortfolio} activeSection={quickInputActiveSection} onClose={() => { setQuickInputTargetId(null); setQuickInputActiveSection(undefined); }} onSave={(trade) => { handleAddTradeWithReward(currentQuickInputPortfolio.id, trade); setQuickInputTargetId(null); setQuickInputActiveSection(undefined); }} />
+          </React.Suspense>
+        )}
         {currentExecutionPortfolio && <TradeExecutionModal lang={lang} portfolio={currentExecutionPortfolio} onClose={() => setExecutionTargetId(null)} onSave={(trade) => { handleAddTradeWithReward(currentExecutionPortfolio.id, trade); setExecutionTargetId(null); }} />}
         {currentAIImagePortfolio && (
-          <AIImageInputModal
-            lang={lang}
-            portfolio={currentAIImagePortfolio}
-            geminiApiKey={geminiApiKey}
-            isPaidUser={currentTier === 'pro' || currentTier === 'premium'}
-            currentTier={currentTier === 'premium' || currentTier === 'pro' ? currentTier : 'free'}
-            onClose={() => setAiImageTargetId(null)}
-            onSave={async (trades) => {
-              await showRewardBeforeAction(AdPlacement.REWARD_TRADE_SAVE);
-              for (const trade of trades) {
-                await handleAddTrade(currentAIImagePortfolio.id, trade);
-              }
-              setAiImageTargetId(null);
-            }}
-          />
+          <React.Suspense fallback={LAZY_MODAL_FALLBACK}>
+            <AIImageInputModal
+              lang={lang}
+              portfolio={currentAIImagePortfolio}
+              geminiApiKey={geminiApiKey}
+              isPaidUser={currentTier === 'pro' || currentTier === 'premium'}
+              currentTier={currentTier === 'premium' || currentTier === 'pro' ? currentTier : 'free'}
+              onClose={() => setAiImageTargetId(null)}
+              onSave={async (trades) => {
+                await showRewardBeforeAction(AdPlacement.REWARD_TRADE_SAVE);
+                for (const trade of trades) {
+                  await handleAddTrade(currentAIImagePortfolio.id, trade);
+                }
+                setAiImageTargetId(null);
+              }}
+            />
+          </React.Suspense>
         )}
 
         {/* Termination Flow Modals */}
@@ -1877,11 +1906,12 @@ const App: React.FC = () => {
 
       {/* ── 결제 모달 ─────────────────────────────── */}
       {checkoutPlan && (
-        <CheckoutModal
-          isOpen={!!checkoutPlan}
-          onClose={() => setCheckoutPlan(null)}
-          lang={lang}
-          plan={checkoutPlan === 'pro' ? {
+        <React.Suspense fallback={null}>
+          <CheckoutModal
+            isOpen={!!checkoutPlan}
+            onClose={() => setCheckoutPlan(null)}
+            lang={lang}
+            plan={checkoutPlan === 'pro' ? {
             id: 'pro',
             label: 'PRO',
             subtitle: lang === 'ko' ? '전문 투자자' : 'Active Investor',
@@ -1906,7 +1936,8 @@ const App: React.FC = () => {
             setCheckoutPlan(null);
             if (user?.id) fetchUserProfile(user.id);
           }}
-        />
+          />
+        </React.Suspense>
       )}
 
       {/* Footer — 법인 필수 정보 (토스 환경은 Footer 내부에서 자동 감지) */}

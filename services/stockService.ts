@@ -242,6 +242,51 @@ export const fetchStockPrice = async (
   return prices[symbol] || null;
 };
 
+/**
+ * IndexedDB에서 해당 종목의 최신 거래일(YYYY-MM-DD)을 반환합니다.
+ * UI에서 db를 직접 import하지 않고 이 API만 사용하세요.
+ * 데이터가 없으면 null을 반환합니다.
+ */
+export const getLatestLocalTradeDateFromDb = async (
+  symbol: string,
+): Promise<string | null> => {
+  const trimmed = symbol?.trim();
+  if (!trimmed) return null;
+  try {
+    await initDatabase();
+    const records = await getStockPrices(trimmed, 1);
+    if (records.length > 0) {
+      return records[records.length - 1].date;
+    }
+    return null;
+  } catch (err) {
+    console.warn("[getLatestLocalTradeDateFromDb]", trimmed, err);
+    return null;
+  }
+};
+
+/**
+ * IndexedDB에서 해당 종목의 최근 거래일 목록(날짜 내림차순, 최대 days개)을 반환합니다.
+ * UI/훅에서 db를 직접 import하지 않고 이 API만 사용하세요.
+ */
+export const getRecentTradingDaysFromDb = async (
+  symbol: string,
+  days: number,
+): Promise<string[]> => {
+  const trimmed = symbol?.trim();
+  if (!trimmed || days <= 0) return [];
+  try {
+    await initDatabase();
+    const records = await getStockPrices(trimmed, days * 2);
+    if (records.length === 0) return [];
+    const sorted = records.sort((a, b) => b.date.localeCompare(a.date));
+    return sorted.slice(0, days).map((r) => r.date);
+  } catch (err) {
+    console.warn("[getRecentTradingDaysFromDb]", trimmed, err);
+    return [];
+  }
+};
+
 // calculateMA, calculateRSI, calculateRollingIndicators → utils/technicalIndicators.ts에서 import
 // 하위 호환성을 위해 re-export
 export { calculateMA, calculateRSI } from "../utils/technicalIndicators";

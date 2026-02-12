@@ -10,8 +10,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Portfolio } from '../types';
 import { calculateHoldings } from '../utils/portfolioCalculations';
-import { fetchStockPrices } from '../services/stockService';
-import { getStockPrices, initDatabase } from '../services/db';
+import { fetchStockPrices, getRecentTradingDaysFromDb } from '../services/stockService';
 import {
   calcT,
   getPhase,
@@ -48,16 +47,8 @@ export interface MultiSplitHookResult {
 // 내부 헬퍼
 // ---------------------------------------------------------------------------
 
-async function fetchRecentTradingDays(targetStock: string, days: number): Promise<string[]> {
-  try {
-    await initDatabase();
-    const records = await getStockPrices(targetStock, days * 2);
-    if (records.length === 0) return [];
-    const sorted = records.sort((a, b) => b.date.localeCompare(a.date));
-    return sorted.slice(0, days).map((r) => r.date);
-  } catch {
-    return [];
-  }
+function fetchRecentTradingDays(targetStock: string, days: number): Promise<string[]> {
+  return getRecentTradingDaysFromDb(targetStock, days);
 }
 
 /** 입력 조합으로부터 안정적인 문자열 키를 생성합니다. */

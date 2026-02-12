@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "granite dev",
     "build": "granite build",
+    "build:web": "vite build",
     "build:analyze": "vite build --mode analyze",
     "preview": "vite preview",
     "deploy": "ait deploy",

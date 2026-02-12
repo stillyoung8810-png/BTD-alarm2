@@ -4,6 +4,7 @@ import { Portfolio, Trade } from '../types';
 import { I18N } from '../constants';
 import { X, Camera, Upload, Clipboard, Sparkles, ChevronRight } from 'lucide-react';
 import { analyzeTradeScreenshot, RecognizedTradeItem } from '../services/geminiService';
+import { ensureValidSession } from '../services/supabase';
 import { incrementUsage } from '../utils/subscriptionUtils';
 
 interface AIImageInputModalProps {
@@ -114,8 +115,19 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
 
   const onStartScan = async () => {
     if (!imageData) return;
-    setStep('scanning');
     setErrorMessage(null);
+    // 세션 유효성 선확인: 로그인 만료 시 401 대신 명확한 메시지 제공
+    const hasValidSession = await ensureValidSession();
+    if (!hasValidSession) {
+      setErrorMessage(
+        lang === 'ko'
+          ? '로그인 세션이 만료되었습니다. 다시 로그인한 뒤 AI 매매 인식을 이용해주세요.'
+          : 'Your login session has expired. Please log in again before using AI trade recognition.',
+      );
+      setStep('error');
+      return;
+    }
+    setStep('scanning');
     try {
       // 1. 사용량 체크 및 증가 호출
       const usageResult = await incrementUsage('ai', currentTier);

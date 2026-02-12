@@ -23,6 +23,12 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
   },
 });
 
+// 디버깅 및 콘솔 테스트용: 브라우저 환경에서만 window.supabase로 노출
+if (typeof window !== 'undefined') {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (window as any).supabase = supabase;
+}
+
 /**
  * 세션 유효성을 확인하고 필요시 갱신하는 헬퍼 함수
  * API 호출 전에 사용하면 Invalid Refresh Token 에러를 사전에 방지할 수 있음

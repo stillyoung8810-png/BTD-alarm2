@@ -8,13 +8,19 @@ const EDGE_BASE_URL = import.meta.env.VITE_GEMINI_EDGE_URL || "";
 
 // 인증 헤더를 가져오는 헬퍼
 const getAuthHeaders = async (): Promise<Record<string, string>> => {
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session }, error } = await supabase.auth.getSession();
+  if (error) {
+    console.warn("[Gemini] getSession error:", error);
+  }
   if (session?.access_token) {
-    return {
+    const headers = {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${session.access_token}`,
     };
+    console.debug("[Gemini] using auth header for user session. exp:", session.expires_at);
+    return headers;
   }
+  console.warn("[Gemini] no active Supabase session; calling Edge Function without Authorization header");
   return { "Content-Type": "application/json" };
 };
 

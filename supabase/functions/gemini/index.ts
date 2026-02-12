@@ -1,9 +1,8 @@
 // Supabase Edge Function: Gemini 호출을 이 함수에서만 수행.
 // 배포: supabase functions deploy gemini --no-verify-jwt
-// JWT 인증은 함수 내부에서 수동으로 수행 (anon key + Authorization header)
+// 인증: Authorization Bearer 헤더 존재 여부만 확인 (프론트에서 Supabase 세션 토큰 전달)
 
 import { serve } from "std/http/server.ts";
-import { createClient } from "@supabase/supabase-js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { GenerationConfig } from "@google/generative-ai";
 
@@ -60,33 +59,9 @@ serve(async (req) => {
     });
   }
 
-  // JWT 인증: 인증된 사용자만 Gemini API 사용 가능
+  // 인증: 프론트에서 Supabase로 발급받은 Bearer 토큰이 있는지만 확인
   const authHeader = req.headers.get("authorization");
-  if (!authHeader) {
-    console.error("[gemini] missing Authorization header");
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-    });
-  }
-  try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    console.log("[gemini] SUPABASE_URL:", supabaseUrl);
-    console.log("[gemini] authHeader (truncated):", authHeader.slice(0, 32), "...");
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { authorization: authHeader } },
-    });
-    const { data: { user }, error: authError } = await userClient.auth.getUser();
-    console.log("[gemini] getUser result:", { hasUser: !!user, authError });
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-      });
-    }
-  } catch (e) {
-    console.error("[gemini] error in manual auth check:", e);
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" },

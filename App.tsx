@@ -15,10 +15,9 @@ import { calculateTotalInvested, calculateAlreadyRealized, calculateHoldings } f
 import { fetchStockPricesWithPrev, loadInitialStockData, loadPaidStockData } from './services/stockService';
 import { getUSSelectionHolidays } from './utils/marketUtils';
 import { getCurrentKSTDateString, getDeviceTimeZone } from './utils/dateUtils';
-import { parseDeviceInfo } from './utils/deviceInfo';
-import { normalizePortfolioData } from './utils/portfolioNormalize';
 import { useFCMToken } from './hooks/useFCMToken';
 import { useAuth } from './hooks/useAuth';
+import { usePortfolios } from './hooks/usePortfolios';
 import { isTossApp } from './services/tossAppBridge';
 import { showRewardBeforeAction, showInterstitialBeforeAction, AdPlacement } from './services/ads/adService';
 import { TossAppProvider } from './contexts/TossAppContext';
@@ -85,13 +84,8 @@ const App: React.FC = () => {
 
   // 주가 캐싱 관련 상수
   const STOCK_PRICE_CACHE_KEY = 'STOCK_PRICE_CACHE_V1';
-  const PORTFOLIOS_CACHE_KEY = 'my_portfolios';
   const KST_UPDATE_HOUR = 7;
   const KST_UPDATE_MINUTE = 20;
-
-  // 중복 요청 방지를 위한 ref
-  const fetchingPortfoliosRef = useRef<Set<string>>(new Set());
-  const fetchPortfoliosAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
 
   // 주소창에 #terms / #privacy 가 있을 때만 해당 탭 자동 오픈. 그 외(로그인/로그아웃/새로고침 등)에는 hash 없으면 대시보드 유지.
   useEffect(() => {
@@ -135,6 +129,24 @@ const App: React.FC = () => {
     setPortfolios,
     saveFCMToken,
     fetchPortfoliosRef,
+  });
+
+  const {
+    fetchPortfolios,
+    handleAddPortfolio,
+    handleClosePortfolio,
+    handleUpdatePortfolio,
+    handleAddTrade,
+    handleDeleteTrade,
+    handleDeletePortfolio,
+    handleDeleteHistory,
+    handleClearHistory,
+  } = usePortfolios({
+    lang,
+    userId: user?.id ?? null,
+    userProfile,
+    portfolios,
+    setPortfolios,
   });
 
   // 현재 유저의 구독 티어 (default: free)
@@ -303,139 +315,6 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // 로컬 저장소에서 포트폴리오 데이터 로드 (동기적, 즉시 실행)
-  const loadPortfoliosFromCache = (userId: string): boolean => {
-    const cacheKey = `${PORTFOLIOS_CACHE_KEY}_${userId}`;
-    try {
-      const cachedData = localStorage.getItem(cacheKey);
-      if (cachedData) {
-        try {
-          const parsedData = JSON.parse(cachedData);
-          const normalizedData = normalizePortfolioData(parsedData);
-          console.log('[loadPortfoliosFromCache] 로컬 저장소에서 데이터 로드:', normalizedData.length, '개');
-          setPortfolios(normalizedData);
-          return true; // 로컬 데이터가 있음
-        } catch (parseError) {
-          console.warn('[loadPortfoliosFromCache] 로컬 저장소 데이터 파싱 실패:', parseError);
-        }
-      }
-    } catch (cacheError) {
-      console.warn('[loadPortfoliosFromCache] 로컬 저장소 접근 실패:', cacheError);
-    }
-    return false; // 로컬 데이터가 없음
-  };
-
-  // Supabase에서 포트폴리오 데이터 가져오기 (백그라운드, 비동기, 중복 요청 방지)
-  const fetchPortfoliosFromSupabase = async (userId: string): Promise<void> => {
-    const cacheKey = `${PORTFOLIOS_CACHE_KEY}_${userId}`;
-    
-    // 중복 요청 방지: 이미 진행 중인 요청이 있으면 취소하고 새로 시작
-    if (fetchingPortfoliosRef.current.has(userId)) {
-      console.log('[fetchPortfoliosFromSupabase] 이미 진행 중인 요청이 있음, 이전 요청 취소');
-      const existingController = fetchPortfoliosAbortControllersRef.current.get(userId);
-      if (existingController) {
-        existingController.abort();
-      }
-    }
-
-    // 진행 중인 요청으로 표시
-    fetchingPortfoliosRef.current.add(userId);
-    
-    // 타임아웃을 위한 AbortController
-    const controller = new AbortController();
-    fetchPortfoliosAbortControllersRef.current.set(userId, controller);
-    
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    try {
-      console.log('[fetchPortfoliosFromSupabase] Supabase 쿼리 실행 (백그라운드)');
-
-      // 타임아웃 설정 (10초)
-      timeoutId = setTimeout(() => {
-        console.warn('[fetchPortfoliosFromSupabase] 10초 타임아웃, 요청 중단 (로컬 데이터 사용)');
-        controller.abort();
-      }, 10000);
-
-      // 쿼리 최적화: 필요한 컬럼만 선택 (SELECT * 대신)
-      const { data, error } = await supabase
-        .from('portfolios')
-        .select('id, created_at, name, daily_buy_amount, start_date, fee_rate, is_closed, closed_at, final_sell_amount, trades, strategy, alarm_config, is_quarter_mode, user_id')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .abortSignal(controller.signal);
-      
-      console.log('[fetchPortfoliosFromSupabase] Supabase 쿼리 완료');
-
-      if (error) {
-        // AbortError는 정상적인 취소이므로 에러로 처리하지 않음
-        if (error.name === 'AbortError' || error.message?.includes('aborted')) {
-          console.log('[fetchPortfoliosFromSupabase] 요청 취소됨 (정상)');
-          return;
-        }
-        
-        console.error('[fetchPortfoliosFromSupabase] 데이터 로드 에러:', {
-          message: error.message,
-          code: error.code,
-        });
-        // 에러가 나도 로컬 데이터가 있으면 화면은 유지됨
-        return;
-      }
-
-      console.log('[fetchPortfoliosFromSupabase] 응답 데이터 개수:', data?.length ?? 0);
-
-      if (data) {
-        // DB의 snake_case를 UI에서 사용하는 camelCase 구조로 변환
-        const formattedData = normalizePortfolioData(data);
-        
-        // 로컬 저장소에 저장 (다음 로드 시 사용)
-        try {
-          localStorage.setItem(cacheKey, JSON.stringify(data));
-          console.log('[fetchPortfoliosFromSupabase] 로컬 저장소에 데이터 저장 완료');
-        } catch (saveError) {
-          console.warn('[fetchPortfoliosFromSupabase] 로컬 저장소 저장 실패:', saveError);
-        }
-
-        // 화면 업데이트 (최신 데이터로)
-        setPortfolios(formattedData);
-        console.log('[fetchPortfoliosFromSupabase] 포트폴리오 상태 업데이트 완료');
-      }
-    } catch (err: any) {
-      // AbortError는 정상적인 취소이므로 에러로 처리하지 않음
-      if (err?.name === 'AbortError' || err?.message?.includes('aborted')) {
-        console.log('[fetchPortfoliosFromSupabase] 요청 취소됨 (정상)');
-        return;
-      }
-      
-      console.error('[fetchPortfoliosFromSupabase] 예기치 못한 에러:', {
-        message: err?.message,
-        name: err?.name
-      });
-      // 에러가 나도 로컬 데이터가 있으면 화면은 유지됨
-    } finally {
-      // 예외/정상 종료 모두에서 타임아웃 정리 (10초 뒤 불필요한 abort 방지)
-      if (timeoutId != null) {
-        clearTimeout(timeoutId);
-      }
-      // 진행 중인 요청 표시 제거
-      fetchingPortfoliosRef.current.delete(userId);
-      fetchPortfoliosAbortControllersRef.current.delete(userId);
-    }
-  };
-
-  // 포트폴리오 데이터 가져오기 (로컬 우선, 백그라운드 업데이트)
-  const fetchPortfolios = (userId: string): void => {
-    console.log('[fetchPortfolios] 함수 시작');
-    
-    // 1단계: 로컬 저장소에서 즉시 데이터 로드 (동기적)
-    const hasCachedData = loadPortfoliosFromCache(userId);
-    
-    // 2단계: 백그라운드에서 Supabase 데이터 가져오기 (비동기, await 없음)
-    // 로컬 데이터가 있든 없든 최신 데이터를 가져와서 업데이트
-    fetchPortfoliosFromSupabase(userId).catch((err) => {
-      console.error('[fetchPortfolios] 백그라운드 업데이트 실패:', err);
-      // 에러가 나도 로컬 데이터가 있으면 화면은 유지됨
-    });
-  };
-
   // useAuth가 세션 복구 시 사용할 포트폴리오 로딩 함수 레퍼런스 동기화
   useEffect(() => {
     fetchPortfoliosRef.current = fetchPortfolios;
@@ -583,458 +462,9 @@ const App: React.FC = () => {
     calcValuation();
   }, [aggregateHoldings]);
 
-  const handleAddPortfolio = async (newP: Omit<Portfolio, 'id'>) => {
-    if (!user) {
-      alert("로그인 세션이 만료되었습니다. 다시 로그인해주세요.");
-      return;
-    }
-
-    await showRewardBeforeAction(AdPlacement.REWARD_STRATEGY_SAVE);
-
-    // 포트폴리오 개수 제한 체크 (진행 중인 포트폴리오만 카운트)
-    const activePortfolios = portfolios.filter(p => !p.isClosed);
-    const maxPortfolios = userProfile?.max_portfolios ?? 3;
-    
-    if (maxPortfolios !== -1 && activePortfolios.length >= maxPortfolios) {
-      const tierName = userProfile?.subscription_tier === 'free' ? '무료' : userProfile?.subscription_tier;
-      alert(lang === 'ko' 
-        ? `${tierName} 플랜에서는 최대 ${maxPortfolios}개의 포트폴리오만 생성할 수 있습니다.\n현재 ${activePortfolios.length}개의 진행 중인 포트폴리오가 있습니다.`
-        : `You can only create up to ${maxPortfolios} portfolios on the ${tierName} plan.\nYou currently have ${activePortfolios.length} active portfolios.`
-      );
-      return;
-    }
-
-    // Supabase 테이블 컬럼명이 snake_case이므로 모든 필드를 매핑
-    const {
-      dailyBuyAmount,
-      startDate,
-      feeRate,
-      isClosed,
-      closedAt,
-      finalSellAmount,
-      alarmconfig,
-      ...rest
-    } = newP;
-
-    // 입력 유효성 검증
-    if (!rest.name || rest.name.trim().length === 0) {
-      alert(lang === 'ko' ? '포트폴리오 이름을 입력해주세요.' : 'Please enter a portfolio name.');
-      return;
-    }
-    if (rest.name.length > 100) {
-      alert(lang === 'ko' ? '포트폴리오 이름은 100자 이내여야 합니다.' : 'Portfolio name must be 100 characters or less.');
-      return;
-    }
-    if (typeof dailyBuyAmount !== 'number' || !isFinite(dailyBuyAmount) || dailyBuyAmount <= 0) {
-      alert(lang === 'ko' ? '매일 매수 금액은 0보다 큰 값이어야 합니다.' : 'Daily buy amount must be greater than 0.');
-      return;
-    }
-    if (dailyBuyAmount > 1_000_000) {
-      alert(lang === 'ko' ? '매일 매수 금액은 $1,000,000 이하여야 합니다.' : 'Daily buy amount must be $1,000,000 or less.');
-      return;
-    }
-    if (typeof feeRate !== 'number' || !isFinite(feeRate) || feeRate < 0 || feeRate > 10) {
-      alert(lang === 'ko' ? '수수료율은 0% ~ 10% 사이여야 합니다.' : 'Fee rate must be between 0% and 10%.');
-      return;
-    }
-    if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
-      alert(lang === 'ko' ? '시작일을 올바른 형식(YYYY-MM-DD)으로 입력해주세요.' : 'Please enter a valid start date (YYYY-MM-DD).');
-      return;
-    }
-
-    // 1. 데이터 준비
-    const payload = {
-      ...rest,
-      id: crypto.randomUUID(),
-      user_id: user.id,
-      daily_buy_amount: dailyBuyAmount,
-      start_date: startDate,
-      fee_rate: feeRate,
-      is_closed: isClosed,
-      closed_at: closedAt || null,
-      final_sell_amount: finalSellAmount || null,
-      alarm_config: alarmconfig || null,
-    };
-
-    console.log('[Portfolio] 전송 직전 최종 확인: payload ready');
-    
-    try {
-      // 2. 여기서 브라우저가 일시정지되는지 확인하세요
-      // alert('지금부터 Supabase로 전송을 시도합니다!'); 
-
-      const { data, error } = await supabase
-        .from('portfolios')
-        .insert([payload])
-        .select();
-
-      if (error) {
-        console.error('Supabase 에러 발생:', error);
-        alert(`저장 실패: ${error.message}`);
-        return;
-      }
-
-      console.log('[Portfolio] 서버 응답 데이터 수신 완료, count:', data?.length ?? 0);
-      if (data && data.length > 0) {
-        // Supabase 컬럼명이 snake_case이므로 모든 필드를 camelCase로 정규화
-        // DB 컬럼명(daily_buy_amount)을 우선적으로 사용
-        const normalized = (data as any[]).map((row) => ({
-          ...row,
-          dailyBuyAmount: row.daily_buy_amount ?? 0,
-          startDate: row.start_date ?? row.startDate ?? '',
-          feeRate: row.fee_rate ?? row.feeRate ?? 0.25,
-          isClosed: row.is_closed ?? row.isClosed ?? false,
-          closedAt: row.closed_at ?? row.closedAt ?? undefined,
-          finalSellAmount: row.final_sell_amount ?? row.finalSellAmount ?? undefined,
-          alarmconfig: row.alarmconfig ?? row.alarm_config ?? undefined,
-        }));
-        setPortfolios(prev => [...prev, ...normalized]);
-        setIsCreatorOpen(false);
-        alert('저장 성공!');
-      }
-
-    } catch (err) {
-      console.error('네트워크/코드 실행 에러:', err);
-      alert('시스템 에러가 발생했습니다.');
-    }
-  };
-
-  const handleClosePortfolio = async (finalSells: Array<{ stock: string; quantity: number; price: number; fee: number }>, additionalFee: number) => {
-    const portfolio = portfolios.find(p => p.id === terminateTargetId);
-    if (!portfolio || !user || !terminateTargetId) return;
-
-    // 1. 총 투자금 계산: 모든 buy 타입 거래 합계
-    const totalInvested = calculateTotalInvested(portfolio);
-
-    // 2. 기 회수금 계산: 기존 sell 타입 거래 합계
-    const alreadyRealized = calculateAlreadyRealized(portfolio);
-
-    // 3. 최종 매도금 계산: 사용자 입력한 각 종목의 (수량 * 단가) - 수수료 합계
-    const finalSellAmount = finalSells.reduce((sum, fs) => {
-      const sellAmount = fs.price * fs.quantity;
-      const netAmount = sellAmount - fs.fee;
-      return sum + netAmount;
-    }, 0) - additionalFee; // 추가 수수료 차감
-
-    // 4. 최종 회수금 = 기 회수금 + 최종 매도금
-    const totalReturn = alreadyRealized + finalSellAmount;
-
-    // 5. 최종 수익금 = 최종 회수금 - 총 투자금
-    const totalProfit = totalReturn - totalInvested;
-
-    // 6. 최종 수익률 = (최종 회수금 / 총 투자금 - 1) * 100
-    const yieldRate = totalInvested > 0 ? ((totalReturn / totalInvested) - 1) * 100 : 0;
-
-    // 7. 최종 매도 거래를 Trade로 생성 (정산 상세 보기용)
-    const endDate = new Date();
-    const endDateStr = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
-
-    const finalSellTrades: Trade[] = finalSells.map((fs, index) => ({
-      id: `final-${endDate.getTime()}-${index}`,
-      type: 'sell',
-      stock: fs.stock,
-      date: endDateStr,
-      price: fs.price,
-      quantity: fs.quantity,
-      fee: fs.fee,
-    }));
-
-    // 8. Show Result
-    setSettlementResult({
-      portfolio,
-      totalInvested,
-      alreadyRealized,
-      finalSellAmount,
-      totalReturn,
-      profit: totalProfit,
-      yieldRate
-    });
-
-    // 9. Actually update state (trades에 최종 매도 거래 포함)
-    const updated = {
-      ...portfolio,
-      isClosed: true,
-      closedAt: endDate.toISOString(),
-      finalSellAmount: finalSellAmount + additionalFee, // 총 매도금액 (수수료 포함)
-      trades: [...portfolio.trades, ...finalSellTrades],
-    };
-
-    // 10. portfolio_history 테이블에 이력 저장 (성공 시에만 포트폴리오 종료 처리)
-    const startDate = portfolio.startDate ? new Date(portfolio.startDate) : new Date();
-
-    const { error: historyError } = await supabase
-      .from('portfolio_history')
-      .insert([{
-        portfolio_id: terminateTargetId,
-        user_id: user.id,
-        portfolio_name: portfolio.name,
-        total_invested: totalInvested,
-        total_return: totalReturn,
-        total_profit: totalProfit,
-        yield_rate: yieldRate,
-        start_date: startDate.toISOString().split('T')[0],
-        end_date: endDate.toISOString(),
-        strategy_detail: {
-          strategy: portfolio.strategy,
-          daily_buy_amount: portfolio.dailyBuyAmount,
-          fee_rate: portfolio.feeRate,
-          alarmconfig: portfolio.alarmconfig,
-        },
-      }]);
-
-    if (historyError) {
-      console.error('Failed to save portfolio history', historyError);
-      alert(
-        lang === 'ko'
-          ? '이력 저장에 실패하여 포트폴리오를 종료하지 않았습니다. 다시 시도해주세요.'
-          : 'Failed to save portfolio history. The portfolio was not closed. Please try again.'
-      );
-      return;
-    }
-
-    // 11. portfolios 테이블 업데이트 (history 저장 성공 이후)
-    const { error: updateError } = await supabase
-      .from('portfolios')
-      .update({
-        is_closed: true,
-        closed_at: updated.closedAt,
-        final_sell_amount: updated.finalSellAmount,
-        trades: updated.trades,
-      })
-      .eq('id', terminateTargetId);
-
-    if (updateError) {
-      console.error('Failed to close portfolio', updateError);
-      // 보상: 방금 넣은 portfolio_history 행 삭제 (부분 성공 상태 방지)
-      await supabase
-        .from('portfolio_history')
-        .delete()
-        .eq('user_id', user.id)
-        .eq('portfolio_id', terminateTargetId);
-      alert(lang === 'ko' ? '전략 종료 저장에 실패했습니다.' : 'Failed to save termination.');
-      return;
-    }
-
-    setPortfolios(prev => prev.map(p => 
-      p.id === terminateTargetId ? updated : p
-    ));
-    setTerminateTargetId(null);
-  };
-
-  // ---------------------------------------------------------------------------
-  // History 탭 핸들러
-  // ---------------------------------------------------------------------------
-
-  const handleDeleteHistory = async (portfolioId: string) => {
-    if (!user) return;
-    try {
-      const { error: histErr } = await supabase
-        .from('portfolio_history')
-        .delete()
-        .eq('user_id', user.id)
-        .eq('portfolio_id', portfolioId);
-
-      const { error: portErr } = await supabase
-        .from('portfolios')
-        .delete()
-        .eq('user_id', user.id)
-        .eq('id', portfolioId);
-
-      if (histErr || portErr) {
-        console.error('Failed to delete history', { histErr, portErr });
-        alert(lang === 'ko' ? '종료 내역 삭제에 실패했습니다. (권한/RLS를 확인해주세요)' : 'Failed to delete history. (Check permissions/RLS)');
-        return;
-      }
-
-      setPortfolios(prev => prev.filter(p => p.id !== portfolioId));
-      setHiddenHistoryIds(prev => [...prev, portfolioId]);
-    } catch (err) {
-      console.error('Unexpected error deleting history record', err);
-      alert(lang === 'ko' ? '종료 내역 삭제 중 오류가 발생했습니다.' : 'Unexpected error while deleting history record.');
-    }
-  };
-
-  const handleClearHistory = async () => {
-    if (!user) return;
-    const msg = lang === 'ko'
-      ? '모든 종료 내역을 삭제하시겠습니까? (Supabase에서도 삭제되며 되돌릴 수 없습니다)'
-      : 'Delete all history records? (This will also delete them from Supabase and cannot be undone.)';
-    if (!window.confirm(msg)) return;
-    try {
-      const { error: histErr } = await supabase
-        .from('portfolio_history')
-        .delete()
-        .eq('user_id', user.id);
-
-      const { error: portErr } = await supabase
-        .from('portfolios')
-        .delete()
-        .eq('user_id', user.id)
-        .eq('is_closed', true);
-
-      if (histErr || portErr) {
-        console.error('Failed to clear history', { histErr, portErr });
-        alert(lang === 'ko' ? '종료 내역 전체 삭제에 실패했습니다. (권한/RLS를 확인해주세요)' : 'Failed to clear history. (Check permissions/RLS)');
-        return;
-      }
-
-      setPortfolios(prev => prev.filter(p => !p.isClosed));
-      setHiddenHistoryIds([]);
-    } catch (err) {
-      console.error('Unexpected error clearing history', err);
-      alert(lang === 'ko' ? '종료 내역 삭제 중 오류가 발생했습니다.' : 'Unexpected error while clearing history.');
-    }
-  };
-
-  const handleUpdatePortfolio = async (updated: Portfolio) => {
-    // 입력 유효성 검증
-    if (!updated.name || updated.name.trim().length === 0 || updated.name.length > 100) {
-      alert(lang === 'ko' ? '포트폴리오 이름은 1~100자여야 합니다.' : 'Portfolio name must be 1-100 characters.');
-      return;
-    }
-    if (typeof updated.dailyBuyAmount !== 'number' || !isFinite(updated.dailyBuyAmount) || updated.dailyBuyAmount <= 0 || updated.dailyBuyAmount > 1_000_000) {
-      alert(lang === 'ko' ? '매일 매수 금액은 $0 초과 ~ $1,000,000 이하여야 합니다.' : 'Daily buy amount must be between $0 and $1,000,000.');
-      return;
-    }
-    if (typeof updated.feeRate !== 'number' || !isFinite(updated.feeRate) || updated.feeRate < 0 || updated.feeRate > 10) {
-      alert(lang === 'ko' ? '수수료율은 0% ~ 10% 사이여야 합니다.' : 'Fee rate must be between 0% and 10%.');
-      return;
-    }
-
-    const { error } = await supabase
-      .from('portfolios')
-      .update({
-        name: updated.name,
-        daily_buy_amount: updated.dailyBuyAmount,
-        start_date: updated.startDate,
-        fee_rate: updated.feeRate,
-        strategy: updated.strategy,
-        trades: updated.trades,
-        is_closed: updated.isClosed,
-        closed_at: updated.closedAt || null,
-        final_sell_amount: updated.finalSellAmount || null,
-        alarm_config: updated.alarmconfig || null,
-        is_quarter_mode: updated.isQuarterMode ?? false,
-      })
-      .eq('id', updated.id);
-
-    if (error) {
-      console.error('Failed to update portfolio', error);
-      alert(lang === 'ko' ? '포트폴리오 업데이트에 실패했습니다.' : 'Failed to update portfolio.');
-      return;
-    }
-
-    setPortfolios(prev => prev.map(p => p.id === updated.id ? updated : p));
-  };
-
-  const handleAddTrade = async (portfolioId: string, trade: Trade) => {
-    const target = portfolios.find(p => p.id === portfolioId);
-    if (!target) return;
-
-    const updatedTrades = [trade, ...target.trades];
-    const updatedPortfolio = { ...target, trades: updatedTrades };
-
-    const { error } = await supabase
-      .from('portfolios')
-      .update({ trades: updatedTrades })
-      .eq('id', portfolioId);
-
-    if (error) {
-      console.error('Failed to add trade', error);
-      alert(lang === 'ko' ? '거래 추가에 실패했습니다.' : 'Failed to add trade.');
-      return;
-    }
-
-    // 쿼터 손절 모드 해제: 다분할 포트폴리오에서 매도로 보유수량 20% 이상 감소 또는 99% 이상 감소(수량 0) 시
-    let nextIsQuarterMode = target.isQuarterMode ?? false;
-    if (target.strategy.multiSplit && nextIsQuarterMode && trade.type === 'sell') {
-      const holdingsBefore = calculateHoldings(target);
-      const holdingsAfter = calculateHoldings(updatedPortfolio);
-      const qtyBefore = holdingsBefore.find(h => h.stock === trade.stock)?.quantity ?? 0;
-      const qtyAfter = holdingsAfter.find(h => h.stock === trade.stock)?.quantity ?? 0;
-      if (qtyBefore > 0) {
-        const dropPct = (qtyBefore - qtyAfter) / qtyBefore;
-        if (dropPct >= 0.2 || dropPct >= 0.99 || qtyAfter <= 0) {
-          nextIsQuarterMode = false;
-          await supabase
-            .from('portfolios')
-            .update({ is_quarter_mode: false })
-            .eq('id', portfolioId);
-        }
-      }
-    }
-
-    setPortfolios(prev => prev.map(p =>
-      p.id === portfolioId ? { ...updatedPortfolio, isQuarterMode: nextIsQuarterMode } : p
-    ));
-  };
-
   const handleAddTradeWithReward = async (portfolioId: string, trade: Trade) => {
     await showRewardBeforeAction(AdPlacement.REWARD_TRADE_SAVE);
     await handleAddTrade(portfolioId, trade);
-  };
-
-  const handleDeleteTrade = async (portfolioId: string, tradeId: string) => {
-    const target = portfolios.find(p => p.id === portfolioId);
-    if (!target) return;
-
-    const updatedTrades = target.trades.filter(t => t.id !== tradeId);
-
-    const { error } = await supabase
-      .from('portfolios')
-      .update({ trades: updatedTrades })
-      .eq('id', portfolioId);
-
-    if (error) {
-      console.error('Failed to delete trade', error);
-      alert(lang === 'ko' ? '거래 삭제에 실패했습니다.' : 'Failed to delete trade.');
-      return;
-    }
-
-    setPortfolios(prev => prev.map(p => {
-      if (p.id === portfolioId) {
-        return {
-          ...p,
-          trades: updatedTrades,
-        };
-      }
-      return p;
-    }));
-  };
-
-  const handleDeletePortfolio = async (id: string) => {
-    // 사용자 확인
-    const confirmMessage = lang === 'ko' 
-      ? '정말로 이 포트폴리오를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.'
-      : 'Are you sure you want to delete this portfolio? This action cannot be undone.';
-    
-    if (!window.confirm(confirmMessage)) {
-      return;
-    }
-
-    try {
-      const { error } = await supabase
-        .from('portfolios')
-        .delete()
-        .eq('id', id);
-
-      if (error) {
-        console.error('Failed to delete portfolio', error);
-        const errorMessage = lang === 'ko' 
-          ? `포트폴리오 삭제에 실패했습니다: ${error.message}`
-          : `Failed to delete portfolio: ${error.message}`;
-        alert(errorMessage);
-        return;
-      }
-
-      // UI에서 즉시 제거
-      setPortfolios(prev => prev.filter(p => p.id !== id));
-    } catch (err) {
-      console.error('Unexpected error while deleting portfolio', err);
-      const errorMessage = lang === 'ko' 
-        ? '포트폴리오 삭제 중 예기치 못한 오류가 발생했습니다.'
-        : 'An unexpected error occurred while deleting the portfolio.';
-      alert(errorMessage);
-    }
   };
 
   const currentAlarmPortfolio = portfolios.find(p => p.id === alarmTargetId);
@@ -1254,7 +684,17 @@ const App: React.FC = () => {
 
         {isCreatorOpen && (
           <React.Suspense fallback={LAZY_MODAL_FALLBACK}>
-            <StrategyCreator lang={lang} onClose={() => setIsCreatorOpen(false)} onSave={handleAddPortfolio} canAccessPaidStocks={canAccessPaidStocks} maxPortfolios={getMaxPortfolios(userProfile)} currentPortfolioCount={activePortfolios.length} />
+            <StrategyCreator
+              lang={lang}
+              onClose={() => setIsCreatorOpen(false)}
+              onSave={async (newP) => {
+                await showRewardBeforeAction(AdPlacement.REWARD_STRATEGY_SAVE);
+                await handleAddPortfolio(newP, () => setIsCreatorOpen(false));
+              }}
+              canAccessPaidStocks={canAccessPaidStocks}
+              maxPortfolios={getMaxPortfolios(userProfile)}
+              currentPortfolioCount={activePortfolios.length}
+            />
           </React.Suspense>
         )}
         {currentAlarmPortfolio && (
@@ -1313,11 +753,21 @@ const App: React.FC = () => {
 
         {/* Termination Flow Modals */}
         {currentTerminatePortfolio && (
-          <TerminationInput 
-            lang={lang} 
-            portfolio={currentTerminatePortfolio} 
-            onClose={() => setTerminateTargetId(null)} 
-            onSave={(finalSells, additionalFee) => handleClosePortfolio(finalSells, additionalFee)} 
+          <TerminationInput
+            lang={lang}
+            portfolio={currentTerminatePortfolio}
+            onClose={() => setTerminateTargetId(null)}
+            onSave={async (finalSells, additionalFee) => {
+              const result = await handleClosePortfolio(
+                currentTerminatePortfolio.id,
+                finalSells,
+                additionalFee,
+              );
+              if (result) {
+                setSettlementResult(result);
+                setTerminateTargetId(null);
+              }
+            }}
           />
         )}
         {settlementResult && (

@@ -35,20 +35,14 @@ import {
   LineChart,
   UserCircle,
   Languages,
-  Sparkles,
-  Star,
-  Zap,
   Crown,
   Hammer
 } from 'lucide-react';
 import { 
   getMaxPortfolios, 
   getMaxAlarms, 
-  UserProfile, 
-  SimpleUserProfile,
-  isActiveSubscription,
-  isNotExpired
 } from './utils/subscriptionUtils';
+import { useTierDisplay } from './hooks/useTierDisplay';
 
 const Backtest = React.lazy(() => import('./components/Backtest'));
 
@@ -124,29 +118,7 @@ const App: React.FC = () => {
     return isActive && notExpired;
   }, [currentTier, userProfile?.subscription_status, userProfile?.subscription_expires_at]);
 
-  const tierLabel =
-    currentTier === 'premium'
-      ? 'PREMIUM'
-      : currentTier === 'pro'
-      ? 'PRO'
-      : 'FREE';
-
-  const tierClassName =
-    currentTier === 'premium'
-      ? 'shimmer-text-premium'
-      : currentTier === 'pro'
-      ? 'shimmer-text-pro'
-      : 'text-free-matte';
-
-  const TierIcon =
-    currentTier === 'premium' ? Crown : currentTier === 'pro' ? Star : Zap;
-
-  const tierIconClassName =
-    currentTier === 'premium'
-      ? 'premium-icon-breath'
-      : currentTier === 'pro'
-      ? 'pro-icon-twinkle'
-      : 'free-icon-zap';
+  const { tierLabel, tierClassName, TierIcon, tierIconClassName } = useTierDisplay(currentTier);
 
   // AI 매매 인식: 무료/유료 티어별 Gemini API 키 (무료: VITE_GEMINI_API_KEY_FREE, 유료: VITE_GEMINI_API_KEY_PAID, 미설정 시 VITE_GEMINI_API_KEY 또는 GEMINI_API_KEY 사용)
   const geminiApiKey = useMemo(() => {
@@ -169,6 +141,8 @@ const App: React.FC = () => {
   const unhandledRejectionHandlerRef = useRef<((e: PromiseRejectionEvent) => void) | null>(null);
   /** 모달 로그인 직후 onAuthStateChange에서 fetchUserData 중복 호출 방지 */
   const justLoggedInRef = useRef(false);
+  /** 탭 포커스 복귀 시 동일 사용자로 SIGNED_IN이 올 때 데이터 재요청(refetchOnWindowFocus) 방지용 */
+  const userIdRef = useRef<string | null>(null);
 
   // 주소창에 #terms / #privacy 가 있을 때만 해당 탭 자동 오픈. 그 외(로그인/로그아웃/새로고침 등)에는 hash 없으면 대시보드 유지.
   useEffect(() => {
@@ -341,6 +315,11 @@ const App: React.FC = () => {
   useEffect(() => {
     authModalRef.current = authModal;
   }, [authModal]);
+
+  // 탭 포커스 시 동일 사용자 SIGNED_IN으로 인한 불필요한 fetchUserData 방지용
+  useEffect(() => {
+    userIdRef.current = user?.id ?? null;
+  }, [user?.id]);
 
   // 비밀번호 재설정 링크(/auth/reset-password)로 진입했을 때 초기 진입 시점에 모달 자동 오픈
   useEffect(() => {
@@ -587,6 +566,9 @@ const App: React.FC = () => {
           if (currentUser && initialSessionLoaded) {
             if (justLoggedInRef.current) {
               justLoggedInRef.current = false;
+            } else if (event === 'SIGNED_IN' && currentUser.id === userIdRef.current) {
+              // 탭 포커스 복귀 시 토큰 갱신으로 SIGNED_IN이 오는 경우 — 실시간 연동 불필요하므로 데이터 재요청 생략
+              return;
             } else {
               await fetchUserData(currentUser);
             }

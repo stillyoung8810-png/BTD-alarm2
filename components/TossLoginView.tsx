@@ -5,6 +5,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { loginWithToss } from '../services/toss/tossAuth';
+import { TDSButton } from './tds';
 
 export interface TossLoginViewProps {
   lang: 'ko' | 'en';
@@ -43,14 +44,15 @@ const TossLoginView: React.FC<TossLoginViewProps> = ({ lang, onSuccess, onError,
       <p className="text-sm font-bold text-slate-600 dark:text-slate-400 text-center">
         {lang === 'ko' ? '토스 앱에서만 사용 가능한 로그인입니다.' : 'This login is only available in the Toss app.'}
       </p>
-      <button
+      <TDSButton
         type="button"
-        onClick={handleTossLogin}
+        fullWidth
+        loading={loading}
         disabled={loading}
-        className="w-full py-5 bg-[#3182F6] text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl hover:opacity-95 active:scale-[0.98] transition-all disabled:opacity-60 disabled:pointer-events-none"
+        onClick={handleTossLogin}
       >
         {loading ? loadingLabel : label}
-      </button>
+      </TDSButton>
     </div>
   );
 };

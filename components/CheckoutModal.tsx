@@ -24,6 +24,8 @@ import {
 import { PAY_METHOD_OPTIONS, type PayMethod, type EasyPayProvider } from '../services/payment/types';
 import { requestPayment, verifyPaymentOnServer, verifyTossPaymentOnServer } from '../services/payment/paymentService';
 import { isTossApp } from '../services/tossAppBridge';
+import { useTossApp } from '../contexts/TossAppContext';
+import { TDSModal, TDSButton } from './tds';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -70,6 +72,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
   onPaymentSuccess,
 }) => {
   const isKo = lang === 'ko';
+  const { isInTossApp } = useTossApp();
   const [payMethod, setPayMethod] = useState<PayMethod>('CARD');
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -126,19 +129,10 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   if (!isOpen) return null;
 
-  // 플랜별 테마
   const isPro = plan.id === 'pro';
 
-  return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-      {/* 배경 오버레이 */}
-      <div
-        className="absolute inset-0 bg-slate-900/50 dark:bg-[#0B0F19]/90 backdrop-blur-xl"
-        onClick={onClose}
-      />
-
-      {/* 모달 본체 */}
-      <div className="relative w-full max-w-md bg-white dark:bg-[#0E1525] rounded-[2.5rem] border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+  const modalBody = (
+    <>
 
         {/* ── 헤더 ──────────────────────────────────────── */}
         <div className="p-6 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-[#0B0F19]">
@@ -280,29 +274,35 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
           </div>
 
-          {/* ▸ 결제 버튼 */}
-          <button
-            onClick={handlePay}
-            disabled={isProcessing}
-            className={`w-full py-4 rounded-2xl text-sm font-black uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed ${
-              isPro
-                ? 'bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white shadow-lg shadow-blue-600/30'
-                : 'bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-black shadow-lg shadow-amber-500/30'
-            }`}
-          >
-            {isProcessing ? (
-              <>
-                <Loader2 size={18} className="animate-spin" />
-                {isKo ? '결제 처리 중...' : 'Processing...'}
-              </>
-            ) : (
-              <>
-                <Zap size={18} />
-                {isKo ? '지금 결제하기' : 'Pay Now'}
-                <ArrowRight size={16} />
-              </>
-            )}
-          </button>
+          {/* ▸ 결제 버튼 — 토스에서는 TDS 버튼 */}
+          {isInTossApp ? (
+            <TDSButton fullWidth loading={isProcessing} disabled={isProcessing} onClick={handlePay}>
+              {isProcessing ? (isKo ? '결제 처리 중...' : 'Processing...') : (isKo ? '지금 결제하기' : 'Pay Now')}
+            </TDSButton>
+          ) : (
+            <button
+              onClick={handlePay}
+              disabled={isProcessing}
+              className={`w-full py-4 rounded-2xl text-sm font-black uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed ${
+                isPro
+                  ? 'bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white shadow-lg shadow-blue-600/30'
+                  : 'bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-black shadow-lg shadow-amber-500/30'
+              }`}
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" />
+                  {isKo ? '결제 처리 중...' : 'Processing...'}
+                </>
+              ) : (
+                <>
+                  <Zap size={18} />
+                  {isKo ? '지금 결제하기' : 'Pay Now'}
+                  <ArrowRight size={16} />
+                </>
+              )}
+            </button>
+          )}
 
           {/* ▸ 하단 안내 문구 */}
           <div className="text-center space-y-1 pt-2">
@@ -350,12 +350,23 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
         {/* ── 닫기 버튼 (우상단) ────────────────────────── */}
         <button
+          type="button"
           onClick={onClose}
           className="absolute top-5 right-5 w-8 h-8 rounded-full bg-slate-200/50 dark:bg-white/10 flex items-center justify-center hover:bg-slate-300/50 dark:hover:bg-white/20 transition-colors"
           aria-label="Close"
         >
           <X size={16} className="text-slate-500 dark:text-slate-400" />
         </button>
+    </>
+  );
+
+  return isInTossApp ? (
+    <TDSModal open={isOpen} onClose={onClose}>{modalBody}</TDSModal>
+  ) : (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/50 dark:bg-[#0B0F19]/90 backdrop-blur-xl" onClick={onClose} aria-hidden />
+      <div className="relative w-full max-w-md bg-white dark:bg-[#0E1525] rounded-[2.5rem] border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        {modalBody}
       </div>
     </div>
   );

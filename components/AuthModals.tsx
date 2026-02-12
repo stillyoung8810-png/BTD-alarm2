@@ -4,9 +4,12 @@ import { X, Mail, Lock, LogOut, Key, UserCheck, ShieldCheck, Sparkles, Send } fr
 import { supabase } from '../services/supabase';
 import { cancelSubscription } from '../services/payment/paymentService';
 import { isTossApp } from '../services/tossAppBridge';
+import { buildRedirectUrl } from '../utils/authHelpers';
 import Toggle from './Toggle';
 import HoverTip from './HoverTip';
 import TossLoginView from './TossLoginView';
+import { TDSModal, TDSModalHeader, TDSButton, TDSTextField } from './tds';
+import { useTossApp } from '../contexts/TossAppContext';
 
 interface AuthModalsProps {
   lang: 'ko' | 'en';
@@ -28,6 +31,7 @@ interface AuthModalsProps {
 
 const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchType, onLogin, onLogout, currentUserEmail, currentTier = 'free', currentUserId, telegramConnectedAt = null, telegramAlertsEnabled = false, onTelegramAlertsEnabledChange }) => {
   const t = I18N[lang];
+  const { isInTossApp } = useTossApp();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -66,14 +70,6 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
     if (!/[0-9]/.test(pw)) return lang === 'ko' ? '숫자를 1개 이상 포함해야 합니다.' : 'Must include at least 1 number.';
     if (!/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(pw)) return lang === 'ko' ? '특수문자를 1개 이상 포함해야 합니다.' : 'Must include at least 1 special character.';
     return null;
-  };
-
-  // 베이스 URL과 경로를 안전하게 합쳐서 슬래시 중복/누락을 방지하는 헬퍼
-  const buildRedirectUrl = (path: string) => {
-    const rawBase = import.meta.env.VITE_SITE_URL || (typeof window !== 'undefined' ? window.location.origin : '');
-    const base = rawBase.replace(/\/+$/, ''); // 끝 슬래시 제거
-    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-    return `${base}${normalizedPath}`;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -397,37 +393,43 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/50 dark:bg-[#0B0F19]/90 backdrop-blur-xl" onClick={onClose}></div>
-      <div 
-        className="relative w-full max-w-md bg-white dark:bg-[#161d2a] rounded-[2.5rem] md:rounded-[3rem] border border-slate-200 dark:border-white/10 shadow-2xl dark:shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col max-h-[calc(100dvh-2rem)]"
-        style={{ touchAction: 'pan-y' }}
-      >
-        
-        {/* Header - 고정 */}
-        <div className="p-6 md:p-8 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-slate-900/40 shrink-0">
-           <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
-                 {type === 'profile' ? <UserCheck className="text-white" size={20} /> : <ShieldCheck className="text-white" size={20} />}
-              </div>
-              <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
-                {type === 'login'
-                  ? t.login
-                  : type === 'signup'
-                  ? t.signup
-                  : type === 'reset-password'
-                  ? (lang === 'ko' ? '비밀번호 재설정' : 'Reset Password')
-                  : type === 'change-password'
-                  ? (lang === 'ko' ? '비밀번호 변경' : 'Change Password')
-                  : 'User Profile'}
-              </h2>
-           </div>
-           <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-white/5 rounded-full text-slate-500 dark:text-slate-400"><X size={24} /></button>
-        </div>
+  const modalTitle =
+    type === 'login'
+      ? t.login
+      : type === 'signup'
+      ? t.signup
+      : type === 'reset-password'
+      ? (lang === 'ko' ? '비밀번호 재설정' : 'Reset Password')
+      : type === 'change-password'
+      ? (lang === 'ko' ? '비밀번호 변경' : 'Change Password')
+      : 'User Profile';
 
-        {/* Content - 스크롤 가능 */}
-        <div className="p-6 md:p-10 space-y-6 md:space-y-8 flex-1 overflow-y-auto overscroll-contain">
+  const modalContent = (
+    <>
+      {isInTossApp ? (
+        <TDSModalHeader
+          title={modalTitle}
+          onClose={onClose}
+          leftAccessory={
+            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
+              {type === 'profile' ? <UserCheck className="text-white" size={20} /> : <ShieldCheck className="text-white" size={20} />}
+            </div>
+          }
+        />
+      ) : (
+        <div className="p-6 md:p-8 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-slate-900/40 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
+              {type === 'profile' ? <UserCheck className="text-white" size={20} /> : <ShieldCheck className="text-white" size={20} />}
+            </div>
+            <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">{modalTitle}</h2>
+          </div>
+          <button type="button" onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-white/5 rounded-full text-slate-500 dark:text-slate-400" aria-label="닫기"><X size={24} /></button>
+        </div>
+      )}
+
+      {/* Content - 스크롤 가능 */}
+      <div className="p-6 md:p-10 space-y-6 md:space-y-8 flex-1 overflow-y-auto overscroll-contain">
           {(type === 'login' || type === 'signup') && isTossApp() ? (
             <>
               {error && (
@@ -1061,6 +1063,16 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
             </form>
           )}
         </div>
+      </>
+  );
+
+  return isInTossApp ? (
+    <TDSModal open onClose={onClose}>{modalContent}</TDSModal>
+  ) : (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/50 dark:bg-[#0B0F19]/90 backdrop-blur-xl" onClick={onClose} aria-hidden />
+      <div className="relative w-full max-w-md bg-white dark:bg-[#161d2a] rounded-[2.5rem] md:rounded-[3rem] border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)]" style={{ touchAction: 'pan-y' }}>
+        {modalContent}
       </div>
     </div>
   );

@@ -8,6 +8,8 @@ import {
   ArrowRight,
   Sparkles
 } from 'lucide-react';
+import { TDSButton } from './tds';
+import { useTossApp } from '../contexts/TossAppContext';
 
 interface LandingProps {
   lang: 'ko' | 'en';
@@ -17,6 +19,7 @@ interface LandingProps {
 
 const Landing: React.FC<LandingProps> = ({ lang, onOpenSignup, onOpenLogin }) => {
   const t = I18N[lang];
+  const { isInTossApp } = useTossApp();
 
   const features = [
     {
@@ -110,31 +113,38 @@ const Landing: React.FC<LandingProps> = ({ lang, onOpenSignup, onOpenLogin }) =>
                 : 'Create quant-based trading strategies and grow your assets systematically with real-time alerts. Experience premium-grade portfolio management.'}
             </p>
 
-            {/* Action Buttons */}
+            {/* Action Buttons — 토스 미니앱에서만 TDS 버튼, 웹은 기존 스타일 유지 */}
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-              {/* Primary Button - Glowing Effect */}
-              <button
-                onClick={onOpenSignup}
-                className="group relative px-8 py-4 bg-white text-indigo-700 rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-white/20 hover:shadow-white/30 hover:scale-[1.02] active:scale-95 transition-all duration-300 flex items-center gap-3 overflow-hidden"
-              >
-                {/* Glow Effect */}
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-100 via-white to-blue-100 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-                <Zap size={18} className="relative z-10" />
-                <span className="relative z-10">
-                  {lang === 'ko' ? '무료로 시작하기' : 'Start for Free'}
-                </span>
-              </button>
-
-              {/* Secondary Button - Ghost Style */}
-              <button
-                onClick={onOpenLogin}
-                className="group px-8 py-4 bg-transparent text-white rounded-2xl font-black text-sm uppercase tracking-widest border border-white/30 hover:bg-white/10 hover:border-white/50 transition-all duration-300 flex items-center gap-3 backdrop-blur-sm"
-              >
-                <span>
-                  {lang === 'ko' ? '이미 계정이 있으신가요? 로그인' : 'Already have an account? Log in'}
-                </span>
-                <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-              </button>
+              {isInTossApp ? (
+                <>
+                  <TDSButton variant="primary" onClick={onOpenSignup} className="px-8 py-4 flex items-center gap-3">
+                    <Zap size={18} />
+                    {lang === 'ko' ? '무료로 시작하기' : 'Start for Free'}
+                  </TDSButton>
+                  <TDSButton variant="secondary" onClick={onOpenLogin} className="px-8 py-4 flex items-center gap-3">
+                    {lang === 'ko' ? '이미 계정이 있으신가요? 로그인' : 'Already have an account? Log in'}
+                    <ArrowRight size={18} />
+                  </TDSButton>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={onOpenSignup}
+                    className="group relative px-8 py-4 bg-white text-indigo-700 rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-white/20 hover:shadow-white/30 hover:scale-[1.02] active:scale-95 transition-all duration-300 flex items-center gap-3 overflow-hidden"
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-r from-blue-100 via-white to-blue-100 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                    <Zap size={18} className="relative z-10" />
+                    <span className="relative z-10">{lang === 'ko' ? '무료로 시작하기' : 'Start for Free'}</span>
+                  </button>
+                  <button
+                    onClick={onOpenLogin}
+                    className="group px-8 py-4 bg-transparent text-white rounded-2xl font-black text-sm uppercase tracking-widest border border-white/30 hover:bg-white/10 hover:border-white/50 transition-all duration-300 flex items-center gap-3 backdrop-blur-sm"
+                  >
+                    <span>{lang === 'ko' ? '이미 계정이 있으신가요? 로그인' : 'Already have an account? Log in'}</span>
+                    <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

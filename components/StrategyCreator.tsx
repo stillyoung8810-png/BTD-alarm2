@@ -7,6 +7,7 @@ import { useTossApp } from '../contexts/TossAppContext';
 import CustomDropdown from './CustomDropdown';
 import HoverTip from './HoverTip';
 import InfoModal from './InfoModal';
+import { useTDSMenu } from './tds';
 
 // 전략 타입 정의 (확장 가능)
 export type StrategyType = 'rsi_ma_interval' | 'multi_split';
@@ -42,17 +43,6 @@ const getStrategyDefinitions = (t: any): StrategyDefinition[] => [
   },
 ];
 
-// 토스 앱 환경에서만 Menu 컴포넌트 import
-let Menu: any = null;
-if (typeof window !== 'undefined') {
-  try {
-    const tossMobile = require('@toss/tds-mobile');
-    Menu = tossMobile.Menu;
-  } catch (e) {
-    // @toss/tds-mobile이 없거나 로드 실패 시 무시
-  }
-}
-
 interface StrategyCreatorProps {
   lang: 'ko' | 'en';
   onClose: () => void;
@@ -71,6 +61,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
   currentPortfolioCount
 }) => {
   const { isInTossApp } = useTossApp();
+  const { Menu } = useTDSMenu();
   const [step, setStep] = useState(0); // 0: 전략 선택, 1-3: 기존 단계
   const [selectedStrategy, setSelectedStrategy] = useState<StrategyType | null>(null);
   const [proInfoOpen, setProInfoOpen] = useState(false);

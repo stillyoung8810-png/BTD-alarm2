@@ -1,5 +1,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { Sparkles, Star, Crown, Check, Lock, Zap, Bell, Clock, Brain, ArrowRight } from 'lucide-react';
+import { useTossApp } from '../contexts/TossAppContext';
+import { TDSButton } from './tds';
 
 const PREMIUM_GLOW_STYLE = `
   @keyframes breathe-gold {
@@ -75,6 +77,7 @@ const TELEGRAM_PREVIEW_CARDS = (isKo: boolean) => [
 
 const Pricing: React.FC<PricingProps> = ({ lang, currentTier, onUpgrade }) => {
   const isKo = lang === 'ko';
+  const { isInTossApp } = useTossApp();
   const [telegramCardIndex, setTelegramCardIndex] = useState(0);
   const [aiCardIndex, setAiCardIndex] = useState(0);
   const previewCards = TELEGRAM_PREVIEW_CARDS(isKo);
@@ -263,21 +266,37 @@ const Pricing: React.FC<PricingProps> = ({ lang, currentTier, onUpgrade }) => {
                     ))}
                   </ul>
 
-                  <button
-                    onClick={() => {
-                      if (!isCurrent && tier.id !== 'free' && onUpgrade) {
-                        onUpgrade(tier.id as 'pro' | 'premium');
-                      }
-                    }}
-                    disabled={isCurrent || isDisabled}
-                    className={`w-full py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all duration-300 flex items-center justify-center gap-2 group/btn disabled:opacity-60 disabled:cursor-not-allowed ${
-                      tier.theme === 'premium' ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-lg shadow-amber-500/20' : tier.theme === 'pro' ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/20' : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white'
-                    }`}
-                  >
-                    {isCurrent ? (isKo ? '사용 중인 플랜' : 'Current Plan') : tier.id === 'premium' ? (isKo ? '출시 알림 받기' : 'Get Notified') : (isKo ? '업그레이드하기' : 'Upgrade Now')}
-                    {!isCurrent && tier.id !== 'premium' && <ArrowRight size={16} className="transition-transform group-hover/btn:translate-x-1" />}
-                    {tier.id === 'premium' && <Bell size={16} className="animate-pulse" />}
-                  </button>
+                  {isInTossApp ? (
+                    <TDSButton
+                      variant={tier.theme === 'pro' ? 'primary' : tier.theme === 'premium' ? 'primary' : 'tertiary'}
+                      fullWidth
+                      disabled={isCurrent || isDisabled}
+                      onClick={() => {
+                        if (!isCurrent && tier.id !== 'free' && onUpgrade) onUpgrade(tier.id as 'pro' | 'premium');
+                      }}
+                      className={tier.theme === 'premium' ? '!bg-amber-500 !text-black hover:!bg-amber-400' : ''}
+                    >
+                      {isCurrent ? (isKo ? '사용 중인 플랜' : 'Current Plan') : tier.id === 'premium' ? (isKo ? '출시 알림 받기' : 'Get Notified') : (isKo ? '업그레이드하기' : 'Upgrade Now')}
+                      {!isCurrent && tier.id !== 'premium' && <ArrowRight size={16} className="ml-1" />}
+                      {tier.id === 'premium' && <Bell size={16} className="animate-pulse" />}
+                    </TDSButton>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        if (!isCurrent && tier.id !== 'free' && onUpgrade) {
+                          onUpgrade(tier.id as 'pro' | 'premium');
+                        }
+                      }}
+                      disabled={isCurrent || isDisabled}
+                      className={`w-full py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all duration-300 flex items-center justify-center gap-2 group/btn disabled:opacity-60 disabled:cursor-not-allowed ${
+                        tier.theme === 'premium' ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-lg shadow-amber-500/20' : tier.theme === 'pro' ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/20' : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white'
+                      }`}
+                    >
+                      {isCurrent ? (isKo ? '사용 중인 플랜' : 'Current Plan') : tier.id === 'premium' ? (isKo ? '출시 알림 받기' : 'Get Notified') : (isKo ? '업그레이드하기' : 'Upgrade Now')}
+                      {!isCurrent && tier.id !== 'premium' && <ArrowRight size={16} className="transition-transform group-hover/btn:translate-x-1" />}
+                      {tier.id === 'premium' && <Bell size={16} className="animate-pulse" />}
+                    </button>
+                  )}
                 </div>
               </div>
             );

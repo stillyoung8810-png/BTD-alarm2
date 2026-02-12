@@ -5,23 +5,7 @@ import { X, Clock, Plus, Trash2, Info, ChevronDown } from 'lucide-react';
 import Toggle from './Toggle';
 import { useTossApp } from '../contexts/TossAppContext';
 import CustomDropdown from './CustomDropdown';
-
-// 토스 앱 환경에서만 Menu 컴포넌트 동적 로드
-// NOTE: @toss/tds-mobile 은 선택적 의존성으로, 설치되지 않은 환경에서는 무시됩니다.
-// require() 사용은 동기적 조건부 의존성 탐지를 위한 의도적 선택입니다.
-/* eslint-disable @typescript-eslint/no-var-requires */
-interface TossMenuProps { open: boolean; onOpen: () => void; onClose: () => void; placement?: string; children: React.ReactNode }
-interface TossMenuComponent extends React.FC<TossMenuProps> {
-  Trigger: React.FC<{ children: React.ReactNode }>;
-  Dropdown: React.FC<{ children: React.ReactNode }>;
-  Header: React.FC<{ children: React.ReactNode }>;
-  DropdownCheckItem: React.FC<{ checked: boolean; onCheckedChange: (checked: boolean) => void; children: React.ReactNode }>;
-}
-let TossMenu: TossMenuComponent | null = null;
-if (typeof window !== 'undefined') {
-  try { TossMenu = (require('@toss/tds-mobile') as { Menu: TossMenuComponent }).Menu; } catch { /* not available */ }
-}
-/* eslint-enable @typescript-eslint/no-var-requires */
+import { useTDSMenu } from './tds';
 
 // ---------------------------------------------------------------------------
 // 상수 (모듈 레벨 — 렌더마다 재생성 방지)
@@ -77,6 +61,7 @@ interface AlarmModalProps {
 
 const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSave, maxAlarms }) => {
   const { isInTossApp } = useTossApp();
+  const { Menu: TDSMenu } = useTDSMenu();
   const initialConfig = portfolio.alarmconfig || {
     enabled: false,
     selectedHours: [],
@@ -289,23 +274,23 @@ const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSav
                     <label className="text-[9px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
                       {lang === 'ko' ? '분' : 'Minute'}
                     </label>
-                    {isInTossApp && TossMenu ? (
-                      <TossMenu
+                    {isInTossApp && TDSMenu ? (
+                      <TDSMenu
                         open={minuteMenuOpen}
                         onOpen={() => setMinuteMenuOpen(true)}
                         onClose={() => setMinuteMenuOpen(false)}
                         placement="bottom"
                       >
-                        <TossMenu.Trigger>
+                        <TDSMenu.Trigger>
                           <button className="w-full p-4 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-xl text-slate-900 dark:text-white text-sm font-black cursor-pointer hover:bg-slate-50 dark:hover:bg-white/10 transition-colors focus:ring-2 focus:ring-blue-500/50 outline-none flex items-center justify-between">
                             <span>{selectedMinute}{lang === 'ko' ? '분' : ' min'}</span>
                             <ChevronDown size={16} className="text-slate-400" />
                           </button>
-                        </TossMenu.Trigger>
-                        <TossMenu.Dropdown>
-                          <TossMenu.Header>{lang === 'ko' ? '10분 단위 설정' : '10-minute Interval'}</TossMenu.Header>
+                        </TDSMenu.Trigger>
+                        <TDSMenu.Dropdown>
+                          <TDSMenu.Header>{lang === 'ko' ? '10분 단위 설정' : '10-minute Interval'}</TDSMenu.Header>
                           {MINUTES.map((minute) => (
-                            <TossMenu.DropdownCheckItem
+                            <TDSMenu.DropdownCheckItem
                               key={minute}
                               checked={selectedMinute === minute}
                               onCheckedChange={(checked) => {
@@ -316,10 +301,10 @@ const AlarmModal: React.FC<AlarmModalProps> = ({ lang, portfolio, onClose, onSav
                               }}
                             >
                               {minute}{lang === 'ko' ? '분' : ' min'}
-                            </TossMenu.DropdownCheckItem>
+                            </TDSMenu.DropdownCheckItem>
                           ))}
-                        </TossMenu.Dropdown>
-                      </TossMenu>
+                        </TDSMenu.Dropdown>
+                      </TDSMenu>
                     ) : (
                       <CustomDropdown
                         value={selectedMinute}

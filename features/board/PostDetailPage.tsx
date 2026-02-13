@@ -63,6 +63,11 @@ export const PostDetailPage: React.FC = () => {
   const hasImage =
     !imageError && post.imageUrl && post.imageUrl.trim() !== '';
 
+  const disclaimerText =
+    "본 분석은 외부 자료를 바탕으로 '유한회사 두리여유'의 주식 알림 알고리즘을 적용해 재구성한 독자적인 리포트입니다. 무단 전재 및 재배포를 금합니다.";
+
+  const cleanedContent = post.content.replace(disclaimerText, '');
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 dark:text-slate-200">
       <header className="sticky top-0 z-40 w-full glass glass-header px-6 md:px-12 py-5 flex items-center justify-between border-b border-slate-200/50 dark:border-white/10">
@@ -103,7 +108,7 @@ export const PostDetailPage: React.FC = () => {
         </h2>
         <div
           className="mt-6 prose prose-slate dark:prose-invert max-w-none text-slate-700 dark:text-slate-300 leading-relaxed"
-          dangerouslySetInnerHTML={{ __html: post.content }}
+          dangerouslySetInnerHTML={{ __html: cleanedContent }}
         />
         <p className="mt-8 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400 text-center whitespace-pre-line">
           본 분석은 외부 자료를 바탕으로 '유한회사 두리여유'의 주식 알림 알고리즘을 적용해 재구성한 독자적인 리포트입니다.

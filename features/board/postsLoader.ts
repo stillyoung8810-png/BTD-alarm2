@@ -25,7 +25,7 @@ export async function loadPosts(): Promise<BoardPost[]> {
 
   if (!Array.isArray(data)) return [];
 
-  return (data as RawPost[]).map((p) => ({
+  const mapped = (data as RawPost[]).map((p) => ({
     id: String(p.id),
     category: p.category,
     title: p.title,
@@ -35,6 +35,9 @@ export async function loadPosts(): Promise<BoardPost[]> {
     imageUrl: p.imageUrl,
     imageAlt: p.imageAlt,
   }));
+
+  // 가장 최근 글이 먼저 보이도록 date 기준 내림차순 정렬
+  return mapped.sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0));
 }
 
 export function loadPostById(posts: BoardPost[], id: string): BoardPost | undefined {

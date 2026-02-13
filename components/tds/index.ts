@@ -7,3 +7,4 @@ export { TDSButton, type TDSButtonProps } from './TDSButton';
 export { TDSModal, TDSModalHeader, TDSModalFooter, type TDSModalProps, type TDSModalHeaderProps, type TDSModalFooterProps } from './TDSModal';
 export { TDSTextField, type TDSTextFieldProps } from './TDSTextField';
 export { useTDSMenu, type TDSMenuComponent } from './useTDSMenu';
+export { TDSList, TDSListRow, type TDSListProps, type TDSListRowProps } from './TDSList';

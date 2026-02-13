@@ -54,9 +54,11 @@ const LAZY_MODAL_FALLBACK = (
   <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/50 dark:bg-slate-950/80 text-slate-400 font-bold">…</div>
 );
 
+type ActiveTab = 'dashboard' | 'markets' | 'history' | 'backtest' | 'pricing' | 'privacy' | 'terms';
+
 const App: React.FC = () => {
   const [lang, setLang] = useState<'ko' | 'en'>('ko');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'markets' | 'history' | 'backtest' | 'pricing' | 'privacy' | 'terms'>('dashboard');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [isCreatorOpen, setIsCreatorOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
@@ -473,6 +475,131 @@ const App: React.FC = () => {
   const currentAIImagePortfolio = portfolios.find(p => p.id === aiImageTargetId);
   const currentTerminatePortfolio = portfolios.find(p => p.id === terminateTargetId);
 
+  /** 탭별 콘텐츠 매핑 — 조건문 분기 제거, Cognitive Complexity 감소 (Phase 0.3) */
+  const tabContentNode = useMemo((): React.ReactNode => {
+    const dashboardFallback = <div className="flex items-center justify-center min-h-[50vh] text-slate-500 dark:text-slate-400 font-bold">{lang === 'ko' ? '대시보드 로딩 중…' : 'Loading dashboard…'}</div>;
+    const genericFallback = <div className="flex items-center justify-center min-h-[50vh] text-slate-500 dark:text-slate-400 font-bold">{lang === 'ko' ? '로딩 중…' : 'Loading…'}</div>;
+    switch (activeTab) {
+      case 'dashboard':
+        return user ? (
+          <React.Suspense fallback={dashboardFallback}>
+            <Dashboard
+              lang={lang}
+              portfolios={activePortfolios}
+              onClosePortfolio={(id) => setTerminateTargetId(id)}
+              onDeletePortfolio={handleDeletePortfolio}
+              onUpdatePortfolio={handleUpdatePortfolio}
+              onOpenCreator={() => {
+                if (activePortfolios.length >= getMaxPortfolios(userProfile)) {
+                  alert(lang === 'ko'
+                    ? `포트폴리오 생성 한도(${getMaxPortfolios(userProfile)}개)에 도달했습니다. 더 많은 포트폴리오를 만들려면 업그레이드를 고려해 보세요.`
+                    : `Portfolio limit (${getMaxPortfolios(userProfile)}) reached. Please upgrade for more.`);
+                  return;
+                }
+                setIsCreatorOpen(true);
+              }}
+              onOpenAlarm={(id) => setAlarmTargetId(id)}
+              onOpenDetails={(id) => setDetailsTargetId(id)}
+              onOpenQuickInput={(id, activeSection) => {
+                setQuickInputTargetId(id);
+                setQuickInputActiveSection(activeSection);
+              }}
+              onOpenExecution={(id) => setExecutionTargetId(id)}
+              onOpenAIImage={(id) => setAiImageTargetId(id)}
+              totalValuation={totalValuation}
+              totalValuationChange={totalValuationChange}
+              totalValuationChangePct={totalValuationChangePct}
+              onDailyExecutionSummaryChange={onDailyExecutionSummaryChange}
+            />
+          </React.Suspense>
+        ) : (
+          <Landing
+            lang={lang}
+            onOpenSignup={() => setAuthModal('signup')}
+            onOpenLogin={() => setAuthModal('login')}
+          />
+        );
+      case 'markets':
+        return (
+          <React.Suspense fallback={genericFallback}>
+            <Markets lang={lang} portfolios={portfolios} canAccessPaidStocks={canAccessPaidStocks} />
+          </React.Suspense>
+        );
+      case 'backtest':
+        return (
+          <React.Suspense fallback={<div className="flex items-center justify-center min-h-[50vh] text-slate-500 dark:text-slate-400 font-bold">백테스트 로딩 중…</div>}>
+            <Backtest lang={lang} currentTier={currentTier === 'premium' || currentTier === 'pro' ? currentTier : 'free'} />
+          </React.Suspense>
+        );
+      case 'pricing':
+        return (
+          <Pricing
+            lang={lang}
+            currentTier={currentTier === 'premium' || currentTier === 'pro' ? currentTier : 'free'}
+            onUpgrade={(planId) => {
+              if (!user) {
+                setAuthModal('login');
+                return;
+              }
+              setCheckoutPlan(planId);
+            }}
+          />
+        );
+      case 'history':
+        return (
+          <React.Suspense fallback={genericFallback}>
+            <History
+              lang={lang}
+              portfolios={portfolios.filter(p => p.isClosed)}
+              onOpenDetails={async (id) => {
+                await showInterstitialBeforeAction(AdPlacement.INTERSTITIAL_SETTLEMENT_DETAIL);
+                setDetailsTargetId(id);
+              }}
+              onDeleteHistory={handleDeleteHistory}
+              onClearHistory={handleClearHistory}
+            />
+          </React.Suspense>
+        );
+      case 'privacy':
+        return (
+          <Privacy
+            lang={lang}
+            onBack={() => {
+              setActiveTab('dashboard');
+              const u = window.location;
+              if (u.hash === '#privacy') window.history.replaceState(null, '', u.pathname + u.search);
+            }}
+          />
+        );
+      case 'terms':
+        return (
+          <Terms
+            lang={lang}
+            onBack={() => {
+              setActiveTab('dashboard');
+              const u = window.location;
+              if (u.hash === '#terms') window.history.replaceState(null, '', u.pathname + u.search);
+            }}
+          />
+        );
+      default:
+        return null;
+    }
+  }, [
+    activeTab,
+    lang,
+    user,
+    activePortfolios,
+    portfolios,
+    userProfile,
+    currentTier,
+    totalValuation,
+    totalValuationChange,
+    totalValuationChangePct,
+    onDailyExecutionSummaryChange,
+    canAccessPaidStocks,
+  ]);
+
   // 메인 레이아웃: 토스 앱 환경에서만 TDSMobileAITProvider로 감싸기
   const MainContent = () => (
     <div className={`min-h-screen transition-colors duration-500 bg-slate-50 dark:bg-slate-950 dark:text-slate-200`}>
@@ -555,107 +682,7 @@ const App: React.FC = () => {
         </header>
 
         <main className="max-w-7xl mx-auto px-6 md:px-16 py-10">
-          {activeTab === 'dashboard' && (
-            user ? (
-              <React.Suspense fallback={<div className="flex items-center justify-center min-h-[50vh] text-slate-500 dark:text-slate-400 font-bold">{lang === 'ko' ? '대시보드 로딩 중…' : 'Loading dashboard…'}</div>}>
-                <Dashboard 
-                  lang={lang}
-                  portfolios={activePortfolios} 
-                  onClosePortfolio={(id) => setTerminateTargetId(id)}
-                  onDeletePortfolio={handleDeletePortfolio}
-                  onUpdatePortfolio={handleUpdatePortfolio}
-                  onOpenCreator={() => {
-                    if (activePortfolios.length >= getMaxPortfolios(userProfile)) {
-                      alert(lang === 'ko' 
-                        ? `포트폴리오 생성 한도(${getMaxPortfolios(userProfile)}개)에 도달했습니다. 더 많은 포트폴리오를 만들려면 업그레이드를 고려해 보세요.` 
-                        : `Portfolio limit (${getMaxPortfolios(userProfile)}) reached. Please upgrade for more.`);
-                      return;
-                    }
-                    setIsCreatorOpen(true);
-                  }}
-                  onOpenAlarm={(id) => setAlarmTargetId(id)}
-                  onOpenDetails={(id) => setDetailsTargetId(id)}
-                  onOpenQuickInput={(id, activeSection) => {
-                    setQuickInputTargetId(id);
-                    setQuickInputActiveSection(activeSection);
-                  }}
-                  onOpenExecution={(id) => setExecutionTargetId(id)}
-                  onOpenAIImage={(id) => setAiImageTargetId(id)}
-                  totalValuation={totalValuation}
-                  totalValuationChange={totalValuationChange}
-                  totalValuationChangePct={totalValuationChangePct}
-                  onDailyExecutionSummaryChange={onDailyExecutionSummaryChange}
-                />
-              </React.Suspense>
-            ) : (
-              <Landing 
-                lang={lang}
-                onOpenSignup={() => setAuthModal('signup')}
-                onOpenLogin={() => setAuthModal('login')}
-              />
-            )
-          )}
-          {activeTab === 'markets' && (
-            <React.Suspense fallback={<div className="flex items-center justify-center min-h-[50vh] text-slate-500 dark:text-slate-400 font-bold">{lang === 'ko' ? '시장 로딩 중…' : 'Loading markets…'}</div>}>
-              <Markets lang={lang} portfolios={portfolios} canAccessPaidStocks={canAccessPaidStocks} />
-            </React.Suspense>
-          )}
-          {activeTab === 'backtest' && (
-            <React.Suspense fallback={<div className="flex items-center justify-center min-h-[50vh] text-slate-500 dark:text-slate-400 font-bold">백테스트 로딩 중…</div>}>
-              <Backtest 
-                lang={lang} 
-                currentTier={currentTier === 'premium' || currentTier === 'pro' ? currentTier : 'free'} 
-              />
-            </React.Suspense>
-          )}
-          {activeTab === 'pricing' && (
-            <Pricing 
-              lang={lang} 
-              currentTier={currentTier === 'premium' || currentTier === 'pro' ? currentTier : 'free'}
-              onUpgrade={(planId) => {
-                if (!user) {
-                  setAuthModal('login');
-                  return;
-                }
-                setCheckoutPlan(planId);
-              }}
-            />
-          )}
-          {activeTab === 'history' && (
-            <React.Suspense fallback={<div className="flex items-center justify-center min-h-[50vh] text-slate-500 dark:text-slate-400 font-bold">{lang === 'ko' ? '히스토리 로딩 중…' : 'Loading history…'}</div>}>
-              <History 
-                lang={lang} 
-                portfolios={portfolios.filter(p => p.isClosed)} 
-                onOpenDetails={async (id) => {
-                  await showInterstitialBeforeAction(AdPlacement.INTERSTITIAL_SETTLEMENT_DETAIL);
-                  setDetailsTargetId(id);
-                }}
-                onDeleteHistory={handleDeleteHistory}
-                onClearHistory={handleClearHistory}
-              />
-            </React.Suspense>
-          )}
-
-          {activeTab === 'privacy' && (
-            <Privacy
-              lang={lang}
-              onBack={() => {
-                setActiveTab('dashboard');
-                const u = window.location;
-                if (u.hash === '#privacy') window.history.replaceState(null, '', u.pathname + u.search);
-              }}
-            />
-          )}
-          {activeTab === 'terms' && (
-            <Terms
-              lang={lang}
-              onBack={() => {
-                setActiveTab('dashboard');
-                const u = window.location;
-                if (u.hash === '#terms') window.history.replaceState(null, '', u.pathname + u.search);
-              }}
-            />
-          )}
+          {tabContentNode}
         </main>
 
         {/* Unified Floating Navigation Bar - center '+' button */}

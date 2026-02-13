@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Portfolio } from '../types';
 import { I18N, PAID_STOCKS } from '../constants';
 import StockLogo from './StockLogo';
-import { 
-  Plus, 
+import {
+  Plus,
   Zap,
   Info,
   Bell,
@@ -12,13 +11,16 @@ import {
   Trash2,
   TrendingUp,
   Layers,
-  Camera
+  Camera,
 } from 'lucide-react';
 import { calculateInvestedAmount, calculateYield, determineActiveSection, calculateAlreadyRealized, calculateHoldings, getMaPeriods, getMAValuesForAlignment } from '../utils/portfolioCalculations';
 import { fetchStockPrices } from '../services/stockService';
 import HoverTip from './HoverTip';
 import { formatPortfolioDailyExecutionBlock, joinDailyExecutionBlocks } from '../utils/dailyExecutionSummary';
 import { useMultiSplitExecution } from '../hooks/useMultiSplitExecution';
+import { useTossApp } from '../contexts/TossAppContext';
+import { TDSButton, TDSList, TDSListRow } from './tds';
+import { getConditionalTypographyStyle, getConditionalColor } from '../utils/tossStyleHelpers';
 
 interface DashboardProps {
   lang: 'ko' | 'en';
@@ -101,86 +103,156 @@ const Dashboard: React.FC<DashboardProps> = ({
     onDailyExecutionSummaryChange(next);
   }, [alarmIdsKey, dailyExecutionBlocks, onDailyExecutionSummaryChange]);
 
+  const { isInTossApp } = useTossApp();
   const t = I18N[lang];
   const isPositiveChange = totalValuationChange >= 0;
   const changeColor = totalValuationChange === 0 ? 'text-slate-400' : (isPositiveChange ? 'text-emerald-500' : 'text-rose-500');
 
+  // Phase 2: 토스 환경에서만 TDS Typography/색상 적용 (웹은 기존 className 유지)
+  const tossTitleStyle = getConditionalTypographyStyle(isInTossApp, 'Typography2', 'Bold');
+  const tossCaptionStyle = getConditionalTypographyStyle(isInTossApp, 'Typography7', 'Regular');
+  const tossValueStyle = getConditionalTypographyStyle(isInTossApp, 'Typography2', 'Bold');
+  const tossChangePositiveColor = getConditionalColor(isInTossApp, 'success');
+  const tossChangeNegativeColor = getConditionalColor(isInTossApp, 'error');
+  const tossTextSecondaryColor = getConditionalColor(isInTossApp, 'textSecondary');
+
+  const valuationLabelStyle = tossCaptionStyle ? { ...tossCaptionStyle, color: tossTextSecondaryColor ?? undefined } : undefined;
+  const valuationValueStyle = tossValueStyle ? { ...tossValueStyle, color: undefined } : undefined;
+  const changeValueStyle = tossValueStyle && (totalValuationChange !== 0)
+    ? { ...tossValueStyle, color: isPositiveChange ? (tossChangePositiveColor ?? undefined) : (tossChangeNegativeColor ?? undefined) }
+    : tossValueStyle;
+
   return (
     <div className="space-y-12 animate-in fade-in duration-700">
-      
       <section className="flex flex-col md:flex-row md:items-start justify-between gap-8 pt-8">
         <div className="max-w-2xl">
-          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight dark:text-white mb-4 leading-[1.1]">
+          <h1
+            className={!isInTossApp ? 'text-4xl md:text-5xl font-extrabold tracking-tight dark:text-white mb-4 leading-[1.1]' : 'mb-4'}
+            style={tossTitleStyle ?? undefined}
+          >
             {t.portfolioMgmt}
           </h1>
-          <p className="text-slate-500 dark:text-slate-400 text-lg font-medium leading-relaxed">
+          <p
+            className={!isInTossApp ? 'text-slate-500 dark:text-slate-400 text-lg font-medium leading-relaxed' : ''}
+            style={isInTossApp && tossCaptionStyle ? { ...tossCaptionStyle, color: tossTextSecondaryColor ?? undefined } : undefined}
+          >
             {t.systematicAccumulation}
           </p>
         </div>
-        
+
         <div className="flex flex-col items-end gap-6 min-w-[280px]">
-            <div className="flex items-center gap-8 px-2">
+          <div className="flex items-center gap-8 px-2">
             <div className="flex flex-col items-end">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{t.totalValuation}</span>
-                <span className="text-3xl font-black dark:text-white tracking-tighter">
-                  ${totalValuation.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                </span>
+              <span
+                className={!isInTossApp ? 'text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1' : 'mb-1'}
+                style={valuationLabelStyle}
+              >
+                {t.totalValuation}
+              </span>
+              <span
+                className={!isInTossApp ? 'text-3xl font-black dark:text-white tracking-tighter' : ''}
+                style={valuationValueStyle}
+              >
+                ${totalValuation.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </span>
             </div>
-            <div className="w-[1px] h-10 bg-slate-200 dark:bg-slate-800"></div>
+            <div className="w-[1px] h-10 bg-slate-200 dark:bg-slate-800" />
             <div className="flex flex-col items-end">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{t.gain24h}</span>
-                <span className={`text-3xl font-black tracking-tighter ${changeColor}`}>
-                  {totalValuationChange === 0
-                    ? '$0.00'
-                    : `${isPositiveChange ? '+' : '-'}$${Math.abs(totalValuationChange).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                  }
-                </span>
-                <span className={`text-xs font-bold mt-0.5 ${changeColor}`}>
-                  {Number.isNaN(totalValuationChangePct)
-                    ? '-'
-                    : `${totalValuationChangePct >= 0 ? '+' : ''}${totalValuationChangePct.toFixed(2)}%`}
-                </span>
+              <span
+                className={!isInTossApp ? 'text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1' : 'mb-1'}
+                style={valuationLabelStyle}
+              >
+                {t.gain24h}
+              </span>
+              <span
+                className={!isInTossApp ? `text-3xl font-black tracking-tighter ${changeColor}` : ''}
+                style={changeValueStyle}
+              >
+                {totalValuationChange === 0
+                  ? '$0.00'
+                  : `${isPositiveChange ? '+' : '-'}$${Math.abs(totalValuationChange).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              </span>
+              <span
+                className={!isInTossApp ? `text-xs font-bold mt-0.5 ${changeColor}` : 'mt-0.5'}
+                style={changeValueStyle}
+              >
+                {Number.isNaN(totalValuationChangePct)
+                  ? '-'
+                  : `${totalValuationChangePct >= 0 ? '+' : ''}${totalValuationChangePct.toFixed(2)}%`}
+              </span>
             </div>
           </div>
-          
-          <button 
-            onClick={onOpenCreator}
-            className="w-full md:w-auto px-10 py-5 bg-blue-600 text-white rounded-[2rem] font-black text-sm uppercase shadow-xl shadow-blue-500/30 hover:scale-105 transition-all flex items-center justify-center gap-2"
-          >
-            <Plus size={18} strokeWidth={3} /> {t.newPortfolio}
-          </button>
+
+          {isInTossApp ? (
+            <TDSButton variant="primary" onClick={onOpenCreator} className="flex items-center justify-center gap-2">
+              <Plus size={18} strokeWidth={3} /> {t.newPortfolio}
+            </TDSButton>
+          ) : (
+            <button
+              type="button"
+              onClick={onOpenCreator}
+              className="w-full md:w-auto px-10 py-5 bg-blue-600 text-white rounded-[2rem] font-black text-sm uppercase shadow-xl shadow-blue-500/30 hover:scale-105 transition-all flex items-center justify-center gap-2"
+            >
+              <Plus size={18} strokeWidth={3} /> {t.newPortfolio}
+            </button>
+          )}
         </div>
       </section>
 
-      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {portfolios.length === 0 ? (
+      {portfolios.length === 0 ? (
+        <section className={isInTossApp ? 'block' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8'}>
           <div className="col-span-full glass p-16 rounded-[2.5rem] flex flex-col items-center justify-center text-center space-y-4 border-2 border-dashed border-slate-200 dark:border-white/5">
-             <p className="text-slate-500">{lang === 'ko' ? '포트폴리오가 없습니다. 포트폴리오를 추가해주세요.' : 'No portfolios. Please add a portfolio.'}</p>
+            <p className="text-slate-500">{lang === 'ko' ? '포트폴리오가 없습니다. 포트폴리오를 추가해주세요.' : 'No portfolios. Please add a portfolio.'}</p>
           </div>
-        ) : (
-          portfolios.map(p => (
-            <PortfolioCard 
-              key={p.id} 
-              portfolio={p} 
-              lang={lang}
-              onOpenAlarm={() => onOpenAlarm(p.id)}
-              onOpenDetails={() => onOpenDetails(p.id)}
-              onOpenQuickInput={async () => {
-                const activeSection = await determineActiveSection(p);
-                onOpenQuickInput(p.id, activeSection || undefined);
-              }}
-              onOpenExecution={() => onOpenExecution(p.id)}
-              onOpenAIImage={() => onOpenAIImage(p.id)}
-              onClose={() => onClosePortfolio(p.id)}
-              onDelete={() => onDeletePortfolio(p.id)}
-              onUpdatePortfolio={onUpdatePortfolio}
-              onDailyExecutionBlock={
-                onDailyExecutionSummaryChange ? setDailyExecutionBlockForId : undefined
-              }
-            />
-          ))
-        )}
-      </section>
+        </section>
+      ) : (
+        <section className={isInTossApp ? '' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8'}>
+          {isInTossApp ? (
+            <TDSList className="list-none p-0 m-0 space-y-4">
+              {portfolios.map((p) => (
+                <TDSListRow key={p.id} border="none" verticalPadding="large">
+                  <PortfolioCard
+                    portfolio={p}
+                    lang={lang}
+                    onOpenAlarm={() => onOpenAlarm(p.id)}
+                    onOpenDetails={() => onOpenDetails(p.id)}
+                    onOpenQuickInput={async () => {
+                      const activeSection = await determineActiveSection(p);
+                      onOpenQuickInput(p.id, activeSection || undefined);
+                    }}
+                    onOpenExecution={() => onOpenExecution(p.id)}
+                    onOpenAIImage={() => onOpenAIImage(p.id)}
+                    onClose={() => onClosePortfolio(p.id)}
+                    onDelete={() => onDeletePortfolio(p.id)}
+                    onUpdatePortfolio={onUpdatePortfolio}
+                    onDailyExecutionBlock={onDailyExecutionSummaryChange ? setDailyExecutionBlockForId : undefined}
+                  />
+                </TDSListRow>
+              ))}
+            </TDSList>
+          ) : (
+            portfolios.map((p) => (
+              <PortfolioCard
+                key={p.id}
+                portfolio={p}
+                lang={lang}
+                onOpenAlarm={() => onOpenAlarm(p.id)}
+                onOpenDetails={() => onOpenDetails(p.id)}
+                onOpenQuickInput={async () => {
+                  const activeSection = await determineActiveSection(p);
+                  onOpenQuickInput(p.id, activeSection || undefined);
+                }}
+                onOpenExecution={() => onOpenExecution(p.id)}
+                onOpenAIImage={() => onOpenAIImage(p.id)}
+                onClose={() => onClosePortfolio(p.id)}
+                onDelete={() => onDeletePortfolio(p.id)}
+                onUpdatePortfolio={onUpdatePortfolio}
+                onDailyExecutionBlock={onDailyExecutionSummaryChange ? setDailyExecutionBlockForId : undefined}
+              />
+            ))
+          )}
+        </section>
+      )}
     </div>
   );
 };
@@ -198,6 +270,7 @@ const PortfolioCard: React.FC<{
   lang: 'ko' | 'en';
   onDailyExecutionBlock?: (id: string, block: string | null) => void;
 }> = ({ portfolio, onClose, onDelete, onOpenAlarm, onOpenDetails, onOpenQuickInput, onOpenExecution, onOpenAIImage, onUpdatePortfolio, lang, onDailyExecutionBlock }) => {
+  const { isInTossApp } = useTossApp();
   const t = I18N[lang];
   // 다분할 매매법일 때는 multiSplit.targetStock을 사용, 아니면 ma0.stock 사용
   const ma0Ticker = portfolio.strategy.multiSplit?.targetStock || portfolio.strategy.ma0.stock;
@@ -479,35 +552,67 @@ const PortfolioCard: React.FC<{
       <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-white/20 to-transparent pointer-events-none opacity-50 dark:hidden"></div>
       <div className="absolute -right-12 -top-12 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl pointer-events-none"></div>
 
-      {/* 우측 상단 버튼 그룹 */}
+      {/* 우측 상단 버튼 그룹 — Phase 2: 토스에서만 TDSButton */}
       <div className="absolute top-4 right-4 flex items-center gap-2 z-20">
-        {/* 알람 버튼 */}
-        <button 
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenAlarm();
-          }}
-          className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-300 ${
-            isAlarmEnabled 
-              ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-500 border border-amber-200 dark:border-amber-500/30' 
-              : 'bg-transparent text-slate-500 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
-          }`}
-          title={lang === 'ko' ? '알람 설정' : 'Alarm settings'}
-        >
-          {isAlarmEnabled ? <Bell size={16} fill="currentColor" /> : <BellOff size={16} />}
-        </button>
-
-        {/* 삭제 버튼 */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 border border-slate-200 dark:border-slate-700 bg-transparent hover:bg-red-600 hover:text-white hover:border-red-600 transition-all duration-200 active:scale-95"
-          title={lang === 'ko' ? '포트폴리오 삭제' : 'Delete portfolio'}
-        >
-          <Trash2 size={16} strokeWidth={2} />
-        </button>
+        {isInTossApp ? (
+          <>
+            <TDSButton
+              variant="tertiary"
+              size="small"
+              onClick={(e) => {
+                e?.stopPropagation?.();
+                onOpenAlarm();
+              }}
+              className={`w-9 h-9 min-w-0 p-0 rounded-lg flex items-center justify-center ${
+                isAlarmEnabled ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-500' : ''
+              }`}
+              aria-label={lang === 'ko' ? '알람 설정' : 'Alarm settings'}
+            >
+              {isAlarmEnabled ? <Bell size={16} fill="currentColor" /> : <BellOff size={16} />}
+            </TDSButton>
+            <TDSButton
+              variant="tertiary"
+              size="small"
+              onClick={(e) => {
+                e?.stopPropagation?.();
+                onDelete();
+              }}
+              className="w-9 h-9 min-w-0 p-0 rounded-lg flex items-center justify-center text-slate-500"
+              aria-label={lang === 'ko' ? '포트폴리오 삭제' : 'Delete portfolio'}
+            >
+              <Trash2 size={16} strokeWidth={2} />
+            </TDSButton>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenAlarm();
+              }}
+              className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-300 ${
+                isAlarmEnabled
+                  ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-500 border border-amber-200 dark:border-amber-500/30'
+                  : 'bg-transparent text-slate-500 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+              }`}
+              title={lang === 'ko' ? '알람 설정' : 'Alarm settings'}
+            >
+              {isAlarmEnabled ? <Bell size={16} fill="currentColor" /> : <BellOff size={16} />}
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+              className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 border border-slate-200 dark:border-slate-700 bg-transparent hover:bg-red-600 hover:text-white hover:border-red-600 transition-all duration-200 active:scale-95"
+              title={lang === 'ko' ? '포트폴리오 삭제' : 'Delete portfolio'}
+            >
+              <Trash2 size={16} strokeWidth={2} />
+            </button>
+          </>
+        )}
       </div>
 
       <div className="flex justify-between items-start relative z-10">
@@ -581,19 +686,36 @@ const PortfolioCard: React.FC<{
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenAIImage();
-          }}
-          className="shrink-0 w-24 h-24 rounded-[2.5rem] bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-white/10 shadow-md dark:shadow-lg flex items-center justify-center hover:scale-[1.02] active:scale-[0.98] transition-transform focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-          title={lang === 'ko' ? 'AI 매매 인식' : 'AI Trade Recognition'}
-        >
-          <div className="w-12 h-12 rounded-2xl bg-indigo-600 dark:bg-indigo-500 flex items-center justify-center">
-            <Camera size={24} className="text-white" strokeWidth={2} />
-          </div>
-        </button>
+        {isInTossApp ? (
+          <TDSButton
+            variant="tertiary"
+            size="medium"
+            onClick={(e) => {
+              e?.stopPropagation?.();
+              onOpenAIImage();
+            }}
+            className="shrink-0 w-24 h-24 rounded-[2.5rem] min-w-0 p-0 flex items-center justify-center"
+            aria-label={lang === 'ko' ? 'AI 매매 인식' : 'AI Trade Recognition'}
+          >
+            <div className="w-12 h-12 rounded-2xl bg-indigo-600 dark:bg-indigo-500 flex items-center justify-center">
+              <Camera size={24} className="text-white" strokeWidth={2} />
+            </div>
+          </TDSButton>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenAIImage();
+            }}
+            className="shrink-0 w-24 h-24 rounded-[2.5rem] bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-white/10 shadow-md dark:shadow-lg flex items-center justify-center hover:scale-[1.02] active:scale-[0.98] transition-transform focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+            title={lang === 'ko' ? 'AI 매매 인식' : 'AI Trade Recognition'}
+          >
+            <div className="w-12 h-12 rounded-2xl bg-indigo-600 dark:bg-indigo-500 flex items-center justify-center">
+              <Camera size={24} className="text-white" strokeWidth={2} />
+            </div>
+          </button>
+        )}
       </div>
 
       <div 
@@ -833,23 +955,46 @@ const PortfolioCard: React.FC<{
             </div>
           )}
         </div>
-        <button 
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenQuickInput();
-          }}
-          className="w-10 h-10 rounded-xl bg-blue-600/20 dark:bg-white/20 flex items-center justify-center text-blue-700 dark:text-white backdrop-blur-md hover:scale-110 active:scale-95 transition-all shadow-sm dark:shadow-[0_0_15px_rgba(255,255,255,0.2)] shrink-0"
-        >
-           <Zap size={20} className="fill-current" />
-        </button>
+        {isInTossApp ? (
+          <TDSButton
+            variant="tertiary"
+            size="small"
+            onClick={(e) => {
+              e?.stopPropagation?.();
+              onOpenQuickInput();
+            }}
+            className="w-10 h-10 min-w-0 p-0 rounded-xl flex items-center justify-center shrink-0"
+            aria-label={lang === 'ko' ? '퀵 입력' : 'Quick input'}
+          >
+            <Zap size={20} className="fill-current" />
+          </TDSButton>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenQuickInput();
+            }}
+            className="w-10 h-10 rounded-xl bg-blue-600/20 dark:bg-white/20 flex items-center justify-center text-blue-700 dark:text-white backdrop-blur-md hover:scale-110 active:scale-95 transition-all shadow-sm dark:shadow-[0_0_15px_rgba(255,255,255,0.2)] shrink-0"
+          >
+            <Zap size={20} className="fill-current" />
+          </button>
+        )}
       </div>
 
-      <button 
-        onClick={onClose}
-        className="w-full py-4 text-[10px] font-black bg-slate-50 dark:bg-transparent text-slate-500 dark:text-slate-500 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/5 uppercase tracking-[0.2em] border border-slate-200 dark:border-white/10 rounded-2xl transition-all relative z-10"
-      >
-        {t.terminate}
-      </button>
+      {isInTossApp ? (
+        <TDSButton variant="tertiary" onClick={onClose} className="w-full relative z-10">
+          {t.terminate}
+        </TDSButton>
+      ) : (
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-full py-4 text-[10px] font-black bg-slate-50 dark:bg-transparent text-slate-500 dark:text-slate-500 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/5 uppercase tracking-[0.2em] border border-slate-200 dark:border-white/10 rounded-2xl transition-all relative z-10"
+        >
+          {t.terminate}
+        </button>
+      )}
     </div>
   );
 };

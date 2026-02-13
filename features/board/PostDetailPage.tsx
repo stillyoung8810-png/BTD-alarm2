@@ -105,6 +105,11 @@ export const PostDetailPage: React.FC = () => {
           className="mt-6 prose prose-slate dark:prose-invert max-w-none text-slate-700 dark:text-slate-300 leading-relaxed"
           dangerouslySetInnerHTML={{ __html: post.content }}
         />
+        <p className="mt-8 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400 text-center whitespace-pre-line">
+          본 분석은 외부 자료를 바탕으로 '유한회사 두리여유'의 주식 알림 알고리즘을 적용해 재구성한 독자적인 리포트입니다.
+          {"\n"}
+          무단 전재 및 재배포를 금합니다.
+        </p>
       </article>
     </div>
   );

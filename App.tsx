@@ -30,7 +30,8 @@ import {
   UserCircle,
   Languages,
   Crown,
-  Hammer
+  Hammer,
+  FileText
 } from 'lucide-react';
 import { 
   getMaxPortfolios, 
@@ -705,6 +706,21 @@ const App: React.FC = () => {
               }
               tooltipIcon={<Hammer size={16} className="text-indigo-400" />}
             />
+            {/* 애드센스용 게시판 — 웹 전용, 토스 미니앱에는 미노출 */}
+            {!isInTossApp && (
+              <a
+                href="/posts"
+                className="flex flex-col items-center gap-1 transition-all px-2 md:px-4 text-slate-500 hover:text-slate-300 hover:bg-white/5 rounded-xl"
+                aria-label="게시판"
+              >
+                <div className="p-2.5 rounded-xl transition-all duration-300 text-slate-500 hover:text-slate-300 hover:bg-white/5">
+                  <FileText size={22} aria-hidden />
+                </div>
+                <span className="text-[9px] font-black uppercase tracking-tighter hidden md:block text-slate-500">
+                  게시판
+                </span>
+              </a>
+            )}
           </nav>
         </div>
 

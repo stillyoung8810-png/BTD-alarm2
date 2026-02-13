@@ -1,0 +1,112 @@
+/**
+ * 게시판 상세 페이지 — /posts/:id
+ * 이미지: imageUrl 있으면 상단 노출, alt=imageAlt, max-width:100% height:auto.
+ * 웹 전용 (토스 미니앱 노출 안 함).
+ */
+
+import React, { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import type { BoardPost } from './boardTypes';
+import { loadPosts, loadPostById } from './postsLoader';
+import { FileText } from 'lucide-react';
+
+export const PostDetailPage: React.FC = () => {
+  const { id } = useParams<{ id: string }>();
+  const [post, setPost] = useState<BoardPost | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [imageError, setImageError] = useState(false);
+
+  useEffect(() => {
+    loadPosts()
+      .then((data) => {
+        const found = id ? loadPostById(data, id) : undefined;
+        setPost(found ?? null);
+        setError(found ? null : '글이 없습니다.');
+        setImageError(false);
+      })
+      .catch((e) => {
+        setError(e instanceof Error ? e.message : 'Failed to load');
+      })
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 dark:text-slate-200 flex items-center justify-center">
+        <p className="text-slate-500 dark:text-slate-400 font-medium">로딩 중…</p>
+      </div>
+    );
+  }
+
+  if (error || !post) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 dark:text-slate-200 flex flex-col items-center justify-center px-6">
+        <p className="text-red-500 dark:text-red-400 font-medium mb-4" role="alert">
+          {error ?? '글이 없습니다.'}
+        </p>
+        <a
+          href="/posts"
+          className="text-blue-600 dark:text-blue-400 hover:underline font-bold"
+        >
+          목록으로
+        </a>
+      </div>
+    );
+  }
+
+  const hasImage =
+    !imageError && post.imageUrl && post.imageUrl.trim() !== '';
+
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 dark:text-slate-200">
+      <header className="sticky top-0 z-40 w-full glass glass-header px-6 md:px-12 py-5 flex items-center justify-between border-b border-slate-200/50 dark:border-white/10">
+        <a
+          href="/posts"
+          className="flex items-center gap-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors font-bold"
+        >
+          ← 목록
+        </a>
+        <h1 className="text-lg font-black tracking-tight dark:text-white uppercase flex items-center gap-2">
+          <FileText size={22} aria-hidden />
+          게시판
+        </h1>
+        <div className="w-12" aria-hidden />
+      </header>
+
+      <article className="max-w-2xl mx-auto px-6 py-10">
+        {hasImage && (
+          <div className="mb-6 rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-slate-900/50">
+            <img
+              src={post.imageUrl!}
+              alt={post.imageAlt ?? post.title}
+              className="w-full max-w-full h-auto block"
+              style={{ maxWidth: '100%', height: 'auto' }}
+              loading="lazy"
+              onError={() => setImageError(true)}
+            />
+          </div>
+        )}
+        <time
+          className="text-slate-500 dark:text-slate-400 text-sm font-medium"
+          dateTime={post.date}
+        >
+          {formatDate(post.date)}
+        </time>
+        <h2 className="mt-1 text-xl font-bold text-slate-900 dark:text-white">
+          {post.title}
+        </h2>
+        <div
+          className="mt-6 prose prose-slate dark:prose-invert max-w-none text-slate-700 dark:text-slate-300 leading-relaxed"
+          dangerouslySetInnerHTML={{ __html: post.content }}
+        />
+      </article>
+    </div>
+  );
+};
+export default PostDetailPage;

@@ -14,7 +14,9 @@
  *
  * ⚠️ 환경변수 필요:
  *    - PORTONE_API_SECRET: 포트원 V2 API 시크릿
- *    - PORTONE_WEBHOOK_SECRET: 포트원 Webhook 서명 검증 시크릿 (선택)
+ *    - PORTONE_WEBHOOK_SECRET_TEST: 포트원 웹훅 서명 검증 시크릿 (테스트 연동).
+ *      Supabase Secrets에 등록. 설정 시 x-portone-signature 헤더로 시그니처 검증 필수, 실패 시 401.
+ *      미설정 시 검증 생략(기존 동작 유지).
  */
 
 import { serve } from "std/http/server";
@@ -26,7 +28,51 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const PORTONE_API_SECRET = Deno.env.get("PORTONE_API_SECRET") ?? "";
+const PORTONE_WEBHOOK_SECRET_TEST = Deno.env.get("PORTONE_WEBHOOK_SECRET_TEST") ?? "";
 const PORTONE_API_BASE = "https://api.portone.io";
+
+// ---------------------------------------------------------------------------
+// 웹훅 시그니처 검증 (PORTONE_WEBHOOK_SECRET_TEST 사용)
+// ---------------------------------------------------------------------------
+const SIGNATURE_HEADER = "x-portone-signature";
+
+/**
+ * HMAC-SHA256(rawBody, secret)을 Base64로 계산해 전달받은 시그니처와 비교합니다.
+ * 시크릿이 설정되어 있으면 검증 필수; 실패 시 401 반환.
+ */
+async function verifyWebhookSignature(
+  rawBody: string,
+  signatureHeader: string | null,
+): Promise<{ valid: boolean }> {
+  if (!PORTONE_WEBHOOK_SECRET_TEST) {
+    return { valid: true };
+  }
+  if (!signatureHeader?.trim()) {
+    return { valid: false };
+  }
+  const receivedSig = signatureHeader.replace(/^v1,?\s*/i, "").trim();
+  if (!receivedSig) {
+    return { valid: false };
+  }
+
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(PORTONE_WEBHOOK_SECRET_TEST),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sigBuffer = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    encoder.encode(rawBody),
+  );
+  const expectedSig = btoa(String.fromCharCode(...new Uint8Array(sigBuffer)));
+
+  const valid = receivedSig.length > 0 && expectedSig === receivedSig;
+  return { valid };
+}
 
 // ---------------------------------------------------------------------------
 // 플랜별 금액 (위변조 검증)
@@ -89,9 +135,24 @@ serve(async (req: Request) => {
   }
 
   try {
+    // ── 0. Raw body 수신 (시그니처 검증용) ─────────────
+    const rawBody = await req.text();
+    const signatureHeader = req.headers.get(SIGNATURE_HEADER);
+    const { valid: signatureValid } = await verifyWebhookSignature(rawBody, signatureHeader);
+    if (!signatureValid) {
+      console.warn("[webhook] 시그니처 검증 실패: PORTONE_WEBHOOK_SECRET_TEST 기준 불일치 또는 헤더 없음");
+      return new Response(
+        JSON.stringify({ error: "Unauthorized", message: "Webhook signature verification failed." }),
+        { status: 401, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
     // ── 1. Webhook 페이로드 파싱 ──────────────────────
-    const body = await req.json();
-    const { type, data } = body as {
+    const body = JSON.parse(rawBody) as {
+      type: string;
+      data: { paymentId?: string; transactionId?: string };
+    };
+    const { type, data } = body;
       type: string;        // "Transaction.Paid" | "Transaction.Cancelled" | ...
       data: { paymentId?: string; transactionId?: string };
     };

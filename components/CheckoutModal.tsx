@@ -22,7 +22,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { PAY_METHOD_OPTIONS, type PayMethod, type EasyPayProvider } from '../services/payment/types';
-import { requestPayment, verifyPaymentOnServer, verifyTossPaymentOnServer } from '../services/payment/paymentService';
+import { requestPayment, requestPaymentWithServerVerify, verifyTossPaymentOnServer } from '../services/payment/paymentService';
 import { isTossApp } from '../services/tossAppBridge';
 import { useTossApp } from '../contexts/TossAppContext';
 import { TDSModal, TDSButton } from './tds';
@@ -77,48 +77,63 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
 
   // ── 결제 실행 ─────────────────────────────────────────
+  // 포트원: requestPaymentWithServerVerify 한 번에 결제창 + verify-payment 호출.
+  // 토스: requestPayment 후 verifyTossPaymentOnServer 별도 호출.
   const handlePay = useCallback(async () => {
     if (isProcessing) return;
     setIsProcessing(true);
 
+    const payReq = {
+      orderName: `${plan.label} ${isKo ? '이용권 (30일)' : 'Plan (30 days)'}`,
+      totalAmount: plan.price,
+      customerEmail,
+      customerId,
+      payMethod,
+      planId: plan.id,
+      ...(payMethod === 'EASY_PAY' ? { easyPayProvider: 'KAKAOPAY' as EasyPayProvider } : {}),
+    };
+
     try {
-        const result = await requestPayment({
-        orderName: `${plan.label} ${isKo ? '이용권 (30일)' : 'Plan (30 days)'}`,
-        totalAmount: plan.price,
-        customerEmail,
-        customerId,
-        payMethod,
-        planId: plan.id,
-        ...(payMethod === 'EASY_PAY' ? { easyPayProvider: 'KAKAOPAY' as EasyPayProvider } : {}),
-      });
-
-        if (result.success) {
-          // ── 서버 측 결제 검증 (핵심 보안) ──
-          // 토스: BFF(Railway) 경유 mTLS 검증. 포트원: Supabase Edge Function 검증.
-          const verification = isTossApp()
-            ? await verifyTossPaymentOnServer(result.paymentId, plan.id)
-            : await verifyPaymentOnServer(result.paymentId, plan.id);
-
-          if (verification.success) {
-            alert(isKo ? '결제가 완료되었습니다! 서비스가 활성화됩니다.' : 'Payment complete! Your service is now active.');
-            onPaymentSuccess?.();
-            onClose();
-          } else {
-            // 서버 검증 실패 (결제는 이미 됐으므로 안내)
-            alert(isKo
-              ? `결제는 완료되었으나 검증에 실패했습니다. 잠시 후 자동 반영되거나 고객센터에 문의하세요.\n(${verification.error ?? ''})`
-              : `Payment succeeded but verification failed. It will be reflected shortly or contact support.\n(${verification.error ?? ''})`);
-            onPaymentSuccess?.();
-            onClose();
-          }
-      } else {
-        // 사용자 취소 (PAYMENT_USER_CANCEL) 는 조용히 처리
-        if (result.code === 'PAYMENT_USER_CANCEL' || result.code === 'USER_CANCEL') {
+      if (isTossApp()) {
+        const result = await requestPayment(payReq);
+        if (!result.success) {
+          if (result.code === 'PAYMENT_USER_CANCEL' || result.code === 'USER_CANCEL') return;
+          alert(isKo ? `결제에 실패했습니다: ${result.message ?? '알 수 없는 오류'}` : `Payment failed: ${result.message ?? 'Unknown error'}`);
           return;
         }
-        alert(isKo
-          ? `결제에 실패했습니다: ${result.message ?? '알 수 없는 오류'}`
-          : `Payment failed: ${result.message ?? 'Unknown error'}`);
+        const verification = await verifyTossPaymentOnServer(result.paymentId, plan.id);
+        if (verification.success) {
+          alert(isKo ? '결제가 완료되었습니다! 서비스가 활성화됩니다.' : 'Payment complete! Your service is now active.');
+          onPaymentSuccess?.();
+          onClose();
+        } else {
+          alert(isKo
+            ? `결제는 완료되었으나 검증에 실패했습니다. 잠시 후 자동 반영되거나 고객센터에 문의하세요.\n(${verification.error ?? ''})`
+            : `Payment succeeded but verification failed. It will be reflected shortly or contact support.\n(${verification.error ?? ''})`);
+          onPaymentSuccess?.();
+          onClose();
+        }
+        return;
+      }
+
+      // 포트원: 결제창 띄우기 + 성공 시 verify-payment 호출까지 한 흐름
+      const result = await requestPaymentWithServerVerify(payReq);
+
+      if (result.success && result.verification) {
+        if (result.verification.success) {
+          alert(isKo ? '결제가 완료되었습니다! 서비스가 활성화됩니다.' : 'Payment complete! Your service is now active.');
+          onPaymentSuccess?.();
+          onClose();
+        } else {
+          alert(isKo
+            ? `결제는 완료되었으나 검증에 실패했습니다. 잠시 후 자동 반영되거나 고객센터에 문의하세요.\n(${result.verification.error ?? ''})`
+            : `Payment succeeded but verification failed. It will be reflected shortly or contact support.\n(${result.verification.error ?? ''})`);
+          onPaymentSuccess?.();
+          onClose();
+        }
+      } else if (!result.success) {
+        if (result.code === 'PAYMENT_USER_CANCEL' || result.code === 'USER_CANCEL') return;
+        alert(isKo ? `결제에 실패했습니다: ${result.message ?? '알 수 없는 오류'}` : `Payment failed: ${result.message ?? 'Unknown error'}`);
       }
     } catch {
       alert(isKo ? '결제 처리 중 오류가 발생했습니다.' : 'An error occurred during payment.');

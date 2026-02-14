@@ -185,6 +185,51 @@ export async function requestPayment(req: PaymentRequest): Promise<PaymentResult
 }
 
 // ---------------------------------------------------------------------------
+// 결제 요청 + 서버 검증 (포트원: 결제창 → 성공 시 verify-payment 호출)
+// ---------------------------------------------------------------------------
+export interface RequestPaymentWithVerifyResult {
+  success: boolean;
+  paymentId: string;
+  /** 포트원 경로에서만 채워짐. 토스는 호출부에서 verifyTossPaymentOnServer 호출 */
+  verification?: VerifyPaymentResult;
+  code?: string;
+  message?: string;
+}
+
+/**
+ * VITE_PORTONE_STORE_ID, VITE_PORTONE_CHANNEL_KEY로 결제창을 띄우고,
+ * 결제 성공 시(포트원 경로) verify-payment Edge Function을 호출해 서버 검증까지 수행합니다.
+ *
+ * - 웹(포트원): requestPayment → 성공 시 verifyPaymentOnServer 호출 후 결과 반환.
+ * - 토스 미니앱: requestPayment만 수행. 호출부에서 verifyTossPaymentOnServer 필수 호출.
+ */
+export async function requestPaymentWithServerVerify(
+  req: PaymentRequest,
+): Promise<RequestPaymentWithVerifyResult> {
+  const result = await requestPayment(req);
+
+  if (!result.success) {
+    return {
+      success: false,
+      paymentId: result.paymentId,
+      code: result.code,
+      message: result.message,
+    };
+  }
+
+  if (isTossApp()) {
+    return { success: true, paymentId: result.paymentId };
+  }
+
+  const verification = await verifyPaymentOnServer(result.paymentId, req.planId);
+  return {
+    success: verification.success,
+    paymentId: result.paymentId,
+    verification,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // 서버 측 결제 검증 (핵심 보안 로직)
 // ---------------------------------------------------------------------------
 /**

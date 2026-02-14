@@ -13,6 +13,8 @@ import { AgingPopulationCharts } from './AgingPopulationCharts';
 import { SKHynixCharts } from './SKHynixCharts';
 import { CloudThreeCharts } from './CloudThreeCharts';
 import { NvidiaAmdCharts } from './NvidiaAmdCharts';
+import { YieldSpreadCharts } from './YieldSpreadCharts';
+import { InflationExpectationsChart } from './InflationExpectationsChart';
 
 export const PostDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -118,6 +120,8 @@ export const PostDetailPage: React.FC = () => {
         {post.id === '6' && <SKHynixCharts />}
         {post.id === '5' && <CloudThreeCharts />}
         {post.id === '12' && <NvidiaAmdCharts />}
+        {post.id === '27' && <YieldSpreadCharts />}
+        {post.id === '17' && <InflationExpectationsChart />}
         <p className="mt-8 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400 text-center whitespace-pre-line">
           본 분석은 외부 자료를 바탕으로 '유한회사 두리여유'의 주식 알림 알고리즘을 적용해 재구성한 독자적인 리포트입니다.
           {"\n"}

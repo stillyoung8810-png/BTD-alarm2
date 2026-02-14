@@ -45,6 +45,18 @@
 | `PORTONE_WEBHOOK_SECRET_TEST` | 웹훅 서명 검증용 (예정) | 현재 Edge Function에서 **미사용** |
 | `WEBHOOKURL` | 포트원 콘솔에 등록할 URL | `https://vbscfgjlckbjrdqzpire.supabase.co/functions/v1/payment-webhook` |
 
+### 2.3 배포 시 클라이언트 환경 변수 (필수)
+
+Vite는 `VITE_*` 환경 변수를 **빌드 시점**에 번들에 삽입합니다. 따라서 **배포(Cloudflare Pages, Vercel 등)에서 빌드할 때** 아래 변수가 설정되어 있어야 결제창이 동작합니다.
+
+| 변수 | 설정 위치 (예시) |
+|------|------------------|
+| `VITE_PORTONE_STORE_ID` | Cloudflare Pages → Settings → Environment variables → **Build** (또는 Production/Preview) |
+| `VITE_PORTONE_CHANNEL_KEY` | 동일 |
+
+- **설정하지 않으면**: 사이트 로드 시 콘솔에 `[Payment] VITE_PORTONE_STORE_ID 환경변수가 설정되지 않았습니다.` 경고가 뜨고, 결제 버튼 클릭 시 "결제 환경이 설정되지 않았습니다" 또는 "data.storeId 파라미터는 필수 입력입니다" 오류가 발생합니다.
+- **Cloudflare Pages**: 프로젝트 → Settings → Environment variables에 `VITE_PORTONE_STORE_ID`, `VITE_PORTONE_CHANNEL_KEY` 추가 후 **다시 빌드(Re-deploy)** 해야 반영됩니다.
+
 ---
 
 ## 3. 구현된 기능 상세

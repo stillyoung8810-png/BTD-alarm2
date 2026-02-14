@@ -25,9 +25,14 @@ const STORE_ID = import.meta.env.VITE_PORTONE_STORE_ID as string;
 const NICEPAY_CHANNEL_KEY = import.meta.env.VITE_PORTONE_CHANNEL_KEY as string;
 const PORTONE_SDK_URL = 'https://cdn.portone.io/v2/browser-sdk.js';
 
-// 런타임 유효성 검사 — 환경변수 누락 시 빠른 실패
-if (!STORE_ID) console.error('[Payment] VITE_PORTONE_STORE_ID 환경변수가 설정되지 않았습니다.');
-if (!NICEPAY_CHANNEL_KEY) console.error('[Payment] VITE_PORTONE_CHANNEL_KEY 환경변수가 설정되지 않았습니다.');
+// 런타임 유효성 검사 — 환경변수 누락 시 콘솔 경고 (결제 시에도 검사하여 명확한 에러 반환)
+if (!STORE_ID) console.warn('[Payment] VITE_PORTONE_STORE_ID 환경변수가 설정되지 않았습니다. 배포 시 빌드 환경에 설정하세요.');
+if (!NICEPAY_CHANNEL_KEY) console.warn('[Payment] VITE_PORTONE_CHANNEL_KEY 환경변수가 설정되지 않았습니다. 배포 시 빌드 환경에 설정하세요.');
+
+/** 포트원 결제창 사용 가능 여부 (Store ID / Channel Key가 빌드 시 주입되어 있을 때만 true) */
+export function isPortOneConfigured(): boolean {
+  return Boolean(STORE_ID?.trim() && NICEPAY_CHANNEL_KEY?.trim());
+}
 
 // ---------------------------------------------------------------------------
 // 포트원 V2 SDK 동적 로드
@@ -125,6 +130,15 @@ export async function requestPayment(req: PaymentRequest): Promise<PaymentResult
   }
 
   // ── 포트원 V2 표준 결제창 ──────────────────────────────────
+  if (!STORE_ID?.trim() || !NICEPAY_CHANNEL_KEY?.trim()) {
+    return {
+      success: false,
+      paymentId,
+      code: 'CONFIG_MISSING',
+      message: '결제 환경이 설정되지 않았습니다. (Store ID / Channel Key가 없습니다. 배포 환경 변수 확인 필요)',
+    };
+  }
+
   const PortOne = await loadPortOneSDK();
 
   const portOneRequest: Record<string, unknown> = {

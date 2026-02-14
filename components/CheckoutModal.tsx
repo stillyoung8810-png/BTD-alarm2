@@ -133,7 +133,10 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
         }
       } else if (!result.success) {
         if (result.code === 'PAYMENT_USER_CANCEL' || result.code === 'USER_CANCEL') return;
-        alert(isKo ? `결제에 실패했습니다: ${result.message ?? '알 수 없는 오류'}` : `Payment failed: ${result.message ?? 'Unknown error'}`);
+        const msg = result.code === 'CONFIG_MISSING'
+          ? (isKo ? '결제 환경이 설정되지 않았습니다. 관리자에게 문의해 주세요.' : 'Payment is not configured. Please contact support.')
+          : (result.message ?? (isKo ? '알 수 없는 오류' : 'Unknown error'));
+        alert(isKo ? `결제에 실패했습니다: ${msg}` : `Payment failed: ${msg}`);
       }
     } catch {
       alert(isKo ? '결제 처리 중 오류가 발생했습니다.' : 'An error occurred during payment.');

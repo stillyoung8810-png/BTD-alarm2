@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "granite dev",
     "build": "granite build",
+    "generate-sitemap": "node scripts/generate-sitemap.js",
+    "prebuild:web": "npm run generate-sitemap",
     "build:web": "vite build",
     "build:analyze": "vite build --mode analyze",
     "preview": "vite preview",

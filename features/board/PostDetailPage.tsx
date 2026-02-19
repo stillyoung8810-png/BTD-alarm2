@@ -22,6 +22,7 @@ import { OilProductionChart } from './OilProductionChart';
 import { FedMbsChart } from './FedMbsChart';
 import { VixChart } from './VixChart';
 import { SofrChart } from './SofrChart';
+import { HanwhaAerospaceChart } from './HanwhaAerospaceChart';
 
 export const PostDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -136,6 +137,7 @@ export const PostDetailPage: React.FC = () => {
         {post.id === '31' && <FedMbsChart />}
         {post.id === '33' && <VixChart />}
         {post.id === '34' && <SofrChart />}
+        {post.id === '35' && <HanwhaAerospaceChart />}
         <p className="mt-8 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400 text-center whitespace-pre-line">
           본 분석은 외부 자료를 바탕으로 '유한회사 두리여유'의 주식 알림 알고리즘을 적용해 재구성한 독자적인 리포트입니다.
           {"\n"}

@@ -293,7 +293,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
           </div>
 
-          {/* 이용권 개수 선택 */}
+          {/* 이용권 개수 선택 — 다크모드에서 드롭다운 옵션 가독성 확보 */}
           <div className="mb-4">
             <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-2">
               {isKo ? '이용 기간 (개수)' : 'Duration (quantity)'}
@@ -301,7 +301,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
             <select
               value={quantity}
               onChange={(e) => setQuantity(Number(e.target.value))}
-              className="w-full py-2 px-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-900 dark:text-white text-sm font-medium"
+              className="w-full py-2 px-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-medium"
               aria-label={isKo ? '이용권 개수 선택' : 'Select quantity'}
             >
               {Array.from({ length: QUANTITY_MAX }, (_, i) => i + 1).map((n) => (

@@ -17,6 +17,10 @@ body {
 .dark body {
   background-color: #06090F;
 }
+/* 다크모드에서 네이티브 select 드롭다운 옵션 가독성 (배경/글자 색) */
+.dark select {
+  color-scheme: dark;
+}
 .glass {
   background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(18px);

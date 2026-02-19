@@ -21,6 +21,7 @@
 
 import { serve } from "std/http/server";
 import { createClient } from "@supabase/supabase-js";
+import { getServiceExpiresAt } from "../_shared/subscription.ts";
 
 // ---------------------------------------------------------------------------
 // 환경 변수
@@ -75,19 +76,20 @@ async function verifyWebhookSignature(
 }
 
 // ---------------------------------------------------------------------------
-// 플랜별 금액 (위변조 검증)
-// 환경변수(PLAN_AMOUNT_PRO, PLAN_AMOUNT_PREMIUM)로 관리 — 가격 변경 시 한 곳만 수정
+// 플랜별 단가 (위변조 검증)
 // ---------------------------------------------------------------------------
 const PLAN_AMOUNTS: Record<string, number> = {
   pro: Number(Deno.env.get("PLAN_AMOUNT_PRO") ?? 5900),
   premium: Number(Deno.env.get("PLAN_AMOUNT_PREMIUM") ?? 9900),
 };
 
-// ---------------------------------------------------------------------------
-// 서비스 이용 만료일 계산 (30일)
-// ---------------------------------------------------------------------------
-function getServiceExpiresAt(): string {
-  return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+const PLAN_DAYS_PER_UNIT = 30;
+const QUANTITY_MAX = 12;
+
+function deriveQuantityFromAmount(actualAmount: number, unitPrice: number): number | null {
+  if (actualAmount < unitPrice || actualAmount % unitPrice !== 0) return null;
+  const q = actualAmount / unitPrice;
+  return q >= 1 && q <= QUANTITY_MAX ? q : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -153,9 +155,6 @@ serve(async (req: Request) => {
       data: { paymentId?: string; transactionId?: string };
     };
     const { type, data } = body;
-      type: string;        // "Transaction.Paid" | "Transaction.Cancelled" | ...
-      data: { paymentId?: string; transactionId?: string };
-    };
 
     const paymentId = data?.paymentId;
     if (!paymentId) {
@@ -196,7 +195,6 @@ serve(async (req: Request) => {
       }
 
       if (existingOrder) {
-        // pending → paid 업데이트
         await adminClient
           .from("orders")
           .update({
@@ -206,9 +204,11 @@ serve(async (req: Request) => {
           })
           .eq("id", existingOrder.id);
 
-        // 서비스 활성화
         const planId = existingOrder.plan_id;
-        const expiresAt = getServiceExpiresAt();
+        const unitPrice = PLAN_AMOUNTS[planId];
+        const quantity = unitPrice != null ? deriveQuantityFromAmount(payment.amount.total, unitPrice) : null;
+        const totalDays = quantity != null ? PLAN_DAYS_PER_UNIT * quantity : PLAN_DAYS_PER_UNIT;
+        const expiresAt = getServiceExpiresAt(totalDays);
 
         await adminClient
           .from("user_profiles")
@@ -240,38 +240,41 @@ serve(async (req: Request) => {
         // customer.id 로 fallback
         userId = userId ?? payment.customer?.id;
 
-        if (userId && planId && PLAN_AMOUNTS[planId]) {
-          // 금액 검증
-          if (payment.amount.total === PLAN_AMOUNTS[planId]) {
-            await adminClient.from("orders").insert({
-              user_id: userId,
-              payment_id: paymentId,
-              plan_id: planId,
-              order_name: payment.orderName ?? `${planId.toUpperCase()} Plan`,
-              amount: payment.amount.total,
-              currency: payment.amount.currency ?? "KRW",
-              pay_method: payment.method?.type ?? "UNKNOWN",
-              status: "paid",
-              pg_provider: "nicepay",
-              pg_tx_id: payment.transactionId ?? null,
-              paid_at: payment.paidAt ?? new Date().toISOString(),
-            });
+        const unitPrice = planId != null ? PLAN_AMOUNTS[planId] : undefined;
+        const quantity = unitPrice != null ? deriveQuantityFromAmount(payment.amount.total, unitPrice) : null;
 
-            const expiresAt = getServiceExpiresAt();
-            await adminClient
-              .from("user_profiles")
-              .update({
-                subscription_tier: planId,
-                subscription_status: "active",
-                subscription_expires_at: expiresAt,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", userId);
+        if (userId && planId && unitPrice != null && quantity != null) {
+          const totalDays = PLAN_DAYS_PER_UNIT * quantity;
+          const expiresAt = getServiceExpiresAt(totalDays);
 
-            console.info(`[webhook] 신규 주문 처리: paymentId=${paymentId}`);
-          } else {
-            console.warn(`[webhook] 금액 불일치: expected=${PLAN_AMOUNTS[planId]}, actual=${payment.amount.total}`);
-          }
+          await adminClient.from("orders").insert({
+            user_id: userId,
+            payment_id: paymentId,
+            plan_id: planId,
+            order_name: payment.orderName ?? `${planId.toUpperCase()} Plan (${totalDays}일)`,
+            amount: payment.amount.total,
+            currency: payment.amount.currency ?? "KRW",
+            pay_method: payment.method?.type ?? "UNKNOWN",
+            status: "paid",
+            pg_provider: "nicepay",
+            pg_tx_id: payment.transactionId ?? null,
+            paid_at: payment.paidAt ?? new Date().toISOString(),
+            metadata: { quantity },
+          });
+
+          await adminClient
+            .from("user_profiles")
+            .update({
+              subscription_tier: planId,
+              subscription_status: "active",
+              subscription_expires_at: expiresAt,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", userId);
+
+          console.info(`[webhook] 신규 주문 처리: paymentId=${paymentId}`);
+        } else if (userId && planId && unitPrice != null) {
+          console.warn(`[webhook] 금액 불일치: unit=${unitPrice}, actual=${payment.amount.total}, paymentId=${paymentId}`);
         } else {
           console.warn(`[webhook] userId/planId 확인 불가 — paymentId=${paymentId}`);
         }

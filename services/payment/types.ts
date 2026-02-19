@@ -41,9 +41,18 @@ export interface PlanInfo {
   label: string;
   subtitle: string;
   price: number;          // 원화 기준 (₩)
-  priceUSD: number;       // 달러 기준 ($)
   features: string[];     // 체크 항목 텍스트
 }
+
+// ---------------------------------------------------------------------------
+// 이용권 상수 (개수 선택·만료일 계산에 사용)
+// ---------------------------------------------------------------------------
+/** 1개당 이용 일수 */
+export const PLAN_DAYS_PER_UNIT = 30;
+/** 이용권 개수 선택 상한 (클라이언트·서버 검증용) */
+export const QUANTITY_MAX = 12;
+/** 기본 개수 (미선택 시) */
+export const DEFAULT_QUANTITY = 1;
 
 // ---------------------------------------------------------------------------
 // 결제 요청 파라미터
@@ -56,6 +65,8 @@ export interface PaymentRequest {
   payMethod: PayMethod;
   easyPayProvider?: EasyPayProvider;
   planId: string;
+  /** 이용권 개수 (1 = 30일, 2 = 60일 …). 기본 1, 서버 검증 시 사용 */
+  quantity?: number;
 }
 
 // ---------------------------------------------------------------------------

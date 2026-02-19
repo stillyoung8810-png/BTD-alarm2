@@ -2,17 +2,31 @@ import { FastifyInstance } from "fastify";
 import { handleTossError, tossClient } from "../tossClient";
 import { supabaseAdmin } from "../supabaseClient";
 
+const PLAN_DAYS_PER_UNIT = 30;
+const QUANTITY_MAX = 12;
+
+const PLAN_AMOUNTS: Record<string, number> = {
+    pro: Number(process.env.PLAN_AMOUNT_PRO ?? 5900),
+    premium: Number(process.env.PLAN_AMOUNT_PREMIUM ?? 9900),
+};
+
 interface VerifyBody {
     paymentId: string;
     planId: string;
+    quantity?: number;
+}
+
+function deriveQuantityFromAmount(actualAmount: number, unitPrice: number): number | null {
+    if (unitPrice <= 0 || actualAmount < unitPrice || actualAmount % unitPrice !== 0) return null;
+    const q = actualAmount / unitPrice;
+    return q >= 1 && q <= QUANTITY_MAX ? q : null;
 }
 
 export async function paymentRoutes(fastify: FastifyInstance) {
-    // POST /payment/toss/verify
     fastify.post<{ Body: VerifyBody }>(
         "/payment/toss/verify",
         async (request, reply) => {
-            const { paymentId, planId } = request.body;
+            const { paymentId, planId, quantity: reqQuantity } = request.body;
             const authHeader = request.headers.authorization;
 
             if (!paymentId || !planId) {
@@ -29,11 +43,17 @@ export async function paymentRoutes(fastify: FastifyInstance) {
                 });
             }
 
+            const unitPrice = PLAN_AMOUNTS[planId];
+            if (unitPrice == null || unitPrice <= 0) {
+                return reply.code(400).send({
+                    success: false,
+                    error: `Invalid planId: ${planId}`,
+                });
+            }
+
             try {
-                // 1. Verify Supabase Token
                 const token = authHeader.replace("Bearer ", "");
-                const { data: { user }, error: authError } = await supabaseAdmin
-                    .auth.getUser(token);
+                const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
 
                 if (authError || !user) {
                     return reply.code(401).send({
@@ -42,46 +62,25 @@ export async function paymentRoutes(fastify: FastifyInstance) {
                     });
                 }
 
-                console.log(
-                    `[Payment] Verifying payment ${paymentId} for user ${user.id} (Plan: ${planId})`,
-                );
-
-                // 2. Call Toss Payment Verify API (mTLS)
-                // Note: If using standard Toss Payments, the URL is https://api.tosspayments.com/v1/payments/{paymentKey}
-                // If using Apps in Toss mTLS, we use the mTLS URL.
-                // User requested mTLS. We assume standard structure but on mTLS domain or just call standard if mTLS domain fails.
-                // For this implementation, we use the mTLS client (tossClient) to call the *verify* endpoint.
-                // Endpoint: /v1/payments/{paymentKey} (Standard) mapping to mTLS base.
-                // Ideally, the mTLS domain mirrors the standard API.
-                // We'll POST to a confirmation endpoint or GET the payment.
-                // Toss Payments usually prefers POST /v1/payments/confirm for widgets.
+                const expectedAmount = unitPrice * (typeof reqQuantity === "number" && reqQuantity >= 1 && reqQuantity <= QUANTITY_MAX ? reqQuantity : 1);
 
                 const confirmResponse = await tossClient.post(
-                    "/v1/payments/confirm", // Relative to TOSS_API_URL
+                    "/v1/payments/confirm",
                     {
-                        paymentKey: paymentId, // Assuming paymentId IS the paymentKey or similar
-                        orderId: paymentId, // This might be different depending on client implementation, usually orderId and paymentKey are distinct.
-                        amount: planId === "premium" ? 29900 : 9900, // Validate amount based on plan
+                        paymentKey: paymentId,
+                        orderId: paymentId,
+                        amount: expectedAmount,
                     },
                     {
-                        // Add Basic Auth if using standard Toss Payments behind mTLS?
-                        // Usually mTLS replaces the Secret Key, OR used in conjunction.
-                        // We'll throw in the Secret Key if provided, just in case.
                         headers: process.env.TOSS_PAYMENTS_SECRET_KEY
                             ? {
-                                Authorization: `Basic ${
-                                    Buffer.from(
-                                        process.env.TOSS_PAYMENTS_SECRET_KEY +
-                                            ":",
-                                    ).toString("base64")
-                                }`,
+                                Authorization: `Basic ${Buffer.from(process.env.TOSS_PAYMENTS_SECRET_KEY + ":", "utf8").toString("base64")}`,
                             }
                             : {},
                     },
                 );
 
-                const paymentData = confirmResponse.data;
-
+                const paymentData = confirmResponse.data as { status?: string; totalAmount?: number };
                 if (paymentData.status !== "DONE") {
                     return reply.send({
                         success: false,
@@ -89,10 +88,17 @@ export async function paymentRoutes(fastify: FastifyInstance) {
                     });
                 }
 
-                // 3. Update DB (Supabase)
-                // Update user_profiles substitution
-                const expiresAt = new Date();
-                expiresAt.setMonth(expiresAt.getMonth() + 1); // +1 Month default
+                const actualAmount = Number(paymentData.totalAmount) || 0;
+                const quantity = deriveQuantityFromAmount(actualAmount, unitPrice);
+                if (quantity == null) {
+                    return reply.code(400).send({
+                        success: false,
+                        error: "Payment amount does not match any allowed plan quantity.",
+                    });
+                }
+
+                const totalDays = PLAN_DAYS_PER_UNIT * quantity;
+                const expiresAt = new Date(Date.now() + totalDays * 24 * 60 * 60 * 1000);
 
                 const { error: updateError } = await supabaseAdmin
                     .from("user_profiles")
@@ -100,6 +106,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
                         subscription_tier: planId,
                         subscription_status: "active",
                         subscription_expires_at: expiresAt.toISOString(),
+                        updated_at: new Date().toISOString(),
                     })
                     .eq("id", user.id);
 
@@ -111,21 +118,22 @@ export async function paymentRoutes(fastify: FastifyInstance) {
                     });
                 }
 
-                // Record Order (Optional but recommended)
                 await supabaseAdmin.from("orders").insert({
                     user_id: user.id,
                     payment_id: paymentId,
                     plan_id: planId,
-                    amount: paymentData.totalAmount,
+                    order_name: `${planId.toUpperCase()} Plan (${totalDays}일)`,
+                    amount: actualAmount,
                     currency: "KRW",
-                    status: "PAID",
-                    pg_provider: "TOSS_PAYMENTS", // or TOSS_APP
+                    pay_method: "CARD",
+                    status: "paid",
+                    pg_provider: "TOSS_PAYMENTS",
                     paid_at: new Date().toISOString(),
+                    metadata: { quantity },
                 });
 
                 console.log("[Payment] Verification & DB Update Successful");
 
-                // 4. Return Success
                 return reply.send({
                     success: true,
                     message: "Payment verified successfully.",

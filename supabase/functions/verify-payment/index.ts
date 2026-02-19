@@ -10,6 +10,7 @@
 
 import { serve } from "std/http/server";
 import { createClient } from "@supabase/supabase-js";
+import { getServiceExpiresAt } from "../_shared/subscription.ts";
 
 // ---------------------------------------------------------------------------
 // 환경 변수
@@ -30,20 +31,22 @@ const corsHeaders = {
 };
 
 // ---------------------------------------------------------------------------
-// 플랜별 금액 (서버 측 금액 위변조 검증용)
+// 플랜별 단가 (서버 측 금액 위변조 검증용)
 // 환경변수(PLAN_AMOUNT_PRO, PLAN_AMOUNT_PREMIUM)로 관리 — 가격 변경 시 한 곳만 수정
-// 환경변수가 없으면 기본값 사용 (개발/테스트 편의)
 // ---------------------------------------------------------------------------
 const PLAN_AMOUNTS: Record<string, number> = {
   pro: Number(Deno.env.get("PLAN_AMOUNT_PRO") ?? 5900),
   premium: Number(Deno.env.get("PLAN_AMOUNT_PREMIUM") ?? 9900),
 };
 
-// ---------------------------------------------------------------------------
-// 서비스 이용 만료일 계산 (30일)
-// ---------------------------------------------------------------------------
-function getServiceExpiresAt(): string {
-  return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+const PLAN_DAYS_PER_UNIT = 30;
+const QUANTITY_MAX = 12;
+
+/** 실제 결제 금액으로부터 quantity 역산 (위변조 방지). 허용 범위 밖이면 null */
+function deriveQuantityFromAmount(actualAmount: number, unitPrice: number): number | null {
+  if (actualAmount < unitPrice || actualAmount % unitPrice !== 0) return null;
+  const q = actualAmount / unitPrice;
+  return q >= 1 && q <= QUANTITY_MAX ? q : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,10 +124,8 @@ serve(async (req: Request) => {
     }
 
     // ── 2. 요청 바디 파싱 ──────────────────────────────
-    const { paymentId, planId } = await req.json() as {
-      paymentId: string;
-      planId: string;
-    };
+    const body = await req.json() as { paymentId?: string; planId?: string; quantity?: number };
+    const { paymentId, planId } = body;
 
     if (!paymentId || !planId) {
       return new Response(
@@ -133,8 +134,8 @@ serve(async (req: Request) => {
       );
     }
 
-    const expectedAmount = PLAN_AMOUNTS[planId];
-    if (!expectedAmount) {
+    const unitPrice = PLAN_AMOUNTS[planId];
+    if (unitPrice == null || unitPrice <= 0) {
       return new Response(
         JSON.stringify({ error: `유효하지 않은 플랜: ${planId}` }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -144,7 +145,6 @@ serve(async (req: Request) => {
     // ── 3. 포트원 V2 API로 결제 상태 검증 ──────────────
     const payment = await getPortOnePayment(paymentId);
 
-    // 3-a. 결제 상태 확인
     if (payment.status !== "PAID") {
       return new Response(
         JSON.stringify({
@@ -155,10 +155,10 @@ serve(async (req: Request) => {
       );
     }
 
-    // 3-b. 금액 위변조 검증
-    if (payment.amount.total !== expectedAmount) {
+    const quantity = deriveQuantityFromAmount(payment.amount.total, unitPrice);
+    if (quantity == null) {
       console.warn(
-        `[verify-payment] 금액 불일치! expected=${expectedAmount}, actual=${payment.amount.total}, paymentId=${paymentId}`,
+        `[verify-payment] 금액이 단가의 1~${QUANTITY_MAX}배가 아님: actual=${payment.amount.total}, unit=${unitPrice}, paymentId=${paymentId}`,
       );
       return new Response(
         JSON.stringify({
@@ -186,12 +186,14 @@ serve(async (req: Request) => {
       );
     }
 
-    // 4-b. orders 테이블에 기록 (upsert — pending → paid)
+    const totalDays = PLAN_DAYS_PER_UNIT * quantity;
+    const expiresAt = getServiceExpiresAt(totalDays);
+
     const orderData = {
       user_id: user.id,
       payment_id: paymentId,
       plan_id: planId,
-      order_name: `${planId.toUpperCase()} Plan (30일)`,
+      order_name: `${planId.toUpperCase()} Plan (${totalDays}일)`,
       amount: payment.amount.total,
       currency: payment.amount.currency ?? "KRW",
       pay_method: payment.method?.type ?? "CARD",
@@ -199,6 +201,7 @@ serve(async (req: Request) => {
       pg_provider: "nicepay",
       pg_tx_id: payment.transactionId ?? null,
       paid_at: payment.paidAt ?? new Date().toISOString(),
+      metadata: { quantity },
     };
 
     if (existingOrder) {
@@ -224,7 +227,6 @@ serve(async (req: Request) => {
     }
 
     // 4-c. user_profiles 서비스 활성화
-    const expiresAt = getServiceExpiresAt();
     const { error: profileError } = await adminClient
       .from("user_profiles")
       .update({

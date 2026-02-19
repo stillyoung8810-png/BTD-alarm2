@@ -153,10 +153,10 @@ export async function requestPayment(req: PaymentRequest): Promise<PaymentResult
       ...(req.customerEmail ? { email: req.customerEmail } : {}),
       ...(req.customerId ? { customerId: req.customerId } : {}),
     },
-    // Webhook에서 사용자/플랜 식별용 (서버 검증 실패 시 fallback)
     customData: JSON.stringify({
       userId: req.customerId,
       planId: req.planId,
+      quantity: req.quantity ?? 1,
     }),
   };
 
@@ -235,7 +235,7 @@ export async function requestPaymentWithServerVerify(
     return { success: true, paymentId: result.paymentId };
   }
 
-  const verification = await verifyPaymentOnServer(result.paymentId, req.planId);
+  const verification = await verifyPaymentOnServer(result.paymentId, req.planId, req.quantity);
   return {
     success: verification.success,
     paymentId: result.paymentId,
@@ -270,6 +270,7 @@ export interface VerifyPaymentResult {
 export async function verifyPaymentOnServer(
   paymentId: string,
   planId: string,
+  quantity?: number,
 ): Promise<VerifyPaymentResult> {
   try {
     const { data: { session } } = await supabase.auth.getSession();
@@ -285,7 +286,7 @@ export async function verifyPaymentOnServer(
         Authorization: `Bearer ${session.access_token}`,
         apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
       },
-      body: JSON.stringify({ paymentId, planId }),
+      body: JSON.stringify({ paymentId, planId, ...(quantity != null ? { quantity } : {}) }),
     });
 
     const data = await res.json();
@@ -317,6 +318,7 @@ export async function verifyPaymentOnServer(
 export async function verifyTossPaymentOnServer(
   paymentId: string,
   planId: string,
+  quantity?: number,
 ): Promise<VerifyPaymentResult> {
   if (!BFF_URL?.trim()) {
     return { success: false, error: 'BFF URL이 설정되지 않았습니다.' };
@@ -334,7 +336,7 @@ export async function verifyTossPaymentOnServer(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify({ paymentId, planId }),
+      body: JSON.stringify({ paymentId, planId, ...(quantity != null ? { quantity } : {}) }),
     });
 
     const data = await res.json().catch(() => ({}));

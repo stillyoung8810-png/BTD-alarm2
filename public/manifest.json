@@ -1,0 +1,19 @@
+{
+  "name": "BUY THE DIP",
+  "short_name": "BTD",
+  "description": "Premium strategy manager - 알람 및 전략 관리",
+  "start_url": "https://btd-alarm2.pages.dev/",
+  "scope": "https://btd-alarm2.pages.dev/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#1d4ed8",
+  "background_color": "#06090F",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -42,8 +42,8 @@ npx ait init
   - `appName`: 앱인토스 콘솔과 동일
   - `brand.displayName`: 미니앱 한글 이름
   - `brand.primaryColor`: 브랜드 메인 색 (`#3182F6` 등)
-  - `brand.icon`: 콘솔에 업로드한 아이콘 이미지 URL
-  - `web.host`: 개발 시 `localhost`, 실기기 테스트 시 내부 IP 로 변경
+  ★★ `brand.icon`: 실제 운영 배포 시에는 콘솔에 업로드된 CDN URL로 이 값만 교체
+  ★★ `web.host`: 개발 시 `localhost`, 실기기 테스트 시 내부 IP 로 변경
 
 - **주요 화면을 TDS 컴포넌트로 단계적 치환**
   - 최소 대상:
@@ -62,7 +62,7 @@ npx ait init
   - `SUPABASE_SERVICE_ROLE_KEY`
   - `TOSS_CLIENT_CERT`
   - `TOSS_CLIENT_KEY`
-  - `TOSS_CLIENT_ID`
+  ★★- `TOSS_CLIENT_ID`
   - `TOSS_WEBHOOK_USER` (회원 탈퇴 콜백용 Basic Auth 아이디)
   - `TOSS_WEBHOOK_PASSWORD` (회원 탈퇴 콜백용 Basic Auth 비밀번호)
 

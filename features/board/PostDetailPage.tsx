@@ -24,12 +24,30 @@ import { VixChart } from './VixChart';
 import { SofrChart } from './SofrChart';
 import { HanwhaAerospaceChart } from './HanwhaAerospaceChart';
 
+const CANONICAL_BASE = 'https://btd-alarm2.pages.dev';
+
 export const PostDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [post, setPost] = useState<BoardPost | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [imageError, setImageError] = useState(false);
+
+  useEffect(() => {
+    if (!id) return;
+    const href = `${CANONICAL_BASE}/posts/${id}`;
+    let link = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+    const created = !link;
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'canonical';
+      document.head.appendChild(link);
+    }
+    link.href = href;
+    return () => {
+      if (created && link?.parentNode) link.parentNode.removeChild(link);
+    };
+  }, [id]);
 
   useEffect(() => {
     loadPosts()

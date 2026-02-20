@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Tailwind v4: CDN 시절과 동일하게 class 기반 다크모드 (대시보드·이력·시세·모달 색상 일치) */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* Tailwind v4: theme 확장 (기존 CDN config 이관) */
 @theme {
   --color-slate-950: #06090F;

@@ -7,6 +7,7 @@
 import React, { useEffect, useState } from 'react';
 import type { BoardPost } from './boardTypes';
 import { loadPosts } from './postsLoader';
+import { formatPostDate } from './formatDate';
 import { FileText } from 'lucide-react';
 
 export const PostsListPage: React.FC = () => {
@@ -25,11 +26,6 @@ export const PostsListPage: React.FC = () => {
       })
       .finally(() => setLoading(false));
   }, []);
-
-  const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
-  };
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 dark:text-slate-200">
@@ -71,7 +67,7 @@ export const PostsListPage: React.FC = () => {
                     {post.category ?? '칼럼'}
                   </span>
                   <span className="ml-2 text-slate-500 dark:text-slate-400 text-xs">
-                    {formatDate(post.date)}
+                    {formatPostDate(post.date)}
                   </span>
                   <h2 className="mt-1 text-base font-bold text-slate-900 dark:text-white line-clamp-2">
                     {post.title}

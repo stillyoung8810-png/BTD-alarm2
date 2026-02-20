@@ -8,21 +8,9 @@ import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import type { BoardPost } from './boardTypes';
 import { loadPosts, loadPostById } from './postsLoader';
+import { formatPostDate } from './formatDate';
+import { POST_CHART_MAP } from './postChartMap';
 import { FileText } from 'lucide-react';
-import { AgingPopulationCharts } from './AgingPopulationCharts';
-import { SKHynixCharts } from './SKHynixCharts';
-import { CloudThreeCharts } from './CloudThreeCharts';
-import { NvidiaAmdCharts } from './NvidiaAmdCharts';
-import { YieldSpreadCharts } from './YieldSpreadCharts';
-import { InflationExpectationsChart } from './InflationExpectationsChart';
-import { PrivateDebtToGdpCharts } from './PrivateDebtToGdpCharts';
-import { AlphabetCharts } from './AlphabetCharts';
-import { CarbonEmissionsChart } from './CarbonEmissionsChart';
-import { OilProductionChart } from './OilProductionChart';
-import { FedMbsChart } from './FedMbsChart';
-import { VixChart } from './VixChart';
-import { SofrChart } from './SofrChart';
-import { HanwhaAerospaceChart } from './HanwhaAerospaceChart';
 
 const CANONICAL_BASE = 'https://btd-alarm2.pages.dev';
 
@@ -63,11 +51,6 @@ export const PostDetailPage: React.FC = () => {
       .finally(() => setLoading(false));
   }, [id]);
 
-  const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 dark:text-slate-200 flex items-center justify-center">
@@ -99,6 +82,7 @@ export const PostDetailPage: React.FC = () => {
     "본 분석은 외부 자료를 바탕으로 '유한회사 두리여유'의 주식 알림 알고리즘을 적용해 재구성한 독자적인 리포트입니다. 무단 전재 및 재배포를 금합니다.";
 
   const cleanedContent = post.content.replace(disclaimerText, '');
+  const ChartComponent = post.id ? POST_CHART_MAP[post.id] : null;
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 dark:text-slate-200">
@@ -133,7 +117,7 @@ export const PostDetailPage: React.FC = () => {
           className="text-slate-500 dark:text-slate-400 text-sm font-medium"
           dateTime={post.date}
         >
-          {formatDate(post.date)}
+          {formatPostDate(post.date)}
         </time>
         <h2 className="mt-1 text-xl font-bold text-slate-900 dark:text-white">
           {post.title}
@@ -142,20 +126,7 @@ export const PostDetailPage: React.FC = () => {
           className="mt-6 prose prose-slate dark:prose-invert max-w-none text-slate-700 dark:text-slate-300 leading-relaxed"
           dangerouslySetInnerHTML={{ __html: cleanedContent }}
         />
-        {post.id === '30' && <AgingPopulationCharts />}
-        {post.id === '6' && <SKHynixCharts />}
-        {post.id === '5' && <CloudThreeCharts />}
-        {post.id === '12' && <NvidiaAmdCharts />}
-        {post.id === '27' && <YieldSpreadCharts />}
-        {post.id === '17' && <InflationExpectationsChart />}
-        {post.id === '22' && <PrivateDebtToGdpCharts />}
-        {post.id === '20' && <AlphabetCharts />}
-        {post.id === '28' && <CarbonEmissionsChart />}
-        {post.id === '9' && <OilProductionChart />}
-        {post.id === '31' && <FedMbsChart />}
-        {post.id === '33' && <VixChart />}
-        {post.id === '34' && <SofrChart />}
-        {post.id === '35' && <HanwhaAerospaceChart />}
+        {ChartComponent && <ChartComponent />}
         <p className="mt-8 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400 text-center whitespace-pre-line">
           본 분석은 외부 자료를 바탕으로 '유한회사 두리여유'의 주식 알림 알고리즘을 적용해 재구성한 독자적인 리포트입니다.
           {"\n"}

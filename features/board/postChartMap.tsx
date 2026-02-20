@@ -18,6 +18,7 @@ import { FedMbsChart } from './FedMbsChart';
 import { VixChart } from './VixChart';
 import { SofrChart } from './SofrChart';
 import { HanwhaAerospaceChart } from './HanwhaAerospaceChart';
+import { SamsungSdiCharts } from './SamsungSdiCharts';
 
 export const POST_CHART_MAP: Record<string, React.FC> = {
   '5': CloudThreeCharts,
@@ -34,4 +35,5 @@ export const POST_CHART_MAP: Record<string, React.FC> = {
   '33': VixChart,
   '34': SofrChart,
   '35': HanwhaAerospaceChart,
+  '36': SamsungSdiCharts,
 };

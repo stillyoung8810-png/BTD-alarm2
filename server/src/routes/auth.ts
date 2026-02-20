@@ -17,17 +17,19 @@ export async function authRoutes(fastify: FastifyInstance) {
     try {
       console.log('[Auth] Exchanging Toss Code for Token...');
       // 1. Call Toss API to get Access Token (mTLS)
-      // Endpoint: /api-partner/v1/apps-in-toss/user/oauth2/generate-token (Confirmed from docs)
+      // Endpoint: /api-partner/v1/apps-in-toss/user/oauth2/generate-token
+      // 토스 API는 mTLS만으로 앱을 식별할 수 있어 client_id가 불필요할 수 있음.
+      // 공식 콘솔 가이드에 client_id 확인 방법이 없으므로, 있을 때만 body에 포함.
+      const body: { code: string; grant_type: string; client_id?: string } = {
+        code,
+        grant_type: 'authorization_code',
+      };
+      if (process.env.TOSS_CLIENT_ID) {
+        body.client_id = process.env.TOSS_CLIENT_ID;
+      }
       const tokenResponse = await tossClient.post(
         '/api-partner/v1/apps-in-toss/user/oauth2/generate-token',
-        {
-          code,
-          grant_type: 'authorization_code',
-          // client_id, client_secret might not be needed if mTLS is the sole auth, 
-          // but often they are still required. Assuming mTLS is sufficient or strict.
-          // If client_id is needed, add it from env.
-          client_id: process.env.TOSS_CLIENT_ID, 
-        }
+        body
       );
 
       const { access_token, refresh_token, expires_in } = tokenResponse.data;

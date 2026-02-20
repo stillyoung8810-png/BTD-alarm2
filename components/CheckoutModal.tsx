@@ -337,33 +337,43 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </p>
         </div>
 
-        {/* 결제 수단 */}
-        <div>
-          <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-3">
-            {isKo ? '결제 수단 선택' : 'Payment Method'}
-          </h3>
-          <div className="grid grid-cols-3 gap-2">
-            {PAY_METHOD_OPTIONS.map((opt) => {
-              const isSelected = payMethod === opt.id;
-              return (
-                <button
-                  key={opt.id}
-                  onClick={() => setPayMethod(opt.id)}
-                  className={`flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl border transition-all duration-200 text-center ${
-                    isSelected ? styles.methodSelected : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10'
-                  }`}
-                >
-                  <span className={isSelected ? styles.methodIcon : 'text-slate-500 dark:text-slate-400'}>
-                    {METHOD_ICON_MAP[opt.icon] ?? <CreditCard size={20} />}
-                  </span>
-                  <span className={`text-[10px] font-bold leading-tight ${isSelected ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}>
-                    {isKo ? opt.label.ko : opt.label.en}
-                  </span>
-                </button>
-              );
-            })}
+        {/* 결제 수단 — 토스 미니앱에서는 PG 선택 비노출, 토스페이만 사용 */}
+        {!isInTossApp && (
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-3">
+              {isKo ? '결제 수단 선택' : 'Payment Method'}
+            </h3>
+            <div className="grid grid-cols-3 gap-2">
+              {PAY_METHOD_OPTIONS.map((opt) => {
+                const isSelected = payMethod === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setPayMethod(opt.id)}
+                    className={`flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl border transition-all duration-200 text-center ${
+                      isSelected ? styles.methodSelected : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10'
+                    }`}
+                  >
+                    <span className={isSelected ? styles.methodIcon : 'text-slate-500 dark:text-slate-400'}>
+                      {METHOD_ICON_MAP[opt.icon] ?? <CreditCard size={20} />}
+                    </span>
+                    <span className={`text-[10px] font-bold leading-tight ${isSelected ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}>
+                      {isKo ? opt.label.ko : opt.label.en}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
+        {isInTossApp && (
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5">
+            <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+              {isKo ? '토스페이로 결제됩니다.' : 'Payment will be processed with Toss Pay.'}
+            </p>
+          </div>
+        )}
 
         {/* 금액 */}
         <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-white/5">

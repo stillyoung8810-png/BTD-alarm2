@@ -44,6 +44,8 @@ export interface ResetPasswordViewProps {
   error: string | null;
   info: string | null;
   handleSubmit: (e: React.FormEvent) => Promise<void>;
+  /** Phase 3: 토스에서 TDSTextField/TDSButton 사용 */
+  isInTossApp?: boolean;
 }
 
 /** 비밀번호 변경 (프로필 내 현재 비밀번호 + 새 비밀번호) */
@@ -61,6 +63,8 @@ export interface ChangePasswordViewProps {
   error: string | null;
   info: string | null;
   handleSubmit: (e: React.FormEvent) => Promise<void>;
+  /** Phase 3: 토스에서 TDSTextField/TDSButton 사용 */
+  isInTossApp?: boolean;
 }
 
 /** 프로필 (계정 정보, 텔레그램, 비밀번호 변경, 로그아웃, 환불, 탈퇴) */
@@ -99,4 +103,6 @@ export interface ProfileViewProps {
   onConnectTelegram: () => Promise<string>;
   /** 회원 탈퇴 실행 (세션 기반, 내부에서 getSession 등 호출) */
   onDeleteAccount: () => Promise<void>;
+  /** Phase 3: 토스에서 TDSButton 사용 */
+  isInTossApp?: boolean;
 }

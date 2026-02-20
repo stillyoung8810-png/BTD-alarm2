@@ -1,6 +1,7 @@
 /**
  * 프로필 뷰 (계정 정보, 텔레그램, 비밀번호 변경, 로그아웃, 환불, 탈퇴)
  * Phase 0.3 — AuthModals 서브뷰 분리
+ * Phase 3 — 토스에서 TDSButton 사용
  */
 
 import React from 'react';
@@ -8,6 +9,7 @@ import { UserCheck, Key, LogOut, Send, Sparkles } from 'lucide-react';
 import { I18N } from '../../constants';
 import Toggle from '../Toggle';
 import HoverTip from '../HoverTip';
+import { TDSButton } from '../tds';
 import type { ProfileViewProps } from './authViewTypes';
 
 const ProfileView: React.FC<ProfileViewProps> = ({
@@ -43,6 +45,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   cancelSubscription,
   onConnectTelegram,
   onDeleteAccount,
+  isInTossApp,
 }) => {
   const t = I18N[lang];
 
@@ -145,6 +148,11 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                 ) : null}
                 <p className="text-[10px] text-slate-500">{lang === 'ko' ? '연결 후 프로필을 다시 열면 상태가 반영됩니다.' : 'Reopen profile after connecting to see status.'}</p>
               </div>
+            ) : isInTossApp ? (
+              <TDSButton variant="tertiary" fullWidth disabled={!currentUserId || telegramLinkLoading} loading={telegramLinkLoading} onClick={handleConnectTelegramClick} className="flex items-center justify-center gap-2 text-[#0088cc] border-[#0088cc]/30">
+                <Send size={18} />
+                {telegramLinkLoading ? (lang === 'ko' ? '처리 중…' : 'Loading…') : (lang === 'ko' ? '텔레그램 연결하기' : 'Connect Telegram')}
+              </TDSButton>
             ) : (
               <button type="button" disabled={!currentUserId || telegramLinkLoading} onClick={handleConnectTelegramClick} className="w-full py-4 bg-[#0088cc]/10 text-[#0088cc] dark:text-[#54a9eb] rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 border border-[#0088cc]/30 hover:bg-[#0088cc]/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
                 <Send size={18} />
@@ -164,17 +172,30 @@ const ProfileView: React.FC<ProfileViewProps> = ({
       </div>
 
       <div className="space-y-3">
-        <button type="button" onClick={() => onSwitchType('change-password')} disabled={loading} className="w-full py-5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-white rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 border border-slate-200 dark:border-white/5 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
-          <Key size={18} /> {t.changePassword}
-        </button>
-        <button
-          type="button"
-          onClick={async () => { setLoading(true); try { await onLogout(); } catch (err) { setError(lang === 'ko' ? '로그아웃 중 오류가 발생했습니다.' : 'Error during logout'); } finally { setLoading(false); } }}
-          disabled={loading}
-          className="w-full py-5 bg-rose-600/10 text-rose-500 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 border border-rose-500/20 hover:bg-rose-500 hover:text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          <LogOut size={18} /> {t.logout}
-        </button>
+        {isInTossApp ? (
+          <>
+            <TDSButton variant="secondary" fullWidth onClick={() => onSwitchType('change-password')} disabled={loading} className="flex items-center justify-center gap-3">
+              <Key size={18} /> {t.changePassword}
+            </TDSButton>
+            <TDSButton variant="tertiary" fullWidth onClick={async () => { setLoading(true); try { await onLogout(); } catch (err) { setError(lang === 'ko' ? '로그아웃 중 오류가 발생했습니다.' : 'Error during logout'); } finally { setLoading(false); } }} disabled={loading} className="flex items-center justify-center gap-3 text-rose-500 border border-rose-500/20">
+              <LogOut size={18} /> {t.logout}
+            </TDSButton>
+          </>
+        ) : (
+          <>
+            <button type="button" onClick={() => onSwitchType('change-password')} disabled={loading} className="w-full py-5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-white rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 border border-slate-200 dark:border-white/5 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
+              <Key size={18} /> {t.changePassword}
+            </button>
+            <button
+              type="button"
+              onClick={async () => { setLoading(true); try { await onLogout(); } catch (err) { setError(lang === 'ko' ? '로그아웃 중 오류가 발생했습니다.' : 'Error during logout'); } finally { setLoading(false); } }}
+              disabled={loading}
+              className="w-full py-5 bg-rose-600/10 text-rose-500 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 border border-rose-500/20 hover:bg-rose-500 hover:text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <LogOut size={18} /> {t.logout}
+            </button>
+          </>
+        )}
 
         {currentTier !== 'free' && (
           <div className="pt-4 border-t border-slate-200 dark:border-white/5">
@@ -190,12 +211,21 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                   <li>{lang === 'ko' ? '그 외 → 환불 불가 (이용 기간 만료 시 자동 종료)' : 'Otherwise → not eligible for refund (expires automatically)'}</li>
                 </ul>
                 <div className="flex gap-2">
-                  <button type="button" onClick={() => setShowCancelSub(false)} className="flex-1 py-3 text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
-                    {lang === 'ko' ? '취소' : 'Cancel'}
-                  </button>
-                  <button type="button" disabled={cancelSubLoading} onClick={handleRefundConfirm} className="flex-1 py-3 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-xl transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
-                    {cancelSubLoading ? (lang === 'ko' ? '처리 중…' : 'Processing…') : (lang === 'ko' ? '환불 확인' : 'Confirm Refund')}
-                  </button>
+                  {isInTossApp ? (
+                    <>
+                      <TDSButton variant="tertiary" className="flex-1" onClick={() => setShowCancelSub(false)}>{lang === 'ko' ? '취소' : 'Cancel'}</TDSButton>
+                      <TDSButton variant="primary" className="flex-1" loading={cancelSubLoading} disabled={cancelSubLoading} onClick={handleRefundConfirm}>{cancelSubLoading ? (lang === 'ko' ? '처리 중…' : 'Processing…') : (lang === 'ko' ? '환불 확인' : 'Confirm Refund')}</TDSButton>
+                    </>
+                  ) : (
+                    <>
+                      <button type="button" onClick={() => setShowCancelSub(false)} className="flex-1 py-3 text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+                        {lang === 'ko' ? '취소' : 'Cancel'}
+                      </button>
+                      <button type="button" disabled={cancelSubLoading} onClick={handleRefundConfirm} className="flex-1 py-3 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-xl transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                        {cancelSubLoading ? (lang === 'ko' ? '처리 중…' : 'Processing…') : (lang === 'ko' ? '환불 확인' : 'Confirm Refund')}
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -215,12 +245,21 @@ const ProfileView: React.FC<ProfileViewProps> = ({
               <p className="text-[11px] text-slate-500 dark:text-slate-400">{lang === 'ko' ? '확인을 위해 아래에 "탈퇴합니다"를 입력해주세요.' : 'Type "DELETE" below to confirm.'}</p>
               <input type="text" value={deleteConfirmText} onChange={(e) => setDeleteConfirmText(e.target.value)} placeholder={lang === 'ko' ? '탈퇴합니다' : 'DELETE'} className="w-full p-3 bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-700 rounded-xl text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-rose-500/50" />
               <div className="flex gap-2">
-                <button type="button" onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(''); }} className="flex-1 py-3 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl font-bold text-xs uppercase tracking-widest">
-                  {lang === 'ko' ? '취소' : 'Cancel'}
-                </button>
-                <button type="button" disabled={loading || (lang === 'ko' ? deleteConfirmText !== '탈퇴합니다' : deleteConfirmText !== 'DELETE')} onClick={handleDeleteAccountClick} className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed hover:bg-rose-700 transition-colors">
-                  {loading ? (lang === 'ko' ? '처리 중...' : 'Processing...') : (lang === 'ko' ? '영구 삭제' : 'Delete Forever')}
-                </button>
+                {isInTossApp ? (
+                  <>
+                    <TDSButton variant="tertiary" className="flex-1" onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(''); }}>{lang === 'ko' ? '취소' : 'Cancel'}</TDSButton>
+                    <TDSButton variant="dangerFill" className="flex-1" loading={loading} disabled={loading || (lang === 'ko' ? deleteConfirmText !== '탈퇴합니다' : deleteConfirmText !== 'DELETE')} onClick={handleDeleteAccountClick}>{loading ? (lang === 'ko' ? '처리 중...' : 'Processing...') : (lang === 'ko' ? '영구 삭제' : 'Delete Forever')}</TDSButton>
+                  </>
+                ) : (
+                  <>
+                    <button type="button" onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(''); }} className="flex-1 py-3 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl font-bold text-xs uppercase tracking-widest">
+                      {lang === 'ko' ? '취소' : 'Cancel'}
+                    </button>
+                    <button type="button" disabled={loading || (lang === 'ko' ? deleteConfirmText !== '탈퇴합니다' : deleteConfirmText !== 'DELETE')} onClick={handleDeleteAccountClick} className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed hover:bg-rose-700 transition-colors">
+                      {loading ? (lang === 'ko' ? '처리 중...' : 'Processing...') : (lang === 'ko' ? '영구 삭제' : 'Delete Forever')}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           )}

@@ -1,15 +1,16 @@
 import React from 'react';
 import { I18N } from '../constants';
-import { 
-  Shield, 
-  Zap, 
-  TrendingUp, 
+import {
+  Shield,
+  Zap,
+  TrendingUp,
   Bell,
   ArrowRight,
-  Sparkles
+  Sparkles,
 } from 'lucide-react';
 import { TDSButton } from './tds';
 import { useTossApp } from '../contexts/TossAppContext';
+import { getConditionalTypographyStyle } from '../utils/tossStyleHelpers';
 
 interface LandingProps {
   lang: 'ko' | 'en';
@@ -20,6 +21,11 @@ interface LandingProps {
 const Landing: React.FC<LandingProps> = ({ lang, onOpenSignup, onOpenLogin }) => {
   const t = I18N[lang];
   const { isInTossApp } = useTossApp();
+
+  // Phase 3: 토스 환경에서만 TDS Typography 적용 (웹은 기존 className 유지)
+  const tossTitleStyle = getConditionalTypographyStyle(isInTossApp, 'Typography2', 'Bold');
+  const tossSubtitleStyle = getConditionalTypographyStyle(isInTossApp, 'Typography5', 'Regular');
+  const tossCaptionStyle = getConditionalTypographyStyle(isInTossApp, 'Typography7', 'Regular');
 
   const features = [
     {
@@ -89,8 +95,11 @@ const Landing: React.FC<LandingProps> = ({ lang, onOpenSignup, onOpenLogin }) =>
               </span>
             </div>
 
-            {/* Main Title */}
-            <h1 className="text-3xl md:text-4xl lg:text-5xl font-black text-white leading-tight tracking-tight mb-4">
+            {/* Main Title — Phase 3: 토스에서 TDS Typography */}
+            <h1
+              className={!isInTossApp ? 'text-3xl md:text-4xl lg:text-5xl font-black text-white leading-tight tracking-tight mb-4' : 'mb-4 text-white'}
+              style={tossTitleStyle ?? undefined}
+            >
               {lang === 'ko' ? (
                 <>
                   나만의 <span className="text-blue-200">BUY THE DIP</span> 전략을
@@ -106,8 +115,11 @@ const Landing: React.FC<LandingProps> = ({ lang, onOpenSignup, onOpenLogin }) =>
               )}
             </h1>
 
-            {/* Subtitle */}
-            <p className="text-base md:text-lg text-blue-100/80 font-medium leading-relaxed mb-10 max-w-lg mx-auto">
+            {/* Subtitle — Phase 3: 토스에서 TDS Typography */}
+            <p
+              className={!isInTossApp ? 'text-base md:text-lg text-blue-100/80 font-medium leading-relaxed mb-10 max-w-lg mx-auto' : 'mb-10 max-w-lg mx-auto text-blue-100/90'}
+              style={tossSubtitleStyle ?? undefined}
+            >
               {lang === 'ko'
                 ? '퀀트 기반의 매매 전략을 생성하고, 실시간 알림을 통해 체계적으로 자산을 불려나가세요. 프리미엄 등급의 매니징 경험을 제공합니다.'
                 : 'Create quant-based trading strategies and grow your assets systematically with real-time alerts. Experience premium-grade portfolio management.'}
@@ -150,12 +162,13 @@ const Landing: React.FC<LandingProps> = ({ lang, onOpenSignup, onOpenLogin }) =>
         </div>
       </div>
 
-      {/* Feature Pills */}
+      {/* Feature Pills — Phase 3: 토스에서 TDS 스타일 상수와 정렬 */}
       <div className="mt-12 flex flex-wrap justify-center gap-3 max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300">
         {features.map((feature, index) => (
           <div
             key={index}
             className="flex items-center gap-2 px-5 py-3 rounded-full bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/50 shadow-sm hover:shadow-md transition-all duration-300 hover:-translate-y-0.5"
+            style={isInTossApp && tossCaptionStyle ? { fontSize: tossCaptionStyle.fontSize, lineHeight: tossCaptionStyle.lineHeight, fontWeight: tossCaptionStyle.fontWeight } : undefined}
           >
             <span className="text-blue-500 dark:text-blue-400">{feature.icon}</span>
             <span className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wide">

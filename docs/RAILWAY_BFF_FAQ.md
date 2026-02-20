@@ -1,21 +1,19 @@
 # Railway BFF 설정 FAQ
 
-## 1. TOSS_CLIENT_ID는 뭐고, 어디서 받나요? (토스 시크릿 키랑 다른가요?)
+## 1. TOSS_CLIENT_ID는 뭐고, 꼭 넣어야 하나요? (토스 시크릿 키랑 다른가요?)
 
-**다릅니다.**
+**다릅니다.** 그리고 **필수는 아닐 수 있습니다.**
 
 | 구분 | 용도 | 발급처 |
 |------|------|--------|
-| **TOSS_CLIENT_ID** | 토스 **앱인토스** 앱 식별자. 로그인(code → 토큰 교환) 요청 시 body에 넣는 값. | **앱인토스 개발자 콘솔** (앱 생성·mTLS 발급하는 그 콘솔) |
-| **TOSS_CLIENT_CERT / TOSS_CLIENT_KEY** | mTLS 인증서·개인키. 서버 ↔ 토스 API 통신 시 클라이언트 인증용. | 같은 앱인토스 콘솔 → mTLS 인증서 발급 |
-| **토스페이먼츠 시크릿 키** (TOSS_PAYMENTS_SECRET_KEY 등) | 토스페이 **일반 결제 API** 인증용 (Basic Auth 등). | **토스페이먼츠** 가맹점 콘솔 |
+| **TOSS_CLIENT_ID** (선택) | 로그인 code→토큰 교환 요청 body에 넣는 앱 식별자. **토스 API가 mTLS만으로 앱을 식별하면 불필요할 수 있음.** | 앱인토스 콘솔 — 단, [콘솔 가이드](https://developers-apps-in-toss.toss.im/login/console.html)에는 **client_id 확인 방법이 없음**. 필요 시 지원 문의. |
+| **TOSS_CLIENT_CERT / TOSS_CLIENT_KEY** | mTLS 인증서·개인키. 서버↔토스 API 통신 시 클라이언트 인증용. | 앱인토스 콘솔 → mTLS 인증서 발급 |
+| **토스페이먼츠 시크릿 키** (TOSS_PAYMENTS_SECRET_KEY 등) | 토스페이 일반 결제 API 인증용. | 토스페이먼츠 가맹점 콘솔 |
 
-- **TOSS_CLIENT_ID**는 **앱인토스**에서 앱 만들 때 나오는 **앱 키 / Client ID / App ID** 같은 값입니다.  
-  콘솔에서 해당 앱 선택 → “앱 정보”, “앱 키”, “연동 정보” 같은 메뉴에서 확인하세요.  
-  (문서: [토스 로그인 소개](https://developers-apps-in-toss.toss.im/login/intro.html) 등에서 `client_id` 요구 여부 확인 가능.)
-- 아까 받은 **토스 시크릿 키**가 **토스페이먼츠** 쪽 키라면, 그건 **TOSS_CLIENT_ID와 별개**입니다.  
-  BFF의 **로그인** 흐름에는 **TOSS_CLIENT_ID**(앱인토스) + **mTLS 인증서**가 쓰이고,  
-  **결제** 쪽은 앱인토스 mTLS 전용인지, 토스페이먼츠 API도 쓰는지에 따라 시크릿 키가 추가로 필요할 수 있습니다.
+- **TOSS_CLIENT_ID**는 **선택**입니다. BFF는 값이 있으면 body에 넣고, 없으면 mTLS만으로 요청합니다.  
+  (콘솔 가이드에는 client_id 확인 경로 없음.)
+  공식 가이드에 “앱 정보”, “앱 키”, “연동 정보” 공식 가이드에 앱 키/Client ID 확인 설명이 없어, 없어도 동작하면 그대로 두고, 토스 API 에러 시에만 지원에 문의해 보시면 됩니다.  
+- **토스 시크릿 키**가 토스페이먼츠 쪽이면 TOSS_CLIENT_ID와 별개입니다. 결제는 토스페이먼츠 시크릿, 로그인은 mTLS(＋선택적으로 TOSS_CLIENT_ID)입니다.
 
 ---
 
@@ -60,10 +58,8 @@
   - `TOSS_CLIENT_KEY` — 인증서 개인키 내용
   - `SUPABASE_URL` — Supabase 프로젝트 URL
   - `SUPABASE_SERVICE_ROLE_KEY` — Supabase 서비스 롤 키(Admin API용)
-  - `TOSS_CLIENT_ID` — 앱인토스 콘솔의 앱 키/Client ID (로그인용)
 - **선택**:
-  - `TOSS_API_URL` — 기본값 사용 시 생략 가능
-  - `CORS_ORIGIN` — 필요 시 지정
-  - `PORT` — Railway가 주입하면 생략 가능
+  - `TOSS_CLIENT_ID` — 토스 API가 요구할 때만. 가이드에 확인 경로 없음, mTLS만으로 될 수 있으면 생략
+  - `TOSS_API_URL`, `CORS_ORIGIN`, `PORT` — 기본값/자동 주입 시 생략 가능
 
 이렇게 하면 안티그래비티가 정리한 “다음 단계”가 **우리 프로젝트(server 폴더 BFF)** 에 맞게 적용됩니다.

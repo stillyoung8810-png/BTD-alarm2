@@ -484,6 +484,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                   error,
                   info,
                   handleSubmit,
+                  isInTossApp,
                 }
               : type === 'change-password'
               ? {
@@ -500,6 +501,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                   error,
                   info,
                   handleSubmit,
+                  isInTossApp,
                 }
               : {
                   lang,
@@ -507,6 +509,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                   onSwitchType,
                   onLogout,
                   currentUserEmail,
+                  isInTossApp,
                   currentTier: currentTier ?? 'free',
                   currentUserId,
                   tierLabel,

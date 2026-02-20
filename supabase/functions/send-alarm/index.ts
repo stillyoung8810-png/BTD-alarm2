@@ -291,12 +291,9 @@ serve(async (req) => {
       );
     }
 
+    // FIREBASE_SERVICE_ACCOUNT 없으면 FCM은 스킵하되, 텔레그램 발송은 진행 가능
     if (!firebaseServiceAccount) {
-      console.error("Missing FIREBASE_SERVICE_ACCOUNT");
-      return new Response(
-        JSON.stringify({ error: "Firebase service account not configured" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      console.warn("Missing FIREBASE_SERVICE_ACCOUNT; FCM will be skipped. Telegram may still be sent.");
     }
 
     // 요청 본문 파싱
@@ -349,22 +346,7 @@ serve(async (req) => {
       console.warn(`No active FCM devices for user ${user_id}; will still try Telegram if enabled.`);
     }
 
-    // Firebase Service Account 파싱
-    const serviceAccount = JSON.parse(firebaseServiceAccount);
-    const projectId = serviceAccount.project_id;
-
-    if (!projectId) {
-      console.error("Project ID not found in service account");
-      return new Response(
-        JSON.stringify({ error: "Invalid service account configuration" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Access Token 획득
-    const accessToken = await getGoogleAccessToken(firebaseServiceAccount);
-
-    // 언어에 따른 알림 제목/본문 결정
+    // 언어에 따른 알림 제목/본문 결정 (텔레그램/FCM 공통)
     const localizedTitle =
       preferredLang === 'en' ? 'BTD Trading Alert' : 'BTD 매매 알람';
     const localizedBody =
@@ -372,42 +354,58 @@ serve(async (req) => {
         ? 'This is your scheduled trading alert. Please review your portfolio strategy.'
         : '설정하신 매매 알람 시간입니다. 포트폴리오 전략을 확인해 주세요.';
 
-    // 모든 활성 토큰에 FCM 알림 전송
-    console.log(`Sending FCM to ${tokens.length} device(s)`);
-
-    const results = await Promise.allSettled(
-      tokens.map((token) =>
-        sendFCMNotification(accessToken, projectId, token, localizedTitle, localizedBody, data)
-      )
-    );
-
-    // 결과 집계
     let successful = 0;
     let failed = 0;
     const tokensToDeactivate: string[] = [];
+    let fcmResults: PromiseSettledResult<{ success: boolean; shouldDeactivate: boolean }>[] = [];
 
-    results.forEach((result, index) => {
-      if (result.status === "fulfilled") {
-        if (result.value.success) {
-          successful++;
-        } else {
-          failed++;
-          if (result.value.shouldDeactivate) {
-            tokensToDeactivate.push(tokens[index]);
+    // FCM 발송: FIREBASE_SERVICE_ACCOUNT 있을 때만 수행
+    if (firebaseServiceAccount && tokens.length > 0) {
+      let serviceAccount: { project_id?: string } = {};
+      try {
+        serviceAccount = JSON.parse(firebaseServiceAccount);
+      } catch (e) {
+        console.error("Invalid FIREBASE_SERVICE_ACCOUNT JSON:", e);
+      }
+      const projectId = serviceAccount?.project_id;
+      if (projectId) {
+        try {
+          const accessToken = await getGoogleAccessToken(firebaseServiceAccount);
+          console.log(`Sending FCM to ${tokens.length} device(s)`);
+          fcmResults = await Promise.allSettled(
+            tokens.map((token) =>
+              sendFCMNotification(accessToken, projectId, token, localizedTitle, localizedBody, data)
+            )
+          );
+          fcmResults.forEach((result, index) => {
+            if (result.status === "fulfilled") {
+              if (result.value.success) {
+                successful++;
+              } else {
+                failed++;
+                if (result.value.shouldDeactivate) {
+                  tokensToDeactivate.push(tokens[index]);
+                }
+              }
+            } else {
+              failed++;
+            }
+          });
+          if (tokensToDeactivate.length > 0) {
+            console.log(`Deactivating ${tokensToDeactivate.length} invalid token(s)`);
+            await supabase
+              .from("user_devices")
+              .update({ is_active: false })
+              .in("fcm_token", tokensToDeactivate);
           }
+        } catch (fcmErr) {
+          console.error("FCM send error:", fcmErr);
+          failed = tokens.length;
         }
       } else {
-        failed++;
+        console.warn("Project ID not found in service account; skipping FCM.");
+        failed = tokens.length;
       }
-    });
-
-    // 유효하지 않은 토큰 비활성화
-    if (tokensToDeactivate.length > 0) {
-      console.log(`Deactivating ${tokensToDeactivate.length} invalid token(s)`);
-      await supabase
-        .from("user_devices")
-        .update({ is_active: false })
-        .in("fcm_token", tokensToDeactivate);
     }
 
     // 텔레그램 발송 (Pro/Premium + telegram_enabled + chat_id 있을 때만)
@@ -521,16 +519,15 @@ serve(async (req) => {
       console.warn("[sent_alarms] insert failed (logging only):", err);
     }
 
-    // 마지막 알림 전송 시간 업데이트 (성공한 경우)
-    if (successful > 0) {
+    // 마지막 알림 전송 시간 업데이트 (FCM 성공한 경우)
+    if (successful > 0 && fcmResults.length > 0) {
       const now = new Date().toISOString();
       const successfulTokens = tokens.filter((_, index) => {
-        const result = results[index];
-        return result.status === "fulfilled" && result.value.success;
+        const result = fcmResults[index];
+        return result?.status === "fulfilled" && result.value.success;
       });
 
       if (successfulTokens.length > 0) {
-        // user_devices 테이블 업데이트
         await supabase
           .from("user_devices")
           .update({ last_notification_sent_at: now })

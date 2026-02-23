@@ -952,28 +952,92 @@ const App: React.FC = () => {
 };
 
 // ---------------------------------------------------------------------------
+// TDS 로드 상태 (토스 앱 내부에서만 의미 있음)
+// ---------------------------------------------------------------------------
+type TDSLoadState = 'idle' | 'loading' | 'success' | 'failed';
+
+// ---------------------------------------------------------------------------
 // TDSWrapper: 토스 앱 환경에서만 TDSMobileAITProvider로 감싸는 래퍼
+// - TDS 로드 실패 시 fallback UI 표시로 하얀 화면 방지
+// - 재시도 버튼으로 동적 import 재시도
 // TossAppProvider 하위에 위치하므로 useTossApp() 사용 가능
 // ---------------------------------------------------------------------------
 const TDSWrapper: React.FC<{ isInTossApp: boolean; children: React.ReactNode }> = ({ isInTossApp, children }) => {
   const [TDSProvider, setTDSProvider] = useState<React.ComponentType<{ children: React.ReactNode }> | null>(null);
+  const [loadState, setLoadState] = useState<TDSLoadState>('idle');
+  const [loadError, setLoadError] = useState<Error | null>(null);
 
-  useEffect(() => {
-    if (!isInTossApp) return;
-
+  const loadTDS = useCallback(() => {
+    setLoadError(null);
+    setLoadState('loading');
     import('@toss/tds-mobile-ait')
       .then((module) => {
         setTDSProvider(() => module.TDSMobileAITProvider);
+        setLoadState('success');
       })
       .catch((error) => {
-        console.warn('[TDSWrapper] TDSMobileAITProvider 로드 실패:', error);
+        const err = error instanceof Error ? error : new Error(String(error));
+        console.warn('[TDSWrapper] TDSMobileAITProvider 로드 실패:', err.message, err);
+        setLoadError(err);
+        setLoadState('failed');
       });
-  }, [isInTossApp]);
+  }, []);
 
-  if (isInTossApp && TDSProvider) {
+  useEffect(() => {
+    if (!isInTossApp) return;
+    loadTDS();
+  }, [isInTossApp, loadTDS]);
+
+  // 토스 앱 아님 → TDS 불필요, children 그대로 렌더 (기존 동작)
+  if (!isInTossApp) {
+    return <>{children}</>;
+  }
+
+  // 토스 앱 + TDS 로드 성공 → Provider로 감싸서 렌더
+  if (loadState === 'success' && TDSProvider) {
     return <TDSProvider>{children}</TDSProvider>;
   }
-  return <>{children}</>;
+
+  // 토스 앱 + TDS 로딩 중 → 하위에 TDS 의존 컴포넌트가 있으므로 children 미렌더, 로딩 UI만 표시
+  if (loadState === 'loading') {
+    return (
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 bg-[#F1F5F9] p-6 dark:bg-[#06090F]">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-500 dark:border-slate-600 dark:border-t-indigo-400" />
+        <p className="text-sm font-medium text-slate-600 dark:text-slate-400">TDS 로딩 중…</p>
+      </div>
+    );
+  }
+
+  // 토스 앱 + TDS 로드 실패 → fallback UI (재시도 가능)
+  if (loadState === 'failed') {
+    return (
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 bg-[#F1F5F9] p-6 dark:bg-[#06090F]">
+        <p className="text-center text-sm font-medium text-slate-700 dark:text-slate-300">
+          토스 디자인 시스템(TDS)을 불러오지 못했습니다.
+        </p>
+        {loadError && (
+          <p className="max-w-md truncate text-center text-xs text-slate-500 dark:text-slate-400" title={loadError.message}>
+            {loadError.message}
+          </p>
+        )}
+        <button
+          type="button"
+          onClick={loadTDS}
+          className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+        >
+          다시 시도
+        </button>
+      </div>
+    );
+  }
+
+  // idle (isInTossApp 직후 아직 loadTDS 미호출) → 로딩과 동일 처리
+  return (
+    <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 bg-[#F1F5F9] p-6 dark:bg-[#06090F]">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-500 dark:border-slate-600 dark:border-t-indigo-400" />
+      <p className="text-sm font-medium text-slate-600 dark:text-slate-400">준비 중…</p>
+    </div>
+  );
 };
 
 // ---------------------------------------------------------------------------

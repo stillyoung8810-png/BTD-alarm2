@@ -45,6 +45,9 @@ interface WebFrameworkModule {
 
 let _cachedModule: WebFrameworkModule | null = null;
 
+/** 샌드박스 등에서 디버그 로그를 켜는 쿼리 파라미터 (예: ?toss_debug=1) */
+const TOSS_DEBUG_QUERY = 'toss_debug';
+
 // ---------------------------------------------------------------------------
 // 1. 토스 앱 환경 감지
 // ---------------------------------------------------------------------------
@@ -61,6 +64,81 @@ export const isTossApp = (): boolean => {
     window.__TOSS_APP__ ||
     /TossApp|TossIt/i.test(navigator.userAgent)
   );
+};
+
+// ---------------------------------------------------------------------------
+// 1-1. 토스 앱 환경 디버그 (샌드박스/개발용)
+// ---------------------------------------------------------------------------
+export interface TossAppDebugSnapshot {
+  /** 최종 isTossApp() 결과 */
+  isTossApp: boolean;
+  /** window.TossApp 존재 여부 */
+  hasTossApp: boolean;
+  /** window.__TOSS_APP__ 존재 여부 */
+  hasTossAppLegacy: boolean;
+  /** UserAgent에 TossApp|TossIt 매칭 여부 */
+  uaMatch: boolean;
+  /** UserAgent 앞 80자 (개인정보 회피) */
+  userAgentPreview: string;
+  /** 디버그 로그를 출력했는지 (쿼리 또는 DEV) */
+  debugLogEnabled: boolean;
+}
+
+/**
+ * 현재 환경의 토스 앱 감지 상세 스냅샷을 반환합니다.
+ * 로그 출력 없이 값만 반환하므로, 샌드박스에서 조건부 로깅에 활용할 수 있습니다.
+ */
+export const getTossAppDebugSnapshot = (): TossAppDebugSnapshot | null => {
+  if (typeof window === 'undefined') return null;
+
+  const hasTossApp = 'TossApp' in window && !!window.TossApp;
+  const hasTossAppLegacy = '__TOSS_APP__' in window && !!window.__TOSS_APP__;
+  const ua = navigator.userAgent;
+  const uaMatch = /TossApp|TossIt/i.test(ua);
+
+  const isDev =
+    typeof import.meta !== 'undefined' &&
+    (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV === true;
+  const queryEnabled =
+    typeof window !== 'undefined' &&
+    typeof window.location?.search === 'string' &&
+    new URLSearchParams(window.location.search).get(TOSS_DEBUG_QUERY) === '1';
+  const debugLogEnabled = isDev || !!queryEnabled;
+
+  return {
+    isTossApp: !!(hasTossApp || hasTossAppLegacy || uaMatch),
+    hasTossApp,
+    hasTossAppLegacy,
+    uaMatch,
+    userAgentPreview: ua.slice(0, 80),
+    debugLogEnabled,
+  };
+};
+
+/**
+ * 토스 앱 환경 감지 결과를 콘솔에 구조화해 출력합니다.
+ * - 개발 모드(VITE DEV)이거나 URL에 ?toss_debug=1 이 있을 때만 출력합니다.
+ * - 샌드박스에서 로그를 보려면 스킴/URL에 toss_debug=1 을 붙이면 됩니다.
+ */
+export const logTossAppEnvironment = (): void => {
+  const snapshot = getTossAppDebugSnapshot();
+  if (!snapshot || !snapshot.debugLogEnabled) return;
+
+  const prefix = '[TossApp:Env]';
+  // eslint-disable-next-line no-console
+  console.groupCollapsed(`${prefix} 토스 앱 환경 감지`);
+  // eslint-disable-next-line no-console
+  console.log('isTossApp (최종)', snapshot.isTossApp);
+  // eslint-disable-next-line no-console
+  console.log('window.TossApp', snapshot.hasTossApp);
+  // eslint-disable-next-line no-console
+  console.log('window.__TOSS_APP__', snapshot.hasTossAppLegacy);
+  // eslint-disable-next-line no-console
+  console.log('UserAgent TossApp|TossIt', snapshot.uaMatch);
+  // eslint-disable-next-line no-console
+  console.log('UserAgent (앞 80자)', snapshot.userAgentPreview);
+  // eslint-disable-next-line no-console
+  console.groupEnd();
 };
 
 // ---------------------------------------------------------------------------

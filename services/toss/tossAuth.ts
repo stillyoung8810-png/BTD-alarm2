@@ -37,27 +37,32 @@ export async function loginWithToss(): Promise<TossAuthResult> {
     const authResult = bridge?.requestAuth
       ? await bridge.requestAuth()
       : await requestAuthViaFramework(mod);
-    code = authResult?.code?.trim();
+    code = (authResult?.authorizationCode ?? authResult?.code)?.trim();
     if (!code) {
       return { success: false, error: '토스 인증 코드를 받지 못했습니다.' };
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : '토스 로그인 요청 실패';
+    const msg = toErrorMessage(err, '토스 로그인 요청 실패');
     console.warn('[TossAuth] 브릿지 요청 실패:', msg);
     return { success: false, error: msg };
   }
+
+  const rawReferrer = (typeof window !== 'undefined' && (window as { __TOSS_REFERRER__?: string }).__TOSS_REFERRER__)
+    ?? import.meta.env.VITE_TOSS_REFERRER
+    ?? 'DEFAULT';
+  const referrer = rawReferrer === 'sandbox' || rawReferrer === 'DEFAULT' ? rawReferrer : 'DEFAULT';
 
   try {
     const res = await fetch(`${BFF_URL.replace(/\/+$/, '')}/auth/toss/exchange`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code }),
+      body: JSON.stringify({ authorizationCode: code, referrer }),
     });
 
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok) {
-      const serverMessage = data?.message ?? data?.error ?? '로그인에 실패했습니다.';
+      const serverMessage = (typeof data?.error === 'string' ? data.error : data?.message ?? data?.error) ?? '로그인에 실패했습니다.';
       return { success: false, error: serverMessage };
     }
 
@@ -81,17 +86,22 @@ export async function loginWithToss(): Promise<TossAuthResult> {
     const email = user?.email ?? user?.user_metadata?.email ?? '';
     return { success: true, user: { id, email } };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : '네트워크 오류';
-    return { success: false, error: msg };
+    return { success: false, error: toErrorMessage(err, '네트워크 오류') };
   }
+}
+
+function toErrorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error ? err.message : fallback;
 }
 
 /**
  * @apps-in-toss/web-framework에 로그인 API가 노출된 경우 사용.
- * 현재는 window.TossApp.requestAuth 위주이므로, fallback으로만 사용.
+ * 공식 스펙: authorizationCode, referrer 반환.
  */
-async function requestAuthViaFramework(mod: { partner?: { requestAuth?: () => Promise<{ code: string }> } }): Promise<{ code: string }> {
-  const requestAuth = (mod as { partner?: { requestAuth?: () => Promise<{ code: string }> } }).partner?.requestAuth;
+async function requestAuthViaFramework(
+  mod: { partner?: { requestAuth?: () => Promise<{ authorizationCode?: string; code?: string; referrer?: string }> } }
+): Promise<{ authorizationCode?: string; code?: string; referrer?: string }> {
+  const requestAuth = mod.partner?.requestAuth;
   if (!requestAuth) {
     throw new Error('토스 로그인 API를 사용할 수 없습니다.');
   }

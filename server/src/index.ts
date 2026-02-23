@@ -1,14 +1,26 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import dotenv from "dotenv";
-import { authRoutes } from "./routes/auth";
+import { randomUUID } from "crypto";
+import { baseLogger } from "./toss/logger";
+import { tossAuthRoutes } from "./routes/tossAuthRoute";
 import { paymentRoutes } from "./routes/payment";
 import { tossWebhookRoutes } from "./routes/tossWebhook";
 
 dotenv.config();
 
 const server = Fastify({
-    logger: true,
+  logger: baseLogger,
+});
+
+/** 모든 요청에 correlation_id 부여·request.log에 자동 바인딩 (관찰 가능성) */
+server.addHook("onRequest", async (request) => {
+  const headerId = request.headers["x-correlation-id"];
+  const correlationId =
+    (typeof headerId === "string" && headerId.trim()) || randomUUID();
+  request.correlationId = correlationId;
+  (request as { log: ReturnType<typeof request.log.child> }).log =
+    request.log.child({ correlationId });
 });
 
 const start = async () => {
@@ -19,7 +31,7 @@ const start = async () => {
             methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         });
 
-        await server.register(authRoutes);
+        await server.register(tossAuthRoutes);
         await server.register(paymentRoutes);
         await server.register(tossWebhookRoutes);
 

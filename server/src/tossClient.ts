@@ -37,19 +37,37 @@ export const tossClient = axios.create({
     timeout: 10000,
 });
 
-// Helper to handle Toss API errors
-export const handleTossError = (error: any, context: string) => {
+/** 토스 API 실패 응답: resultType "FAIL", error: { errorCode, reason } */
+export function normalizeTossErrorPayload(data: unknown): { error: string; errorCode?: string } {
+    if (data && typeof data === 'object' && 'error' in data) {
+        const err = (data as { error?: { reason?: string; errorCode?: string } }).error;
+        if (err && typeof err === 'object') {
+            return {
+                error: typeof err.reason === 'string' ? err.reason : 'Unknown error',
+                errorCode: typeof err.errorCode === 'string' ? err.errorCode : undefined,
+            };
+        }
+    }
+    return { error: 'Internal Server Error' };
+}
+
+export const handleTossError = (error: unknown, context: string): { error: string; errorCode?: string } => {
     if (axios.isAxiosError(error)) {
+        const data = error.response?.data;
         console.error(`[TossClient] ${context} Error:`, {
             status: error.response?.status,
-            data: error.response?.data,
+            data,
             message: error.message,
         });
+        const normalized = normalizeTossErrorPayload(data);
+        if (normalized.error !== 'Internal Server Error') return normalized;
         return {
-            error: error.response?.data?.message || error.message,
-            code: error.response?.data?.code || "UNKNOWN_ERROR",
+            error: typeof data === 'object' && data !== null && 'message' in data
+                ? String((data as { message?: string }).message)
+                : error.message,
+            errorCode: 'UNKNOWN_ERROR',
         };
     }
     console.error(`[TossClient] ${context} Unexpected Error:`, error);
-    return { error: "Internal Server Error" };
+    return { error: 'Internal Server Error' };
 };

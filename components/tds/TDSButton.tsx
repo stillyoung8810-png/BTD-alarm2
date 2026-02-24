@@ -55,31 +55,7 @@ export const TDSButton: React.FC<TDSButtonProps> = ({
   const { isInTossApp } = useTossApp();
   const isDisabled = disabled || loading;
 
-  if (isInTossApp) {
-    try {
-      const { Button: TDSButtonComponent } = require('@toss/tds-mobile');
-      const tdsColor = variant === 'danger' || variant === 'dangerFill' ? 'danger' : 'primary';
-      const tdsVariant = variant === 'secondary' || variant === 'tertiary' ? 'weak' : 'fill';
-      return (
-        <TDSButtonComponent
-          type={type}
-          color={tdsColor}
-          variant={tdsVariant}
-          display={fullWidth ? 'block' : 'inline'}
-          size={size === 'small' ? 'small' : size === 'medium' ? 'medium' : 'xlarge'}
-          disabled={isDisabled}
-          loading={loading}
-          onClick={onClick}
-          aria-label={ariaLabel}
-          className={className}
-        >
-          {loading ? null : children}
-        </TDSButtonComponent>
-      );
-    } catch {
-      /* @toss/tds-mobile not available, fall through to web */
-    }
-  }
+  /* R2 롤백: TDS 분기 제거. require('@toss/tds-mobile') 제거로 번들 에러 방지. 항상 웹 브랜치. */
 
   const variantClass = VARIANT_MAP[variant];
   const sizeClass = SIZE_MAP[size];

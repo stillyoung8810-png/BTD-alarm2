@@ -30,15 +30,8 @@ export interface TDSListRowProps {
  */
 export const TDSList: React.FC<TDSListProps> = ({ children, className }) => {
   const { isInTossApp } = useTossApp();
-  if (!isInTossApp) {
-    return <>{children}</>;
-  }
-  try {
-    const { List } = require('@toss/tds-mobile');
-    return <List className={className}>{children}</List>;
-  } catch {
-    return <ul className={className}>{children}</ul>;
-  }
+  /* R2 롤백: require('@toss/tds-mobile') 제거. 항상 웹 브랜치(ul 래퍼). */
+  return <ul className={className}>{children}</ul>;
 };
 
 /**
@@ -54,23 +47,6 @@ export const TDSListRow: React.FC<TDSListRowProps> = ({
   className,
 }) => {
   const { isInTossApp } = useTossApp();
-  if (!isInTossApp) {
-    return <div className={className}>{children}</div>;
-  }
-  try {
-    const { ListRow } = require('@toss/tds-mobile');
-    return (
-      <ListRow
-        border={border}
-        verticalPadding={verticalPadding}
-        withTouchEffect={withTouchEffect}
-        onClick={onClick}
-        className={className}
-      >
-        {children}
-      </ListRow>
-    );
-  } catch {
-    return <li className={className}>{children}</li>;
-  }
+  /* R2 롤백: require('@toss/tds-mobile') 제거. 항상 웹 브랜치(li 래퍼). */
+  return <li className={className}>{children}</li>;
 };

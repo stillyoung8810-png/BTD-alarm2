@@ -97,25 +97,7 @@ export const TDSModal: React.FC<TDSModalProps> = ({
 
   if (!open) return null;
 
-  if (isInTossApp) {
-    try {
-      const { Modal: TDSModalComponent } = require('@toss/tds-mobile');
-      return (
-        <TDSModalComponent
-          open={open}
-          onOpenChange={(open: boolean) => {
-            if (!open) onClose();
-          }}
-          onExited={onExited}
-        >
-          <TDSModalComponent.Overlay onClick={onClose} />
-          <TDSModalComponent.Content>{children}</TDSModalComponent.Content>
-        </TDSModalComponent>
-      );
-    } catch {
-      /* fall through to web */
-    }
-  }
+  /* R2 롤백: TDS 분기 제거. require('@toss/tds-mobile') 제거로 번들 에러 방지. 항상 웹 브랜치. */
 
   return (
     <div className={MODAL.overlay} role="dialog" aria-modal="true">

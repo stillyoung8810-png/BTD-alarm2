@@ -40,31 +40,7 @@ export const TDSTextField: React.FC<TDSTextFieldProps> = ({
 }) => {
   const { isInTossApp } = useTossApp();
 
-  if (isInTossApp) {
-    try {
-      const { TextField: TDSTextFieldComponent } = require('@toss/tds-mobile');
-      return (
-        <div className={className}>
-          <TDSTextFieldComponent
-            variant="box"
-            label={label}
-            labelOption="sustain"
-            hasError={hasError}
-            help={help}
-            value={value}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
-            placeholder={placeholder}
-            disabled={disabled}
-            type={type}
-            required={required}
-            autoComplete={autoComplete}
-          />
-        </div>
-      );
-    } catch {
-      /* fall through to web */
-    }
-  }
+  /* R2 롤백: TDS 분기 제거. require('@toss/tds-mobile') 제거로 번들 에러 방지. 항상 웹 브랜치. */
 
   const inputClass = [
     INPUT.base,

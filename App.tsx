@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Portfolio, Trade } from './types';
 import { I18N } from './constants';
@@ -76,20 +75,16 @@ const App: React.FC = () => {
   const [totalValuationPrev, setTotalValuationPrev] = useState<number>(0);
   const [totalValuationChange, setTotalValuationChange] = useState<number>(0);
   const [totalValuationChangePct, setTotalValuationChangePct] = useState<number>(0);
-  /** Dashboard에서 만든 상세 daily execution 요약 (LOC/MOC 등 포함). 있으면 DB 저장 시 이걸 사용. */
-  const [dailyExecutionSummaryFromDashboard, setDailyExecutionSummaryFromDashboard] =
-    useState<string | null>(null);
+  const [dailyExecutionSummaryFromDashboard, setDailyExecutionSummaryFromDashboard] = useState<string | null>(null);
 
   const onDailyExecutionSummaryChange = useCallback((summary: string | null) => {
     setDailyExecutionSummaryFromDashboard(summary ?? null);
   }, []);
 
-  // 주가 캐싱 관련 상수
   const STOCK_PRICE_CACHE_KEY = 'STOCK_PRICE_CACHE_V1';
   const KST_UPDATE_HOUR = 7;
   const KST_UPDATE_MINUTE = 20;
 
-  // 주소창에 #terms / #privacy 가 있을 때만 해당 탭 자동 오픈. 그 외(로그인/로그아웃/새로고침 등)에는 hash 없으면 대시보드 유지.
   useEffect(() => {
     const syncTabFromHash = () => {
       const hash = window.location.hash;
@@ -101,7 +96,6 @@ const App: React.FC = () => {
     return () => window.removeEventListener('hashchange', syncTabFromHash);
   }, []);
 
-  // daily execution 요약 텍스트 (DB 저장용) – 실제 계산은 portfolios/lang/대시보드 요약이 바뀔 때만 수행
   const summaryToSave = useMemo(() => {
     const fromDashboard = dailyExecutionSummaryFromDashboard;
     const base =
@@ -111,7 +105,6 @@ const App: React.FC = () => {
     return base && base.trim().length > 0 ? base : '';
   }, [portfolios, lang, dailyExecutionSummaryFromDashboard]);
 
-  // DailyExecution upsert 디바운스 및 마지막 저장 값 추적
   const dailyExecutionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedSummaryRef = useRef<string | null>(null);
 
@@ -154,7 +147,6 @@ const App: React.FC = () => {
   // 현재 유저의 구독 티어 (default: free)
   const currentTier = (userProfile?.subscription_tier || 'free').toLowerCase();
 
-  // PRO/PREMIUM만 유료 종목 접근 허용 (만료/비활성 상태면 차단)
   const canAccessPaidStocks = useMemo(() => {
     const tierOk = currentTier === 'pro' || currentTier === 'premium';
     if (!tierOk) return false;
@@ -170,7 +162,6 @@ const App: React.FC = () => {
 
   const { tierLabel, tierClassName, TierIcon, tierIconClassName } = useTierDisplay(currentTier);
 
-  // AI 매매 인식: 무료/유료 티어별 Gemini API 키 (무료: VITE_GEMINI_API_KEY_FREE, 유료: VITE_GEMINI_API_KEY_PAID, 미설정 시 VITE_GEMINI_API_KEY 또는 GEMINI_API_KEY 사용)
   const geminiApiKey = useMemo(() => {
     const isPaid = currentTier === 'pro' || currentTier === 'premium';
     const paid = import.meta.env.VITE_GEMINI_API_KEY_PAID;
@@ -181,7 +172,6 @@ const App: React.FC = () => {
     return (isPaid ? paid : free) || fallback || undefined;
   }, [currentTier]);
 
-  // States for the 2-step termination flow
   const [terminateTargetId, setTerminateTargetId] = useState<string | null>(null);
   const [settlementResult, setSettlementResult] = useState<{
     portfolio: Portfolio;
@@ -194,24 +184,18 @@ const App: React.FC = () => {
   } | null>(null);
 
   const t = I18N[lang];
-
-  // 토스 앱 환경 여부 — 동기적 감지 (TDSProvider 조건 판단용, Context는 하위에서 사용)
   const isInTossApp = isTossApp();
 
-  // 알람이 켜진 포트폴리오 기준 daily execution 요약을 Supabase에 캐싱
-  // - summaryToSave(useMemo)로 계산된 값을, 변경 후 일정 시간(디바운스) 뒤에 한 번만 upsert
   useEffect(() => {
     if (!user?.id) return;
     if (!summaryToSave || summaryToSave.trim().length === 0) return;
 
-    // 이전 타이머가 있으면 취소
     if (dailyExecutionDebounceRef.current) {
       clearTimeout(dailyExecutionDebounceRef.current);
     }
 
     dailyExecutionDebounceRef.current = setTimeout(async () => {
       try {
-        // 내용이 마지막으로 저장된 요약과 동일하면 DB 호출 생략
         if (lastSavedSummaryRef.current === summaryToSave) {
           return;
         }
@@ -243,7 +227,6 @@ const App: React.FC = () => {
       }
     }, 3000);
 
-    // 의존성 변경/언마운트 시 타이머 정리
     return () => {
       if (dailyExecutionDebounceRef.current) {
         clearTimeout(dailyExecutionDebounceRef.current);
@@ -252,7 +235,6 @@ const App: React.FC = () => {
     };
   }, [user?.id, summaryToSave, lang]);
 
-  // 유료 로그인 시: 유료 종목만 추가로 IndexedDB에 저장 (중복 호출 방지)
   const paidStocksLoadedRef = useRef(false);
   useEffect(() => {
     if (!canAccessPaidStocks) return;
@@ -265,25 +247,21 @@ const App: React.FC = () => {
     run();
   }, [canAccessPaidStocks]);
 
-  // 비밀번호 재설정 링크(/auth/reset-password)로 진입했을 때 초기 진입 시점에 모달 자동 오픈
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const path = window.location.pathname;
 
-    // 메일에서 넘어온 링크: https://btd-alarm2.pages.dev/auth/reset-password...
     if (path.startsWith('/auth/reset-password')) {
       setAuthModal('reset-password');
     }
   }, []);
 
-  // 프로필 모달이 열릴 때: 전역 상태(userProfile)가 있으면 캐시 사용(select 생략), 없을 때만 서버 조회(폴백)
   useEffect(() => {
     if (authModal !== 'profile' || !user?.id) return;
-    if (userProfile != null) return; // 캐시 사용, 불필요한 서버 호출 생략
-    fetchUserProfile(user.id); // 예외: 초기 로딩 전 등 프로필이 없을 때만 조회
+    if (userProfile != null) return;
+    fetchUserProfile(user.id);
   }, [authModal, user?.id, userProfile, fetchUserProfile]);
 
-  // 초기 다크 모드 및 Supabase 세션/포트폴리오 로딩
   useEffect(() => {
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
@@ -292,12 +270,8 @@ const App: React.FC = () => {
     }
   }, [isDarkMode]);
 
-  // 토스 앱 브릿지 초기화는 TossAppProvider 내부에서 자동으로 수행됩니다.
-
-  // IndexedDB 초기 데이터 로딩 (앱 시작 시 한 번만 실행)
   useEffect(() => {
     let isMounted = true;
-    
     const loadData = async () => {
       try {
         console.log('[App] IndexedDB 초기 데이터 로딩 시작');
@@ -309,21 +283,16 @@ const App: React.FC = () => {
         console.error('[App] IndexedDB 초기 데이터 로딩 실패:', error);
       }
     };
-    
     loadData();
-    
     return () => {
       isMounted = false;
     };
   }, []);
 
-  // useAuth가 세션 복구 시 사용할 포트폴리오 로딩 함수 레퍼런스 동기화
   useEffect(() => {
     fetchPortfoliosRef.current = fetchPortfolios;
   }, [fetchPortfolios]);
 
-
-  // 전체 보유 수량 집계 (포트폴리오/거래 변경시에만 재계산)
   const aggregateHoldings = useMemo(() => {
     const activePortfolios = portfolios.filter(p => !p.isClosed);
     const result: Record<string, number> = {};
@@ -338,13 +307,11 @@ const App: React.FC = () => {
     return result;
   }, [portfolios]);
 
-  // 대시보드에 넘길 포트폴리오 목록 – 매 렌더마다 filter()로 새 배열이 되면 자식 alarmIds/effect 연쇄 실행·무한루프 위험
   const activePortfolios = useMemo(
     () => portfolios.filter(p => !p.isClosed),
     [portfolios]
   );
 
-  // 전체 포트폴리오의 현재 평가액 및 24h 변동 계산 + 캐싱
   useEffect(() => {
     const symbols = Object.keys(aggregateHoldings).filter(sym => aggregateHoldings[sym] > 0);
 
@@ -358,7 +325,6 @@ const App: React.FC = () => {
 
     const calcValuation = async () => {
       try {
-        // 한국 시간(KST) 기준 날짜/시간 계산 (KST는 UTC+9, DST 없음)
         const nowUtc = new Date();
         const nowKst = new Date(nowUtc.getTime() + 9 * 60 * 60 * 1000);
         const year = nowKst.getUTCFullYear();
@@ -370,31 +336,26 @@ const App: React.FC = () => {
         const todayStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const minutesOfDay = hours * 60 + minutes;
 
-        // 전일(미국 시장) 공휴일 여부 확인
         const yesterday = new Date(nowKst.getTime() - 24 * 60 * 60 * 1000);
         const yYear = yesterday.getUTCFullYear();
         const yMonth = yesterday.getUTCMonth() + 1;
         const yDay = yesterday.getUTCDate();
         const yesterdayStr = `${yYear}-${String(yMonth).padStart(2, '0')}-${String(yDay).padStart(2, '0')}`;
 
-        // 연도별 미국 휴장일 목록 (부활절 제외 9개, 대체 휴일 포함)
         const usHolidaysForYear = getUSSelectionHolidays(yYear);
         const wasHolidayYesterday = usHolidaysForYear.includes(yesterdayStr);
 
-        // KST 기준 요일 (0=Sun..6=Sat)
         const kstDayOfWeek = nowKst.getUTCDay();
 
         const isAfterUpdateTime =
           minutesOfDay >= KST_UPDATE_HOUR * 60 + KST_UPDATE_MINUTE;
 
-        // 화(2)~토(6) 07:20 이후 && 전날이 휴일이 아닌 경우에만 새로운 종가가 있을 가능성이 높다고 가정
         const isPotentialNewCloseAvailable =
           kstDayOfWeek >= 2 &&
           kstDayOfWeek <= 6 &&
           isAfterUpdateTime &&
           !wasHolidayYesterday;
 
-        // localStorage 캐시 확인
         let cachedPrices: Record<string, { current: number; previous: number }> | null = null;
         try {
           const raw = window.localStorage.getItem(STOCK_PRICE_CACHE_KEY);
@@ -411,13 +372,12 @@ const App: React.FC = () => {
         let priceMap: Record<string, { current: number; previous: number }>;
 
         const shouldFetchFromServer =
-          !cachedPrices || // 캐시 없음
-          (isPotentialNewCloseAvailable && !cachedPrices); // 새로운 종가가 있을 수 있는데 캐시도 없는 경우
+          !cachedPrices || 
+          (isPotentialNewCloseAvailable && !cachedPrices); 
 
         if (shouldFetchFromServer) {
           priceMap = await fetchStockPricesWithPrev(symbols);
 
-          // 캐시에 저장
           try {
             const payload = {
               date: todayStr,
@@ -432,7 +392,6 @@ const App: React.FC = () => {
             console.warn('Failed to write stock price cache:', err);
           }
         } else {
-          // 캐시 사용 (휴장일/일~월/07:20 이전 등)
           priceMap = cachedPrices || {};
         }
 
@@ -464,8 +423,9 @@ const App: React.FC = () => {
     calcValuation();
   }, [aggregateHoldings]);
 
+  // 🚀 패치 1: 퀵입력/실행 모달 저장 (currentTier 주입)
   const handleAddTradeWithReward = async (portfolioId: string, trade: Trade) => {
-    await showRewardBeforeAction(AdPlacement.REWARD_TRADE_SAVE);
+    await showRewardBeforeAction(AdPlacement.REWARD_TRADE_SAVE, currentTier as any);
     await handleAddTrade(portfolioId, trade);
   };
 
@@ -476,7 +436,6 @@ const App: React.FC = () => {
   const currentAIImagePortfolio = portfolios.find(p => p.id === aiImageTargetId);
   const currentTerminatePortfolio = portfolios.find(p => p.id === terminateTargetId);
 
-  /** 탭별 콘텐츠 매핑 — 조건문 분기 제거, Cognitive Complexity 감소 (Phase 0.3) */
   const tabContentNode = useMemo((): React.ReactNode => {
     const dashboardFallback = <div className="flex items-center justify-center min-h-[50vh] text-slate-500 dark:text-slate-400 font-bold">{lang === 'ko' ? '대시보드 로딩 중…' : 'Loading dashboard…'}</div>;
     const genericFallback = <div className="flex items-center justify-center min-h-[50vh] text-slate-500 dark:text-slate-400 font-bold">{lang === 'ko' ? '로딩 중…' : 'Loading…'}</div>;
@@ -487,6 +446,7 @@ const App: React.FC = () => {
             <Dashboard
               lang={lang}
               portfolios={activePortfolios}
+              currentTier={currentTier === 'premium' || currentTier === 'pro' ? (currentTier as 'pro' | 'premium') : 'free'}
               onClosePortfolio={(id) => setTerminateTargetId(id)}
               onDeletePortfolio={handleDeletePortfolio}
               onUpdatePortfolio={handleUpdatePortfolio}
@@ -523,7 +483,12 @@ const App: React.FC = () => {
       case 'markets':
         return (
           <React.Suspense fallback={genericFallback}>
-            <Markets lang={lang} portfolios={portfolios} canAccessPaidStocks={canAccessPaidStocks} />
+            <Markets
+              lang={lang}
+              portfolios={portfolios}
+              canAccessPaidStocks={canAccessPaidStocks}
+              currentTier={currentTier === 'premium' || currentTier === 'pro' ? (currentTier as 'pro' | 'premium') : 'free'}
+            />
           </React.Suspense>
         );
       case 'backtest':
@@ -552,8 +517,9 @@ const App: React.FC = () => {
             <History
               lang={lang}
               portfolios={portfolios.filter(p => p.isClosed)}
+              // 🚀 패치 2: 정산 상세보기 진입 전 (currentTier 주입)
               onOpenDetails={async (id) => {
-                await showInterstitialBeforeAction(AdPlacement.INTERSTITIAL_SETTLEMENT_DETAIL);
+                await showInterstitialBeforeAction(AdPlacement.INTERSTITIAL_SETTLEMENT_DETAIL, currentTier as any);
                 setDetailsTargetId(id);
               }}
               onDeleteHistory={handleDeleteHistory}
@@ -601,12 +567,9 @@ const App: React.FC = () => {
     canAccessPaidStocks,
   ]);
 
-  // 메인 레이아웃: 토스 앱 환경에서만 TDSMobileAITProvider로 감싸기
   const MainContent = () => (
     <div className={`min-h-screen transition-colors duration-500 bg-slate-50 dark:bg-slate-950 dark:text-slate-200`}>
       <div className="pb-32">
-        
-        {/* Header */}
         <header className="sticky top-0 z-40 w-full glass glass-header px-6 md:px-12 py-5 flex items-center justify-between border-b border-slate-200/50 dark:border-white/10">
           <div className="flex items-center gap-4 cursor-pointer group" onClick={() => setActiveTab('dashboard')}>
             <div className="w-11 h-11 relative flex items-center justify-center group-hover:scale-110 transition-all duration-300">
@@ -641,7 +604,6 @@ const App: React.FC = () => {
                 const nextLang: 'ko' | 'en' = lang === 'ko' ? 'en' : 'ko';
                 setLang(nextLang);
 
-                // 로그인된 경우, 선호 언어를 user_profiles에 반영
                 if (user?.id) {
                   try {
                     const { error } = await supabase
@@ -686,7 +648,6 @@ const App: React.FC = () => {
           {tabContentNode}
         </main>
 
-        {/* Unified Floating Navigation Bar - center '+' button */}
         <div className="floating-nav w-[calc(100%-3rem)] md:w-auto">
           <nav className="glass rounded-full px-4 py-3 flex items-center gap-2 md:gap-6 shadow-2xl border border-white/10 premium-shadow min-w-[320px] justify-center">
             <NavIcon active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutDashboard size={22} />} label={t.dashboard} />
@@ -706,7 +667,6 @@ const App: React.FC = () => {
               }
               tooltipIcon={<Hammer size={16} className="text-indigo-400" />}
             />
-            {/* 애드센스용 게시판 — 웹 전용, 토스 미니앱에는 미노출 */}
             {!isInTossApp && (
               <a
                 href="/posts"
@@ -729,8 +689,9 @@ const App: React.FC = () => {
             <StrategyCreator
               lang={lang}
               onClose={() => setIsCreatorOpen(false)}
+              // 🚀 패치 3: 전략 생성기 완료 후 (currentTier 주입)
               onSave={async (newP) => {
-                await showRewardBeforeAction(AdPlacement.REWARD_STRATEGY_SAVE);
+                await showRewardBeforeAction(AdPlacement.REWARD_STRATEGY_SAVE, currentTier as any);
                 await handleAddPortfolio(newP, () => setIsCreatorOpen(false));
               }}
               canAccessPaidStocks={canAccessPaidStocks}
@@ -745,8 +706,9 @@ const App: React.FC = () => {
               lang={lang}
               portfolio={currentAlarmPortfolio}
               onClose={() => setAlarmTargetId(null)}
+              // 🚀 패치 4: 알람 설정 저장 완료 후 (currentTier 주입)
               onSave={async (config) => {
-                await showRewardBeforeAction(AdPlacement.REWARD_ALARM_SAVE);
+                await showRewardBeforeAction(AdPlacement.REWARD_ALARM_SAVE, currentTier as any);
                 const tz = userProfile?.timezone || getDeviceTimeZone();
                 const nextConfig = { ...config, timezone: config.timezone || tz };
                 handleUpdatePortfolio({ ...currentAlarmPortfolio, alarmconfig: nextConfig });
@@ -782,8 +744,9 @@ const App: React.FC = () => {
               isPaidUser={currentTier === 'pro' || currentTier === 'premium'}
               currentTier={currentTier === 'premium' || currentTier === 'pro' ? currentTier : 'free'}
               onClose={() => setAiImageTargetId(null)}
+              // 🚀 패치 5: AI 이미지 인식 매매 저장 시 (currentTier 주입)
               onSave={async (trades) => {
-                await showRewardBeforeAction(AdPlacement.REWARD_TRADE_SAVE);
+                await showRewardBeforeAction(AdPlacement.REWARD_TRADE_SAVE, currentTier as any);
                 for (const trade of trades) {
                   await handleAddTrade(currentAIImagePortfolio.id, trade);
                 }
@@ -793,7 +756,6 @@ const App: React.FC = () => {
           </React.Suspense>
         )}
 
-        {/* Termination Flow Modals */}
         {currentTerminatePortfolio && (
           <TerminationInput
             lang={lang}
@@ -839,15 +801,11 @@ const App: React.FC = () => {
                 if (error) {
                   console.error('Logout error:', error);
                 }
-                // 카카오/구글 OAuth 여부와 관계없이, 로컬에 남은 Supabase 세션 토큰을 확실히 제거
-                // (비우지 않으면 새로고침 시 getSession()이 이전 토큰을 읽어 다시 로그인된 것처럼 보일 수 있음)
                 clearAuthStorage();
-
                 setUser(null); 
                 setUserProfile(null);
                 setPortfolios([]); 
                 setAuthModal(null);
-
                 if (typeof window !== 'undefined') {
                   window.location.reload();
                 }
@@ -885,7 +843,6 @@ const App: React.FC = () => {
         )}
       </div>
 
-      {/* ── 결제 모달 ─────────────────────────────── */}
       {checkoutPlan && (
         <React.Suspense fallback={null}>
           <CheckoutModal
@@ -921,7 +878,6 @@ const App: React.FC = () => {
         </React.Suspense>
       )}
 
-      {/* Footer — 법인 필수 정보 (토스 환경은 Footer 내부에서 자동 감지) */}
       <Footer
         onNavigateTerms={() => {
           setActiveTab('terms');
@@ -951,98 +907,10 @@ const App: React.FC = () => {
   );
 };
 
-// ---------------------------------------------------------------------------
-// TDS 로드 상태 (토스 앱 내부에서만 의미 있음)
-// ---------------------------------------------------------------------------
-type TDSLoadState = 'idle' | 'loading' | 'success' | 'failed';
-
-// ---------------------------------------------------------------------------
-// TDSWrapper: 토스 앱 환경에서만 TDSMobileAITProvider로 감싸는 래퍼
-// - TDS 로드 실패 시 fallback UI 표시로 하얀 화면 방지
-// - 재시도 버튼으로 동적 import 재시도
-// TossAppProvider 하위에 위치하므로 useTossApp() 사용 가능
-// ---------------------------------------------------------------------------
-const TDSWrapper: React.FC<{ isInTossApp: boolean; children: React.ReactNode }> = ({ isInTossApp, children }) => {
-  const [TDSProvider, setTDSProvider] = useState<React.ComponentType<{ children: React.ReactNode }> | null>(null);
-  const [loadState, setLoadState] = useState<TDSLoadState>('idle');
-  const [loadError, setLoadError] = useState<Error | null>(null);
-
-  const loadTDS = useCallback(() => {
-    setLoadError(null);
-    setLoadState('loading');
-    import('@toss/tds-mobile-ait')
-      .then((module) => {
-        setTDSProvider(() => module.TDSMobileAITProvider);
-        setLoadState('success');
-      })
-      .catch((error) => {
-        const err = error instanceof Error ? error : new Error(String(error));
-        console.warn('[TDSWrapper] TDSMobileAITProvider 로드 실패:', err.message, err);
-        setLoadError(err);
-        setLoadState('failed');
-      });
-  }, []);
-
-  useEffect(() => {
-    if (!isInTossApp) return;
-    loadTDS();
-  }, [isInTossApp, loadTDS]);
-
-  // 토스 앱 아님 → TDS 불필요, children 그대로 렌더 (기존 동작)
-  if (!isInTossApp) {
-    return <>{children}</>;
-  }
-
-  // 토스 앱 + TDS 로드 성공 → Provider로 감싸서 렌더
-  if (loadState === 'success' && TDSProvider) {
-    return <TDSProvider>{children}</TDSProvider>;
-  }
-
-  // 토스 앱 + TDS 로딩 중 → 하위에 TDS 의존 컴포넌트가 있으므로 children 미렌더, 로딩 UI만 표시
-  if (loadState === 'loading') {
-    return (
-      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 bg-[#F1F5F9] p-6 dark:bg-[#06090F]">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-500 dark:border-slate-600 dark:border-t-indigo-400" />
-        <p className="text-sm font-medium text-slate-600 dark:text-slate-400">TDS 로딩 중…</p>
-      </div>
-    );
-  }
-
-  // 토스 앱 + TDS 로드 실패 → fallback UI (재시도 가능)
-  if (loadState === 'failed') {
-    return (
-      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 bg-[#F1F5F9] p-6 dark:bg-[#06090F]">
-        <p className="text-center text-sm font-medium text-slate-700 dark:text-slate-300">
-          토스 디자인 시스템(TDS)을 불러오지 못했습니다.
-        </p>
-        {loadError && (
-          <p className="max-w-md truncate text-center text-xs text-slate-500 dark:text-slate-400" title={loadError.message}>
-            {loadError.message}
-          </p>
-        )}
-        <button
-          type="button"
-          onClick={loadTDS}
-          className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
-        >
-          다시 시도
-        </button>
-      </div>
-    );
-  }
-
-  // idle (isInTossApp 직후 아직 loadTDS 미호출) → 로딩과 동일 처리
-  return (
-    <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 bg-[#F1F5F9] p-6 dark:bg-[#06090F]">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-500 dark:border-slate-600 dark:border-t-indigo-400" />
-      <p className="text-sm font-medium text-slate-600 dark:text-slate-400">준비 중…</p>
-    </div>
-  );
+const TDSWrapper: React.FC<{ isInTossApp: boolean; children: React.ReactNode }> = ({ children }) => {
+  return <>{children}</>;
 };
 
-// ---------------------------------------------------------------------------
-// NavIcon
-// ---------------------------------------------------------------------------
 interface NavIconProps {
   active: boolean;
   onClick: () => void;
@@ -1096,7 +964,6 @@ const NavIcon: React.FC<NavIconProps> = ({ active, onClick, icon, label, disable
           <div className="text-[11px] font-bold leading-tight text-slate-100 whitespace-pre-line">
             {tooltip}
           </div>
-          {/* Arrow */}
           <div className="absolute left-1/2 -bottom-1.5 h-3 w-3 -translate-x-1/2 rotate-45 bg-[#0F172A] border-r border-b border-white/10" />
         </div>
       )}

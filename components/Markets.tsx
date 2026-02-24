@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   XAxis, 
@@ -19,6 +18,10 @@ import { calculateHoldings } from '../utils/portfolioCalculations';
 import StockLogo from './StockLogo';
 import HoverTip from './HoverTip';
 import InfoModal from './InfoModal';
+import { useTossApp } from '../contexts/TossAppContext';
+
+// 🚀 1. 스마트 배너 컴포넌트 임포트
+import { TossInlineBanner } from './TossInlineBanner';
 
 // ---------------------------------------------------------------------------
 // 날짜 포맷 헬퍼 (CustomTooltip 용)
@@ -141,7 +144,6 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ label, checked, onChange })
 // ---------------------------------------------------------------------------
 // StockCard 하위 컴포넌트
 // ---------------------------------------------------------------------------
-/** 채권형 ETF 목록 */
 const BOND_ETFS = ['STRC', 'SGOV', 'BIL', 'ICSH'] as const;
 
 interface StockCardProps {
@@ -283,9 +285,15 @@ interface MarketsProps {
   lang: 'ko' | 'en';
   portfolios?: Portfolio[];
   canAccessPaidStocks?: boolean;
+  currentTier?: 'free' | 'pro' | 'premium'; // 티어 Prop 추가
 }
 
-const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidStocks = false }) => {
+const Markets: React.FC<MarketsProps> = ({
+  lang,
+  portfolios = [],
+  canAccessPaidStocks = false,
+  currentTier = 'free',
+}) => {
   const [selectedStock, setSelectedStock] = useState('QQQ');
   const [stockData, setStockData] = useState<Record<string, StockData>>({});
   const [chartData, setChartData] = useState<Array<{ name: string; price: number; ma20: number; ma60: number; date: string }>>([]);
@@ -296,6 +304,7 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
   const scrollRafRef = useRef<number | null>(null);
   const t = I18N[lang];
   const [proInfoOpen, setProInfoOpen] = useState(false);
+  const { isInTossApp } = useTossApp();
 
   const lockedTooltip =
     lang === 'ko' ? 'PRO/PREMIUM 전용 종목입니다.' : 'This ticker is PRO/PREMIUM only.';
@@ -307,8 +316,6 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
       (navigator && (navigator.maxTouchPoints || 0) > 0)
     );
   }, []);
-
-  // 1배수 종목 → 모듈 상수 ONE_X_STOCKS 참조
 
   // 마켓 상태 계산
   const marketStatus = useMemo(() => getMarketStatus(lang), [lang]);
@@ -333,21 +340,11 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
   // 필터링된 종목 리스트 (기본 리스트)
   const filteredStocks = useMemo(() => {
     let filtered = ALL_STOCKS;
-    
-    // 보유 종목만 보기 필터
-    if (showHoldingsOnly) {
-      filtered = filtered.filter(ticker => holdingsSet.has(ticker));
-    }
-    
-    // 1배수만 보기 필터
-    if (show1xOnly) {
-      filtered = filtered.filter(ticker => ONE_X_STOCKS.includes(ticker));
-    }
-    
+    if (showHoldingsOnly) filtered = filtered.filter(ticker => holdingsSet.has(ticker));
+    if (show1xOnly) filtered = filtered.filter(ticker => ONE_X_STOCKS.includes(ticker));
     return filtered;
   }, [showHoldingsOnly, show1xOnly, holdingsSet]);
 
-  // 무한 루프용 3중 리스트 (끝/처음 자연 연결). 보유 종목만 보기 시에는 중복 노출 방지를 위해 3중 반복하지 않음
   const loopEnabled = filteredStocks.length >= 2 && !showHoldingsOnly;
   const loopedStocks = useMemo(() => {
     if (!loopEnabled) return filteredStocks;
@@ -366,7 +363,7 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
     return { step: step > 0 ? step : 200, startOffset };
   };
 
-  // 무한 루프 초기 위치: 가운데(2번째) 리스트로 점프
+  // 무한 루프 초기 위치
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -377,7 +374,7 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
     const baseLen = filteredStocks.length;
     const raf = window.requestAnimationFrame(() => {
       const children = el.children as unknown as HTMLElement[];
-      const target = children?.[baseLen]; // 가운데 리스트의 첫 카드
+      const target = children?.[baseLen];
       if (target) el.scrollLeft = target.offsetLeft;
     });
     return () => window.cancelAnimationFrame(raf);
@@ -400,7 +397,6 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
     loadStockData();
   }, [canAccessPaidStocks]);
 
-  // 무료 티어에서 유료 종목이 선택된 상태가 되지 않도록 보정
   useEffect(() => {
     if (canAccessPaidStocks) return;
     if (PAID_STOCKS.includes(selectedStock)) {
@@ -409,19 +405,18 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
     }
   }, [canAccessPaidStocks, selectedStock]);
 
-  // 선택된 종목의 차트 데이터 로드
+  // 차트 데이터 로드
   useEffect(() => {
     const loadChartData = async () => {
       if (!selectedStock) return;
       if (!canAccessPaidStocks && PAID_STOCKS.includes(selectedStock)) return;
       try {
         const history = await fetchStockPriceHistory(selectedStock, 90);
-        // Recharts 형식으로 변환 (날짜 정보 포함)
         const formatted = history.map(item => {
           const date = new Date(item.date);
           return {
             name: date.toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-US', { month: 'short', day: 'numeric' }),
-            date: item.date, // 원본 날짜 저장 (tooltip용)
+            date: item.date,
             price: item.price,
             ma20: item.ma20,
             ma60: item.ma60,
@@ -436,7 +431,6 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
     loadChartData();
   }, [selectedStock, lang, canAccessPaidStocks]);
 
-  // 차트 Y축 범위 (useMemo — chartData가 바뀔 때만 재계산)
   const yAxisDomain = useMemo(() => {
     if (chartData.length === 0) return ['auto', 'auto'] as const;
 
@@ -475,13 +469,11 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
       if (!children || children.length < baseLen * 3) return;
 
       const { step } = getCardStep();
-      const middleStart = children?.[baseLen]?.offsetLeft ?? 0; // 가운데 리스트 시작
-      const thirdStart = children?.[baseLen * 2]?.offsetLeft ?? 0; // 3번째 리스트 시작
-      // 왼쪽: 한 카드 이상 들어갔을 때만 점프 (한 칸 왼쪽에서 마지막 종목 SGOV 보이도록)
+      const middleStart = children?.[baseLen]?.offsetLeft ?? 0;
+      const thirdStart = children?.[baseLen * 2]?.offsetLeft ?? 0;
       const thresholdLeft = step;
-      const thresholdRight = step * 0.5; // 오른쪽: 살짝 넘어갔을 때 점프
+      const thresholdRight = step * 0.5;
 
-      // 가운데 범위를 벗어나면 같은 카드 위치를 유지한 채 가운데로 되돌림
       if (el.scrollLeft < middleStart - thresholdLeft) {
         el.scrollLeft += baseLen * step;
       } else if (el.scrollLeft >= thirdStart + thresholdRight) {
@@ -506,7 +498,6 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
             </div>
             <h2 className="text-2xl font-black dark:text-white uppercase tracking-tight">{t.globalMarkets}</h2>
           </div>
-          {/* 마켓 상태 배지 */}
           <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase border flex items-center gap-1.5 ${
             marketStatus.isOpen 
               ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' 
@@ -517,7 +508,6 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
           </div>
         </div>
 
-        {/* Chart View */}
         <div className="bg-white light-card-depth dark:bg-[#080B15] p-8 rounded-[2.5rem] overflow-hidden h-96 border border-slate-200 dark:border-white/5 shadow-xl relative">
           <div className="flex justify-between items-start mb-8 relative z-10">
             <div>
@@ -597,30 +587,34 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
               </ComposedChart>
             ) : (
               <div className="flex items-center justify-center h-full text-slate-500 text-sm font-bold">
-                {isLoading ? (lang === 'ko' ? '차트 데이터 로딩 중...' : 'Loading chart data...') : (lang === 'ko' ? '차트 데이터 없음' : 'No chart data')}
+                {/* 🚀 번역 키 에러(I18N) 해결 부분 */}
+                {isLoading 
+                  ? (lang === 'ko' ? '차트 데이터 로딩 중...' : 'Loading chart data...') 
+                  : (lang === 'ko' ? '차트 데이터 없음' : 'No chart data')}
               </div>
             )}
           </ResponsiveContainer>
         </div>
       </section>
 
-      {/* Horizontal Scrolling Stock Cards with Navigation Arrows */}
+      {/* 🚀 2. 구형 광고 부착 로직(useEffect)은 삭제하고, 완벽한 스마트 배너 1줄로 교체! */}
+      <TossInlineBanner currentTier={currentTier} isInTossApp={isInTossApp} variant="card" />
+
       <section className="space-y-6">
         <div className="flex items-center justify-between px-2">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <BarChart2 className="text-slate-500" size={16} />
+              {/* 🚀 번역 키 에러(I18N) 해결 부분 */}
               <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest">
                 {lang === 'ko' ? '종목 정보' : 'Stock Info'}
               </h3>
             </div>
-            {/* 보유 종목 필터 스위치 */}
             <ToggleSwitch
               label={lang === 'ko' ? '보유 종목만 보기' : 'Holdings Only'}
               checked={showHoldingsOnly}
               onChange={() => setShowHoldingsOnly(!showHoldingsOnly)}
             />
-            {/* 1배수만 보기 필터 스위치 */}
             <ToggleSwitch
               label={lang === 'ko' ? '1배수만 보기' : '1x Only'}
               checked={show1xOnly}
@@ -653,6 +647,7 @@ const Markets: React.FC<MarketsProps> = ({ lang, portfolios = [], canAccessPaidS
           >
             {filteredStocks.length === 0 ? (
               <div className="flex items-center justify-center w-full py-12 text-slate-400 text-sm font-bold">
+                {/* 🚀 번역 키 에러(I18N) 해결 부분 */}
                 {lang === 'ko' ? '보유 중인 종목이 없습니다.' : 'No holdings available.'}
               </div>
             ) : (

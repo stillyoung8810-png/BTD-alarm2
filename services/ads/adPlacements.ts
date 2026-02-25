@@ -4,10 +4,11 @@
  */
 
 export const AdPlacement = {
-  REWARD_STRATEGY_SAVE: 'strategy_save',
-  REWARD_TRADE_SAVE: 'trade_save',
-  REWARD_ALARM_SAVE: 'alarm_save',
+  INTERSTITIAL_STRATEGY_SAVE: 'strategy_save',
+  INTERSTITIAL_TRADE_SAVE: 'trade_save',
+  INTERSTITIAL_ALARM_SAVE: 'alarm_save',
   INTERSTITIAL_SETTLEMENT_DETAIL: 'settlement_detail',
+  REWARD_UNLOCK_AI: 'reward_unlock_ai',
 } as const;
 
 export type AdPlacementKey = keyof typeof AdPlacement;

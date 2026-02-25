@@ -122,7 +122,7 @@ const executeInterstitialFlow = async (adGroupId: string): Promise<AdResult> => 
  * @param placementId 광고 지면 ID
  * @param tier 유저의 현재 결제 티어 (기본값: 'free')
  */
-export async function showInterstitialBeforeAction(
+export async function showInterstitialOnTransition(
   placementId: AdPlacementId, 
   tier: UserTier = 'free'
 ): Promise<AdResult> {
@@ -142,25 +142,52 @@ export async function showInterstitialBeforeAction(
 }
 
 /**
- * [Public API] 리워드 광고 호출 함수 (DEPRECATED & FUTURE-PROOFING)
- * 향후 PRO 유저 대상 선택적 보상형 광고 도입을 위한 구조적 게이트 유지.
- * @param placementId 광고 지면 ID
- * @param tier 유저의 현재 결제 티어 (기본값: 'free')
+ * [Public API] 보상형 광고 요청 (자발적 시청 전용)
+ * @returns 보상 획득(끝까지 시청 완료) 시 true, 실패/중도 이탈 시 false
  */
-export async function showRewardBeforeAction(
-  _placementId: AdPlacementId, 
-  tier: UserTier = 'free'
-): Promise<AdResult> {
-  // 웹 환경 가드
-  if (!isTossApp()) return { shown: false };
+export async function requestRewardAd(placementId: AdPlacementId): Promise<boolean> {
+  if (!isTossApp()) return true; // 웹 환경 테스트용 패스
 
-  // 티어 가드: PREMIUM은 모든 광고 면제
-  if (tier === 'premium') {
-    return { shown: false };
+  const api = WebFramework as any;
+  if (typeof api.loadFullScreenAd?.isSupported !== 'function' || !api.loadFullScreenAd.isSupported()) {
+    return false;
   }
 
-  // TODO: PRO 또는 FREE 유저를 위한 리워드 연동부. (현재는 UX 정책상 비활성)
-  return { shown: false };
+  let loadUnregister: (() => void) | null = null;
+  let isRewarded = false;
+
+  try {
+    loadUnregister = await waitForAdLoad(placementId, api);
+
+    await new Promise<void>((resolve, reject) => {
+      let showUnregister: (() => void) | undefined;
+      showUnregister = api.showFullScreenAd({
+        options: { adGroupId: placementId },
+        onEvent: (event: any) => {
+          if (event.type === 'userEarnedReward') {
+            isRewarded = true;
+          } else if (event.type === 'dismissed') {
+            if (showUnregister) showUnregister();
+            resolve();
+          } else if (event.type === 'failedToShow') {
+            if (showUnregister) showUnregister();
+            reject(new Error('Toss SDK failedToShow'));
+          }
+        },
+        onError: (error: any) => {
+          if (showUnregister) showUnregister();
+          reject(error);
+        }
+      });
+    });
+
+    return isRewarded;
+  } catch (error) {
+    console.error('[AdService] Reward Ad error:', error);
+    return false;
+  } finally {
+    if (loadUnregister) loadUnregister();
+  }
 }
 
 export { AdPlacement };

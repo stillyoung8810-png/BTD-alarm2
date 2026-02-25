@@ -18,7 +18,8 @@ import { useFCMToken } from './hooks/useFCMToken';
 import { useAuth } from './hooks/useAuth';
 import { usePortfolios } from './hooks/usePortfolios';
 import { isTossApp } from './services/tossAppBridge';
-import { showRewardBeforeAction, showInterstitialBeforeAction, AdPlacement } from './services/ads/adService';
+import { showInterstitialOnTransition, AdPlacement } from './services/ads/adService';
+import { restorePendingIapOrders } from './services/payment/tossIapService';
 import { TossAppProvider } from './contexts/TossAppContext';
 import { buildDailyExecutionSummary } from './utils/dailyExecutionSummary';
 import { 
@@ -93,6 +94,9 @@ const App: React.FC = () => {
     };
     syncTabFromHash();
     window.addEventListener('hashchange', syncTabFromHash);
+    if (isTossApp()) {
+      restorePendingIapOrders();
+    }
     return () => window.removeEventListener('hashchange', syncTabFromHash);
   }, []);
 
@@ -424,9 +428,9 @@ const App: React.FC = () => {
   }, [aggregateHoldings]);
 
   // 🚀 패치 1: 퀵입력/실행 모달 저장 (currentTier 주입)
-  const handleAddTradeWithReward = async (portfolioId: string, trade: Trade) => {
-    await showRewardBeforeAction(AdPlacement.REWARD_TRADE_SAVE, currentTier as any);
-    await handleAddTrade(portfolioId, trade);
+  const handleAddTradeWithAd = async (portfolioId: string, trade: Trade) => {
+    await handleAddTrade(portfolioId, trade); // 1. 저장 먼저
+    await showInterstitialOnTransition(AdPlacement.INTERSTITIAL_TRADE_SAVE, currentTier as any); // 2. 창 닫히기 전 전면광고 띄우고 대기
   };
 
   const currentAlarmPortfolio = portfolios.find(p => p.id === alarmTargetId);
@@ -519,7 +523,7 @@ const App: React.FC = () => {
               portfolios={portfolios.filter(p => p.isClosed)}
               // 🚀 패치 2: 정산 상세보기 진입 전 (currentTier 주입)
               onOpenDetails={async (id) => {
-                await showInterstitialBeforeAction(AdPlacement.INTERSTITIAL_SETTLEMENT_DETAIL, currentTier as any);
+                await showInterstitialOnTransition(AdPlacement.INTERSTITIAL_SETTLEMENT_DETAIL, currentTier as any);
                 setDetailsTargetId(id);
               }}
               onDeleteHistory={handleDeleteHistory}
@@ -691,8 +695,10 @@ const App: React.FC = () => {
               onClose={() => setIsCreatorOpen(false)}
               // 🚀 패치 3: 전략 생성기 완료 후 (currentTier 주입)
               onSave={async (newP) => {
-                await showRewardBeforeAction(AdPlacement.REWARD_STRATEGY_SAVE, currentTier as any);
-                await handleAddPortfolio(newP, () => setIsCreatorOpen(false));
+                await handleAddPortfolio(newP, async () => {
+                  await showInterstitialOnTransition(AdPlacement.INTERSTITIAL_STRATEGY_SAVE, currentTier as any);
+                  setIsCreatorOpen(false);
+                });
               }}
               canAccessPaidStocks={canAccessPaidStocks}
               maxPortfolios={getMaxPortfolios(userProfile)}
@@ -708,10 +714,10 @@ const App: React.FC = () => {
               onClose={() => setAlarmTargetId(null)}
               // 🚀 패치 4: 알람 설정 저장 완료 후 (currentTier 주입)
               onSave={async (config) => {
-                await showRewardBeforeAction(AdPlacement.REWARD_ALARM_SAVE, currentTier as any);
                 const tz = userProfile?.timezone || getDeviceTimeZone();
                 const nextConfig = { ...config, timezone: config.timezone || tz };
                 handleUpdatePortfolio({ ...currentAlarmPortfolio, alarmconfig: nextConfig });
+                await showInterstitialOnTransition(AdPlacement.INTERSTITIAL_ALARM_SAVE, currentTier as any);
                 setAlarmTargetId(null);
               }}
               maxAlarms={getMaxAlarms(userProfile)}
@@ -731,10 +737,10 @@ const App: React.FC = () => {
         )}
         {currentQuickInputPortfolio && (
           <React.Suspense fallback={LAZY_MODAL_FALLBACK}>
-            <QuickInputModal lang={lang} portfolio={currentQuickInputPortfolio} activeSection={quickInputActiveSection} onClose={() => { setQuickInputTargetId(null); setQuickInputActiveSection(undefined); }} onSave={(trade) => { handleAddTradeWithReward(currentQuickInputPortfolio.id, trade); setQuickInputTargetId(null); setQuickInputActiveSection(undefined); }} />
+            <QuickInputModal lang={lang} portfolio={currentQuickInputPortfolio} activeSection={quickInputActiveSection} onClose={() => { setQuickInputTargetId(null); setQuickInputActiveSection(undefined); }} onSave={async (trade) => { await handleAddTradeWithAd(currentQuickInputPortfolio.id, trade); setQuickInputTargetId(null); setQuickInputActiveSection(undefined); }} />
           </React.Suspense>
         )}
-        {currentExecutionPortfolio && <TradeExecutionModal lang={lang} portfolio={currentExecutionPortfolio} onClose={() => setExecutionTargetId(null)} onSave={(trade) => { handleAddTradeWithReward(currentExecutionPortfolio.id, trade); setExecutionTargetId(null); }} />}
+        {currentExecutionPortfolio && <TradeExecutionModal lang={lang} portfolio={currentExecutionPortfolio} onClose={() => setExecutionTargetId(null)} onSave={async (trade) => { await handleAddTradeWithAd(currentExecutionPortfolio.id, trade); setExecutionTargetId(null); }} />}
         {currentAIImagePortfolio && (
           <React.Suspense fallback={LAZY_MODAL_FALLBACK}>
             <AIImageInputModal
@@ -745,10 +751,12 @@ const App: React.FC = () => {
               currentTier={currentTier === 'premium' || currentTier === 'pro' ? currentTier : 'free'}
               onClose={() => setAiImageTargetId(null)}
               // 🚀 패치 5: AI 이미지 인식 매매 저장 시 (currentTier 주입)
-              onSave={async (trades) => {
-                await showRewardBeforeAction(AdPlacement.REWARD_TRADE_SAVE, currentTier as any);
+              onSave={async (trades, skipAd) => {
                 for (const trade of trades) {
                   await handleAddTrade(currentAIImagePortfolio.id, trade);
+                }
+                if (!skipAd) {
+                  await showInterstitialOnTransition(AdPlacement.INTERSTITIAL_TRADE_SAVE, currentTier as any);
                 }
                 setAiImageTargetId(null);
               }}

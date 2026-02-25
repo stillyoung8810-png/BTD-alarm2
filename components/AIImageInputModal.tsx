@@ -2,10 +2,11 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Portfolio, Trade } from '../types';
 import { I18N } from '../constants';
-import { X, Camera, Upload, Clipboard, Sparkles, ChevronRight } from 'lucide-react';
+import { X, Camera, Upload, Clipboard, Sparkles, ChevronRight, Video } from 'lucide-react';
 import { analyzeTradeScreenshot, RecognizedTradeItem } from '../services/geminiService';
 import { ensureValidSession } from '../services/supabase';
 import { incrementUsage } from '../utils/subscriptionUtils';
+import { requestRewardAd, AdPlacement } from '../services/ads/adService';
 
 interface AIImageInputModalProps {
   lang: 'ko' | 'en';
@@ -14,10 +15,10 @@ interface AIImageInputModalProps {
   isPaidUser: boolean;
   currentTier: string;
   onClose: () => void;
-  onSave: (trades: Trade[]) => void;
+  onSave: (trades: Trade[], skipAd?: boolean) => void;
 }
 
-type Step = 'upload' | 'scanning' | 'result' | 'error';
+type Step = 'upload' | 'limit_reached' | 'scanning' | 'result' | 'error';
 
 const AIImageInputModal: React.FC<AIImageInputModalProps> = ({ 
   lang, 
@@ -35,6 +36,8 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
   const [recognizedTrades, setRecognizedTrades] = useState<RecognizedTradeItem[]>([]);
   const [selectedIndexes, setSelectedIndexes] = useState<Set<number>>(new Set());
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [limitType, setLimitType] = useState<'daily' | 'monthly' | null>(null);
+  const [rewardWatched, setRewardWatched] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = useCallback((file: File) => {
@@ -113,7 +116,7 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
 
   const onDragOver = (e: React.DragEvent) => e.preventDefault();
 
-  const onStartScan = async () => {
+  const onStartScan = async (bypassUsageCheck = false) => {
     if (!imageData) return;
     setErrorMessage(null);
     // 세션 유효성 선확인: 로그인 만료 시 401 대신 명확한 메시지 제공
@@ -129,26 +132,28 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
     }
     setStep('scanning');
     try {
-      // 1. 사용량 체크 및 증가 호출
-      const usageResult = await incrementUsage('ai', currentTier);
-      if (!usageResult.success) {
-        setErrorMessage(
-          lang === 'ko' 
-            ? usageResult.message === 'DAILY_LIMIT_REACHED' 
-              ? '일일 AI 분석 한도에 도달했습니다. 내일 다시 시도하거나 멤버십을 업그레이드하세요.'
-              : usageResult.message === 'MONTHLY_LIMIT_REACHED'
-                ? '월간 AI 분석 한도(50회)에 도달했습니다. 프리미엄 업그레이드를 고려해 보세요.'
-                : usageResult.message || '사용량 확인 중 오류가 발생했습니다.'
-            : usageResult.message || 'Usage limit reached or verification failed.'
-        );
-        setStep('error');
-        return;
+      if (!bypassUsageCheck) {
+        const usageResult = await incrementUsage('ai', currentTier);
+        if (!usageResult.success) {
+          if (usageResult.message === 'DAILY_LIMIT_REACHED' || usageResult.message === 'MONTHLY_LIMIT_REACHED') {
+            setLimitType(usageResult.message === 'DAILY_LIMIT_REACHED' ? 'daily' : 'monthly');
+            setStep('limit_reached');
+            return;
+          }
+          setErrorMessage(
+            lang === 'ko'
+              ? usageResult.message || '사용량 확인 중 오류가 발생했습니다.'
+              : usageResult.message || 'Usage limit reached or verification failed.'
+          );
+          setStep('error');
+          return;
+        }
       }
 
       const base64 = imageData.includes(',') ? imageData.split(',')[1] : imageData;
-      // Cloudflare Worker에서 유료/무료 티어별로 키를 선택하도록 넘기는 옵션
+      const shouldApplyPremiumAI = isPaidUser || bypassUsageCheck;
       const result = await analyzeTradeScreenshot(base64, imageMime, {
-        isPaidUser,
+        isPaidUser: shouldApplyPremiumAI,
       });
 
       if (result && result.trades.length > 0) {
@@ -222,6 +227,17 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
     };
   };
 
+  const handleWatchAdToUnlock = async () => {
+    const isRewardEarned = await requestRewardAd(AdPlacement.REWARD_UNLOCK_AI as any);
+    if (isRewardEarned) {
+      setRewardWatched(true);
+      onStartScan(true);
+    } else {
+      setErrorMessage(lang === 'ko' ? '광고 시청이 완료되지 않아 분석이 취소되었습니다.' : 'Ad watch incomplete. Scan cancelled.');
+      setStep('error');
+    }
+  };
+
   const handleConfirmSave = () => {
     if (selectedIndexes.size === 0) {
       // 선택된 항목이 없다면 아무 것도 저장하지 않고 조용히 리턴
@@ -232,7 +248,7 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
       .map((r, i) => ({ r, i }))
       .filter(({ i }) => selectedIndexes.has(i))
       .map(({ r, i }) => toTrade(r, i));
-    onSave(trades);
+    onSave(trades, rewardWatched);
     onClose();
   };
 
@@ -324,6 +340,20 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
             </>
           )}
 
+          {step === 'limit_reached' && (
+            <div className="rounded-2xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/50 dark:bg-amber-500/10 p-4">
+              <p className="text-sm font-bold text-amber-800 dark:text-amber-200">
+                {lang === 'ko'
+                  ? limitType === 'daily'
+                    ? '일일 AI 분석 한도에 도달했습니다. 광고를 시청하면 1회 추가 분석이 가능합니다.'
+                    : '월간 AI 분석 한도에 도달했습니다. 광고를 시청하면 1회 추가 분석이 가능합니다.'
+                  : limitType === 'daily'
+                    ? 'Daily AI analysis limit reached. Watch an ad to unlock one more analysis.'
+                    : 'Monthly AI analysis limit reached. Watch an ad to unlock one more analysis.'}
+              </p>
+            </div>
+          )}
+
           {step === 'scanning' && (
             <div className="flex flex-col items-center justify-center py-12 gap-6">
               <div className="relative w-48 h-32 rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-slate-900">
@@ -413,12 +443,29 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
                 {t.cancel}
               </button>
               <button
-                onClick={onStartScan}
+                onClick={() => onStartScan(false)}
                 disabled={!imageData}
                 className="flex-[2] py-4 md:py-5 bg-indigo-600 dark:bg-indigo-500 text-white rounded-2xl font-black uppercase text-xs shadow-xl dark:shadow-indigo-500/20 flex items-center justify-center gap-2 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:pointer-events-none"
               >
                 <Sparkles size={16} />
                 {t.aiScanStart}
+              </button>
+            </>
+          )}
+          {step === 'limit_reached' && (
+            <>
+              <button
+                onClick={() => { setStep('upload'); setLimitType(null); }}
+                className="flex-1 py-4 md:py-5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-2xl font-black uppercase text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+              >
+                {lang === 'ko' ? '나중에' : 'Later'}
+              </button>
+              <button
+                onClick={handleWatchAdToUnlock}
+                className="flex-[2] py-4 md:py-5 bg-indigo-600 dark:bg-indigo-500 text-white rounded-2xl font-black uppercase text-xs shadow-xl dark:shadow-indigo-500/20 flex items-center justify-center gap-2 hover:scale-[1.02] transition-all"
+              >
+                <Video size={16} />
+                {lang === 'ko' ? '광고 보고 1회 해금하기' : 'Watch ad to unlock once'}
               </button>
             </>
           )}

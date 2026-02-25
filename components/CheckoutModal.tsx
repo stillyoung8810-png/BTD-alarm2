@@ -29,7 +29,8 @@ import {
   type EasyPayProvider,
 } from '../services/payment/types';
 import type { PaymentRequest } from '../services/payment/types';
-import { requestPayment, requestPaymentWithServerVerify, verifyTossPaymentOnServer } from '../services/payment/paymentService';
+import { requestPaymentWithServerVerify } from '../services/payment/paymentService';
+import { requestTossIAP } from '../services/payment/tossIapService';
 import { isTossApp } from '../services/tossAppBridge';
 import { useTossApp } from '../contexts/TossAppContext';
 import { TDSModal, TDSButton } from './tds';
@@ -183,18 +184,18 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
   }), [plan, quantity, totalAmount, payMethod, customerEmail, customerId, isKo]);
 
   const handleTossPay = useCallback(async (payReq: PaymentRequest) => {
-    const result = await requestPayment(payReq);
+    const result = await requestTossIAP(plan.id, payReq.quantity ?? 1);
+
     if (!result.success) {
       return {
         ok: false,
-        cancel: result.code === 'PAYMENT_USER_CANCEL' || result.code === 'USER_CANCEL',
+        cancel: result.cancel,
         message: result.message,
       };
     }
-    const verification = await verifyTossPaymentOnServer(result.paymentId, plan.id, payReq.quantity);
+
     return {
-      ok: verification.success,
-      message: verification.error,
+      ok: true,
       needRefresh: true,
     };
   }, [plan.id]);
@@ -232,7 +233,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
         onClose();
         return;
       }
-      const alertMsg = outcome.configMissing
+      const alertMsg = ('configMissing' in outcome && outcome.configMissing)
         ? msgs.configMissing
         : outcome.needRefresh
           ? msgs.verifyFailed(outcome.message ?? '')

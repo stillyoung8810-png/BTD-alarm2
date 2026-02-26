@@ -9,7 +9,7 @@ import https from 'https';
 import type { RequestLogger } from './logger';
 import { parseTokenResponse, parseLoginMeResponse, userKeyToString } from './responseParsers';
 import type { TossTokenSuccessDto, TossErrorPayload, NormalizedTossError } from './types';
-import { maskToken } from './logger';
+import { baseLogger, maskToken } from './logger';
 
 const BASE_URL = process.env.TOSS_API_URL || 'https://apps-in-toss-api.toss.im';
 const GENERATE_TOKEN_PATH = '/api-partner/v1/apps-in-toss/user/oauth2/generate-token';
@@ -18,13 +18,44 @@ const LOGIN_ME_PATH = '/api-partner/v1/apps-in-toss/user/oauth2/login-me';
 let singletonAgent: https.Agent | null = null;
 let singletonClient: AxiosInstance | null = null;
 
+function maskSecret(value: string, visibleChars = 10): string {
+  if (!value || value.length <= visibleChars * 2) return '***';
+  return `${value.slice(0, visibleChars)}...${value.slice(-visibleChars)}`;
+}
+
 function getMtlsAgent(): https.Agent {
   if (singletonAgent) return singletonAgent;
-  const cert = process.env.TOSS_CLIENT_CERT?.replace(/\\n/g, '\n');
-  const key = process.env.TOSS_CLIENT_KEY?.replace(/\\n/g, '\n');
+  const rawCert = process.env.TOSS_CLIENT_CERT || '';
+  const rawKey = process.env.TOSS_CLIENT_KEY || '';
+
+  baseLogger.info(
+    {
+      hasCert: !!rawCert,
+      hasKey: !!rawKey,
+      certLength: rawCert.length,
+      keyLength: rawKey.length,
+      certHasEscapedNewlines: rawCert.includes('\\n'),
+      keyHasEscapedNewlines: rawKey.includes('\\n'),
+      certSnippet: maskSecret(rawCert),
+      keySnippet: maskSecret(rawKey),
+    },
+    'Toss mTLS env vars loaded'
+  );
+
+  const cert = rawCert.replace(/\\n/g, '\n');
+  const key = rawKey.replace(/\\n/g, '\n');
+
   if (!cert || !key) {
+    baseLogger.error(
+      {
+        hasCert: !!cert,
+        hasKey: !!key,
+      },
+      'TOSS_CLIENT_CERT and TOSS_CLIENT_KEY are required for mTLS'
+    );
     throw new Error('TOSS_CLIENT_CERT and TOSS_CLIENT_KEY are required for mTLS');
   }
+
   singletonAgent = new https.Agent({
     cert,
     key,
@@ -108,12 +139,28 @@ export async function getToken(
     if (axios.isAxiosError(err)) {
       const payload = normalizeTossError(err.response?.data);
       log.warn(
-        { status: err.response?.status, errorCode: payload.errorCode, reason: payload.error },
+        {
+          status: err.response?.status,
+          errorCode: payload.errorCode,
+          reason: payload.error,
+          axiosCode: err.code,
+          axiosMessage: err.message,
+          axiosIsTimeout: err.code === 'ECONNABORTED',
+          axiosUrl: err.config ? `${err.config.baseURL || ''}${err.config.url || ''}` : undefined,
+        },
         'Toss generate-token failed'
       );
       return { success: false, error: payload };
     }
-    log.error({ err }, 'Toss generate-token unexpected error');
+    const unknownErr = err as Error;
+    log.error(
+      {
+        errName: unknownErr?.name,
+        errMessage: unknownErr?.message,
+        errStack: unknownErr?.stack,
+      },
+      'Toss generate-token unexpected error'
+    );
     return { success: false, error: { error: 'Internal Server Error' } };
   }
 }

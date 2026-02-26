@@ -14,7 +14,17 @@ export async function tossAuthRoutes(fastify: FastifyInstance) {
   fastify.post('/auth/toss/exchange', async (request, reply) => {
     const { correlationId, log } = request;
 
-    const parsed = parseTossExchangeBody(request.body);
+    const rawBody = request.body;
+    if (rawBody == null || typeof rawBody !== 'object') {
+      log.warn('Toss exchange: request body missing or not an object');
+      return reply.code(400).send({
+        error: 'Request body is required (JSON with authorizationCode, referrer)',
+        errorCode: 'VALIDATION_ERROR',
+        requestId: correlationId,
+      });
+    }
+
+    const parsed = parseTossExchangeBody(rawBody);
     if (!parsed.success) {
       log.warn({ error: parsed.error }, 'Toss exchange body validation failed');
       return reply.code(400).send({
@@ -25,8 +35,17 @@ export async function tossAuthRoutes(fastify: FastifyInstance) {
     }
 
     const { authorizationCode, referrer } = parsed.data;
+    const codeTrimmed = authorizationCode.trim();
+    if (!codeTrimmed) {
+      log.warn('Toss exchange: authorizationCode is empty after trim');
+      return reply.code(400).send({
+        error: 'authorizationCode is required',
+        errorCode: 'VALIDATION_ERROR',
+        requestId: correlationId,
+      });
+    }
 
-    const tokenResult = await getToken(authorizationCode, referrer, log);
+    const tokenResult = await getToken(codeTrimmed, referrer, log);
     if (!tokenResult.success) {
       return reply.code(400).send({
         ...tokenResult.error,

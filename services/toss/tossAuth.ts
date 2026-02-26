@@ -1,10 +1,11 @@
 /**
- * 토스 로그인: 브릿지에서 인증 코드 획득 → Railway BFF를 통해 세션 발급.
+ * 토스 로그인: SDK appLogin으로 인증 코드 획득 → Railway BFF를 통해 세션 발급.
  * 모든 토스 서버 간 통신은 BFF(Railway)를 거칩니다.
  */
 
+import { appLogin } from '@apps-in-toss/web-framework';
 import { supabase } from '../supabase';
-import { isTossApp, loadWebFramework } from './tossBridge';
+import { isTossApp } from './tossBridge';
 
 const BFF_URL = import.meta.env.VITE_RAILWAY_BFF_URL as string | undefined;
 
@@ -15,7 +16,7 @@ export interface TossAuthResult {
 }
 
 /**
- * 토스 앱 내에서 로그인: 브릿지로 code 획득 후 BFF /auth/toss/exchange 호출하여 Supabase 세션 설정.
+ * 토스 앱 내에서 로그인: appLogin으로 code·referrer 획득 후 BFF /auth/toss/exchange 호출하여 Supabase 세션 설정.
  */
 export async function loginWithToss(): Promise<TossAuthResult> {
   if (!isTossApp()) {
@@ -28,29 +29,20 @@ export async function loginWithToss(): Promise<TossAuthResult> {
   }
 
   let code: string;
+  let referrer: string;
   try {
-    const mod = await loadWebFramework();
-    const bridge = typeof window !== 'undefined' ? window.TossApp : undefined;
-    if (!mod?.partner && !bridge?.requestAuth) {
-      return { success: false, error: '토스 로그인을 사용할 수 없는 환경입니다.' };
-    }
-    const authResult = bridge?.requestAuth
-      ? await bridge.requestAuth()
-      : await requestAuthViaFramework(mod);
-    code = (authResult?.authorizationCode ?? authResult?.code)?.trim();
+    const { authorizationCode, referrer: referrerFromSdk } = await appLogin();
+    code = authorizationCode?.trim();
     if (!code) {
       return { success: false, error: '토스 인증 코드를 받지 못했습니다.' };
     }
+    // SDK: "DEFAULT" | "SANDBOX" → BFF 스펙: "DEFAULT" | "sandbox"
+    referrer = referrerFromSdk === 'SANDBOX' ? 'sandbox' : referrerFromSdk;
   } catch (err) {
     const msg = toErrorMessage(err, '토스 로그인 요청 실패');
-    console.warn('[TossAuth] 브릿지 요청 실패:', msg);
+    console.warn('[TossAuth] appLogin 실패:', msg);
     return { success: false, error: msg };
   }
-
-  const rawReferrer = (typeof window !== 'undefined' && (window as { __TOSS_REFERRER__?: string }).__TOSS_REFERRER__)
-    ?? import.meta.env.VITE_TOSS_REFERRER
-    ?? 'DEFAULT';
-  const referrer = rawReferrer === 'sandbox' || rawReferrer === 'DEFAULT' ? rawReferrer : 'DEFAULT';
 
   try {
     const res = await fetch(`${BFF_URL.replace(/\/+$/, '')}/auth/toss/exchange`, {
@@ -92,18 +84,4 @@ export async function loginWithToss(): Promise<TossAuthResult> {
 
 function toErrorMessage(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
-}
-
-/**
- * @apps-in-toss/web-framework에 로그인 API가 노출된 경우 사용.
- * 공식 스펙: authorizationCode, referrer 반환.
- */
-async function requestAuthViaFramework(
-  mod: { partner?: { requestAuth?: () => Promise<{ authorizationCode?: string; code?: string; referrer?: string }> } }
-): Promise<{ authorizationCode?: string; code?: string; referrer?: string }> {
-  const requestAuth = mod.partner?.requestAuth;
-  if (!requestAuth) {
-    throw new Error('토스 로그인 API를 사용할 수 없습니다.');
-  }
-  return requestAuth();
 }

@@ -9,10 +9,10 @@ export default defineConfig({
   },
   web: {
     // 실기기 테스트 시: PC IP로 변경 (ipconfig에서 IPv4 주소 확인 192.168.0.24)
-    host: 'localhost',
+    host: '127.0.0.1', // 토스에 ait 파일 돌리려면, 'localhost' 사용??
     port: 5173,
     commands: {
-      dev: 'vite', // 실기기 접속 시 --host 필수
+      dev: 'vite --host 127.0.0.1', // 실기기 접속 시 --host 필수// ait 파일 돌리려면, vite 만?
       build: 'vite build',
     },
   },

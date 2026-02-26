@@ -76,9 +76,20 @@ export async function getToken(
   referrer: string,
   log: RequestLogger
 ): Promise<GetTokenResult | GetTokenFailure> {
+  const code = authorizationCode?.trim();
+  if (!code) {
+    log.warn('getToken: authorizationCode is empty');
+    return { success: false, error: { error: 'authorizationCode is required' } };
+  }
+
   const client = getClient();
+  const body: { authorizationCode: string; referrer: string } = {
+    authorizationCode: code,
+    referrer,
+  };
+
   try {
-    const res = await client.post(GENERATE_TOKEN_PATH, { authorizationCode, referrer });
+    const res = await client.post(GENERATE_TOKEN_PATH, body);
     const parsed = parseTokenResponse(res.data);
     if (!parsed) {
       log.warn({ raw: res.data }, 'Toss generate-token response shape invalid');

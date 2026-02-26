@@ -2,7 +2,6 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import dotenv from "dotenv";
 import { randomUUID } from "crypto";
-import { baseLogger } from "./toss/logger";
 import { tossAuthRoutes } from "./routes/tossAuthRoute";
 import { paymentRoutes } from "./routes/payment";
 import { tossWebhookRoutes } from "./routes/tossWebhook";
@@ -10,7 +9,12 @@ import { tossWebhookRoutes } from "./routes/tossWebhook";
 dotenv.config();
 
 const server = Fastify({
-  logger: baseLogger,
+  logger: {
+    level: process.env.LOG_LEVEL || "info",
+    ...(process.env.NODE_ENV !== "production" && {
+      transport: { target: "pino-pretty", options: { colorize: true } },
+    }),
+  },
 });
 
 /** 모든 요청에 correlation_id 부여·request.log에 자동 바인딩 (관찰 가능성) */

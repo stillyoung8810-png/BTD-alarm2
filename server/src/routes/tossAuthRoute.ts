@@ -14,7 +14,17 @@ export async function tossAuthRoutes(fastify: FastifyInstance) {
   fastify.post('/auth/toss/exchange', async (request, reply) => {
     const { correlationId, log } = request;
 
-    const rawBody = request.body;
+    const rawBody = request.body as Record<string, unknown> | null | undefined;
+    log.info(
+      {
+        codeSnippet:
+          typeof rawBody?.authorizationCode === 'string'
+            ? rawBody.authorizationCode.substring(0, 10)
+            : undefined,
+        referrer: rawBody?.referrer,
+      },
+      'Frontend delivered token data'
+    );
     if (rawBody == null || typeof rawBody !== 'object') {
       log.warn('Toss exchange: request body missing or not an object');
       return reply.code(400).send({

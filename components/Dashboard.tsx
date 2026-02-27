@@ -726,31 +726,20 @@ const PortfolioCard: React.FC<{
           <div className="flex items-center gap-1.5 mb-1.5 opacity-80">
              <span className="text-[9px] font-black text-blue-700 dark:text-blue-300 uppercase tracking-widest">{t.dailyExecution}</span>
              <Info size={10} className="text-blue-700 dark:text-blue-300" />
-             {portfolio.strategy.multiSplit && multiSplitPhase && (
+             {portfolio.strategy.multiSplit && (multiSplitPhase || isInQuarterMode) && (
                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-md ${
-                 multiSplitPhase === 'first' 
+                 isInQuarterMode
+                   ? 'text-amber-500 dark:text-amber-300 bg-amber-200/50 dark:bg-amber-500/25'
+                   : multiSplitPhase === 'first' 
                    ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-100/50 dark:bg-emerald-500/20' 
-                   : multiSplitPhase === 'second'
-                   ? 'text-blue-600 dark:text-blue-400 bg-blue-100/50 dark:bg-blue-500/20'
-                   : 'text-amber-600 dark:text-amber-400 bg-amber-100/50 dark:bg-amber-500/20'
+                   : 'text-rose-500 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/20'
                }`}>
-                 {multiSplitPhase === 'first' 
+                 {isInQuarterMode
+                   ? t.quarterStopLoss
+                   : multiSplitPhase === 'first'
                    ? t.firstHalf
-                   : multiSplitPhase === 'second'
-                   ? t.secondHalf
-                   : t.quarterStopLoss
-                 }
+                   : t.secondHalf}
                </span>
-             )}
-             {portfolio.strategy.multiSplit && (
-                <HoverTip
-                  text={isInQuarterMode ? t.quarterReturnTip : t.quarterEntryTip}
-                  className="ml-auto"
-                >
-                  <span className="text-[9px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">
-                    {t.quarterStopLoss}
-                  </span>
-                </HoverTip>
              )}
           </div>
           {portfolio.strategy.multiSplit ? (

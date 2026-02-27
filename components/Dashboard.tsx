@@ -43,24 +43,24 @@ interface DashboardProps {
   onDailyExecutionSummaryChange?: (summaryText: string | null) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ 
-  lang, 
-  portfolios, 
-  currentTier,
-  onClosePortfolio,
-  onDeletePortfolio,
-  onUpdatePortfolio,
-  onOpenCreator, 
-  onOpenAlarm,
-  onOpenDetails,
-  onOpenQuickInput,
-  onOpenExecution,
-  onOpenAIImage,
-  totalValuation,
-  totalValuationChange,
-  totalValuationChangePct,
-  onDailyExecutionSummaryChange,
-}) => {
+interface DashboardViewProps extends DashboardProps {
+  isInTossApp: boolean;
+  normalizedTier: 'free' | 'pro' | 'premium';
+  setDailyExecutionBlockForId?: (id: string, block: string | null) => void;
+}
+
+const Dashboard: React.FC<DashboardProps> = (props) => {
+  const {
+    lang,
+    portfolios,
+    currentTier,
+    totalValuation,
+    totalValuationChange,
+    totalValuationChangePct,
+    onDailyExecutionSummaryChange,
+    ...rest
+  } = props;
+
   const [dailyExecutionBlocks, setDailyExecutionBlocks] = useState<Record<string, string>>({});
   const lastDailyExecutionSummaryRef = useRef<string | null>(null);
 
@@ -103,14 +103,172 @@ const Dashboard: React.FC<DashboardProps> = ({
   }, [alarmIdsKey, dailyExecutionBlocks, onDailyExecutionSummaryChange]);
 
   const { isInTossApp } = useTossApp();
+  const normalizedTier = (currentTier ?? 'free') as 'free' | 'pro' | 'premium';
+
+  const viewProps: DashboardViewProps = {
+    ...rest,
+    lang,
+    portfolios,
+    currentTier,
+    totalValuation,
+    totalValuationChange,
+    totalValuationChangePct,
+    onDailyExecutionSummaryChange,
+    isInTossApp,
+    normalizedTier,
+    setDailyExecutionBlockForId: onDailyExecutionSummaryChange ? setDailyExecutionBlockForId : undefined,
+  };
+
+  return isInTossApp ? <DashboardToss {...viewProps} /> : <DashboardWeb {...viewProps} />;
+};
+
+const DashboardWeb: React.FC<DashboardViewProps> = ({
+  lang,
+  portfolios,
+  totalValuation,
+  totalValuationChange,
+  totalValuationChangePct,
+  onOpenCreator,
+  onOpenAlarm,
+  onOpenDetails,
+  onOpenQuickInput,
+  onOpenExecution,
+  onOpenAIImage,
+  onClosePortfolio,
+  onDeletePortfolio,
+  onUpdatePortfolio,
+  setDailyExecutionBlockForId,
+}) => {
   const t = I18N[lang];
   const isPositiveChange = totalValuationChange >= 0;
-  const changeColor = totalValuationChange === 0 ? 'text-slate-400' : (isPositiveChange ? 'text-emerald-500' : 'text-rose-500');
+  const changeColor =
+    totalValuationChange === 0
+      ? 'text-slate-400'
+      : isPositiveChange
+      ? 'text-emerald-500'
+      : 'text-rose-500';
 
-  const normalizedTier = (currentTier ?? 'free') as 'free' | 'pro' | 'premium';
+  return (
+    <div className="space-y-12 animate-in fade-in duration-700">
+      <section className="flex flex-col md:flex-row md:items-start justify-between gap-8 pt-8">
+        <div className="max-w-2xl">
+          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight dark:text-white mb-4 leading-[1.1]">
+            {t.portfolioMgmt}
+          </h1>
+          <p className="text-slate-500 dark:text-slate-400 text-lg font-medium leading-relaxed">
+            {t.systematicAccumulation}
+          </p>
+        </div>
+
+        <div className="flex flex-col items-end gap-6 min-w-[280px]">
+          <div className="flex items-center gap-8 px-2">
+            <div className="flex flex-col items-end">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                {t.totalValuation}
+              </span>
+              <span className="text-3xl font-black dark:text-white tracking-tighter">
+                ${totalValuation.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </span>
+            </div>
+            <div className="w-[1px] h-10 bg-slate-200 dark:bg-slate-800" />
+            <div className="flex flex-col items-end">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                {t.gain24h}
+              </span>
+              <span className={`text-3xl font-black tracking-tighter ${changeColor}`}>
+                {totalValuationChange === 0
+                  ? '$0.00'
+                  : `${isPositiveChange ? '+' : '-'}$${Math.abs(totalValuationChange).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}`}
+              </span>
+              <span className={`text-xs font-bold mt-0.5 ${changeColor}`}>
+                {Number.isNaN(totalValuationChangePct)
+                  ? '-'
+                  : `${totalValuationChangePct >= 0 ? '+' : ''}${totalValuationChangePct.toFixed(2)}%`}
+              </span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onOpenCreator}
+            className="w-full md:w-auto px-10 py-5 bg-blue-600 text-white rounded-[2rem] font-black text-sm uppercase shadow-xl shadow-blue-500/30 hover:scale-105 transition-all flex items-center justify-center gap-2"
+          >
+            <Plus size={18} strokeWidth={3} /> {t.newPortfolio}
+          </button>
+        </div>
+      </section>
+
+      {portfolios.length === 0 ? (
+        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="col-span-full glass p-16 rounded-[2.5rem] flex flex-col items-center justify-center text-center space-y-4 border-2 border-dashed border-slate-200 dark:border-white/5">
+            <p className="text-slate-500">
+              {lang === 'ko'
+                ? '포트폴리오가 없습니다. 포트폴리오를 추가해주세요.'
+                : 'No portfolios. Please add a portfolio.'}
+            </p>
+          </div>
+        </section>
+      ) : (
+        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          {portfolios.map((p) => (
+            <PortfolioCard
+              key={p.id}
+              portfolio={p}
+              lang={lang}
+              onOpenAlarm={() => onOpenAlarm(p.id)}
+              onOpenDetails={() => onOpenDetails(p.id)}
+              onOpenQuickInput={async () => {
+                const activeSection = await determineActiveSection(p);
+                onOpenQuickInput(p.id, activeSection || undefined);
+              }}
+              onOpenExecution={() => onOpenExecution(p.id)}
+              onOpenAIImage={() => onOpenAIImage(p.id)}
+              onClose={() => onClosePortfolio(p.id)}
+              onDelete={() => onDeletePortfolio(p.id)}
+              onUpdatePortfolio={onUpdatePortfolio}
+              onDailyExecutionBlock={setDailyExecutionBlockForId}
+            />
+          ))}
+        </section>
+      )}
+    </div>
+  );
+};
+
+const DashboardToss: React.FC<DashboardViewProps> = ({
+  lang,
+  portfolios,
+  currentTier,
+  normalizedTier,
+  onClosePortfolio,
+  onDeletePortfolio,
+  onUpdatePortfolio,
+  onOpenCreator,
+  onOpenAlarm,
+  onOpenDetails,
+  onOpenQuickInput,
+  onOpenExecution,
+  onOpenAIImage,
+  totalValuation,
+  totalValuationChange,
+  totalValuationChangePct,
+  setDailyExecutionBlockForId,
+}) => {
+  const { isInTossApp } = useTossApp();
+  const t = I18N[lang];
+  const isPositiveChange = totalValuationChange >= 0;
+  const changeColor =
+    totalValuationChange === 0
+      ? 'text-slate-400'
+      : isPositiveChange
+      ? 'text-emerald-500'
+      : 'text-rose-500';
+
   const isFreeTier = normalizedTier === 'free';
 
-  // 🛠️ 리팩토링: 어디에 광고를 넣을지만 결정 (수동 ref/effect 삭제됨)
   const shouldRenderBetweenBanner = isInTossApp && isFreeTier && portfolios.length >= 2;
   const shouldRenderBottomBanner = isInTossApp && isFreeTier;
 
@@ -139,7 +297,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     return items;
   }, [isInTossApp, isFreeTier, portfolios, shouldRenderBetweenBanner, shouldRenderBottomBanner]);
 
-  // Phase 2: 디자인 시스템 스타일 적용
   const tossTitleStyle = getConditionalTypographyStyle(isInTossApp, 'Typography2', 'Bold');
   const tossCaptionStyle = getConditionalTypographyStyle(isInTossApp, 'Typography7', 'Regular');
   const tossValueStyle = getConditionalTypographyStyle(isInTossApp, 'Typography2', 'Bold');
@@ -147,20 +304,35 @@ const Dashboard: React.FC<DashboardProps> = ({
   const tossChangeNegativeColor = getConditionalColor(isInTossApp, 'error');
   const tossTextSecondaryColor = getConditionalColor(isInTossApp, 'textSecondary');
 
-  const valuationLabelStyle = tossCaptionStyle ? { ...tossCaptionStyle, color: tossTextSecondaryColor ?? undefined } : undefined;
+  const valuationLabelStyle = tossCaptionStyle
+    ? { ...tossCaptionStyle, color: tossTextSecondaryColor ?? undefined }
+    : undefined;
   const valuationValueStyle = tossValueStyle ? { ...tossValueStyle, color: undefined } : undefined;
-  const changeValueStyle = tossValueStyle && (totalValuationChange !== 0)
-    ? { ...tossValueStyle, color: isPositiveChange ? (tossChangePositiveColor ?? undefined) : (tossChangeNegativeColor ?? undefined) }
-    : tossValueStyle;
+  const changeValueStyle =
+    tossValueStyle && totalValuationChange !== 0
+      ? {
+          ...tossValueStyle,
+          color: isPositiveChange
+            ? tossChangePositiveColor ?? undefined
+            : tossChangeNegativeColor ?? undefined,
+        }
+      : tossValueStyle;
 
   return (
     <div className="space-y-12 animate-in fade-in duration-700">
       <section className="flex flex-col md:flex-row md:items-start justify-between gap-8 pt-8">
         <div className="max-w-2xl">
-          <h1 className={!isInTossApp ? 'text-4xl md:text-5xl font-extrabold tracking-tight dark:text-white mb-4 leading-[1.1]' : 'mb-4'} style={tossTitleStyle ?? undefined}>
+          <h1 className="mb-4" style={tossTitleStyle ?? undefined}>
             {t.portfolioMgmt}
           </h1>
-          <p className={!isInTossApp ? 'text-slate-500 dark:text-slate-400 text-lg font-medium leading-relaxed' : ''} style={isInTossApp && tossCaptionStyle ? { ...tossCaptionStyle, color: tossTextSecondaryColor ?? undefined } : undefined}>
+          <p
+            className=""
+            style={
+              isInTossApp && tossCaptionStyle
+                ? { ...tossCaptionStyle, color: tossTextSecondaryColor ?? undefined }
+                : undefined
+            }
+          >
             {t.systematicAccumulation}
           </p>
         </div>
@@ -168,109 +340,100 @@ const Dashboard: React.FC<DashboardProps> = ({
         <div className="flex flex-col items-end gap-6 min-w-[280px]">
           <div className="flex items-center gap-8 px-2">
             <div className="flex flex-col items-end">
-              <span className={!isInTossApp ? 'text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1' : 'mb-1'} style={valuationLabelStyle}>
+              <span className="mb-1" style={valuationLabelStyle}>
                 {t.totalValuation}
               </span>
-              <span className={!isInTossApp ? 'text-3xl font-black dark:text-white tracking-tighter' : ''} style={valuationValueStyle}>
-                ${totalValuation.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              <span style={valuationValueStyle}>
+                ${totalValuation.toLocaleString(undefined, {
+                  minimumFractionDigits: 0,
+                  maximumFractionDigits: 0,
+                })}
               </span>
             </div>
             <div className="w-[1px] h-10 bg-slate-200 dark:bg-slate-800" />
             <div className="flex flex-col items-end">
-              <span className={!isInTossApp ? 'text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1' : 'mb-1'} style={valuationLabelStyle}>
+              <span className="mb-1" style={valuationLabelStyle}>
                 {t.gain24h}
               </span>
-              <span className={!isInTossApp ? `text-3xl font-black tracking-tighter ${changeColor}` : ''} style={changeValueStyle}>
-                {totalValuationChange === 0 ? '$0.00' : `${isPositiveChange ? '+' : '-'}$${Math.abs(totalValuationChange).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              <span style={changeValueStyle}>
+                {totalValuationChange === 0
+                  ? '$0.00'
+                  : `${isPositiveChange ? '+' : '-'}$${Math.abs(totalValuationChange).toLocaleString(
+                      undefined,
+                      {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      }
+                    )}`}
               </span>
-              <span className={!isInTossApp ? `text-xs font-bold mt-0.5 ${changeColor}` : 'mt-0.5'} style={changeValueStyle}>
-                {Number.isNaN(totalValuationChangePct) ? '-' : `${totalValuationChangePct >= 0 ? '+' : ''}${totalValuationChangePct.toFixed(2)}%`}
+              <span style={changeValueStyle}>
+                {Number.isNaN(totalValuationChangePct)
+                  ? '-'
+                  : `${totalValuationChangePct >= 0 ? '+' : ''}${totalValuationChangePct.toFixed(2)}%`}
               </span>
             </div>
           </div>
 
-          {isInTossApp ? (
-            <TDSButton variant="primary" onClick={() => onOpenCreator()} className="flex items-center justify-center gap-2">
-              <Plus size={18} strokeWidth={3} /> {t.newPortfolio}
-            </TDSButton>
-          ) : (
-            <button type="button" onClick={onOpenCreator} className="w-full md:w-auto px-10 py-5 bg-blue-600 text-white rounded-[2rem] font-black text-sm uppercase shadow-xl shadow-blue-500/30 hover:scale-105 transition-all flex items-center justify-center gap-2">
-              <Plus size={18} strokeWidth={3} /> {t.newPortfolio}
-            </button>
-          )}
+          <TDSButton
+            variant="primary"
+            onClick={() => onOpenCreator()}
+            className="flex items-center justify-center gap-2"
+          >
+            <Plus size={18} strokeWidth={3} /> {t.newPortfolio}
+          </TDSButton>
         </div>
       </section>
 
       {portfolios.length === 0 ? (
-        <section className={isInTossApp ? 'block' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8'}>
-          <div className="col-span-full glass p-16 rounded-[2.5rem] flex flex-col items-center justify-center text-center space-y-4 border-2 border-dashed border-slate-200 dark:border-white/5">
-            <p className="text-slate-500">{lang === 'ko' ? '포트폴리오가 없습니다. 포트폴리오를 추가해주세요.' : 'No portfolios. Please add a portfolio.'}</p>
+        <section className="block">
+          <div className="glass p-16 rounded-[2.5rem] flex flex-col items-center justify-center text-center space-y-4 border-2 border-dashed border-slate-200 dark:border-white/5">
+            <p className="text-slate-500">
+              {lang === 'ko'
+                ? '포트폴리오가 없습니다. 포트폴리오를 추가해주세요.'
+                : 'No portfolios. Please add a portfolio.'}
+            </p>
           </div>
-          {/* 🚀 스마트 배너 컴포넌트 사용 */}
           <TossInlineBanner currentTier={currentTier} isInTossApp={isInTossApp} variant="card" />
         </section>
       ) : (
-        <section className={isInTossApp ? '' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8'}>
-          {isInTossApp ? (
-            <TDSList className="list-none p-0 m-0 space-y-4">
-              {listItems.map((item) => {
-                if (item.type === 'portfolio') {
-                  const p = item.portfolio;
-                  return (
-                    <TDSListRow key={p.id} border="none" verticalPadding="large">
-                      <PortfolioCard
-                        portfolio={p}
-                        lang={lang}
-                        onOpenAlarm={() => onOpenAlarm(p.id)}
-                        onOpenDetails={() => onOpenDetails(p.id)}
-                        onOpenQuickInput={async () => {
-                          const activeSection = await determineActiveSection(p);
-                          onOpenQuickInput(p.id, activeSection || undefined);
-                        }}
-                        onOpenExecution={() => onOpenExecution(p.id)}
-                        onOpenAIImage={() => onOpenAIImage(p.id)}
-                        onClose={() => onClosePortfolio(p.id)}
-                        onDelete={() => onDeletePortfolio(p.id)}
-                        onUpdatePortfolio={onUpdatePortfolio}
-                        onDailyExecutionBlock={onDailyExecutionSummaryChange ? setDailyExecutionBlockForId : undefined}
-                      />
-                    </TDSListRow>
-                  );
-                }
-
+        <section>
+          <TDSList className="list-none p-0 m-0 space-y-4">
+            {listItems.map((item) => {
+              if (item.type === 'portfolio') {
+                const p = item.portfolio;
                 return (
-                  <TDSListRow
-                    key={item.id === 'between' ? 'ad-slot-between' : 'ad-slot-bottom'}
-                    border="none"
-                    verticalPadding="small" // 👈 타입 에러 수정됨
-                  >
-                    {/* 🚀 스마트 배너 컴포넌트 사용 */}
-                    <TossInlineBanner currentTier={currentTier} isInTossApp={isInTossApp} variant="card" />
+                  <TDSListRow key={p.id} border="none" verticalPadding="large">
+                    <PortfolioCard
+                      portfolio={p}
+                      lang={lang}
+                      onOpenAlarm={() => onOpenAlarm(p.id)}
+                      onOpenDetails={() => onOpenDetails(p.id)}
+                      onOpenQuickInput={async () => {
+                        const activeSection = await determineActiveSection(p);
+                        onOpenQuickInput(p.id, activeSection || undefined);
+                      }}
+                      onOpenExecution={() => onOpenExecution(p.id)}
+                      onOpenAIImage={() => onOpenAIImage(p.id)}
+                      onClose={() => onClosePortfolio(p.id)}
+                      onDelete={() => onDeletePortfolio(p.id)}
+                      onUpdatePortfolio={onUpdatePortfolio}
+                      onDailyExecutionBlock={setDailyExecutionBlockForId}
+                    />
                   </TDSListRow>
                 );
-              })}
-            </TDSList>
-          ) : (
-            portfolios.map((p) => (
-              <PortfolioCard
-                key={p.id}
-                portfolio={p}
-                lang={lang}
-                onOpenAlarm={() => onOpenAlarm(p.id)}
-                onOpenDetails={() => onOpenDetails(p.id)}
-                onOpenQuickInput={async () => {
-                  const activeSection = await determineActiveSection(p);
-                  onOpenQuickInput(p.id, activeSection || undefined);
-                }}
-                onOpenExecution={() => onOpenExecution(p.id)}
-                onOpenAIImage={() => onOpenAIImage(p.id)}
-                onClose={() => onClosePortfolio(p.id)}
-                onDelete={() => onDeletePortfolio(p.id)}
-                onUpdatePortfolio={onUpdatePortfolio}
-                onDailyExecutionBlock={onDailyExecutionSummaryChange ? setDailyExecutionBlockForId : undefined}
-              />
-            ))
-          )}
+              }
+
+              return (
+                <TDSListRow
+                  key={item.id === 'between' ? 'ad-slot-between' : 'ad-slot-bottom'}
+                  border="none"
+                  verticalPadding="small"
+                >
+                  <TossInlineBanner currentTier={currentTier} isInTossApp={isInTossApp} variant="card" />
+                </TDSListRow>
+              );
+            })}
+          </TDSList>
         </section>
       )}
     </div>
@@ -303,6 +466,7 @@ const PortfolioCard: React.FC<{
   const [yieldRate, setYieldRate] = useState<number>(0);
   const [realizedProfit, setRealizedProfit] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [dailyExecutionText, setDailyExecutionText] = useState<string | null>(null);
 
   const [maActiveSection, setMaActiveSection] = useState<1 | 2 | 3 | null>(null);
   const [maBlockVersion, setMaBlockVersion] = useState(0);
@@ -348,7 +512,13 @@ const PortfolioCard: React.FC<{
 
   useEffect(() => {
     if (!onDailyExecutionBlock || !isAlarmEnabled || (!portfolio.strategy.multiSplit && maBlockVersion === 0)) return;
-    const block = formatPortfolioDailyExecutionBlock(portfolio, lang, { multiSplitExecutionData: multiSplitExecutionData ?? undefined, multiSplitPhase: multiSplitPhase ?? null, isQuarterStopLossActive: isInQuarterMode, maActiveSection: maActiveSection ?? undefined });
+    const block = formatPortfolioDailyExecutionBlock(portfolio, lang, {
+      multiSplitExecutionData: multiSplitExecutionData ?? undefined,
+      multiSplitPhase: multiSplitPhase ?? null,
+      isQuarterStopLossActive: isInQuarterMode,
+      maActiveSection: maActiveSection ?? undefined,
+    });
+    setDailyExecutionText(block);
     onDailyExecutionBlockRef.current?.(portfolio.id, block);
   }, [isAlarmEnabled, lang, multiSplitExecutionData, multiSplitPhase, isInQuarterMode, maBlockVersion, maActiveSection]);
 
@@ -400,22 +570,81 @@ const PortfolioCard: React.FC<{
 
       <div className="flex gap-4 relative z-10 min-h-[140px] items-center">
         <div className="flex-1 flex flex-col justify-center space-y-6">
-          <div><span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{t.invested}</span><p className="text-2xl font-black">${investedAmount.toLocaleString()}</p></div>
-          <div><span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{lang === 'ko' ? '실현손익' : 'Realized P/L'}</span><p className={`text-2xl font-black ${realizedProfit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>${realizedProfit.toLocaleString()}</p></div>
+          <div>
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+              {t.invested}
+            </span>
+            <p className="text-2xl font-black">
+              ${investedAmount.toLocaleString()}
+            </p>
+          </div>
+          <div>
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+              {lang === 'ko' ? '실현손익' : 'Realized P/L'}
+            </span>
+            <p
+              className={`text-2xl font-black ${
+                realizedProfit >= 0 ? 'text-emerald-500' : 'text-rose-500'
+              }`}
+            >
+              ${realizedProfit.toLocaleString()}
+            </p>
+          </div>
         </div>
         {isInTossApp ? (
-          <TDSButton variant="tertiary" size="medium" onClick={() => onOpenAIImage()} className="w-24 h-24 rounded-[2.5rem] flex items-center justify-center"><div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center"><Camera size={24} className="text-white" /></div></TDSButton>
+          <TDSButton
+            variant="tertiary"
+            size="medium"
+            onClick={() => onOpenAIImage()}
+            className="w-24 h-24 rounded-[2.5rem] flex items-center justify-center"
+          >
+            <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center">
+              <Camera size={24} className="text-white" />
+            </div>
+          </TDSButton>
         ) : (
-          <button type="button" onClick={onOpenAIImage} className="w-24 h-24 rounded-[2.5rem] bg-slate-100 flex items-center justify-center"><Camera size={24} /></button>
+          <button
+            type="button"
+            onClick={onOpenAIImage}
+            className="w-24 h-24 rounded-[2.5rem] bg-slate-100 flex items-center justify-center"
+          >
+            <Camera size={24} />
+          </button>
         )}
       </div>
 
-      <div onClick={onOpenExecution} className="bg-blue-50 dark:bg-blue-600/15 rounded-[1.5rem] p-5 flex items-center justify-between cursor-pointer border border-blue-100">
-        <div className="flex-1"><span className="text-[9px] font-black text-blue-700 uppercase tracking-widest">{t.dailyExecution}</span><div className="text-lg font-black">{t.strategyPreparing}</div></div>
+      <div
+        onClick={onOpenExecution}
+        className="bg-blue-50 dark:bg-blue-600/15 rounded-[1.5rem] p-5 flex items-center justify-between cursor-pointer border border-blue-100"
+      >
+        <div className="flex-1">
+          <span className="text-[9px] font-black text-blue-700 uppercase tracking-widest">
+            {t.dailyExecution}
+          </span>
+          <div className="text-lg font-black">
+            {dailyExecutionText?.trim() || t.strategyPreparing}
+          </div>
+        </div>
         {isInTossApp ? (
-          <TDSButton variant="tertiary" size="small" onClick={() => onOpenQuickInput()} className="w-10 h-10 min-w-0 p-0 rounded-xl flex items-center justify-center"><Zap size={20} className="fill-current" /></TDSButton>
+          <TDSButton
+            variant="tertiary"
+            size="small"
+            onClick={() => onOpenQuickInput()}
+            className="w-10 h-10 min-w-0 p-0 rounded-xl flex items-center justify-center"
+          >
+            <Zap size={20} className="fill-current" />
+          </TDSButton>
         ) : (
-          <button type="button" onClick={onOpenQuickInput} className="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center"><Zap size={20} /></button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenQuickInput();
+            }}
+            className="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center"
+          >
+            <Zap size={20} />
+          </button>
         )}
       </div>
 

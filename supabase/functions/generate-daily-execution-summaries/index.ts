@@ -433,43 +433,27 @@ function checkRecentMOCSell(
 }
 
 // 쿼터모드 1회 매수금 재계산 (utils/multiSplitCalc.ts calcNewOneTimeAmount 와 동일 로직)
-function calculateNewOneTimeAmount(portfolio: Portfolio, mocDate: string): number {
+// 새 1회 매수금 = [잔금 + MOC 매도 금액] / 10, C_current = C_init - Σ(E_buy) + Σ(E_sell)
+function calculateNewOneTimeAmount(portfolio: Portfolio, _mocDate: string): number {
   if (!portfolio.strategy.multiSplit) return portfolio.dailyBuyAmount;
+  const dailyBuyAmount = portfolio.dailyBuyAmount;
   const a = portfolio.strategy.multiSplit.totalSplitCount;
+  if (dailyBuyAmount <= 0 || a <= 0) return 0;
 
-  const tradesBeforeMOC = portfolio.trades.filter((t) => t.date <= mocDate);
-  const portfolioBeforeMOC: Portfolio = { ...portfolio, trades: tradesBeforeMOC };
-  const holdingsBeforeMOC = calculateHoldings(portfolioBeforeMOC);
-  const totalInvestedBeforeMOC = holdingsBeforeMOC.reduce((sum, h) => sum + h.totalCost, 0);
-  const T_atMOC = portfolio.dailyBuyAmount > 0
-    ? Math.ceil((totalInvestedBeforeMOC / portfolio.dailyBuyAmount) * 100) / 100
-    : 0;
+  const C_init = dailyBuyAmount * a;
+  const sumEbuy = portfolio.trades
+    .filter((t) => t.type === "buy")
+    .reduce((sum, t) => sum + t.price * t.quantity + t.fee, 0);
+  const sells = portfolio.trades.filter((t) => t.type === "sell");
+  const sumEsellNonMOC = sells
+    .filter((t) => !t.isMOC)
+    .reduce((sum, t) => sum + t.price * t.quantity - t.fee, 0);
+  const mocSellAmount = sells
+    .filter((t) => t.isMOC)
+    .reduce((sum, t) => sum + t.price * t.quantity - t.fee, 0);
 
-  const remainingRounds = a - T_atMOC;
-
-  // 중간 매매 손익 계산 (음수 포함)
-  const tradesAfterMOC = portfolio.trades.filter((t) =>
-    t.date > mocDate && t.type === "sell"
-  );
-
-  let intermediateProfit = 0;
-  const tempTrades = [...tradesBeforeMOC];
-
-  tradesAfterMOC.forEach((sellTrade) => {
-    const holdingsAtSell = calculateHoldings({ ...portfolio, trades: tempTrades });
-    const holdingAtSell = holdingsAtSell.find((h) => h.stock === sellTrade.stock);
-    const avgPriceAtSell = holdingAtSell?.avgPrice || 0;
-
-    if (avgPriceAtSell > 0) {
-      const profit = (sellTrade.price - avgPriceAtSell) * sellTrade.quantity - sellTrade.fee;
-      intermediateProfit += profit;
-    }
-
-    tempTrades.push(sellTrade);
-  });
-
-  const remainingFunds = portfolio.dailyBuyAmount * remainingRounds;
-  const newOneTimeAmount = (remainingFunds + intermediateProfit) / QUARTER_SPLIT_COUNT;
+  const cashBeforeMOC = C_init - sumEbuy + sumEsellNonMOC;
+  const newOneTimeAmount = (cashBeforeMOC + mocSellAmount) / QUARTER_SPLIT_COUNT;
   return Math.max(0, newOneTimeAmount);
 }
 

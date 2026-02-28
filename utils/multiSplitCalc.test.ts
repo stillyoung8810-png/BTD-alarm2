@@ -317,10 +317,8 @@ describe('calcNewOneTimeAmount', () => {
     expect(calcNewOneTimeAmount([], 0, 40, '2026-01-01')).toBe(0);
   });
 
-  it('기본 계산: (남은 회차 × 1회 매수금 + 중간 손익) / 10', () => {
-    // 1000$ 매수, dailyBuyAmount=250 → T_atMOC=4
-    // a=40, 남은 회차=36, 잔금=250*36=9000, 중간손익=0
-    // newOneTimeAmount = 9000/10 = 900
+  it('새 공식: (잔금 + MOC 매도 금액) / 10, C_current = C_init - Σ(E_buy) + Σ(E_sell)', () => {
+    // C_init = 250*40 = 10000, 매수 1000 → C_current = 10000 - 1000 = 9000, new = 9000/10 = 900
     const trades: TradeInput[] = [
       makeTrade({ type: 'buy', stock: 'AAPL', date: '2026-01-01', price: 100, quantity: 10, fee: 0 }),
     ];
@@ -328,16 +326,14 @@ describe('calcNewOneTimeAmount', () => {
     expect(result).toBe(900);
   });
 
-  it('중간 손실 반영 → 금액 감소', () => {
+  it('매도 회수금 반영: C_current = C_init - E_buy + E_sell', () => {
     const trades: TradeInput[] = [
       makeTrade({ type: 'buy', stock: 'AAPL', date: '2026-01-01', price: 100, quantity: 10, fee: 0 }),
       makeTrade({ type: 'sell', stock: 'AAPL', date: '2026-01-10', price: 80, quantity: 5, fee: 0 }),
     ];
-    // T_atMOC=4, 남은=36, 잔금=9000
-    // 중간손익 = (80-100)*5 = -100
-    // newOneTimeAmount = (9000 + (-100))/10 = 890
+    // C_init=10000, E_buy=1000, E_sell=80*5-0=400 → C_current=9400, new=940
     const result = calcNewOneTimeAmount(trades, 250, 40, '2026-01-01');
-    expect(result).toBe(890);
+    expect(result).toBe(940);
   });
 });
 
@@ -450,11 +446,12 @@ describe('calcMultiSplitOrders', () => {
     expect(result.locBuy1).toBeUndefined();
   });
 
-  it('currentQuantity=0 → 매도 주문 없음', () => {
+  it('currentQuantity=0 → 매도 수량 0으로 표시 (orderEntryForDisplay)', () => {
     const result = calcMultiSplitOrders({ ...baseParams, currentQuantity: 0 });
-    // locSell, limitSell은 safeOrder에서 qty=0이라 null이 되어 undefined
-    expect(result.locSell).toBeUndefined();
-    expect(result.limitSell).toBeUndefined();
+    expect(result.locSell).toBeDefined();
+    expect(result.locSell!.quantity).toBe(0);
+    expect(result.limitSell).toBeDefined();
+    expect(result.limitSell!.quantity).toBe(0);
   });
 
   it('매도 수량 합계 = 보유 수량 (누락 없음)', () => {

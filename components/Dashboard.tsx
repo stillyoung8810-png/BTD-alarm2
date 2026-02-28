@@ -657,64 +657,89 @@ const PortfolioCard: React.FC<{
         </div>
       </div>
 
-      {/* 좌측 지표 + 우측 AI 스캔 버튼 (flex): 버튼은 투자금액·실현손익 공간의 수직 중앙에 정렬 */}
-      <div className={`flex gap-4 relative z-10 min-h-[140px] items-center ${portfolio.strategy.multiSplit ? 'mt-3' : ''}`}>
-        <div className="flex-1 flex flex-col justify-center min-w-0 space-y-6">
-          <div className="space-y-1">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">{t.invested}</span>
-              <span className="text-[9px] text-slate-400 dark:text-slate-500">
-                {lang === 'ko' ? '(수수료 포함)' : '(Fee included)'}
-              </span>
-            </div>
-            <p className="text-2xl font-black text-slate-800 dark:text-white tracking-tight leading-tight">
-              {isLoading ? '...' : `$${investedAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-            </p>
+      {/* 좌측 지표 + 우측 AI/퀵 입력 버튼 — 그리드로 퀵입력 상단=실현손익 상단, 버튼 세로축=알람·삭제 사이 */}
+      <div className={`grid grid-cols-[1fr_50px] gap-x-4 gap-y-6 items-start relative z-10 min-h-[140px] mr-[3px] ${portfolio.strategy.multiSplit ? 'mt-3' : ''}`}>
+        <div className="space-y-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">{t.invested}</span>
+            <span className="text-[9px] text-slate-400 dark:text-slate-500">
+              {lang === 'ko' ? '(수수료 포함)' : '(Fee included)'}
+            </span>
           </div>
-          <div className="space-y-1">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
-                {lang === 'ko' ? '실현손익' : 'Realized P/L'}
-              </span>
-              <span className="text-[9px] text-slate-400 dark:text-slate-500">
-                {lang === 'ko' ? '(제비용 반영)' : '(After fees)'}
-              </span>
-            </div>
-            <p className={`text-2xl font-black tracking-tight leading-tight flex items-center gap-1 ${realizedProfit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-              <span className="text-[11px]">{realizedProfit >= 0 ? '↑' : '↓'}</span>
-              {isLoading ? '...' : `${realizedProfit >= 0 ? '+' : ''}$${realizedProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-            </p>
-          </div>
+          <p className="text-2xl font-black text-slate-800 dark:text-white tracking-tight leading-tight">
+            {isLoading ? '...' : `$${investedAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          </p>
         </div>
-        {isInTossApp ? (
-          <TDSButton
-            variant="tertiary"
-            size="medium"
-            onClick={() => {
-              onOpenAIImage();
-            }}
-            className="shrink-0 w-24 h-24 rounded-[2.5rem] min-w-0 p-0 flex items-center justify-center"
-            aria-label={lang === 'ko' ? 'AI 매매 인식' : 'AI Trade Recognition'}
-          >
-            <div className="w-12 h-12 rounded-2xl bg-indigo-600 dark:bg-indigo-500 flex items-center justify-center">
-              <Camera size={24} className="text-white" strokeWidth={2} />
-            </div>
-          </TDSButton>
-        ) : (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenAIImage();
-            }}
-            className="shrink-0 w-24 h-24 rounded-[2.5rem] bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-white/10 shadow-md dark:shadow-lg flex items-center justify-center hover:scale-[1.02] active:scale-[0.98] transition-transform focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-            title={lang === 'ko' ? 'AI 매매 인식' : 'AI Trade Recognition'}
-          >
-            <div className="w-12 h-12 rounded-2xl bg-indigo-600 dark:bg-indigo-500 flex items-center justify-center">
-              <Camera size={24} className="text-white" strokeWidth={2} />
-            </div>
-          </button>
-        )}
+        <div className="flex justify-center">
+          {isInTossApp ? (
+            <TDSButton
+              variant="tertiary"
+              size="medium"
+              onClick={() => {
+                onOpenAIImage();
+              }}
+              className="shrink-0 w-[50px] h-[50px] rounded-[1.25rem] min-w-0 p-0 flex items-center justify-center"
+              aria-label={lang === 'ko' ? 'AI 매매 인식' : 'AI Trade Recognition'}
+            >
+              <div className="w-[50px] h-[50px] rounded-[1.25rem] bg-indigo-600 dark:bg-indigo-500 flex items-center justify-center shadow-md dark:shadow-[0_0_17px_rgba(255,255,255,0.25)]">
+                <Camera size={28} className="text-white" strokeWidth={2} />
+              </div>
+            </TDSButton>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                onOpenAIImage();
+              }}
+              className="shrink-0 w-[50px] h-[50px] rounded-[1.25rem] bg-transparent dark:bg-transparent flex items-center justify-center hover:scale-[1.02] active:scale-[0.98] transition-transform focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+              title={lang === 'ko' ? 'AI 매매 인식' : 'AI Trade Recognition'}
+            >
+              <div className="w-[50px] h-[50px] rounded-[1.25rem] bg-indigo-600 dark:bg-indigo-500 flex items-center justify-center shadow-md dark:shadow-[0_0_17px_rgba(255,255,255,0.25)]">
+                <Camera size={28} className="text-white" strokeWidth={2} />
+              </div>
+            </button>
+          )}
+        </div>
+        <div className="space-y-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+              {lang === 'ko' ? '실현손익' : 'Realized P/L'}
+            </span>
+            <span className="text-[9px] text-slate-400 dark:text-slate-500">
+              {lang === 'ko' ? '(제비용 반영)' : '(After fees)'}
+            </span>
+          </div>
+          <p className={`text-2xl font-black tracking-tight leading-tight flex items-center gap-1 ${realizedProfit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+            <span className="text-[11px]">{realizedProfit >= 0 ? '↑' : '↓'}</span>
+            {isLoading ? '...' : `${realizedProfit >= 0 ? '+' : ''}$${realizedProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          </p>
+        </div>
+        <div className="flex justify-center">
+          {isInTossApp ? (
+            <TDSButton
+              variant="tertiary"
+              size="medium"
+              onClick={() => {
+                onOpenQuickInput();
+              }}
+              className="shrink-0 w-[50px] h-[50px] rounded-[1.25rem] min-w-0 p-0 flex items-center justify-center"
+              aria-label={lang === 'ko' ? '퀵 입력' : 'Quick input'}
+            >
+              <Zap size={20} className="fill-current" />
+            </TDSButton>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenQuickInput();
+              }}
+              className="shrink-0 w-[50px] h-[50px] rounded-[1.25rem] bg-blue-600/20 dark:bg-white/20 flex items-center justify-center text-blue-700 dark:text-white backdrop-blur-md hover:scale-[1.02] active:scale-[0.98] transition-all shadow-sm dark:shadow-[0_0_15px_rgba(255,255,255,0.2)]"
+            >
+              <Zap size={20} className="fill-current" />
+            </button>
+          )}
+        </div>
       </div>
 
       <div 
@@ -943,30 +968,7 @@ const PortfolioCard: React.FC<{
             </div>
           )}
         </div>
-        {isInTossApp ? (
-          <TDSButton
-            variant="tertiary"
-            size="small"
-            onClick={() => {
-              onOpenQuickInput();
-            }}
-            className="w-10 h-10 min-w-0 p-0 rounded-xl flex items-center justify-center shrink-0"
-            aria-label={lang === 'ko' ? '퀵 입력' : 'Quick input'}
-          >
-            <Zap size={20} className="fill-current" />
-          </TDSButton>
-        ) : (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenQuickInput();
-            }}
-            className="w-10 h-10 rounded-xl bg-blue-600/20 dark:bg-white/20 flex items-center justify-center text-blue-700 dark:text-white backdrop-blur-md hover:scale-110 active:scale-95 transition-all shadow-sm dark:shadow-[0_0_15px_rgba(255,255,255,0.2)] shrink-0"
-          >
-            <Zap size={20} className="fill-current" />
-          </button>
-        )}
+        {/* 빠른 입력 버튼은 상단 섹션으로 이동하여, 일별 매매 실행 텍스트 폭을 침범하지 않도록 분리함 */}
       </div>
 
       {isInTossApp ? (

@@ -236,31 +236,40 @@ export function calcIntermediateProfit(
 
 /**
  * 쿼터 손절 모드에서 MOC 매도 후 새로운 1회 매수금을 계산합니다.
- * = (남은 회차 × 기존 1회 매수금 + 중간 매매 손익) / 10
+ * 새로운 1회 매수금 = [잔금 + MOC 매도 금액] / 10
+ *
+ * 잔금 C_current = C_init - Σ(E_buy) + Σ(E_sell)
+ * - C_init: 초기 자본금 = 1회 매수금 × a
+ * - E_buy: 매수 체결 금액 (주가×수량 + 수수료)
+ * - E_sell: 매도 체결 금액 (주가×수량 - 수수료)
+ *
+ * 구현: 잔금 = C_init - Σ(E_buy) + Σ(MOC 제외 E_sell), MOC 매도 금액 = Σ(MOC인 E_sell)
+ * → (잔금 + MOC 매도 금액) / 10 = C_current / 10
  */
 export function calcNewOneTimeAmount(
   trades: TradeInput[],
   dailyBuyAmount: number,
   totalSplitCount: number,
-  mocDate: string,
+  _mocDate: string,
 ): number {
-  if (dailyBuyAmount <= 0) return 0;
+  if (dailyBuyAmount <= 0 || totalSplitCount <= 0) return 0;
 
-  // MOC 시점의 T 계산
-  const tradesBeforeMOC = trades.filter((t) => t.date <= mocDate);
-  const T_atMOC = calcT(tradesBeforeMOC, dailyBuyAmount);
+  const C_init = dailyBuyAmount * totalSplitCount;
 
-  // 남은 회차
-  const remainingRounds = totalSplitCount - T_atMOC;
+  const sumEbuy = trades
+    .filter((t) => t.type === 'buy')
+    .reduce((sum, t) => sum + t.price * t.quantity + t.fee, 0);
 
-  // 중간 매매 손익 (음수 포함)
-  const intermediateProfit = calcIntermediateProfit(trades, mocDate);
+  const sells = trades.filter((t) => t.type === 'sell');
+  const sumEsellNonMOC = sells
+    .filter((t) => !t.isMOC)
+    .reduce((sum, t) => sum + t.price * t.quantity - t.fee, 0);
+  const mocSellAmount = sells
+    .filter((t) => t.isMOC)
+    .reduce((sum, t) => sum + t.price * t.quantity - t.fee, 0);
 
-  // 잔금
-  const remainingFunds = dailyBuyAmount * remainingRounds;
-
-  // 새 1회 매수금
-  const newOneTimeAmount = (remainingFunds + intermediateProfit) / QUARTER_SPLIT_COUNT;
+  const cashBeforeMOC = C_init - sumEbuy + sumEsellNonMOC;
+  const newOneTimeAmount = (cashBeforeMOC + mocSellAmount) / QUARTER_SPLIT_COUNT;
   return Math.max(0, newOneTimeAmount);
 }
 
@@ -293,6 +302,16 @@ export function safeOrder(price: number, qty: number): OrderEntry | null {
   if (isNaN(price) || isNaN(qty) || price <= 0) return null;
   const finalQty = Math.max(0, Math.floor(qty));
   if (finalQty <= 0) return null;
+  return { price: Number(price.toFixed(2)), quantity: finalQty };
+}
+
+/**
+ * 표시용 OrderEntry. 수량이 0이어도 가격만 유효하면 반환합니다.
+ * (LOC 매수: 수량 0이어도 가격 표시, LOC 매도: 보유 1~3주일 때 가격 표시·수량 0)
+ */
+function orderEntryForDisplay(price: number, qty: number): OrderEntry | null {
+  if (isNaN(price) || price <= 0) return null;
+  const finalQty = Math.max(0, Math.floor(qty));
   return { price: Number(price.toFixed(2)), quantity: finalQty };
 }
 
@@ -402,36 +421,47 @@ export function calcMultiSplitOrders(params: {
   const result: MultiSplitExecutionResult = { phase };
 
   if (phase === 'first') {
-    // 전반전: LOC 매수1 (평단가 0.5회분), LOC 매수2 (LOC가 0.5회분)
+    // 전반전: LOC 매수1 (평단가 0.5회분), LOC 매수2 (LOC가 0.5회분) — 수량 0이어도 가격 표시
     const half = oneTimeAmount * FIRST_HALF_BUY_RATIO;
 
     const locBuy1Price = basePrice;
-    const locBuy1Qty =
+    const qtyWithHalf =
       half > 0 && locBuy1Price > 0
         ? half / (locBuy1Price * (1 + feeRate / 100))
         : 0;
-    result.locBuy1 = safeOrder(locBuy1Price, locBuy1Qty) ?? undefined;
-
-    const locBuy2Qty =
-      half > 0 && locBuyBasePrice > 0
-        ? half / (locBuyBasePrice * (1 + feeRate / 100))
+    const qtyWithFull =
+      oneTimeAmount > 0 && locBuy1Price > 0
+        ? oneTimeAmount / (locBuy1Price * (1 + feeRate / 100))
         : 0;
-    result.locBuy2 = safeOrder(locBuyBasePrice, locBuy2Qty) ?? undefined;
+    // 0.5회분으로는 1주 미만이지만 1회분이면 1주 이상 가능한 경우 → LOC 매수1 수량 1로 표시
+    const locBuy1Qty =
+      Math.floor(qtyWithHalf) < 1 && Math.floor(qtyWithFull) >= 1 ? 1 : qtyWithHalf;
+    result.locBuy1 = orderEntryForDisplay(locBuy1Price, locBuy1Qty) ?? undefined;
+
+    // LOC 매수2: (1회 매수 금액) - (LOC 매수1 주문 금액) 으로 남은 금액 기준 수량 계산
+    const finalLocBuy1Qty = Math.max(0, Math.floor(locBuy1Qty));
+    const locBuy1OrderAmount = locBuy1Price * finalLocBuy1Qty * (1 + feeRate / 100);
+    const remainingForLoc2 = Math.max(0, oneTimeAmount - locBuy1OrderAmount);
+    const locBuy2Qty =
+      locBuyBasePrice > 0
+        ? remainingForLoc2 / (locBuyBasePrice * (1 + feeRate / 100))
+        : 0;
+    result.locBuy2 = orderEntryForDisplay(locBuyBasePrice, locBuy2Qty) ?? undefined;
   } else {
-    // 후반전: LOC 매수 1회분
+    // 후반전: LOC 매수 1회분 — 수량 0이어도 가격 표시
     const locBuyQty =
       oneTimeAmount > 0 && locBuyBasePrice > 0
         ? oneTimeAmount / (locBuyBasePrice * (1 + feeRate / 100))
         : 0;
-    result.locBuy2 = safeOrder(locBuyBasePrice, locBuyQty) ?? undefined;
+    result.locBuy2 = orderEntryForDisplay(locBuyBasePrice, locBuyQty) ?? undefined;
   }
 
-  // LOC 매도
-  result.locSell = safeOrder(locSellBasePrice, locSellQty) ?? undefined;
+  // LOC 매도 — 보유 1~3주 등 수량 0이어도 가격 표시·수량 0으로 표기
+  result.locSell = orderEntryForDisplay(locSellBasePrice, locSellQty) ?? undefined;
 
-  // 지정가 매도: 평단가 × (1 + A/100)
+  // 지정가 매도: 평단가 × (1 + A/100) — 수량 0이어도 가격 표시
   const limitSellPrice = basePrice * (1 + A / 100);
-  result.limitSell = safeOrder(limitSellPrice, limitSellQty) ?? undefined;
+  result.limitSell = orderEntryForDisplay(limitSellPrice, limitSellQty) ?? undefined;
 
   return result;
 }

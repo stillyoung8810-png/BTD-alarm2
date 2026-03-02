@@ -1362,9 +1362,10 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
               <Percent className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" size={18} />
               <input
                 type="number"
+                min={0}
                 step="0.01"
                 value={feeRate}
-                onChange={(e) => setFeeRate(Number(e.target.value))}
+                onChange={(e) => setFeeRate(Math.max(0, Number(e.target.value)))}
                 className="w-full p-5 pl-14 bg-slate-100/50 dark:bg-slate-900 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-white/10 font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all"
               />
             </div>
@@ -1427,9 +1428,10 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                <Percent className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" size={18} />
                <input 
                 type="number" 
+                min={0}
                 step="0.01"
                 value={feeRate}
-                onChange={(e) => setFeeRate(Number(e.target.value))}
+                onChange={(e) => setFeeRate(Math.max(0, Number(e.target.value)))}
                 className="w-full p-5 pl-14 bg-slate-100/50 dark:bg-slate-900 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-white/10 font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500/50 transition-all" 
                />
             </div>

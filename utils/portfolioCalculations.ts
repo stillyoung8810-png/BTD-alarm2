@@ -2,6 +2,9 @@ import { Portfolio, Trade } from '../types';
 import { fetchStockPrices, fetchStockPriceHistory } from '../services/stockService';
 import { calculateMA } from './technicalIndicators';
 
+/** 수량/원가가 이 값 미만이면 0으로 간주 (부동소수점 방어) */
+const HOLDINGS_QTY_EPSILON = 1e-10;
+
 /**
  * 포트폴리오의 현재 보유 내역을 계산합니다
  */
@@ -10,39 +13,54 @@ export interface Holdings {
   quantity: number;
   totalCost: number; // 매수 금액 + 매수 수수료
   avgPrice: number;
+  /** 매도 시 역산한 누적 실현손익 (이동평균법 기반). 전량 매도된 종목도 포함. */
+  realizedPnL?: number;
 }
 
 /**
- * 포트폴리오의 보유 내역을 계산합니다 (매수만 고려)
+ * 포트폴리오의 보유 내역을 계산합니다 (매수만 고려).
+ * 매도 시 실현손익을 역산하여 종목별 realizedPnL에 누적합니다.
  */
 export const calculateHoldings = (portfolio: Portfolio): Holdings[] => {
-  const holdingsMap: Record<string, { quantity: number; totalCost: number }> = {};
+  const holdingsMap: Record<string, { quantity: number; totalCost: number; realizedPnL: number }> = {};
 
   portfolio.trades.forEach(trade => {
     if (trade.type === 'buy') {
       if (!holdingsMap[trade.stock]) {
-        holdingsMap[trade.stock] = { quantity: 0, totalCost: 0 };
+        holdingsMap[trade.stock] = { quantity: 0, totalCost: 0, realizedPnL: 0 };
       }
       holdingsMap[trade.stock].quantity += trade.quantity;
-      holdingsMap[trade.stock].totalCost += (trade.price * trade.quantity + trade.fee);
+      holdingsMap[trade.stock].totalCost += trade.price * trade.quantity + Math.abs(trade.fee);
     } else if (trade.type === 'sell') {
       if (holdingsMap[trade.stock]) {
-        holdingsMap[trade.stock].quantity -= trade.quantity;
-        // 매도 시에는 평균 단가를 유지하기 위해 비례적으로 차감
-        const avgPrice = holdingsMap[trade.stock].totalCost / (holdingsMap[trade.stock].quantity + trade.quantity);
-        holdingsMap[trade.stock].totalCost = holdingsMap[trade.stock].quantity * avgPrice;
+        const entry = holdingsMap[trade.stock];
+        if (entry.quantity < 0 || entry.quantity < trade.quantity) {
+          throw new Error(`[${trade.stock}] 초과 매도 에러: 시도수량=${trade.quantity}, 보유수량=${entry.quantity}`);
+        }
+        const currentAvgPrice = entry.quantity > HOLDINGS_QTY_EPSILON ? entry.totalCost / entry.quantity : 0;
+        const revenue = trade.price * trade.quantity - Math.abs(trade.fee);
+        const costBasis = currentAvgPrice * trade.quantity;
+        entry.realizedPnL += revenue - costBasis;
+
+        const avgPrice = currentAvgPrice;
+        entry.quantity -= trade.quantity;
+        entry.totalCost = entry.quantity * avgPrice;
+
+        if (entry.quantity <= 0 || Math.abs(entry.quantity) < HOLDINGS_QTY_EPSILON) {
+          entry.quantity = 0;
+          entry.totalCost = 0;
+        }
       }
     }
   });
 
-  return Object.entries(holdingsMap)
-    .filter(([_, data]) => data.quantity > 0)
-    .map(([stock, data]) => ({
-      stock,
-      quantity: data.quantity,
-      totalCost: data.totalCost,
-      avgPrice: data.totalCost / data.quantity,
-    }));
+  return Object.entries(holdingsMap).map(([stock, data]) => ({
+    stock,
+    quantity: data.quantity,
+    totalCost: data.totalCost,
+    avgPrice: data.quantity > HOLDINGS_QTY_EPSILON ? data.totalCost / data.quantity : 0,
+    realizedPnL: Number(data.realizedPnL.toFixed(2)),
+  }));
 };
 
 /**
@@ -59,7 +77,7 @@ export const calculateInvestedAmount = (portfolio: Portfolio): number => {
 export const calculateTotalInvested = (portfolio: Portfolio): number => {
   return portfolio.trades
     .filter(t => t.type === 'buy')
-    .reduce((sum, t) => sum + (t.price * t.quantity + t.fee), 0);
+    .reduce((sum, t) => sum + (t.price * t.quantity + Math.abs(t.fee)), 0);
 };
 
 /**
@@ -68,7 +86,7 @@ export const calculateTotalInvested = (portfolio: Portfolio): number => {
 export const calculateAlreadyRealized = (portfolio: Portfolio): number => {
   return portfolio.trades
     .filter(t => t.type === 'sell')
-    .reduce((sum, t) => sum + (t.price * t.quantity - t.fee), 0);
+    .reduce((sum, t) => sum + (t.price * t.quantity - Math.abs(t.fee)), 0);
 };
 
 /**

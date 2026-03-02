@@ -47,12 +47,17 @@ export interface TradeInput {
   isMOC?: boolean;
 }
 
+/** 수량/원가가 이 값 미만이면 0으로 간주 (부동소수점 방어) */
+const HOLDINGS_QTY_EPSILON = 1e-10;
+
 /** 보유 내역 */
 export interface HoldingsResult {
   stock: string;
   quantity: number;
   totalCost: number;
   avgPrice: number;
+  /** 매도 시 역산한 누적 실현손익 (이동평균법 기반). 전량 매도된 종목도 포함. */
+  realizedPnL?: number;
 }
 
 /** 다분할 전략 파라미터 */
@@ -101,24 +106,32 @@ export interface MOCSellCheckResult {
 /**
  * 거래 목록에서 현재 보유 내역을 계산합니다.
  * 매수 시 총비용에 수수료 포함, 매도 시 평균단가 비례 차감.
+ * 매도 시 실현손익을 역산하여 종목별 realizedPnL에 누적합니다.
  */
 export function calcHoldings(trades: TradeInput[]): HoldingsResult[] {
-  const map: Record<string, { quantity: number; totalCost: number }> = {};
+  const map: Record<string, { quantity: number; totalCost: number; realizedPnL: number }> = {};
 
   for (const trade of trades) {
     if (trade.type === 'buy') {
       if (!map[trade.stock]) {
-        map[trade.stock] = { quantity: 0, totalCost: 0 };
+        map[trade.stock] = { quantity: 0, totalCost: 0, realizedPnL: 0 };
       }
       map[trade.stock].quantity += trade.quantity;
-      map[trade.stock].totalCost += trade.price * trade.quantity + trade.fee;
+      map[trade.stock].totalCost += trade.price * trade.quantity + Math.abs(trade.fee);
     } else if (trade.type === 'sell') {
       if (map[trade.stock]) {
         const prev = map[trade.stock];
-        const avgPrice = prev.quantity > 0 ? prev.totalCost / prev.quantity : 0;
+        if (prev.quantity < 0 || prev.quantity < trade.quantity) {
+          throw new Error(`[${trade.stock}] 초과 매도 에러: 시도수량=${trade.quantity}, 보유수량=${prev.quantity}`);
+        }
+        const currentAvgPrice = prev.quantity > HOLDINGS_QTY_EPSILON ? prev.totalCost / prev.quantity : 0;
+        const revenue = trade.price * trade.quantity - Math.abs(trade.fee);
+        const costBasis = currentAvgPrice * trade.quantity;
+        prev.realizedPnL += revenue - costBasis;
+
+        const avgPrice = currentAvgPrice;
         prev.quantity -= trade.quantity;
-        // 매도 수량이 보유 수량 초과 시 음수 방지
-        if (prev.quantity < 0) {
+        if (prev.quantity <= 0 || Math.abs(prev.quantity) < HOLDINGS_QTY_EPSILON) {
           prev.quantity = 0;
           prev.totalCost = 0;
         } else {
@@ -128,14 +141,13 @@ export function calcHoldings(trades: TradeInput[]): HoldingsResult[] {
     }
   }
 
-  return Object.entries(map)
-    .filter(([, data]) => data.quantity > 0)
-    .map(([stock, data]) => ({
-      stock,
-      quantity: data.quantity,
-      totalCost: data.totalCost,
-      avgPrice: data.totalCost / data.quantity,
-    }));
+  return Object.entries(map).map(([stock, data]) => ({
+    stock,
+    quantity: data.quantity,
+    totalCost: data.totalCost,
+    avgPrice: data.quantity > HOLDINGS_QTY_EPSILON ? data.totalCost / data.quantity : 0,
+    realizedPnL: Number(data.realizedPnL.toFixed(2)),
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -258,15 +270,15 @@ export function calcNewOneTimeAmount(
 
   const sumEbuy = trades
     .filter((t) => t.type === 'buy')
-    .reduce((sum, t) => sum + t.price * t.quantity + t.fee, 0);
+    .reduce((sum, t) => sum + t.price * t.quantity + Math.abs(t.fee), 0);
 
   const sells = trades.filter((t) => t.type === 'sell');
   const sumEsellNonMOC = sells
     .filter((t) => !t.isMOC)
-    .reduce((sum, t) => sum + t.price * t.quantity - t.fee, 0);
+    .reduce((sum, t) => sum + t.price * t.quantity - Math.abs(t.fee), 0);
   const mocSellAmount = sells
     .filter((t) => t.isMOC)
-    .reduce((sum, t) => sum + t.price * t.quantity - t.fee, 0);
+    .reduce((sum, t) => sum + t.price * t.quantity - Math.abs(t.fee), 0);
 
   const cashBeforeMOC = C_init - sumEbuy + sumEsellNonMOC;
   const newOneTimeAmount = (cashBeforeMOC + mocSellAmount) / QUARTER_SPLIT_COUNT;

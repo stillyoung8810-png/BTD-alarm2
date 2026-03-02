@@ -45,7 +45,7 @@ describe('calcHoldings', () => {
     expect(calcHoldings([])).toEqual([]);
   });
 
-  it('매수 1건 → 보유 1건', () => {
+  it('매수 1건 → 보유 1건, realizedPnL 0', () => {
     const trades: TradeInput[] = [
       makeTrade({ type: 'buy', stock: 'AAPL', price: 150, quantity: 10, fee: 2.5 }),
     ];
@@ -55,34 +55,51 @@ describe('calcHoldings', () => {
     expect(holdings[0].quantity).toBe(10);
     expect(holdings[0].totalCost).toBe(150 * 10 + 2.5); // 1502.5
     expect(holdings[0].avgPrice).toBeCloseTo(150.25, 2);
+    expect(holdings[0].realizedPnL).toBe(0);
   });
 
-  it('매수 + 매도 → 보유 수량 차감', () => {
+  it('매수 + 부분 매도 → 보유 수량 차감, 실현손익 누적', () => {
     const trades: TradeInput[] = [
       makeTrade({ type: 'buy', stock: 'AAPL', price: 100, quantity: 10, fee: 0 }),
       makeTrade({ type: 'sell', stock: 'AAPL', price: 110, quantity: 4, fee: 0 }),
     ];
     const holdings = calcHoldings(trades);
     expect(holdings[0].quantity).toBe(6);
-    // 평단가는 매수 기준 유지 (100)
     expect(holdings[0].avgPrice).toBeCloseTo(100, 2);
+    expect(holdings[0].realizedPnL).toBe((110 - 100) * 4);
   });
 
-  it('전량 매도 → 보유 내역에서 제외', () => {
+  it('전량 매도 → quantity 0이어도 realizedPnL 있으면 1건 반환 (closed position)', () => {
     const trades: TradeInput[] = [
       makeTrade({ type: 'buy', stock: 'AAPL', price: 100, quantity: 5, fee: 0 }),
       makeTrade({ type: 'sell', stock: 'AAPL', price: 110, quantity: 5, fee: 0 }),
     ];
-    expect(calcHoldings(trades)).toHaveLength(0);
+    const holdings = calcHoldings(trades);
+    expect(holdings).toHaveLength(1);
+    expect(holdings[0].stock).toBe('AAPL');
+    expect(holdings[0].quantity).toBe(0);
+    expect(holdings[0].totalCost).toBe(0);
+    expect(holdings[0].avgPrice).toBe(0);
+    expect(holdings[0].realizedPnL).toBe((110 - 100) * 5);
   });
 
-  it('매도 수량 > 보유 수량 → 음수 방지 (0으로 클램프)', () => {
+  it('매도 수량 > 보유 수량 → 예외 발생', () => {
     const trades: TradeInput[] = [
       makeTrade({ type: 'buy', stock: 'AAPL', price: 100, quantity: 3, fee: 0 }),
       makeTrade({ type: 'sell', stock: 'AAPL', price: 110, quantity: 5, fee: 0 }),
     ];
-    // 음수가 되면 0으로 클램프되어 holdings에서 제외됨
-    expect(calcHoldings(trades)).toHaveLength(0);
+    expect(() => calcHoldings(trades)).toThrow(/초과 매도 에러/);
+  });
+
+  it('본전 전량 매도(quantity=0, realizedPnL=0) → 1건 반환', () => {
+    const trades: TradeInput[] = [
+      makeTrade({ type: 'buy', stock: 'AAPL', price: 100, quantity: 10, fee: 0 }),
+      makeTrade({ type: 'sell', stock: 'AAPL', price: 100, quantity: 10, fee: 0 }),
+    ];
+    const holdings = calcHoldings(trades);
+    expect(holdings).toHaveLength(1);
+    expect(holdings[0].quantity).toBe(0);
+    expect(holdings[0].realizedPnL).toBe(0);
   });
 
   it('여러 종목 보유', () => {

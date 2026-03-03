@@ -13,7 +13,7 @@ import {
   Layers,
   Camera,
 } from 'lucide-react';
-import { calculateInvestedAmount, calculateYield, determineActiveSection, calculateAlreadyRealized, calculateHoldings, getMaPeriods, getMAValuesForAlignment } from '../utils/portfolioCalculations';
+import { calculateInvestedAmount, calculateYield, calculateCurrentValuation, determineActiveSection, calculateHoldings, getMaPeriods, getMAValuesForAlignment } from '../utils/portfolioCalculations';
 import { fetchStockPrices } from '../services/stockService';
 import HoverTip from './HoverTip';
 import { formatPortfolioDailyExecutionBlock, joinDailyExecutionBlocks } from '../utils/dailyExecutionSummary';
@@ -520,13 +520,19 @@ const PortfolioCard: React.FC<{
       setIsLoading(true);
       try {
         const current = portfolioRef.current;
-        const invested = calculateInvestedAmount(current);
-        const yieldValue = await calculateYield(current);
-        const realized = calculateAlreadyRealized(current);
+        const holdings = calculateHoldings(current);
+        const [invested, valuation, yieldValue] = await (async () => {
+          const investedAmount = calculateInvestedAmount(current);
+          const currentValuation = await calculateCurrentValuation(current);
+          const yieldRate = await calculateYield(current);
+          return [investedAmount, currentValuation, yieldRate] as const;
+        })();
+        const totalRealizedPnL = holdings.reduce((sum, h) => sum + (h.realizedPnL ?? 0), 0);
         if (cancelled) return;
-        setInvestedAmount(invested);
+        // investedAmount state는 이제 "평가금액"을 표시하기 위해 사용됩니다.
+        setInvestedAmount(valuation);
         setYieldRate(yieldValue);
-        setRealizedProfit(realized);
+        setRealizedProfit(totalRealizedPnL);
       } catch (err) {
         console.error('Error calculating portfolio metrics:', err);
       } finally {
@@ -661,9 +667,8 @@ const PortfolioCard: React.FC<{
       <div className={`grid grid-cols-[1fr_50px] gap-x-4 gap-y-6 items-start relative z-10 min-h-[140px] mr-[3px] ${portfolio.strategy.multiSplit ? 'mt-3' : ''}`}>
         <div className="space-y-1 min-w-0">
           <div className="flex items-center gap-1.5">
-            <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">{t.invested}</span>
-            <span className="text-[9px] text-slate-400 dark:text-slate-500">
-              {lang === 'ko' ? '(수수료 포함)' : '(Fee included)'}
+            <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+              {lang === 'ko' ? '평가금액' : 'Valuation'}
             </span>
           </div>
           <p className="text-2xl font-black text-slate-800 dark:text-white tracking-tight leading-tight">

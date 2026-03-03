@@ -81,9 +81,10 @@ export const calculateTotalInvested = (portfolio: Portfolio): number => {
 };
 
 /**
- * 포트폴리오의 기 회수금을 계산합니다 (기존 sell 타입 거래 합계)
+ * 포트폴리오의 매도 회수금 합계를 계산합니다 (정산·모달용).
+ * Σ(매도: price×qty − 수수료)
  */
-export const calculateAlreadyRealized = (portfolio: Portfolio): number => {
+export const getTotalSellProceeds = (portfolio: Portfolio): number => {
   return portfolio.trades
     .filter(t => t.type === 'sell')
     .reduce((sum, t) => sum + (t.price * t.quantity - Math.abs(t.fee)), 0);

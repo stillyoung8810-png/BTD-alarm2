@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { Portfolio } from '../types';
 import { X } from 'lucide-react';
-import { calculateHoldings, calculateTotalInvested, calculateAlreadyRealized } from '../utils/portfolioCalculations';
+import { calculateHoldings, calculateTotalInvested, getTotalSellProceeds } from '../utils/portfolioCalculations';
 import { PAID_STOCKS } from '../constants';
 import StockLogo from './StockLogo';
 
@@ -86,7 +86,7 @@ const TerminationInput: React.FC<TerminationInputProps> = ({ lang, portfolio, on
             <div className="flex justify-between text-sm">
               <span className="text-slate-600 dark:text-slate-400">{lang === 'ko' ? '기 회수금:' : 'Already Realized:'}</span>
               <span className="font-bold text-slate-900 dark:text-white">
-                ${calculateAlreadyRealized(portfolio).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                ${getTotalSellProceeds(portfolio).toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </span>
             </div>
             <div className="flex justify-between text-sm">

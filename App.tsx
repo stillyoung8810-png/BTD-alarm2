@@ -10,7 +10,7 @@ import AuthModals from './components/AuthModals';
 import Landing from './components/Landing';
 import Pricing from './components/Pricing';
 import { supabase, clearAuthStorage } from './services/supabase';
-import { calculateTotalInvested, calculateAlreadyRealized, calculateHoldings } from './utils/portfolioCalculations';
+import { calculateTotalInvested, calculateHoldings } from './utils/portfolioCalculations';
 import { fetchStockPricesWithPrev, loadInitialStockData, loadPaidStockData } from './services/stockService';
 import { getUSSelectionHolidays } from './utils/marketUtils';
 import { getCurrentKSTDateString, getDeviceTimeZone } from './utils/dateUtils';

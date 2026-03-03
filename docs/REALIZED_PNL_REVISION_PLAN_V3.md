@@ -162,7 +162,7 @@
 | 5 | filter 제거 — map에 있는 모든 종목 반환 | 본전 전량 매도 케이스에서 해당 종목이 반환 배열에 포함되는지 확인 |
 | 6 | portfolioCalculations 매도 블록에서 avgPrice = currentAvgPrice 재사용, 두 파일 SELL 블록 구조 100% 동일화 | 중복 나눗셈 제거, 두 파일 매도 로직 대조 시 동일 |
 | 7 | 평단가 나눗셈 분모 조건을 quantity > HOLDINGS_QTY_EPSILON 으로 통일 | 극소 수량에서 평단가가 비정상 값으로 나오지 않음 |
-| 8 | calcIntermediateProfit O(N²) → 기술 부채 등록 (이번 PR에서는 미구현) | 백로그/이슈에 리팩토링 항목 존재 |
+| 8 | calcIntermediateProfit O(N²) → 기술 부채 등록 (이번 PR에서는 미구현) | 백로그/이슈에 리팩토링 항목 존재. 상세: [CALC_INTERMEDIATE_PROFIT_O_N_REFACTOR_PLAN.md](./CALC_INTERMEDIATE_PROFIT_O_N_REFACTOR_PLAN.md) |
 
 ---
 

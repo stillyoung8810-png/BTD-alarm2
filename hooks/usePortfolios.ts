@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 import { normalizePortfolioData } from '../utils/portfolioNormalize';
-import { calculateHoldings, calculateTotalInvested, calculateAlreadyRealized } from '../utils/portfolioCalculations';
+import { calculateHoldings, calculateTotalInvested, getTotalSellProceeds } from '../utils/portfolioCalculations';
 import type { Portfolio, Trade } from '../types';
 import type { AppUserProfile } from '../types/appUserProfile';
 
@@ -213,10 +213,10 @@ export function usePortfolios({
       if (!portfolio || !userIdOption) return null;
 
       const totalInvested = calculateTotalInvested(portfolio);
-      const alreadyRealized = calculateAlreadyRealized(portfolio);
+      const alreadyRealizedCash = getTotalSellProceeds(portfolio);
       const finalSellAmount =
         finalSells.reduce((sum, fs) => sum + fs.price * fs.quantity - fs.fee, 0) - additionalFee;
-      const totalReturn = alreadyRealized + finalSellAmount;
+      const totalReturn = alreadyRealizedCash + finalSellAmount;
       const totalProfit = totalReturn - totalInvested;
       const yieldRate = totalInvested > 0 ? (totalReturn / totalInvested - 1) * 100 : 0;
 
@@ -294,7 +294,7 @@ export function usePortfolios({
       return {
         portfolio: updated,
         totalInvested,
-        alreadyRealized,
+        alreadyRealized: alreadyRealizedCash,
         finalSellAmount: finalSellAmount + additionalFee,
         totalReturn,
         profit: totalProfit,

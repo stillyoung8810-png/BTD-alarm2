@@ -211,35 +211,34 @@ export function checkRecentMOCSell(
 // ---------------------------------------------------------------------------
 
 /**
- * 특정 날짜(sinceDate) 이후의 매도 거래에서 발생한 중간 손익을 계산합니다.
- * sinceDate까지의 거래로 포트폴리오를 재구성한 뒤,
- * 이후 매도 거래의 (매도가 - 평단가) × 수량 - 수수료를 합산합니다.
+ * 특정 날짜(sinceDate) 이후에 추가된 실현손익을 계산합니다 (O(N)).
+ * calcHoldings(전체)와 calcHoldings(sinceDate 이전)의 realizedPnL 합 차액으로 구합니다.
+ * sinceDate 이후 매수(물타기)가 있으면 변경된 평단가가 반영됩니다.
  *
+ * - 사전 정렬: date 오름차순, 동일일 시 buy → sell 순 (calcHoldings 순서 민감도 대비).
+ * - 부동소수점 방어: 반환 직전 Number((...).toFixed(2)) 적용.
  * 음수(손실)도 포함됩니다.
  */
 export function calcIntermediateProfit(
   trades: TradeInput[],
   sinceDate: string,
 ): number {
-  const tradesUpTo = trades.filter((t) => t.date <= sinceDate);
-  const tradesAfter = trades.filter((t) => t.date > sinceDate && t.type === 'sell');
+  const sorted = [...trades].sort((a, b) => {
+    const byDate = a.date.localeCompare(b.date);
+    if (byDate !== 0) return byDate;
+    if (a.type === 'buy' && b.type === 'sell') return -1;
+    if (a.type === 'sell' && b.type === 'buy') return 1;
+    return 0;
+  });
 
-  let profit = 0;
-  const tempTrades = [...tradesUpTo];
+  const tradesUpTo = sorted.filter((t) => t.date <= sinceDate);
+  const holdingsFull = calcHoldings(sorted);
+  const holdingsUpTo = calcHoldings(tradesUpTo);
 
-  for (const sellTrade of tradesAfter) {
-    const holdings = calcHoldings(tempTrades);
-    const holding = holdings.find((h) => h.stock === sellTrade.stock);
-    const avgPriceAtSell = holding?.avgPrice || 0;
+  const totalRealized = holdingsFull.reduce((sum, h) => sum + (h.realizedPnL ?? 0), 0);
+  const realizedUpTo = holdingsUpTo.reduce((sum, h) => sum + (h.realizedPnL ?? 0), 0);
 
-    if (avgPriceAtSell > 0) {
-      profit += (sellTrade.price - avgPriceAtSell) * sellTrade.quantity - sellTrade.fee;
-    }
-
-    tempTrades.push(sellTrade);
-  }
-
-  return profit;
+  return Number((totalRealized - realizedUpTo).toFixed(2));
 }
 
 // ---------------------------------------------------------------------------

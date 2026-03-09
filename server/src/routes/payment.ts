@@ -2,15 +2,23 @@ import { FastifyInstance } from "fastify";
 import { handleTossError, tossClient } from "../tossClient";
 import { supabaseAdmin } from "../supabaseClient";
 import { IAP_PRODUCTS } from "../services/iapConstants";
+import {
+    fulfillPaidOrder,
+    PLAN_DAYS_PER_UNIT,
+    type PaidPlanId,
+} from "../services/paymentFulfillment";
 
-const PLAN_DAYS_PER_UNIT = 30;
 const QUANTITY_MAX = 12;
 
 const IAP_ORDER_STATUS_URL = "https://api-partner.toss.im/api-partner/v1/apps-in-toss/order/get-order-status";
 const TOSS_PARTNER_API_SECRET = process.env.TOSS_PARTNER_API_SECRET;
 
+// ⚠ PRICE SOURCE OF TRUTH
+// 프론트엔드(constants/membership.ts)와 이 서버 환경변수가 반드시 일치해야 합니다.
+// 기본값(fallback): PRO = 5907, PREMIUM = 9900
+// 변경 시 프론트(.env VITE_PLAN_AMOUNT_*) + 백엔드(PLAN_AMOUNT_*) 모두 갱신 필수.
 const PLAN_AMOUNTS: Record<string, number> = {
-    pro: Number(process.env.PLAN_AMOUNT_PRO ?? 5900),
+    pro: Number(process.env.PLAN_AMOUNT_PRO ?? 5907),
     premium: Number(process.env.PLAN_AMOUNT_PREMIUM ?? 9900),
 };
 
@@ -105,50 +113,43 @@ export async function paymentRoutes(fastify: FastifyInstance) {
                     });
                 }
 
-                const totalDays = PLAN_DAYS_PER_UNIT * quantity;
-                const expiresAt = new Date(Date.now() + totalDays * 24 * 60 * 60 * 1000);
-
-                const { error: updateError } = await supabaseAdmin
-                    .from("user_profiles")
-                    .update({
-                        subscription_tier: planId,
-                        subscription_status: "active",
-                        subscription_expires_at: expiresAt.toISOString(),
-                        updated_at: new Date().toISOString(),
-                    })
-                    .eq("id", user.id);
-
-                if (updateError) {
-                    console.error("[Payment] DB Update Error:", updateError);
-                    return reply.send({
-                        success: false,
-                        error: "Payment verified but DB update failed",
-                    });
-                }
-
-                await supabaseAdmin.from("orders").insert({
-                    user_id: user.id,
-                    payment_id: paymentId,
-                    plan_id: planId,
-                    order_name: `${planId.toUpperCase()} Plan (${totalDays}일)`,
+                const fulfillment = await fulfillPaidOrder({
+                    adminClient: supabaseAdmin,
+                    paymentId,
+                    userId: user.id,
+                    planId: planId as PaidPlanId,
+                    quantity,
                     amount: actualAmount,
                     currency: "KRW",
-                    pay_method: "CARD",
-                    status: "paid",
-                    pg_provider: "TOSS_PAYMENTS",
-                    paid_at: new Date().toISOString(),
-                    metadata: { quantity },
+                    payMethod: "CARD",
+                    pgProvider: "TOSS_PAYMENTS",
+                    pgTxId: paymentId,
+                    paidAt: new Date().toISOString(),
+                    orderName: `${planId.toUpperCase()} Plan (${quantity * PLAN_DAYS_PER_UNIT}일)`,
+                    planAmounts: PLAN_AMOUNTS as { pro: number; premium: number },
+                    metadata: {
+                        source: "toss-payments-verify",
+                    },
                 });
+
+                if (fulfillment.inProgress) {
+                    return reply.code(202).send({
+                        success: false,
+                        error: fulfillment.message || "Payment fulfillment is already in progress",
+                    });
+                }
 
                 console.log("[Payment] Verification & DB Update Successful");
 
                 return reply.send({
                     success: true,
-                    message: "Payment verified successfully.",
+                    message: fulfillment.alreadyProcessed
+                        ? "Payment already processed."
+                        : "Payment verified successfully.",
                     subscription: {
-                        tier: planId,
-                        status: "active",
-                        expiresAt: expiresAt.toISOString(),
+                        tier: fulfillment.subscription?.tier ?? planId,
+                        status: fulfillment.subscription?.status ?? "active",
+                        expiresAt: fulfillment.subscription?.expiresAt ?? null,
                     },
                 });
             } catch (error) {
@@ -224,39 +225,48 @@ export async function paymentRoutes(fastify: FastifyInstance) {
                 // 4. SKU 무조건 검증 (Zero-Trust: 클라이언트 값 무시)
                 const sku = successPayload?.product?.id ?? successPayload?.sku ?? successPayload?.productId;
                 let finalPlanId = "";
-                let amountToRecord = 5900; // PRO 기본값
+                let amountToRecord = PLAN_AMOUNTS.pro;
 
                 if (sku === IAP_PRODUCTS.PRO) {
                     finalPlanId = "pro";
-                    amountToRecord = Number(process.env.PLAN_AMOUNT_PRO ?? 5900);
+                    amountToRecord = PLAN_AMOUNTS.pro;
                 } else {
                     request.log.warn({ orderId, sku }, "[IAP Verify] Unknown or manipulated SKU");
                     return reply.code(400).send({ success: false, error: "Invalid product SKU" });
                 }
 
-                // 5. DB 트랜잭션 실행 (중복 확인 -> 영수증 저장 -> 구독 30일 연장)
+                // 5. 공통 Fulfillment 실행
                 // 토스 IAP 소모품 특성상 수량은 무조건 1단위(30일)로 강제 고정합니다.
-                const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc("process_iap_order", {
-                    p_user_id: user.id,
-                    p_order_id: orderId,
-                    p_plan_id: finalPlanId,
-                    p_amount: amountToRecord,
-                    p_days_to_add: PLAN_DAYS_PER_UNIT,
+                const fulfillment = await fulfillPaidOrder({
+                    adminClient: supabaseAdmin,
+                    paymentId: orderId,
+                    userId: user.id,
+                    planId: finalPlanId as PaidPlanId,
+                    quantity: 1,
+                    amount: amountToRecord,
+                    currency: "KRW",
+                    payMethod: "IAP",
+                    pgProvider: "toss_iap",
+                    pgTxId: orderId,
+                    paidAt: new Date().toISOString(),
+                    orderName: `${finalPlanId.toUpperCase()} Plan (${PLAN_DAYS_PER_UNIT}일)`,
+                    planAmounts: PLAN_AMOUNTS as { pro: number; premium: number },
+                    metadata: {
+                        source: "toss-iap-verify",
+                        sku,
+                        orderStatus: status,
+                    },
                 });
 
-                if (rpcError) {
-                    request.log.error({ error: rpcError.message }, "[IAP Verify] RPC process_iap_order failed");
-                    return reply.code(500).send({ success: false, error: "Transaction failed" });
+                if (fulfillment.inProgress) {
+                    return reply.code(202).send({
+                        success: false,
+                        error: fulfillment.message || "Transaction is already processing",
+                    });
                 }
 
-                const rpcResult = rpcData as { success: boolean; message?: string; error?: string };
-                if (!rpcResult.success) {
-                    request.log.error({ error: rpcResult.error }, "[IAP Verify] RPC logic failed");
-                    return reply.code(500).send({ success: false, error: rpcResult.error || "Transaction logic failed" });
-                }
-
-                request.log.info({ orderId, userId: user.id, planId: finalPlanId, result: rpcResult.message }, "[IAP Verify] Success");
-                return reply.send({ success: true, message: rpcResult.message });
+                request.log.info({ orderId, userId: user.id, planId: finalPlanId, result: fulfillment.message }, "[IAP Verify] Success");
+                return reply.send({ success: true, message: fulfillment.message });
 
             } catch (error) {
                 request.log.error(error, "[IAP Verify] unexpected error");

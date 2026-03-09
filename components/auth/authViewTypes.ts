@@ -73,6 +73,8 @@ export interface ProfileViewProps {
   onClose: () => void;
   onSwitchType: (t: AuthModalType) => void;
   onLogout: () => void;
+  /** 멤버십 업그레이드 클릭 시 호출 (다음 티어 주문 요약 모달 오픈용) */
+  onUpgradePlan?: (planId: 'pro' | 'premium') => void;
   currentUserEmail: string | undefined | null;
   currentTier: 'free' | 'pro' | 'premium';
   currentUserId: string | undefined;

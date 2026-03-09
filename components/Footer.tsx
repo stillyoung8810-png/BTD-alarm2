@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTossApp } from '../contexts/TossAppContext';
+import { openExternalUrl } from '../services/tossAppBridge';
 import { TDSButton } from './tds';
 
 // ---------------------------------------------------------------------------
@@ -51,7 +52,7 @@ const Footer: React.FC<FooterProps> = ({ isInTossApp: isInTossAppProp, onNavigat
           <TDSButton
             variant="primary"
             fullWidth
-            onClick={() => window.open(TOSS_CS_URL, '_blank', 'noopener,noreferrer')}
+            onClick={() => openExternalUrl(TOSS_CS_URL)}
           >
             토스 미니앱 고객센터
           </TDSButton>

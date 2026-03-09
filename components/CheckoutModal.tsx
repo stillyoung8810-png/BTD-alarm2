@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useCallback } from 'react';
+import { formatPriceKRW } from '../utils/currency';
 import {
   X,
   Star,
@@ -169,7 +170,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   const totalDays = PLAN_DAYS_PER_UNIT * quantity;
   const totalAmount = plan.price * quantity;
-  const totalFormatted = `₩${totalAmount.toLocaleString()}`;
+  const totalFormatted = formatPriceKRW(totalAmount);
   const styles = PLAN_STYLES[plan.id];
 
   const buildPayReq = useCallback((): PaymentRequest => ({

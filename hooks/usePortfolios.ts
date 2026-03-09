@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 import { normalizePortfolioData } from '../utils/portfolioNormalize';
 import { calculateHoldings, calculateTotalInvested, getTotalSellProceeds } from '../utils/portfolioCalculations';
+import { getEffectiveSubscription } from '../utils/subscriptionUtils';
 import type { Portfolio, Trade } from '../types';
 import type { AppUserProfile } from '../types/appUserProfile';
 
@@ -30,7 +31,7 @@ export interface UsePortfoliosReturn {
   setPortfolios: React.Dispatch<React.SetStateAction<Portfolio[]>>;
   fetchPortfolios: (userId: string) => void;
   loadPortfoliosFromCache: (userId: string) => boolean;
-  handleAddPortfolio: (newP: Omit<Portfolio, 'id'>, onSuccess?: () => void) => Promise<void>;
+  handleAddPortfolio: (newP: Omit<Portfolio, 'id'>, onSuccess?: () => void | Promise<void>) => Promise<void>;
   handleClosePortfolio: (
     portfolioId: string,
     finalSells: Array<{ stock: string; quantity: number; price: number; fee: number }>,
@@ -134,7 +135,8 @@ export function usePortfolios({
       const activePortfolios = portfolios.filter((p) => !p.isClosed);
       const maxPortfolios = userProfile?.max_portfolios ?? 3;
       if (maxPortfolios !== -1 && activePortfolios.length >= maxPortfolios) {
-        const tierName = userProfile?.subscription_tier === 'free' ? '무료' : userProfile?.subscription_tier;
+        const effectiveTier = getEffectiveSubscription(userProfile).tier;
+        const tierName = effectiveTier === 'free' ? '무료' : effectiveTier;
         alert(
           lang === 'ko'
             ? `${tierName} 플랜에서는 최대 ${maxPortfolios}개의 포트폴리오만 생성할 수 있습니다.`
@@ -196,7 +198,7 @@ export function usePortfolios({
       if (data?.length) {
         const normalized = normalizePortfolioData(data);
         setPortfolios((prev) => [...prev, ...normalized]);
-        onSuccess?.();
+        await Promise.resolve(onSuccess?.());
         alert(lang === 'ko' ? '저장 성공!' : 'Saved!');
       }
     },

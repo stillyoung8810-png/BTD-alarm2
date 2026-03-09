@@ -41,6 +41,8 @@ interface WebFrameworkModule {
     get: () => SafeAreaInsetsValue;
     subscribe: (handler: { onEvent: (insets: SafeAreaInsetsValue) => void }) => () => void;
   };
+  /** 외부 URL 열기 (WebView에서는 브라우저 탭으로 열림) — @apps-in-toss 문서 권장 */
+  openURL?: (url: string) => Promise<unknown>;
 }
 
 let _cachedModule: WebFrameworkModule | null = null;
@@ -242,7 +244,33 @@ export const onNavigationAccessoryClick = async (
 };
 
 // ---------------------------------------------------------------------------
-// 6. 브릿지 초기화 (종합)
+// 6. 외부 URL 열기
+// ---------------------------------------------------------------------------
+/**
+ * 토스 미니앱 내에서는 @apps-in-toss/web-framework의 openURL을 사용해 외부 URL을 엽니다.
+ * (WebView에서 window.open은 차단되거나 오동작할 수 있어, 가이드라인에서 openURL 사용을 권장합니다.)
+ * 토스가 아닌 환경에서는 window.open으로 폴백합니다.
+ */
+export const openExternalUrl = async (url: string): Promise<void> => {
+  if (!url) return;
+  if (isTossApp()) {
+    const mod = await loadWebFramework();
+    if (typeof mod?.openURL === 'function') {
+      try {
+        await mod.openURL(url);
+        return;
+      } catch (e) {
+        console.warn('[TossApp] openURL 실패, window.open 폴백:', (e as Error).message);
+      }
+    }
+  }
+  if (typeof window !== 'undefined') {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+};
+
+// ---------------------------------------------------------------------------
+// 7. 브릿지 초기화 (종합)
 // ---------------------------------------------------------------------------
 export interface TossBridgeState {
   isInTossApp: boolean;

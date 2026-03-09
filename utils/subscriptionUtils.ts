@@ -1,4 +1,5 @@
 import { supabase } from "../services/supabase";
+import { getEffectiveSubscriptionState, type SubscriptionProfileSnapshot } from "../server/src/services/paymentFulfillment";
 
 /**
  * 구독 및 광고 관련 유틸리티 함수
@@ -11,9 +12,11 @@ import { supabase } from "../services/supabase";
 export interface UserProfile {
   id: string;
   subscription_tier: "free" | "pro" | "premium" | "enterprise";
-  subscription_status: "active" | "cancelled" | "expired" | "trial" | null;
+  subscription_status: "active" | "cancelled" | "expired" | "trial" | "refunded" | null;
   subscription_started_at: string | null; // ISO date string
   subscription_expires_at: string | null; // ISO date string
+  pending_plan?: "pro" | "premium" | null;
+  pending_plan_effective_at?: string | null;
   stripe_customer_id: string | null;
   max_portfolios: number;
   max_alarms: number;
@@ -47,6 +50,10 @@ export interface SimpleUserProfile {
   subscription_tier: string;
   max_portfolios: number;
   max_alarms: number;
+  subscription_status?: string | null;
+  subscription_expires_at?: string | null;
+  pending_plan?: string | null;
+  pending_plan_effective_at?: string | null;
 }
 
 /**
@@ -58,6 +65,25 @@ export const PAID_TIERS: readonly string[] = [
   "enterprise",
 ] as const;
 
+function toSubscriptionSnapshot(
+  profile: UserProfile | SimpleUserProfile | null,
+): SubscriptionProfileSnapshot | null {
+  if (!profile) return null;
+  return {
+    subscription_tier: profile.subscription_tier,
+    subscription_status: "subscription_status" in profile ? profile.subscription_status ?? null : null,
+    subscription_expires_at: "subscription_expires_at" in profile ? profile.subscription_expires_at ?? null : null,
+    pending_plan: "pending_plan" in profile ? profile.pending_plan ?? null : null,
+    pending_plan_effective_at: "pending_plan_effective_at" in profile ? profile.pending_plan_effective_at ?? null : null,
+    max_portfolios: profile.max_portfolios,
+    max_alarms: profile.max_alarms,
+  };
+}
+
+export const getEffectiveSubscription = (
+  profile: UserProfile | SimpleUserProfile | null,
+) => getEffectiveSubscriptionState(toSubscriptionSnapshot(profile));
+
 /**
  * 사용자가 유료 구독 중인지 확인
  * @param profile 사용자 프로필 (null 가능)
@@ -67,8 +93,7 @@ export const isPaidSubscription = (
   profile: UserProfile | SimpleUserProfile | null,
 ): boolean => {
   if (!profile) return false;
-
-  const tier = profile.subscription_tier?.toLowerCase();
+  const tier = getEffectiveSubscription(profile).tier?.toLowerCase();
   return PAID_TIERS.includes(tier);
 };
 
@@ -82,18 +107,11 @@ export const isPaidSubscription = (
  * - 'cancelled': 취소됨
  * - 'expired': 만료됨
  * - 'trial': trial 기간 중
+ * - 'refunded': 환불 완료
  */
 export const isActiveSubscription = (profile: UserProfile | null): boolean => {
   if (!profile) return false;
-
-  // SimpleUserProfile에는 subscription_status가 없으므로 tier만 확인
-  if (!("subscription_status" in profile)) {
-    return isPaidSubscription(profile);
-  }
-
-  // 'active' 또는 'trial' 상태를 활성으로 간주
-  return profile.subscription_status === "active" ||
-    profile.subscription_status === "trial";
+  return getEffectiveSubscription(profile).isActive;
 };
 
 /**
@@ -103,20 +121,7 @@ export const isActiveSubscription = (profile: UserProfile | null): boolean => {
  */
 export const isNotExpired = (profile: UserProfile | null): boolean => {
   if (!profile) return true; // 프로필이 없으면 만료되지 않은 것으로 간주
-
-  // SimpleUserProfile에는 subscription_expires_at이 없으므로 true 반환
-  if (!("subscription_expires_at" in profile)) {
-    return true;
-  }
-
-  if (!profile.subscription_expires_at) {
-    // 만료일이 없으면 무한 유지로 간주 (또는 비즈니스 로직에 따라 조정)
-    return true;
-  }
-
-  const expiresAt = new Date(profile.subscription_expires_at);
-  const now = new Date();
-  return expiresAt > now;
+  return !getEffectiveSubscription(profile).isExpired;
 };
 
 /**
@@ -149,11 +154,10 @@ export const shouldShowAds = (
   }
 
   // UserProfile인 경우 (전체 정보 확인)
-  const isActive = isActiveSubscription(profile);
-  const isNotExpiredSubscription = isNotExpired(profile);
+  const effective = getEffectiveSubscription(profile);
 
   // 유료 티어 + 활성 상태 + 만료되지 않음 = 광고 제거
-  const shouldHideAds = isPaidTier && isActive && isNotExpiredSubscription;
+  const shouldHideAds = isPaidTier && effective.isActive && !effective.isExpired;
 
   return !shouldHideAds;
 };
@@ -173,8 +177,7 @@ export const getMaxPortfolios = (
   profile: UserProfile | SimpleUserProfile | null,
 ): number => {
   if (!profile) return 2; // Free 기본값
-
-  const tier = profile.subscription_tier?.toLowerCase?.() || "free";
+  const tier = getEffectiveSubscription(profile).tier;
   if (tier === "premium") return 20;
   if (tier === "pro") return 5;
 
@@ -199,8 +202,7 @@ export const getMaxAlarms = (
   profile: UserProfile | SimpleUserProfile | null,
 ): number => {
   if (!profile) return 2; // Free 기본값
-
-  const tier = profile.subscription_tier?.toLowerCase?.() || "free";
+  const tier = getEffectiveSubscription(profile).tier;
   if (tier === "premium") return 40;
   if (tier === "pro") return 10;
 
@@ -292,6 +294,7 @@ export const getTierDisplayName = (
  * - 'cancelled': 취소됨
  * - 'expired': 만료됨
  * - 'trial': trial 기간 중
+ * - 'refunded': 환불 완료
  */
 export const getStatusDisplayName = (
   status: string | null,
@@ -304,6 +307,7 @@ export const getStatusDisplayName = (
     cancelled: { ko: "취소됨", en: "Cancelled" },
     expired: { ko: "만료됨", en: "Expired" },
     trial: { ko: "체험 중", en: "Trial" },
+    refunded: { ko: "환불됨", en: "Refunded" },
   };
 
   return statusMap[status]?.[lang] || status;

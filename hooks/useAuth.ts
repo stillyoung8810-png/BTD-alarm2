@@ -45,7 +45,7 @@ export function useAuth({
     try {
       const { data: profileData, error: profileError } = await supabase
         .from('user_profiles')
-        .select('subscription_tier, max_portfolios, max_alarms, subscription_status, subscription_expires_at, telegram_enabled, telegram_connected_at, telegram_last_error, preferred_language, timezone, ai_daily_usage, ai_monthly_usage, backtest_daily_usage, last_usage_reset_at')
+        .select('subscription_tier, max_portfolios, max_alarms, subscription_status, subscription_expires_at, pending_plan, pending_plan_effective_at, telegram_enabled, telegram_connected_at, telegram_last_error, preferred_language, timezone, ai_daily_usage, ai_monthly_usage, backtest_daily_usage, last_usage_reset_at')
         .eq('id', userId)
         .single();
       if (!profileError && profileData) {
@@ -73,6 +73,8 @@ export function useAuth({
           max_alarms: profileData.max_alarms,
           subscription_status: profileData.subscription_status ?? null,
           subscription_expires_at: profileData.subscription_expires_at ?? null,
+          pending_plan: profileData.pending_plan ?? null,
+          pending_plan_effective_at: profileData.pending_plan_effective_at ?? null,
           telegram_enabled: profileData.telegram_enabled ?? false,
           telegram_connected_at: profileData.telegram_connected_at ?? null,
           telegram_last_error: profileData.telegram_last_error ?? null,

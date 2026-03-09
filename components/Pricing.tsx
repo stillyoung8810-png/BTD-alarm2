@@ -2,6 +2,8 @@ import React, { useState, useCallback, useRef } from 'react';
 import { Sparkles, Star, Crown, Check, Lock, Zap, Bell, Clock, Brain, ArrowRight } from 'lucide-react';
 import { useTossApp } from '../contexts/TossAppContext';
 import { TDSButton } from './tds';
+import { MembershipConfig } from '../constants/membership';
+import { formatPriceKRW } from '../utils/currency';
 
 const PREMIUM_GLOW_STYLE = `
   @keyframes breathe-gold {
@@ -109,7 +111,7 @@ const Pricing: React.FC<PricingProps> = ({ lang, currentTier, onUpgrade }) => {
       id: 'pro',
       label: 'PRO',
       subtitle: isKo ? '전문 투자자' : 'Active Investor',
-      price: isKo ? '₩5,900' : '$5.90',
+      price: isKo ? formatPriceKRW(MembershipConfig.PRO.rawAmount) : '$5.90',
       priceNote: isKo ? '/ 월 (예정)' : '/ month (planned)',
       theme: 'pro',
       badge: isKo ? '가장 인기 있는 선택' : 'Most popular',
@@ -127,7 +129,7 @@ const Pricing: React.FC<PricingProps> = ({ lang, currentTier, onUpgrade }) => {
       id: 'premium',
       label: 'PREMIUM',
       subtitle: isKo ? '슈퍼 고래' : 'Power User',
-      price: isKo ? '₩9,900' : '$9.90',
+      price: isKo ? formatPriceKRW(MembershipConfig.PREMIUM.rawAmount) : '$9.90',
       priceNote: isKo ? '/ 월 (출시 예정)' : '/ month (coming soon)',
       theme: 'premium',
       badge: isKo ? 'COMING SOON' : 'COMING SOON',

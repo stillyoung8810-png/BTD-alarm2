@@ -208,6 +208,11 @@ serve(async (req: Request) => {
       .update({
         subscription_tier: "free",
         subscription_status: "refunded",
+        subscription_expires_at: null,
+        pending_plan: null,
+        pending_plan_effective_at: null,
+        max_portfolios: 2,
+        max_alarms: 2,
         updated_at: new Date().toISOString(),
       })
       .eq("id", user.id);

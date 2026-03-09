@@ -17,6 +17,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   onClose,
   onSwitchType,
   onLogout,
+  onUpgradePlan,
   currentUserEmail,
   currentTier,
   currentUserId,
@@ -100,6 +101,13 @@ const ProfileView: React.FC<ProfileViewProps> = ({
     }
   };
 
+  const canUpgrade = !!onUpgradePlan && currentTier !== 'premium';
+  const handleUpgradeClick = () => {
+    if (!canUpgrade || !onUpgradePlan) return;
+    const nextPlan: 'pro' | 'premium' = currentTier === 'free' ? 'pro' : 'premium';
+    onUpgradePlan(nextPlan);
+  };
+
   return (
     <div className="space-y-6">
       <div className="bg-slate-50 dark:bg-slate-900/60 p-6 rounded-2xl border border-slate-200 dark:border-white/5 text-center">
@@ -171,33 +179,85 @@ const ProfileView: React.FC<ProfileViewProps> = ({
         )}
       </div>
 
-      <div className="space-y-3">
-        {isInTossApp ? (
-          <>
-            <TDSButton variant="secondary" fullWidth onClick={() => onSwitchType('change-password')} disabled={loading} className="flex items-center justify-center gap-3">
-              <Key size={18} /> {t.changePassword}
+      {canUpgrade && (
+        <div className="space-y-3">
+          {isInTossApp ? (
+            <TDSButton
+              variant="primary"
+              fullWidth
+              onClick={handleUpgradeClick}
+              disabled={loading}
+              className="flex items-center justify-center gap-3"
+            >
+              {lang === 'ko' ? '멤버십 업그레이드' : 'Upgrade Membership'}
             </TDSButton>
-            <TDSButton variant="tertiary" fullWidth onClick={async () => { setLoading(true); try { await onLogout(); } catch (err) { setError(lang === 'ko' ? '로그아웃 중 오류가 발생했습니다.' : 'Error during logout'); } finally { setLoading(false); } }} disabled={loading} className="flex items-center justify-center gap-3 text-rose-500 border border-rose-500/20">
-              <LogOut size={18} /> {t.logout}
-            </TDSButton>
-          </>
-        ) : (
-          <>
-            <button type="button" onClick={() => onSwitchType('change-password')} disabled={loading} className="w-full py-5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-white rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 border border-slate-200 dark:border-white/5 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
-              <Key size={18} /> {t.changePassword}
-            </button>
+          ) : (
             <button
               type="button"
-              onClick={async () => { setLoading(true); try { await onLogout(); } catch (err) { setError(lang === 'ko' ? '로그아웃 중 오류가 발생했습니다.' : 'Error during logout'); } finally { setLoading(false); } }}
+              onClick={handleUpgradeClick}
               disabled={loading}
-              className="w-full py-5 bg-rose-600/10 text-rose-500 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 border border-rose-500/20 hover:bg-rose-500 hover:text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+              className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-md hover:shadow-lg hover:brightness-110 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              <LogOut size={18} /> {t.logout}
+              {lang === 'ko' ? '멤버십 업그레이드' : 'Upgrade Membership'}
             </button>
-          </>
+          )}
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {/* 토스 미니앱 환경에서는 비밀번호 변경 버튼 숨김 */}
+        {!isInTossApp && (
+          <button
+            type="button"
+            onClick={() => onSwitchType('change-password')}
+            disabled={loading}
+            className="w-full py-5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-white rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 border border-slate-200 dark:border-white/5 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <Key size={18} /> {t.changePassword}
+          </button>
         )}
 
-        {currentTier !== 'free' && (
+        {/* 로그아웃 버튼은 환경별 스타일만 다르게 노출 */}
+        {isInTossApp ? (
+          <TDSButton
+            variant="tertiary"
+            fullWidth
+            onClick={async () => {
+              setLoading(true);
+              try {
+                await onLogout();
+              } catch (err) {
+                setError(lang === 'ko' ? '로그아웃 중 오류가 발생했습니다.' : 'Error during logout');
+              } finally {
+                setLoading(false);
+              }
+            }}
+            disabled={loading}
+            className="flex items-center justify-center gap-3 text-rose-500 border border-rose-500/20"
+          >
+            <LogOut size={18} /> {t.logout}
+          </TDSButton>
+        ) : (
+          <button
+            type="button"
+            onClick={async () => {
+              setLoading(true);
+              try {
+                await onLogout();
+              } catch (err) {
+                setError(lang === 'ko' ? '로그아웃 중 오류가 발생했습니다.' : 'Error during logout');
+              } finally {
+                setLoading(false);
+              }
+            }}
+            disabled={loading}
+            className="w-full py-5 bg-rose-600/10 text-rose-500 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 border border-rose-500/20 hover:bg-rose-500 hover:text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <LogOut size={18} /> {t.logout}
+          </button>
+        )}
+
+        {currentTier !== 'free' && !isInTossApp && (
           <div className="pt-4 border-t border-slate-200 dark:border-white/5">
             {!showCancelSub ? (
               <button type="button" onClick={() => setShowCancelSub(true)} disabled={loading || cancelSubLoading} className="w-full py-3 text-[11px] font-bold text-slate-400 hover:text-amber-500 transition-colors uppercase tracking-widest disabled:opacity-60">
@@ -232,38 +292,59 @@ const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
         )}
 
-        <div className="pt-4 border-t border-slate-200 dark:border-white/5">
-          {!showDeleteConfirm ? (
-            <button type="button" onClick={() => setShowDeleteConfirm(true)} disabled={loading} className="w-full py-3 text-[11px] font-bold text-slate-400 hover:text-rose-500 transition-colors uppercase tracking-widest underline-offset-4 disabled:opacity-60">
-              {lang === 'ko' ? '회원 탈퇴' : 'Delete Account'}
-            </button>
-          ) : (
-            <div className="space-y-3 p-4 bg-rose-50 dark:bg-rose-950/30 rounded-2xl border border-rose-200 dark:border-rose-800/50">
-              <p className="text-xs font-bold text-rose-600 dark:text-rose-400">
-                {lang === 'ko' ? '⚠️ 회원 탈퇴 시 모든 데이터(포트폴리오, 매매기록, 알람 설정 등)가 영구 삭제되며 복구할 수 없습니다.' : '⚠️ Deleting your account will permanently remove all data (portfolios, trades, alarms, etc.) and cannot be undone.'}
-              </p>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">{lang === 'ko' ? '확인을 위해 아래에 "탈퇴합니다"를 입력해주세요.' : 'Type "DELETE" below to confirm.'}</p>
-              <input type="text" value={deleteConfirmText} onChange={(e) => setDeleteConfirmText(e.target.value)} placeholder={lang === 'ko' ? '탈퇴합니다' : 'DELETE'} className="w-full p-3 bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-700 rounded-xl text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-rose-500/50" />
-              <div className="flex gap-2">
-                {isInTossApp ? (
-                  <>
-                    <TDSButton variant="tertiary" className="flex-1" onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(''); }}>{lang === 'ko' ? '취소' : 'Cancel'}</TDSButton>
-                    <TDSButton variant="dangerFill" className="flex-1" loading={loading} disabled={loading || (lang === 'ko' ? deleteConfirmText !== '탈퇴합니다' : deleteConfirmText !== 'DELETE')} onClick={handleDeleteAccountClick}>{loading ? (lang === 'ko' ? '처리 중...' : 'Processing...') : (lang === 'ko' ? '영구 삭제' : 'Delete Forever')}</TDSButton>
-                  </>
-                ) : (
-                  <>
-                    <button type="button" onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(''); }} className="flex-1 py-3 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl font-bold text-xs uppercase tracking-widest">
-                      {lang === 'ko' ? '취소' : 'Cancel'}
-                    </button>
-                    <button type="button" disabled={loading || (lang === 'ko' ? deleteConfirmText !== '탈퇴합니다' : deleteConfirmText !== 'DELETE')} onClick={handleDeleteAccountClick} className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed hover:bg-rose-700 transition-colors">
-                      {loading ? (lang === 'ko' ? '처리 중...' : 'Processing...') : (lang === 'ko' ? '영구 삭제' : 'Delete Forever')}
-                    </button>
-                  </>
-                )}
+        {/* 토스 미니앱 환경에서는 회원 탈퇴 UI 전체 숨김 */}
+        {!isInTossApp && (
+          <div className="pt-4 border-t border-slate-200 dark:border-white/5">
+            {!showDeleteConfirm ? (
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(true)}
+                disabled={loading}
+                className="w-full py-3 text-[11px] font-bold text-slate-400 hover:text-rose-500 transition-colors uppercase tracking-widest underline-offset-4 disabled:opacity-60"
+              >
+                {lang === 'ko' ? '회원 탈퇴' : 'Delete Account'}
+              </button>
+            ) : (
+              <div className="space-y-3 p-4 bg-rose-50 dark:bg-rose-950/30 rounded-2xl border border-rose-200 dark:border-rose-800/50">
+                <p className="text-xs font-bold text-rose-600 dark:text-rose-400">
+                  {lang === 'ko'
+                    ? '⚠️ 회원 탈퇴 시 모든 데이터(포트폴리오, 매매기록, 알람 설정 등)가 영구 삭제되며 복구할 수 없습니다.'
+                    : '⚠️ Deleting your account will permanently remove all data (portfolios, trades, alarms, etc.) and cannot be undone.'}
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  {lang === 'ko' ? '확인을 위해 아래에 "탈퇴합니다"를 입력해주세요.' : 'Type "DELETE" below to confirm.'}
+                </p>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder={lang === 'ko' ? '탈퇴합니다' : 'DELETE'}
+                  className="w-full p-3 bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-700 rounded-xl text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-rose-500/50"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDeleteConfirm(false);
+                      setDeleteConfirmText('');
+                    }}
+                    className="flex-1 py-3 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl font-bold text-xs uppercase tracking-widest"
+                  >
+                    {lang === 'ko' ? '취소' : 'Cancel'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={loading || (lang === 'ko' ? deleteConfirmText !== '탈퇴합니다' : deleteConfirmText !== 'DELETE')}
+                    onClick={handleDeleteAccountClick}
+                    className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed hover:bg-rose-700 transition-colors"
+                  >
+                    {loading ? (lang === 'ko' ? '처리 중...' : 'Processing...') : (lang === 'ko' ? '영구 삭제' : 'Delete Forever')}
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -10,7 +10,10 @@
 
 import { serve } from "std/http/server";
 import { createClient } from "@supabase/supabase-js";
-import { getServiceExpiresAt } from "../_shared/subscription.ts";
+import {
+  fulfillPaidOrder,
+  type PaidPlanId,
+} from "../../../server/src/services/paymentFulfillment.ts";
 
 // ---------------------------------------------------------------------------
 // 환경 변수
@@ -31,15 +34,16 @@ const corsHeaders = {
 };
 
 // ---------------------------------------------------------------------------
-// 플랜별 단가 (서버 측 금액 위변조 검증용)
-// 환경변수(PLAN_AMOUNT_PRO, PLAN_AMOUNT_PREMIUM)로 관리 — 가격 변경 시 한 곳만 수정
+// ⚠ PRICE SOURCE OF TRUTH
+// 프론트엔드(constants/membership.ts)와 이 서버 환경변수가 반드시 일치해야 합니다.
+// 기본값(fallback): PRO = 5907, PREMIUM = 9900
+// 변경 시 프론트(.env VITE_PLAN_AMOUNT_*) + 백엔드(PLAN_AMOUNT_*) 모두 갱신 필수.
 // ---------------------------------------------------------------------------
 const PLAN_AMOUNTS: Record<string, number> = {
-  pro: Number(Deno.env.get("PLAN_AMOUNT_PRO") ?? 5900),
+  pro: Number(Deno.env.get("PLAN_AMOUNT_PRO") ?? 5907),
   premium: Number(Deno.env.get("PLAN_AMOUNT_PREMIUM") ?? 9900),
 };
 
-const PLAN_DAYS_PER_UNIT = 30;
 const QUANTITY_MAX = 12;
 
 /** 실제 결제 금액으로부터 quantity 역산 (위변조 방지). 허용 범위 밖이면 null */
@@ -168,99 +172,53 @@ serve(async (req: Request) => {
       );
     }
 
-    // ── 4. Service Role 클라이언트로 DB 조작 ───────────
+    // ── 4. Service Role 클라이언트로 Fulfillment 실행 ───
     const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
-    // 4-a. 중복 검증 방지 — 이미 paid 상태인 주문이 있는지 확인
-    const { data: existingOrder } = await adminClient
-      .from("orders")
-      .select("id, status")
-      .eq("payment_id", paymentId)
-      .maybeSingle();
-
-    if (existingOrder?.status === "paid") {
-      // 이미 처리 완료 (멱등성 보장)
-      return new Response(
-        JSON.stringify({ success: true, message: "이미 검증 완료된 결제입니다." }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
-
-    const totalDays = PLAN_DAYS_PER_UNIT * quantity;
-    const expiresAt = getServiceExpiresAt(totalDays);
-
-    const orderData = {
-      user_id: user.id,
-      payment_id: paymentId,
-      plan_id: planId,
-      order_name: `${planId.toUpperCase()} Plan (${totalDays}일)`,
+    const fulfillment = await fulfillPaidOrder({
+      adminClient,
+      paymentId,
+      userId: user.id,
+      planId: planId as PaidPlanId,
+      quantity,
       amount: payment.amount.total,
       currency: payment.amount.currency ?? "KRW",
-      pay_method: payment.method?.type ?? "CARD",
-      status: "paid",
-      pg_provider: "nicepay",
-      pg_tx_id: payment.transactionId ?? null,
-      paid_at: payment.paidAt ?? new Date().toISOString(),
-      metadata: { quantity },
-    };
+      payMethod: payment.method?.type ?? "CARD",
+      pgProvider: "nicepay",
+      pgTxId: payment.transactionId ?? null,
+      paidAt: payment.paidAt ?? new Date().toISOString(),
+      orderName: `${planId.toUpperCase()} Plan (${quantity * 30}일)`,
+      planAmounts: PLAN_AMOUNTS as { pro: number; premium: number },
+      metadata: {
+        source: "verify-payment",
+        portoneStatus: payment.status,
+      },
+    });
 
-    if (existingOrder) {
-      // pending → paid 업데이트
-      await adminClient
-        .from("orders")
-        .update({
-          status: "paid",
-          pg_tx_id: orderData.pg_tx_id,
-          paid_at: orderData.paid_at,
-        })
-        .eq("id", existingOrder.id);
-    } else {
-      // 신규 INSERT
-      const { error: insertError } = await adminClient
-        .from("orders")
-        .insert(orderData);
-
-      if (insertError) {
-        console.warn("[verify-payment] 주문 INSERT 실패:", insertError.message);
-        // INSERT 실패해도 구독 활성화는 진행 (결제는 이미 성공했으므로)
-      }
-    }
-
-    // 4-c. user_profiles 서비스 활성화
-    const { error: profileError } = await adminClient
-      .from("user_profiles")
-      .update({
-        subscription_tier: planId,
-        subscription_status: "active",
-        subscription_expires_at: expiresAt,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", user.id);
-
-    if (profileError) {
-      console.warn("[verify-payment] 서비스 활성화 실패:", profileError.message);
+    if (fulfillment.inProgress) {
       return new Response(
         JSON.stringify({
           success: false,
-          error: "결제는 완료되었으나 서비스 활성화에 실패했습니다. 고객센터에 문의하세요.",
+          error: fulfillment.message ?? "동일 결제 건이 처리 중입니다.",
         }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
     // ── 5. 성공 응답 ───────────────────────────────────
     console.info(
-      `[verify-payment] 결제 검증 성공: paymentId=${paymentId}, userId=${user.id}, plan=${planId}, amount=${payment.amount.total}, expiresAt=${expiresAt}`,
+      `[verify-payment] 결제 검증 성공: paymentId=${paymentId}, userId=${user.id}, plan=${planId}, amount=${payment.amount.total}, expiresAt=${fulfillment.subscription?.expiresAt ?? "unknown"}`,
     );
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: "결제 검증 완료. 서비스가 활성화되었습니다.",
+        message: fulfillment.alreadyProcessed
+          ? "이미 검증 완료된 결제입니다."
+          : "결제 검증 완료. 서비스가 활성화되었습니다.",
         subscription: {
-          tier: planId,
-          status: "active",
-          expiresAt,
+          tier: fulfillment.subscription?.tier ?? planId,
+          status: fulfillment.subscription?.status ?? "active",
+          expiresAt: fulfillment.subscription?.expiresAt ?? null,
         },
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },

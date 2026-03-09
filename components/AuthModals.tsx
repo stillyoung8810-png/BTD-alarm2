@@ -18,6 +18,8 @@ interface AuthModalsProps {
   currentUserEmail?: string | null;
   currentTier?: 'free' | 'pro' | 'premium' | null;
   currentUserId?: string;
+  /** 프로필 화면에서 멤버십 업그레이드 클릭 시 호출 (CheckoutModal 열기) */
+  onUpgradePlan?: (planId: 'pro' | 'premium') => void;
   /** 텔레그램 계정 연결 여부 (연결됨 표시용) */
   telegramConnectedAt?: string | null;
   /** 텔레그램 알림 사용 여부 (토글 값, user_profiles.telegram_enabled) */
@@ -26,7 +28,21 @@ interface AuthModalsProps {
   onTelegramAlertsEnabledChange?: (enabled: boolean) => void;
 }
 
-const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchType, onLogin, onLogout, currentUserEmail, currentTier = 'free', currentUserId, telegramConnectedAt = null, telegramAlertsEnabled = false, onTelegramAlertsEnabledChange }) => {
+const AuthModals: React.FC<AuthModalsProps> = ({
+  lang,
+  type,
+  onClose,
+  onSwitchType,
+  onLogin,
+  onLogout,
+  currentUserEmail,
+  currentTier = 'free',
+  currentUserId,
+  onUpgradePlan,
+  telegramConnectedAt = null,
+  telegramAlertsEnabled = false,
+  onTelegramAlertsEnabledChange,
+}) => {
   const t = I18N[lang];
   const { isInTossApp } = useTossApp();
   const [email, setEmail] = useState('');
@@ -503,11 +519,12 @@ const AuthModals: React.FC<AuthModalsProps> = ({ lang, type, onClose, onSwitchTy
                   handleSubmit,
                   isInTossApp,
                 }
-              : {
+            : {
                   lang,
                   onClose,
                   onSwitchType,
                   onLogout,
+                  onUpgradePlan,
                   currentUserEmail,
                   isInTossApp,
                   currentTier: currentTier ?? 'free',

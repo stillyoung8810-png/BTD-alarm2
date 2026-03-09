@@ -12,6 +12,7 @@ import {
   type TossAdsAttachBannerOptions, 
   type TossAdsAttachBannerResult 
 } from '../hooks/useTossBanner';
+import { BANNER_AD_GROUP_ID } from '../services/ads/adPlacements';
 
 export type TossInlineBannerVariant = 'card' | 'expanded';
 
@@ -25,7 +26,7 @@ export interface TossInlineBannerProps {
 
 export function TossInlineBanner(props: TossInlineBannerProps): ReactElement | null {
   const {
-    adGroupId = 'ait-ad-test-banner-id',
+    adGroupId = BANNER_AD_GROUP_ID,
     currentTier,
     isInTossApp,
     className,

@@ -3,6 +3,7 @@
 import { serve } from "std/http/server";
 import { createClient } from "@supabase/supabase-js";
 import { SignJWT, importPKCS8 } from "jose";
+import { getEffectiveSubscriptionState } from "../../../server/src/services/paymentFulfillment.ts";
 
 interface AlarmRequest {
   user_id: string;
@@ -15,6 +16,8 @@ interface UserProfileRow {
   subscription_tier?: string | null;
   subscription_status?: string | null;
   subscription_expires_at?: string | null;
+  pending_plan?: string | null;
+  pending_plan_effective_at?: string | null;
   telegram_enabled?: boolean | null;
   telegram_chat_id?: string | null;
   preferred_language?: string | null;
@@ -37,13 +40,9 @@ function getCurrentKSTDateString(): string {
 /** 유료 구독 + 텔레그램 연결 시에만 텔레그램 발송 */
 function shouldSendTelegram(profile: UserProfileRow | null): boolean {
   if (!profile) return false;
-  const tier = (profile.subscription_tier || "").toLowerCase();
-  if (tier !== "pro" && tier !== "premium") return false;
-  const status = (profile.subscription_status || "").toLowerCase();
-  const active = status === "active" || status === "trial" || status === "";
-  if (!active) return false;
-  const expiresAt = profile.subscription_expires_at;
-  if (expiresAt && new Date(expiresAt) <= new Date()) return false;
+  const effective = getEffectiveSubscriptionState(profile);
+  if (effective.tier !== "pro" && effective.tier !== "premium") return false;
+  if (!effective.isActive || effective.isExpired) return false;
   if (profile.telegram_enabled !== true) return false;
   const chatId = profile.telegram_chat_id;
   if (!chatId || String(chatId).trim() === "") return false;

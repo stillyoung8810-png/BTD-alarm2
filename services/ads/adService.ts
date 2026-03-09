@@ -3,11 +3,14 @@
  * 원칙 1: 웹 환경(isTossApp === false)에서는 절대 실행되지 않고 즉시 bypass.
  * 원칙 2: 메모리 누수 방지를 위해 load/show 리스너는 성공/실패 무관 즉시 unregister.
  * 원칙 3: 티어(Tier) 기반 라우팅을 통해 PRO/PREMIUM 유저의 광고 경험을 분리 통제.
+ *
+ * 가이드라인: @apps-in-toss/web-framework의 GoogleAdMob.loadAppsInTossAdMob / showAppsInTossAdMob 사용.
+ * (loadFullScreenAd / showFullScreenAd 아님)
  */
 
 import { isTossApp } from '../toss/tossBridge';
 import { AdPlacement, type AdPlacementId } from './adPlacements';
-import * as WebFramework from '@apps-in-toss/web-framework';
+import { GoogleAdMob } from '@apps-in-toss/web-framework';
 
 const INTERSTITIAL_TIMEOUT_MS = 8_000;
 const AD_FAILURE_POLICY: 'proceed' | 'block' = 'proceed';
@@ -41,22 +44,31 @@ const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
   });
 };
 
+/** GoogleAdMob 전면/리워드 공통: 지원 여부 확인 (가이드라인 준수) */
+const isAdSupported = (): boolean => {
+  try {
+    return typeof GoogleAdMob?.loadAppsInTossAdMob?.isSupported === 'function' && GoogleAdMob.loadAppsInTossAdMob.isSupported() === true;
+  } catch {
+    return false;
+  }
+};
+
 /**
- * SRP 3: 광고 로드 대기 (이벤트 격리)
+ * SRP 3: 광고 로드 대기 (이벤트 격리) — loadAppsInTossAdMob 사용
  */
-const waitForAdLoad = (adGroupId: string, api: any): Promise<() => void> => {
+const waitForAdLoad = (adGroupId: string): Promise<() => void> => {
   return new Promise((resolve, reject) => {
     let unregister: (() => void) | undefined;
     try {
-      unregister = api.loadFullScreenAd({
+      unregister = GoogleAdMob.loadAppsInTossAdMob({
         options: { adGroupId },
-        onEvent: (event: any) => {
+        onEvent: (event: { type: string }) => {
           if (event.type === 'loaded') resolve(unregister || (() => {}));
         },
-        onError: (error: any) => {
+        onError: (error: unknown) => {
           if (unregister) unregister();
           reject(error);
-        }
+        },
       });
     } catch (err) {
       reject(err);
@@ -65,15 +77,15 @@ const waitForAdLoad = (adGroupId: string, api: any): Promise<() => void> => {
 };
 
 /**
- * SRP 4: 로드된 광고 노출 및 종료 대기 (이벤트 격리)
+ * SRP 4: 로드된 광고 노출 및 종료 대기 (이벤트 격리) — showAppsInTossAdMob 사용
  */
-const displayLoadedAd = (adGroupId: string, api: any): Promise<void> => {
+const displayLoadedAd = (adGroupId: string): Promise<void> => {
   return new Promise((resolve, reject) => {
     let unregister: (() => void) | undefined;
     try {
-      unregister = api.showFullScreenAd({
+      unregister = GoogleAdMob.showAppsInTossAdMob({
         options: { adGroupId },
-        onEvent: (event: any) => {
+        onEvent: (event: { type: string }) => {
           if (event.type === 'dismissed') {
             if (unregister) unregister();
             resolve();
@@ -82,10 +94,10 @@ const displayLoadedAd = (adGroupId: string, api: any): Promise<void> => {
             reject(new Error('Toss SDK emitted failedToShow event'));
           }
         },
-        onError: (error: any) => {
+        onError: (error: unknown) => {
           if (unregister) unregister();
           reject(error);
-        }
+        },
       });
     } catch (err) {
       reject(err);
@@ -94,20 +106,18 @@ const displayLoadedAd = (adGroupId: string, api: any): Promise<void> => {
 };
 
 /**
- * 파이프라인: 광고 로드 -> 노출 -> 닫힘 -> 메모리 해제
+ * 파이프라인: 광고 로드 -> 노출 -> 닫힘 -> 메모리 해제 (가이드라인: load → show → cleanup)
  */
 const executeInterstitialFlow = async (adGroupId: string): Promise<AdResult> => {
-  const api = WebFramework as any;
-
-  if (typeof api.loadFullScreenAd?.isSupported !== 'function' || !api.loadFullScreenAd.isSupported()) {
-    return createSafeResult('loadFullScreenAd is not supported in the current app version.');
+  if (!isAdSupported()) {
+    return createSafeResult('GoogleAdMob.loadAppsInTossAdMob is not supported in the current app version.');
   }
 
   let loadUnregister: (() => void) | null = null;
-  
+
   try {
-    loadUnregister = await waitForAdLoad(adGroupId, api);
-    await displayLoadedAd(adGroupId, api);
+    loadUnregister = await waitForAdLoad(adGroupId);
+    await displayLoadedAd(adGroupId);
     return { shown: true };
   } catch (error) {
     return createSafeResult(error instanceof Error ? error.message : String(error));
@@ -148,22 +158,19 @@ export async function showInterstitialOnTransition(
 export async function requestRewardAd(placementId: AdPlacementId): Promise<boolean> {
   if (!isTossApp()) return true; // 웹 환경 테스트용 패스
 
-  const api = WebFramework as any;
-  if (typeof api.loadFullScreenAd?.isSupported !== 'function' || !api.loadFullScreenAd.isSupported()) {
-    return false;
-  }
+  if (!isAdSupported()) return false;
 
   let loadUnregister: (() => void) | null = null;
   let isRewarded = false;
 
   try {
-    loadUnregister = await waitForAdLoad(placementId, api);
+    loadUnregister = await waitForAdLoad(placementId);
 
     await new Promise<void>((resolve, reject) => {
       let showUnregister: (() => void) | undefined;
-      showUnregister = api.showFullScreenAd({
+      showUnregister = GoogleAdMob.showAppsInTossAdMob({
         options: { adGroupId: placementId },
-        onEvent: (event: any) => {
+        onEvent: (event: { type: string }) => {
           if (event.type === 'userEarnedReward') {
             isRewarded = true;
           } else if (event.type === 'dismissed') {
@@ -174,10 +181,10 @@ export async function requestRewardAd(placementId: AdPlacementId): Promise<boole
             reject(new Error('Toss SDK failedToShow'));
           }
         },
-        onError: (error: any) => {
+        onError: (error: unknown) => {
           if (showUnregister) showUnregister();
           reject(error);
-        }
+        },
       });
     });
 

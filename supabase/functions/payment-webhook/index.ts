@@ -21,7 +21,10 @@
 
 import { serve } from "std/http/server";
 import { createClient } from "@supabase/supabase-js";
-import { getServiceExpiresAt } from "../_shared/subscription.ts";
+import {
+  fulfillPaidOrder,
+  type PaidPlanId,
+} from "../../../server/src/services/paymentFulfillment.ts";
 
 // ---------------------------------------------------------------------------
 // 환경 변수
@@ -76,14 +79,16 @@ async function verifyWebhookSignature(
 }
 
 // ---------------------------------------------------------------------------
-// 플랜별 단가 (위변조 검증)
+// ⚠ PRICE SOURCE OF TRUTH
+// 프론트엔드(constants/membership.ts)와 이 서버 환경변수가 반드시 일치해야 합니다.
+// 기본값(fallback): PRO = 5907, PREMIUM = 9900
+// 변경 시 프론트(.env VITE_PLAN_AMOUNT_*) + 백엔드(PLAN_AMOUNT_*) 모두 갱신 필수.
 // ---------------------------------------------------------------------------
 const PLAN_AMOUNTS: Record<string, number> = {
-  pro: Number(Deno.env.get("PLAN_AMOUNT_PRO") ?? 5900),
+  pro: Number(Deno.env.get("PLAN_AMOUNT_PRO") ?? 5907),
   premium: Number(Deno.env.get("PLAN_AMOUNT_PREMIUM") ?? 9900),
 };
 
-const PLAN_DAYS_PER_UNIT = 30;
 const QUANTITY_MAX = 12;
 
 function deriveQuantityFromAmount(actualAmount: number, unitPrice: number): number | null {
@@ -195,32 +200,46 @@ serve(async (req: Request) => {
       }
 
       if (existingOrder) {
-        await adminClient
-          .from("orders")
-          .update({
-            status: "paid",
-            pg_tx_id: payment.transactionId ?? null,
-            paid_at: payment.paidAt ?? new Date().toISOString(),
-          })
-          .eq("id", existingOrder.id);
-
         const planId = existingOrder.plan_id;
         const unitPrice = PLAN_AMOUNTS[planId];
-        const quantity = unitPrice != null ? deriveQuantityFromAmount(payment.amount.total, unitPrice) : null;
-        const totalDays = quantity != null ? PLAN_DAYS_PER_UNIT * quantity : PLAN_DAYS_PER_UNIT;
-        const expiresAt = getServiceExpiresAt(totalDays);
+        const quantity =
+          unitPrice != null
+            ? deriveQuantityFromAmount(payment.amount.total, unitPrice)
+            : null;
 
-        await adminClient
-          .from("user_profiles")
-          .update({
-            subscription_tier: planId,
-            subscription_status: "active",
-            subscription_expires_at: expiresAt,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", existingOrder.user_id);
+        if (unitPrice != null && quantity != null) {
+          const fulfillment = await fulfillPaidOrder({
+            adminClient,
+            paymentId,
+            userId: existingOrder.user_id,
+            planId: planId as PaidPlanId,
+            quantity,
+            amount: payment.amount.total,
+            currency: payment.amount.currency ?? "KRW",
+            payMethod: payment.method?.type ?? "UNKNOWN",
+            pgProvider: "nicepay",
+            pgTxId: payment.transactionId ?? null,
+            paidAt: payment.paidAt ?? new Date().toISOString(),
+            orderName: payment.orderName ?? `${planId.toUpperCase()} Plan (${quantity * 30}일)`,
+            planAmounts: PLAN_AMOUNTS as { pro: number; premium: number },
+            metadata: {
+              source: "payment-webhook",
+              webhookType: type,
+            },
+          });
 
-        console.info(`[webhook] 결제 확인 완료: paymentId=${paymentId}, userId=${existingOrder.user_id}, plan=${planId}`);
+          if (fulfillment.inProgress) {
+            console.info(`[webhook] 처리 중 결제 건 재수신: paymentId=${paymentId}`);
+            return new Response(JSON.stringify({ ok: true, inProgress: true }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+
+          console.info(`[webhook] 결제 확인 완료: paymentId=${paymentId}, userId=${existingOrder.user_id}, plan=${planId}`);
+        } else {
+          console.warn(`[webhook] 기존 주문의 금액/플랜 검증 실패: paymentId=${paymentId}, plan=${planId}`);
+        }
       } else {
         // verify-payment 호출 없이 webhook만 온 경우
         // customData에서 userId, planId 추출 시도
@@ -244,33 +263,30 @@ serve(async (req: Request) => {
         const quantity = unitPrice != null ? deriveQuantityFromAmount(payment.amount.total, unitPrice) : null;
 
         if (userId && planId && unitPrice != null && quantity != null) {
-          const totalDays = PLAN_DAYS_PER_UNIT * quantity;
-          const expiresAt = getServiceExpiresAt(totalDays);
-
-          await adminClient.from("orders").insert({
-            user_id: userId,
-            payment_id: paymentId,
-            plan_id: planId,
-            order_name: payment.orderName ?? `${planId.toUpperCase()} Plan (${totalDays}일)`,
+          const fulfillment = await fulfillPaidOrder({
+            adminClient,
+            paymentId,
+            userId,
+            planId: planId as PaidPlanId,
+            quantity,
             amount: payment.amount.total,
             currency: payment.amount.currency ?? "KRW",
-            pay_method: payment.method?.type ?? "UNKNOWN",
-            status: "paid",
-            pg_provider: "nicepay",
-            pg_tx_id: payment.transactionId ?? null,
-            paid_at: payment.paidAt ?? new Date().toISOString(),
-            metadata: { quantity },
+            payMethod: payment.method?.type ?? "UNKNOWN",
+            pgProvider: "nicepay",
+            pgTxId: payment.transactionId ?? null,
+            paidAt: payment.paidAt ?? new Date().toISOString(),
+            orderName: payment.orderName ?? `${planId.toUpperCase()} Plan (${quantity * 30}일)`,
+            planAmounts: PLAN_AMOUNTS as { pro: number; premium: number },
+            metadata: {
+              source: "payment-webhook",
+              webhookType: type,
+              customDataPresent: Boolean(payment.customData),
+            },
           });
 
-          await adminClient
-            .from("user_profiles")
-            .update({
-              subscription_tier: planId,
-              subscription_status: "active",
-              subscription_expires_at: expiresAt,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", userId);
+          if (fulfillment.inProgress) {
+            console.info(`[webhook] 신규 주문이 이미 처리 중: paymentId=${paymentId}`);
+          }
 
           console.info(`[webhook] 신규 주문 처리: paymentId=${paymentId}`);
         } else if (userId && planId && unitPrice != null) {
@@ -300,6 +316,11 @@ serve(async (req: Request) => {
           .update({
             subscription_tier: "free",
             subscription_status: "refunded",
+            subscription_expires_at: null,
+            pending_plan: null,
+            pending_plan_effective_at: null,
+            max_portfolios: 2,
+            max_alarms: 2,
             updated_at: new Date().toISOString(),
           })
           .eq("id", order.user_id);

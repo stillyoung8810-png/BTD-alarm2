@@ -8,6 +8,8 @@ export interface AppUserProfile {
   max_alarms: number;
   subscription_status?: string | null;
   subscription_expires_at?: string | null;
+  pending_plan?: string | null;
+  pending_plan_effective_at?: string | null;
   telegram_enabled?: boolean;
   telegram_connected_at?: string | null;
   telegram_last_error?: string | null;

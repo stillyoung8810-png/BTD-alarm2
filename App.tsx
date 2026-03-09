@@ -22,6 +22,8 @@ import { showInterstitialOnTransition, AdPlacement } from './services/ads/adServ
 import { restorePendingIapOrders } from './services/payment/tossIapService';
 import { TossAppProvider } from './contexts/TossAppContext';
 import { buildDailyExecutionSummary } from './utils/dailyExecutionSummary';
+import { MembershipConfig } from './constants/membership';
+import { formatPriceKRW } from './utils/currency';
 import { 
   LayoutDashboard, 
   BarChart3, 
@@ -36,6 +38,7 @@ import {
 import { 
   getMaxPortfolios, 
   getMaxAlarms, 
+  getEffectiveSubscription,
 } from './utils/subscriptionUtils';
 import { useTierDisplay } from './hooks/useTierDisplay';
 
@@ -148,21 +151,18 @@ const App: React.FC = () => {
     setPortfolios,
   });
 
-  // 현재 유저의 구독 티어 (default: free)
-  const currentTier = (userProfile?.subscription_tier || 'free').toLowerCase();
+  const effectiveSubscription = useMemo(
+    () => getEffectiveSubscription(userProfile),
+    [userProfile],
+  );
+
+  // 현재 유저의 실효 구독 티어 (pending_plan / 만료 반영)
+  const currentTier = effectiveSubscription.tier.toLowerCase();
 
   const canAccessPaidStocks = useMemo(() => {
     const tierOk = currentTier === 'pro' || currentTier === 'premium';
-    if (!tierOk) return false;
-
-    const status = userProfile?.subscription_status;
-    const isActive = status === 'active' || status === 'trial' || status == null;
-
-    const expiresAt = userProfile?.subscription_expires_at;
-    const notExpired = !expiresAt || new Date(expiresAt) > new Date();
-
-    return isActive && notExpired;
-  }, [currentTier, userProfile?.subscription_status, userProfile?.subscription_expires_at]);
+    return tierOk && effectiveSubscription.isActive && !effectiveSubscription.isExpired;
+  }, [currentTier, effectiveSubscription.isActive, effectiveSubscription.isExpired]);
 
   const { tierLabel, tierClassName, TierIcon, tierIconClassName } = useTierDisplay(currentTier);
 
@@ -832,6 +832,13 @@ const App: React.FC = () => {
             currentUserEmail={user?.email}
             currentTier={currentTier === 'premium' || currentTier === 'pro' ? currentTier : 'free'}
             currentUserId={user?.id ?? undefined}
+            onUpgradePlan={(planId) => {
+              if (!user) {
+                setAuthModal('login');
+                return;
+              }
+              setCheckoutPlan(planId);
+            }}
             telegramConnectedAt={userProfile?.telegram_connected_at ?? null}
             telegramAlertsEnabled={userProfile?.telegram_enabled ?? false}
             onTelegramAlertsEnabledChange={async (enabled) => {
@@ -857,25 +864,18 @@ const App: React.FC = () => {
             isOpen={!!checkoutPlan}
             onClose={() => setCheckoutPlan(null)}
             lang={lang}
-            plan={checkoutPlan === 'pro' ? {
-            id: 'pro',
-            label: 'PRO',
-            subtitle: lang === 'ko' ? '전문 투자자' : 'Active Investor',
-            price: Number(import.meta.env.VITE_PLAN_AMOUNT_PRO ?? 5900),
-            priceFormatted: `₩${Number(import.meta.env.VITE_PLAN_AMOUNT_PRO ?? 5900).toLocaleString()}`,
-            features: lang === 'ko'
-              ? ['포트폴리오 최대 5개', '알람 슬롯 10개', '기본 13개 + PRO 전용 종목', 'AI 매매 인식 (50회/월)', '텔레그램 상세 알림', '광고 제거']
-              : ['Up to 5 portfolios', '10 alert slots', 'Core + PRO tickers', 'AI Trade Recognition (50/mo)', 'Detailed Telegram alerts', 'No ads'],
-          } : {
-            id: 'premium',
-            label: 'PREMIUM',
-            subtitle: lang === 'ko' ? '슈퍼 고래' : 'Power User',
-            price: Number(import.meta.env.VITE_PLAN_AMOUNT_PREMIUM ?? 9900),
-            priceFormatted: `₩${Number(import.meta.env.VITE_PLAN_AMOUNT_PREMIUM ?? 9900).toLocaleString()}`,
-            features: lang === 'ko'
-              ? ['포트폴리오 최대 20개', '알람 슬롯 40개', '모든 종목 + 베타 종목', 'AI 매매 인식 (무제한)', '신규 전략 선공개', 'VIP 전용 고객 지원']
-              : ['Up to 20 portfolios', '40 alert slots', 'All tickers + beta', 'Unlimited AI Recognition', 'Early access to strategies', 'VIP priority support'],
-          }}
+            plan={(() => {
+              const cfg = MembershipConfig.byType[checkoutPlan];
+              const lk = lang === 'ko' ? 'ko' : 'en';
+              return {
+                id: cfg.type,
+                label: cfg.displayName,
+                subtitle: cfg.subtitle[lk],
+                price: cfg.rawAmount,
+                priceFormatted: formatPriceKRW(cfg.rawAmount),
+                features: cfg.features[lk],
+              };
+            })()}
           customerEmail={user?.email}
           customerId={user?.id}
           onPaymentSuccess={() => {

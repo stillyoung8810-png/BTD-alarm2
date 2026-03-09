@@ -1,6 +1,7 @@
 // 배포: supabase functions deploy generate-daily-execution-summaries --no-verify-jwt
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getEffectiveSubscriptionState } from "../../../server/src/services/paymentFulfillment.ts";
 
 type Lang = "ko" | "en";
 
@@ -84,6 +85,8 @@ interface UserProfileRow {
   subscription_tier?: string | null;
   subscription_status?: string | null;
   subscription_expires_at?: string | null;
+  pending_plan?: string | null;
+  pending_plan_effective_at?: string | null;
   telegram_enabled?: boolean | null;
   telegram_chat_id?: string | null;
   preferred_language?: string | null;
@@ -155,13 +158,9 @@ function normalizeLang(value?: string | null): Lang {
 
 function shouldSendTelegram(profile: UserProfileRow | null): boolean {
   if (!profile) return false;
-  const tier = (profile.subscription_tier || "").toLowerCase();
-  if (tier !== "pro" && tier !== "premium") return false;
-  const status = (profile.subscription_status || "").toLowerCase();
-  const active = status === "active" || status === "trial" || status === "";
-  if (!active) return false;
-  const expiresAt = profile.subscription_expires_at;
-  if (expiresAt && new Date(expiresAt) <= new Date()) return false;
+  const effective = getEffectiveSubscriptionState(profile);
+  if (effective.tier !== "pro" && effective.tier !== "premium") return false;
+  if (!effective.isActive || effective.isExpired) return false;
   if (profile.telegram_enabled !== true) return false;
   const chatId = profile.telegram_chat_id;
   if (!chatId || String(chatId).trim() === "") return false;
@@ -1013,7 +1012,7 @@ serve(async (_req) => {
     const supabase = createClient(supabaseUrl, serviceKey);
     const { data: profiles, error: profileError } = await supabase
       .from("user_profiles")
-      .select("id, subscription_tier, subscription_status, subscription_expires_at, telegram_enabled, telegram_chat_id, preferred_language")
+      .select("id, subscription_tier, subscription_status, subscription_expires_at, pending_plan, pending_plan_effective_at, telegram_enabled, telegram_chat_id, preferred_language")
       .in("subscription_tier", ["pro", "premium"])
       .eq("telegram_enabled", true)
       .not("telegram_chat_id", "is", null);

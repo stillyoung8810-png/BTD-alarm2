@@ -1,9 +1,26 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Portfolio, Trade } from '../types';
 import { I18N, CUSTOM_GRADIENT_LOGOS, PAID_STOCKS } from '../constants';
-import { X, Calendar, ChevronRight } from 'lucide-react';
+import { X, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import StockLogo from './StockLogo';
+
+const CALENDAR_WEEKDAYS: Record<'ko' | 'en', string[]> = {
+  ko: ['일', '월', '화', '수', '목', '금', '토'],
+  en: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+};
+
+const getDateKey = (value: Date): string => {
+  const y = value.getFullYear();
+  const m = String(value.getMonth() + 1).padStart(2, '0');
+  const d = String(value.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const dateKeyToLocalDate = (dateKey: string): Date => {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+};
 
 interface TradeExecutionModalProps {
   lang: 'ko' | 'en';
@@ -20,6 +37,8 @@ const TradeExecutionModal: React.FC<TradeExecutionModalProps> = ({ lang, portfol
   const [quantity, setQuantity] = useState<number>(0);
   const [fee, setFee] = useState<number>(0);
   const [isMOC, setIsMOC] = useState<boolean>(false);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState<Date>(() => dateKeyToLocalDate(new Date().toISOString().split('T')[0]));
 
   const t = I18N[lang];
   const feeRate = portfolio.feeRate || 0.25;
@@ -45,6 +64,35 @@ const TradeExecutionModal: React.FC<TradeExecutionModalProps> = ({ lang, portfol
       setSelectedStock(holdings[0] || '');
     }
   }, [type]);
+
+  useEffect(() => {
+    setCalendarMonth(dateKeyToLocalDate(date));
+  }, [date]);
+
+  const calendarDays = useMemo(() => {
+    const year = calendarMonth.getFullYear();
+    const month = calendarMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const days: Array<Date | null> = [];
+
+    for (let i = 0; i < firstDay.getDay(); i++) {
+      days.push(null);
+    }
+
+    for (let day = 1; day <= lastDay.getDate(); day++) {
+      days.push(new Date(year, month, day));
+    }
+
+    return days;
+  }, [calendarMonth]);
+
+  const formattedDateLabel = useMemo(() => {
+    const selected = dateKeyToLocalDate(date);
+    return lang === 'ko'
+      ? `${selected.getFullYear()}년 ${selected.getMonth() + 1}월 ${selected.getDate()}일`
+      : selected.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  }, [date, lang]);
 
   const handleSave = () => {
     if (price <= 0 || quantity <= 0) return;
@@ -144,12 +192,95 @@ const TradeExecutionModal: React.FC<TradeExecutionModalProps> = ({ lang, portfol
              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{type === 'buy' ? t.date : t.sellDate}:</label>
              <div className="relative">
                 <Calendar className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" size={20} />
-                <input 
-                  type="date" 
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="w-full p-6 pl-16 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-3xl text-slate-900 dark:text-white font-bold text-base outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none" 
-                />
+                <button
+                  type="button"
+                  onClick={() => setIsCalendarOpen((prev) => !prev)}
+                  className="w-full p-6 pl-16 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-3xl text-slate-900 dark:text-white font-bold text-base outline-none focus:ring-2 focus:ring-blue-500/50 text-left"
+                >
+                  {formattedDateLabel}
+                </button>
+                {isCalendarOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-[121]"
+                      onClick={() => setIsCalendarOpen(false)}
+                      aria-hidden
+                    />
+                    <div className="absolute left-0 right-0 top-[calc(100%+0.75rem)] z-[122] rounded-[2rem] border border-slate-200 dark:border-white/10 bg-white dark:bg-[#161d2a] shadow-2xl overflow-hidden">
+                      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/5">
+                        <button
+                          type="button"
+                          onClick={() => setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
+                          className="p-2 rounded-full text-blue-500"
+                          aria-label={lang === 'ko' ? '이전 달' : 'Previous month'}
+                        >
+                          <ChevronLeft size={20} />
+                        </button>
+                        <div className="text-lg font-black text-slate-900 dark:text-white">
+                          {lang === 'ko'
+                            ? `${calendarMonth.getFullYear()}년 ${calendarMonth.getMonth() + 1}월`
+                            : calendarMonth.toLocaleDateString('en-US', { year: 'numeric', month: 'long' })}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
+                          className="p-2 rounded-full text-blue-500"
+                          aria-label={lang === 'ko' ? '다음 달' : 'Next month'}
+                        >
+                          <ChevronRight size={20} />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-7 px-4 pt-4 pb-2">
+                        {CALENDAR_WEEKDAYS[lang].map((weekday) => (
+                          <div key={weekday} className="h-8 flex items-center justify-center text-xs font-bold text-slate-400">
+                            {weekday}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-7 gap-y-1 px-4 pb-4">
+                        {calendarDays.map((dayValue, index) => {
+                          if (!dayValue) {
+                            return <div key={`empty-${index}`} className="h-12" />;
+                          }
+
+                          const isWeekend = dayValue.getDay() === 0 || dayValue.getDay() === 6;
+                          const dayKey = getDateKey(dayValue);
+                          const isSelected = dayKey === date;
+
+                          if (isWeekend) {
+                            return (
+                              <div
+                                key={dayKey}
+                                className="h-12 flex items-center justify-center text-gray-300 opacity-30 select-none"
+                                aria-disabled="true"
+                              >
+                                {dayValue.getDate()}
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <button
+                              key={dayKey}
+                              type="button"
+                              onClick={() => {
+                                setDate(dayKey);
+                                setIsCalendarOpen(false);
+                              }}
+                              className={`h-12 flex items-center justify-center rounded-full text-lg font-medium transition-colors active:scale-[0.97] ${
+                                isSelected
+                                  ? 'bg-blue-500 text-white'
+                                  : 'text-slate-900 dark:text-white'
+                              }`}
+                            >
+                              {dayValue.getDate()}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
              </div>
           </div>
 

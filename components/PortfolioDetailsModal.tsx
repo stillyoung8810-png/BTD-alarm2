@@ -249,7 +249,7 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
                     <button 
                       key={dateKey} 
                       onClick={() => setSelectedDate(dateKey)}
-                      className={`relative min-h-[120px] rounded-3xl border transition-all flex flex-col items-center p-3 gap-3 group/day ${
+                      className={`relative min-h-[120px] rounded-3xl border transition-all flex flex-col items-center justify-center p-3 gap-3 group/day ${
                         isSelected 
                           ? 'bg-blue-50 dark:bg-blue-600/20 border-blue-500 shadow-xl scale-105 z-10' 
                           : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10 shadow-sm'
@@ -259,12 +259,12 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
                       
                       <div className="flex flex-col gap-2 w-full items-center">
                         {buys.length > 0 && (
-                          <div className="flex pl-3 items-center justify-center animate-in zoom-in-50 duration-300">
+                          <div className="flex w-full items-center justify-center animate-in zoom-in-50 duration-300">
                             {buys.map((b, idx) => renderStockIcon(b.stock, 'sm', idx))}
                           </div>
                         )}
                         {sells.length > 0 && (
-                          <div className="flex pl-3 items-center justify-center animate-in zoom-in-50 duration-300">
+                          <div className="flex w-full items-center justify-center animate-in zoom-in-50 duration-300">
                             {sells.map((s, idx) => renderStockIcon(s.stock, 'sm', idx))}
                           </div>
                         )}

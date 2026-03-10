@@ -36,6 +36,7 @@ import { isTossApp } from '../services/tossAppBridge';
 import { useTossApp } from '../contexts/TossAppContext';
 import { TDSModal, TDSButton } from './tds';
 import { getServicePeriodDisplay } from '../utils/dateUtils';
+import { MembershipConfig } from '../constants/membership';
 
 // ---------------------------------------------------------------------------
 // 상수 — DRY: 메시지·기간 라벨·플랜 스타일
@@ -164,28 +165,66 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
 }) => {
   const isKo = lang === 'ko';
   const { isInTossApp } = useTossApp();
+  const [selectedPlanId, setSelectedPlanId] = useState<'pro' | 'premium'>(plan.id);
   const [payMethod, setPayMethod] = useState<PayMethod>('CARD');
   const [quantity, setQuantity] = useState<number>(DEFAULT_QUANTITY);
   const [isProcessing, setIsProcessing] = useState(false);
+  const lk = isKo ? 'ko' : 'en';
+
+  // PRO / PREMIUM 플랜 정의 — MembershipConfig 기반 (App.tsx와 동일 소스)
+  const proCfg = MembershipConfig.byType.pro;
+  const premiumCfg = MembershipConfig.byType.premium;
+
+  const planMap: Record<'pro' | 'premium', {
+    id: 'pro' | 'premium';
+    label: string;
+    subtitle: string;
+    price: number;
+    priceFormatted: string;
+    features: string[];
+  }> = {
+    pro: {
+      id: 'pro',
+      label: proCfg.displayName,
+      subtitle: proCfg.subtitle[lk],
+      price: proCfg.rawAmount,
+      priceFormatted: formatPriceKRW(proCfg.rawAmount),
+      features: proCfg.features[lk],
+    },
+    premium: {
+      id: 'premium',
+      label: premiumCfg.displayName,
+      subtitle: premiumCfg.subtitle[lk],
+      price: premiumCfg.rawAmount,
+      priceFormatted: formatPriceKRW(premiumCfg.rawAmount),
+      features: premiumCfg.features[lk],
+    },
+  };
+
+  const activePlan = planMap[selectedPlanId];
+  const isPremiumComingSoon = selectedPlanId === 'premium';
 
   const totalDays = PLAN_DAYS_PER_UNIT * quantity;
-  const totalAmount = plan.price * quantity;
+  const totalAmount = activePlan.price * quantity;
   const totalFormatted = formatPriceKRW(totalAmount);
-  const styles = PLAN_STYLES[plan.id];
+  const styles = PLAN_STYLES[selectedPlanId];
+  const primaryCtaLabel = isPremiumComingSoon
+    ? (isKo ? 'PREMIUM 플랜은 출시 예정입니다' : 'PREMIUM plan is coming soon')
+    : (isKo ? '지금 결제하기' : 'Pay Now');
 
   const buildPayReq = useCallback((): PaymentRequest => ({
-    orderName: `${plan.label} ${getPlanDurationLabel(quantity, isKo)}`,
+    orderName: `${activePlan.label} ${getPlanDurationLabel(quantity, isKo)}`,
     totalAmount,
     customerEmail,
     customerId,
     payMethod,
-    planId: plan.id,
+    planId: selectedPlanId,
     quantity,
     ...(payMethod === 'EASY_PAY' ? { easyPayProvider: 'KAKAOPAY' as EasyPayProvider } : {}),
-  }), [plan, quantity, totalAmount, payMethod, customerEmail, customerId, isKo]);
+  }), [activePlan.label, quantity, totalAmount, payMethod, customerEmail, customerId, isKo, selectedPlanId]);
 
   const handleTossPay = useCallback(async (payReq: PaymentRequest) => {
-    const result = await requestTossIAP(plan.id, payReq.quantity ?? 1);
+    const result = await requestTossIAP(selectedPlanId, payReq.quantity ?? 1);
 
     if (!result.success) {
       return {
@@ -199,7 +238,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
       ok: true,
       needRefresh: true,
     };
-  }, [plan.id]);
+  }, [selectedPlanId]);
 
   const handlePortOnePay = useCallback(async (payReq: PaymentRequest) => {
     const result = await requestPaymentWithServerVerify(payReq);
@@ -218,7 +257,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
   }, []);
 
   const handlePay = useCallback(async () => {
-    if (isProcessing) return;
+    if (isProcessing || isPremiumComingSoon) return;
     setIsProcessing(true);
     const payReq = buildPayReq();
     const msgs = PAY_MSGS[lang];
@@ -251,6 +290,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   }, [
     isProcessing,
+    isPremiumComingSoon,
     buildPayReq,
     handleTossPay,
     handlePortOnePay,
@@ -279,15 +319,41 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
       </div>
 
       <div className="overflow-y-auto max-h-[calc(100vh-8rem)] p-6 space-y-6">
+        {/* 플랜 선택 토글 (PRO / PREMIUM) */}
+        <div className="flex justify-center">
+          <div className="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 p-1">
+            {(['pro', 'premium'] as const).map((id) => {
+              const isSelected = selectedPlanId === id;
+              const isPro = id === 'pro';
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setSelectedPlanId(id)}
+                  className={`px-4 py-1.5 text-xs font-semibold rounded-full transition-colors ${
+                    isSelected
+                      ? isPro
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-amber-400 text-black'
+                      : 'text-slate-500 dark:text-slate-300'
+                  }`}
+                >
+                  {id.toUpperCase()}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* 플랜 카드 */}
         <div className={`p-5 rounded-2xl border ${styles.card}`}>
           <div className="flex items-center gap-3 mb-4">
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${styles.iconBg}`}>
-              {plan.id === 'pro' ? <Star size={20} className={styles.icon} /> : <Crown size={20} className={styles.icon} />}
+              {selectedPlanId === 'pro' ? <Star size={20} className={styles.icon} /> : <Crown size={20} className={styles.icon} />}
             </div>
             <div>
               <p className="font-black text-slate-900 dark:text-white text-base tracking-tight">
-                {plan.label} PLAN
+                {activePlan.label} PLAN
               </p>
               <p className={`text-xs font-semibold ${styles.subtitle}`}>
                 {getPlanDurationLabel(quantity, isKo)}
@@ -315,7 +381,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </div>
 
           <ul className="space-y-2">
-            {plan.features.map((feat, i) => (
+            {activePlan.features.map((feat, i) => (
               <li key={`feat-${i}-${feat.slice(0, 20)}`} className="flex items-center gap-2">
                 <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${styles.check}`}>
                   <Check size={10} className={styles.checkIcon} />
@@ -384,7 +450,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
               {isKo ? '이용권 금액' : 'Plan Price'}
             </span>
             <span className="text-sm font-bold text-slate-900 dark:text-white">
-              {plan.priceFormatted} × {quantity} = {totalFormatted}
+              {activePlan.priceFormatted} × {quantity} = {totalFormatted}
             </span>
           </div>
           <div className="flex justify-between items-center">
@@ -407,13 +473,18 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
         </div>
 
         {isInTossApp ? (
-          <TDSButton fullWidth loading={isProcessing} disabled={isProcessing} onClick={handlePay}>
-            {isProcessing ? (isKo ? '결제 처리 중...' : 'Processing...') : (isKo ? '지금 결제하기' : 'Pay Now')}
+          <TDSButton
+            fullWidth
+            loading={isProcessing}
+            disabled={isProcessing || isPremiumComingSoon}
+            onClick={handlePay}
+          >
+            {isProcessing ? (isKo ? '결제 처리 중...' : 'Processing...') : primaryCtaLabel}
           </TDSButton>
         ) : (
           <button
             onClick={handlePay}
-            disabled={isProcessing}
+            disabled={isProcessing || isPremiumComingSoon}
             className={`w-full py-4 rounded-2xl text-sm font-black uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed ${styles.button}`}
           >
             {isProcessing ? (
@@ -424,11 +495,19 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
             ) : (
               <>
                 <Zap size={18} />
-                {isKo ? '지금 결제하기' : 'Pay Now'}
+                {primaryCtaLabel}
                 <ArrowRight size={16} />
               </>
             )}
           </button>
+        )}
+
+        {isPremiumComingSoon && (
+          <p className="mt-2 text-xs font-semibold text-amber-600 dark:text-amber-400 text-center">
+            {isKo
+              ? 'PREMIUM 플랜은 아직 결제가 불가합니다. 준비되는 대로 안내드릴게요.'
+              : 'The PREMIUM plan is not available for purchase yet.'}
+          </p>
         )}
 
         <div className="text-center space-y-1 pt-2">

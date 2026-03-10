@@ -4,14 +4,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4'
 import { SignJWT, importPKCS8 } from 'https://deno.land/x/jose@v5.2.0/index.ts'
-
-// CORS 헤더 설정
-const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") || "https://btd-alarm2.pages.dev";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+import { getCorsHeaders, getJsonCorsHeaders } from '../_shared/cors.ts'
 
 // Google OAuth2 액세스 토큰 생성 함수
 async function getGoogleAccessToken(serviceAccount: {
@@ -60,6 +53,9 @@ async function getGoogleAccessToken(serviceAccount: {
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req)
+  const jsonHeaders = getJsonCorsHeaders(req)
+
   // CORS preflight 처리
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -76,7 +72,7 @@ Deno.serve(async (req) => {
     if (!record.user_id) {
       return new Response(
         JSON.stringify({ error: 'user_id가 필요합니다.' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 400, headers: jsonHeaders }
       )
     }
 
@@ -106,7 +102,7 @@ Deno.serve(async (req) => {
       console.log('발송할 토큰이 없습니다.')
       return new Response(
         JSON.stringify({ message: '발송할 토큰이 없습니다.' }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 200, headers: jsonHeaders }
       )
     }
 
@@ -229,14 +225,14 @@ Deno.serve(async (req) => {
         message: `알림 전송 완료: 성공 ${successCount}개, 실패 ${failCount}개`,
         results,
       }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 200, headers: jsonHeaders }
     )
 
   } catch (error) {
     console.error('푸시 알림 에러:', error)
     return new Response(
       JSON.stringify({ error: 'Internal server error' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 500, headers: jsonHeaders }
     )
   }
 })

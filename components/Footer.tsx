@@ -46,60 +46,32 @@ const Footer: React.FC<FooterProps> = ({ isInTossApp: isInTossAppProp, onNavigat
       className="w-full bg-slate-100 dark:bg-slate-900/80 border-t border-slate-200 dark:border-white/5 mt-auto"
       style={safeBottom > 0 ? { paddingBottom: `${safeBottom}px` } : undefined}
     >
-      {/* 토스 미니앱 고객센터 — 토스 환경에서만 TDS 버튼, 웹은 링크 유지 */}
-      {isTossAgent && (
-        <div className="px-5 pt-5 pb-2">
-          <TDSButton
-            variant="primary"
-            fullWidth
-            onClick={() => openExternalUrl(TOSS_CS_URL)}
-          >
-            토스 미니앱 고객센터
-          </TDSButton>
-        </div>
-      )}
-
       <div className="px-5 py-6 space-y-4">
-        {/* 이용약관 / 개인정보처리방침 — 토스에서는 TDS tertiary 스타일, 웹은 기존 링크 스타일 */}
+        {/* 이용약관 / 개인정보처리방침 / 환불규정 — 웹·토스 동일하게 글자만(링크 스타일), 버튼 느낌 없음 */}
         <div className="flex items-center gap-3 text-[12px] font-medium flex-wrap">
-          {isTossAgent ? (
-            <>
-              <TDSButton variant="tertiary" onClick={() => { onNavigateTerms?.(); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="!py-1.5 !text-xs underline underline-offset-2 min-w-0">
-                이용약관
-              </TDSButton>
-              <span className="text-slate-300 dark:text-slate-600">|</span>
-              <TDSButton variant="tertiary" onClick={() => { onNavigatePrivacy?.(); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="!py-1.5 !text-xs underline underline-offset-2 min-w-0">
-                개인정보처리방침
-              </TDSButton>
-              <span className="text-slate-300 dark:text-slate-600">|</span>
-              <TDSButton variant="tertiary" onClick={() => { onNavigateRefundPolicy?.(); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="!py-1.5 !text-xs underline underline-offset-2 min-w-0">
-                환불규정
-              </TDSButton>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => { onNavigateTerms?.(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors underline underline-offset-2"
-              >
-                이용약관
-              </button>
-              <span className="text-slate-300 dark:text-slate-600">|</span>
-              <button
-                onClick={() => { onNavigatePrivacy?.(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors underline underline-offset-2"
-              >
-                개인정보처리방침
-              </button>
-              <span className="text-slate-300 dark:text-slate-600">|</span>
-              <button
-                onClick={() => { onNavigateRefundPolicy?.(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors underline underline-offset-2"
-              >
-                환불규정
-              </button>
-            </>
-          )}
+          <button
+            type="button"
+            onClick={() => { onNavigateTerms?.(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+            className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors underline underline-offset-2"
+          >
+            이용약관
+          </button>
+          <span className="text-slate-300 dark:text-slate-600">|</span>
+          <button
+            type="button"
+            onClick={() => { onNavigatePrivacy?.(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+            className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors underline underline-offset-2"
+          >
+            개인정보처리방침
+          </button>
+          <span className="text-slate-300 dark:text-slate-600">|</span>
+          <button
+            type="button"
+            onClick={() => { onNavigateRefundPolicy?.(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+            className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors underline underline-offset-2"
+          >
+            환불규정
+          </button>
         </div>
 
         {/* 법인 정보 */}

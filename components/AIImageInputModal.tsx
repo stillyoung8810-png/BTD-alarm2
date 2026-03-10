@@ -202,6 +202,24 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
       const msg = err instanceof Error ? err.message : String(err);
       if (msg === 'RATE_LIMIT') {
         setErrorMessage(t.aiScanRateLimit);
+      } else if (msg === 'AUTH_REQUIRED') {
+        setErrorMessage(
+          lang === 'ko'
+            ? '로그인 인증이 만료되었거나 누락되었습니다. 다시 로그인한 뒤 AI 매매 인식을 다시 시도해주세요.'
+            : 'Your login session is missing or expired. Please sign in again and retry AI trade recognition.'
+        );
+      } else if (msg === 'FORBIDDEN') {
+        setErrorMessage(
+          lang === 'ko'
+            ? 'AI 인식 요청이 서버 정책에 의해 거부되었습니다. 잠시 후 다시 시도해주세요.'
+            : 'The AI recognition request was rejected by the server policy. Please try again shortly.'
+        );
+      } else if (msg === 'NETWORK_OR_CORS') {
+        setErrorMessage(
+          lang === 'ko'
+            ? '네트워크 연결 또는 미니앱 WebView 정책(CORS) 때문에 AI 인식 요청이 차단되었습니다. 앱을 다시 열거나 잠시 후 다시 시도해주세요.'
+            : 'The AI recognition request was blocked by network connectivity or the mini-app WebView policy (CORS). Reopen the app or try again shortly.'
+        );
       } else {
         setErrorMessage(t.aiScanError);
       }

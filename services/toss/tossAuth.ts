@@ -36,8 +36,8 @@ export async function loginWithToss(): Promise<TossAuthResult> {
     if (!code) {
       return { success: false, error: '토스 인증 코드를 받지 못했습니다.' };
     }
-    // SDK: "DEFAULT" | "SANDBOX" → BFF 스펙: "DEFAULT" | "sandbox"
-    referrer = referrerFromSdk === 'SANDBOX' ? 'sandbox' : referrerFromSdk;
+    // SDK: "DEFAULT" | "SANDBOX" → BFF/토스 API 스펙: "DEFAULT" | "sandbox" (대소문자 정확히 일치)
+    referrer = referrerFromSdk === 'SANDBOX' ? 'sandbox' : 'DEFAULT';
   } catch (err) {
     const msg = toErrorMessage(err, '토스 로그인 요청 실패');
     console.warn('[TossAuth] appLogin 실패:', msg);

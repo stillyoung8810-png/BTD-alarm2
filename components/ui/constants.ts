@@ -5,7 +5,7 @@
  */
 
 export const BUTTON = {
-  base: 'py-3 rounded-2xl font-bold transition-all outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-transparent disabled:opacity-60 disabled:pointer-events-none',
+  base: 'px-6 py-3 rounded-2xl font-bold transition-all outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-transparent disabled:opacity-60 disabled:pointer-events-none',
   primary:
     'bg-[#3182F6] text-white shadow-lg shadow-blue-500/20 hover:opacity-95 active:scale-[0.98] focus:ring-blue-500/50',
   secondary:

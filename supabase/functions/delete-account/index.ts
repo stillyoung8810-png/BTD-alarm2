@@ -7,16 +7,12 @@
 
 import { serve } from "std/http/server";
 import { createClient } from "@supabase/supabase-js";
-
-const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") || "https://btd-alarm2.pages.dev";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+import { getCorsHeaders, getJsonCorsHeaders } from "../_shared/cors.ts";
 
 serve(async (req: Request) => {
+  const corsHeaders = getCorsHeaders(req);
+  const jsonHeaders = getJsonCorsHeaders(req);
+
   // CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -25,7 +21,7 @@ serve(async (req: Request) => {
   if (req.method !== "POST") {
     return new Response(
       JSON.stringify({ error: "Method not allowed" }),
-      { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { status: 405, headers: jsonHeaders },
     );
   }
 
@@ -38,7 +34,7 @@ serve(async (req: Request) => {
     if (!authHeader) {
       return new Response(
         JSON.stringify({ error: "Missing authorization header" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 401, headers: jsonHeaders },
       );
     }
 
@@ -52,7 +48,7 @@ serve(async (req: Request) => {
     if (authError || !user) {
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 401, headers: jsonHeaders },
       );
     }
 

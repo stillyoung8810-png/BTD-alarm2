@@ -1,9 +1,9 @@
-
 import React, { useMemo } from 'react';
 import { Portfolio } from '../types';
 import { I18N } from '../constants';
 import { Calendar, CheckCircle2, ChevronRight, Trash2 } from 'lucide-react';
 import { calculateTotalInvested } from '../utils/portfolioCalculations';
+import { useTossApp } from '../contexts/TossAppContext';
 
 /** 포트폴리오 1건의 invested / profit / yieldRate 계산 */
 const calcPortfolioStats = (p: Portfolio) => {
@@ -28,6 +28,7 @@ interface HistoryProps {
 
 const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails, onDeleteHistory, onClearHistory }) => {
   const t = I18N[lang];
+  const { isInTossApp } = useTossApp();
 
   // 종료일 기준 내림차순 정렬
   const sortedPortfolios = useMemo(() =>
@@ -97,6 +98,93 @@ const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails, onDe
           sortedPortfolios.map(p => {
             const { invested, profit, yieldRate } = calcPortfolioStats(p);
 
+            /* 토스 미니앱 전용: 헤더(총 손익금 우측), Body(넉넉한 gap), Footer(TDS weak 스타일 버튼) */
+            if (isInTossApp) {
+              return (
+                <div key={p.id} className="bg-white dark:glass p-7 rounded-[2.5rem] flex flex-col gap-6 border border-slate-200 dark:border-white/5 shadow-md dark:bg-slate-900/20">
+                  {/* 1. Header: justify-between, items-start — 좌측(이름/기간), 우측(총 손익금) */}
+                  <div className="flex justify-between items-start gap-4">
+                    <div className="flex items-center gap-5 min-w-0">
+                      <div className="w-14 h-14 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-500 rounded-2xl flex items-center justify-center border border-emerald-200 dark:border-emerald-500/20 shrink-0">
+                        <CheckCircle2 size={28} />
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="text-lg font-black text-slate-900 dark:text-white">{p.name}</h4>
+                        <div className="flex flex-col text-[10px] font-black text-slate-600 dark:text-slate-500 uppercase tracking-widest mt-1">
+                          <span>{lang === 'ko' ? '시작: ' : 'Start: '}{p.startDate}</span>
+                          <span>{lang === 'ko' ? '종료: ' : 'End: '}{new Date(p.closedAt || '').toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <p className={`text-xl font-black shrink-0 ${profit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                      {profit >= 0 ? '+' : '-'}${Math.abs(profit).toLocaleString()}
+                    </p>
+                  </div>
+
+                  {/* 2. Body: 총 투자금 / 총 수익률 — 넉넉한 좌우 간격(gap-12) */}
+                  <div className="grid grid-cols-2 gap-12">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest block mb-1">
+                        {lang === 'ko' ? '총 투자금' : 'Total Invested'}
+                      </span>
+                      <p className="text-lg font-black text-slate-900 dark:text-white">
+                        ${invested.toLocaleString()}
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-0.5 font-medium">
+                        [Σ(Buy + Fee)]
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest block mb-1">
+                        {lang === 'ko' ? '총 수익률' : 'Total Yield'}
+                      </span>
+                      <p className={`text-lg font-black ${profit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                        {profit >= 0 ? '+' : ''}{yieldRate.toFixed(2)}%
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-0.5 font-medium">
+                        [(Total Return / Total Invested - 1) * 100]
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* 3. Footer: TDS weak variant 모방
+                      - Primary Weak: 연한 파란 배경 + 쨍한 파란 텍스트 (반투명·덜 강렬한 액션)
+                      - Danger Weak: 연한 붉은 배경 + 쨍한 붉은 텍스트
+                      - 사이즈: text-sm, px-3 py-1.5, rounded-xl, font-semibold */}
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onOpenDetails(p.id)}
+                      className={[
+                        'text-sm font-semibold rounded-xl px-3 py-1.5',
+                        'bg-blue-100 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400',
+                        'hover:bg-blue-200 dark:hover:bg-blue-500/25 transition-colors',
+                      ].join(' ')}
+                    >
+                      {t.viewSettlement} <ChevronRight size={14} className="inline-block align-middle" />
+                    </button>
+                    {onDeleteHistory && (
+                      <button
+                        type="button"
+                        onClick={() => confirmAndRun(
+                          lang === 'ko' ? '삭제되면 되돌릴 수 없습니다. 삭제하시겠습니까?' : 'Delete this history record? (This will also delete it from Supabase and cannot be undone.)',
+                          () => onDeleteHistory(p.id),
+                        )}
+                        className={[
+                          'flex items-center gap-1.5 text-sm font-semibold rounded-xl px-3 py-1.5',
+                          'bg-red-100 dark:bg-red-500/15 text-red-600 dark:text-red-400',
+                          'hover:bg-red-200 dark:hover:bg-red-500/25 transition-colors',
+                        ].join(' ')}
+                      >
+                        <Trash2 size={14} /> {lang === 'ko' ? '기록 삭제' : 'Delete'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
+            /* 일반 웹: 기존 레이아웃 유지 */
             return (
               <div key={p.id} className="bg-white dark:glass p-7 rounded-[2.5rem] flex flex-col md:flex-row md:items-center justify-between gap-6 hover:translate-x-1 transition-transform border border-slate-200 dark:border-white/5 shadow-md dark:bg-slate-900/20">
                 <div className="flex items-center gap-5 min-w-[250px]">

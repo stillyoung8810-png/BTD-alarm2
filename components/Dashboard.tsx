@@ -186,7 +186,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           </div>
 
           {isInTossApp ? (
-            <TDSButton variant="primary" onClick={onOpenCreator} className="flex items-center justify-center gap-2">
+            <TDSButton variant="primary" onClick={onOpenCreator} className="flex items-center justify-center gap-2 !px-10">
               <Plus size={18} strokeWidth={3} /> {t.newPortfolio}
             </TDSButton>
           ) : (

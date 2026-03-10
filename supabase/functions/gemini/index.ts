@@ -5,6 +5,7 @@
 import { serve } from "std/http/server.ts";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { GenerationConfig } from "@google/generative-ai";
+import { getCorsHeaders, getJsonCorsHeaders } from "../_shared/cors.ts";
 
 type Tier = "free" | "paid";
 
@@ -37,25 +38,19 @@ const getApiKey = (tier: Tier): string | null => {
   return freeKey ?? null;
 };
 
-const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") || "https://btd-alarm2.pages.dev";
-
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+  const jsonHeaders = getJsonCorsHeaders(req);
+
   if (req.method === "OPTIONS") {
     // CORS preflight
-    return new Response("ok", { headers: CORS_HEADERS });
+    return new Response("ok", { headers: corsHeaders });
   }
 
   if (req.method !== "POST") {
     return new Response("Method Not Allowed", {
       status: 405,
-      headers: CORS_HEADERS,
+      headers: corsHeaders,
     });
   }
 
@@ -64,7 +59,7 @@ serve(async (req) => {
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
-      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      headers: jsonHeaders,
     });
   }
 
@@ -80,11 +75,11 @@ serve(async (req) => {
   if (!apiKey) {
     if (body.mode === "advisor") {
       return new Response(JSON.stringify({ text: FALLBACK_ADVISOR_TEXT }), {
-        headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+        headers: jsonHeaders,
       });
     }
     return new Response(JSON.stringify({ trades: [] }), {
-      headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+      headers: jsonHeaders,
     });
   }
 
@@ -100,7 +95,7 @@ serve(async (req) => {
       );
       const text = resp.response.text();
       return new Response(JSON.stringify({ text }), {
-        headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+        headers: jsonHeaders,
       });
     }
 
@@ -143,20 +138,20 @@ Return {"trades":[]} if no valid trade data is found.`;
       const match = text.match(/\{[\s\S]*\}/);
       if (!match) {
         return new Response(JSON.stringify({ trades: [] }), {
-          headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+          headers: jsonHeaders,
         });
       }
 
       return new Response(match[0], {
-        headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+        headers: jsonHeaders,
       });
     }
 
-    return new Response("Invalid mode", { status: 400, headers: CORS_HEADERS });
+    return new Response("Invalid mode", { status: 400, headers: corsHeaders });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (/429|rate limit|quota|resource exhausted/i.test(msg)) {
-      return new Response("RATE_LIMIT", { status: 429, headers: CORS_HEADERS });
+      return new Response("RATE_LIMIT", { status: 429, headers: corsHeaders });
     }
     console.error(
       "Supabase gemini function error DETAILS:",
@@ -166,12 +161,12 @@ Return {"trades":[]} if no valid trade data is found.`;
 
     if (body.mode === "advisor") {
       return new Response(JSON.stringify({ text: FALLBACK_ADVISOR_TEXT }), {
-        headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+        headers: jsonHeaders,
         status: 500,
       });
     }
     return new Response(JSON.stringify({ trades: [] }), {
-      headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+      headers: jsonHeaders,
       status: 500,
     });
   }

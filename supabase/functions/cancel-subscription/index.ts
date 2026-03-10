@@ -16,6 +16,7 @@
 
 import { serve } from "std/http/server";
 import { createClient } from "@supabase/supabase-js";
+import { getCorsHeaders, getJsonCorsHeaders } from "../_shared/cors.ts";
 
 // ---------------------------------------------------------------------------
 // 환경 변수
@@ -23,8 +24,6 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const PORTONE_API_SECRET = Deno.env.get("PORTONE_API_SECRET") ?? "";
-const ALLOWED_ORIGIN =
-  Deno.env.get("ALLOWED_ORIGIN") || "https://btd-alarm2.pages.dev";
 const PORTONE_API_BASE = "https://api.portone.io";
 
 const REFUND_WINDOW_DAYS = 7;
@@ -32,14 +31,6 @@ const REFUND_WINDOW_DAYS = 7;
 // ---------------------------------------------------------------------------
 // CORS
 // ---------------------------------------------------------------------------
-const corsHeaders = {
-  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey",
-};
-
-const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
-
 // ---------------------------------------------------------------------------
 // 포트원 V2 결제 취소 API
 // ---------------------------------------------------------------------------
@@ -90,6 +81,13 @@ function hasServiceUsage(profile: UsageProfile | null): boolean {
 // 메인 핸들러
 // ---------------------------------------------------------------------------
 serve(async (req: Request) => {
+  const corsHeaders = getCorsHeaders(req, {
+    allowHeaders: "Content-Type, Authorization, apikey",
+  });
+  const jsonHeaders = getJsonCorsHeaders(req, {
+    allowHeaders: "Content-Type, Authorization, apikey",
+  });
+
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
   }

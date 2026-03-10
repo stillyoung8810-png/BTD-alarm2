@@ -192,6 +192,7 @@ const Pricing: React.FC<PricingProps> = ({ lang, currentTier, onUpgrade }) => {
           {tiers.map((tier) => {
             const isCurrent = currentTier === tier.id;
             const isDisabled = tier.id === 'premium';
+            const isProTier = tier.id === 'pro';
 
             const baseCardClasses =
               tier.theme === 'premium'
@@ -272,29 +273,43 @@ const Pricing: React.FC<PricingProps> = ({ lang, currentTier, onUpgrade }) => {
                     <TDSButton
                       variant={tier.theme === 'pro' ? 'primary' : tier.theme === 'premium' ? 'primary' : 'tertiary'}
                       fullWidth
-                      disabled={isCurrent || isDisabled}
+                      disabled={isDisabled || (isCurrent && tier.id === 'free')}
                       onClick={() => {
-                        if (!isCurrent && tier.id !== 'free' && onUpgrade) onUpgrade(tier.id as 'pro' | 'premium');
+                        if (tier.id !== 'free' && onUpgrade) {
+                          onUpgrade(tier.id as 'pro' | 'premium');
+                        }
                       }}
                       className={tier.theme === 'premium' ? '!bg-amber-500 !text-black hover:!bg-amber-400' : ''}
                     >
-                      {isCurrent ? (isKo ? '사용 중인 플랜' : 'Current Plan') : tier.id === 'premium' ? (isKo ? '출시 알림 받기' : 'Get Notified') : (isKo ? '업그레이드하기' : 'Upgrade Now')}
+                      {isProTier && isCurrent
+                        ? (isKo ? '기간 연장하기' : 'Extend Period')
+                        : isCurrent
+                          ? (isKo ? '사용 중인 플랜' : 'Current Plan')
+                          : tier.id === 'premium'
+                            ? (isKo ? '출시 알림 받기' : 'Get Notified')
+                            : (isKo ? '업그레이드하기' : 'Upgrade Now')}
                       {!isCurrent && tier.id !== 'premium' && <ArrowRight size={16} className="ml-1" />}
                       {tier.id === 'premium' && <Bell size={16} className="animate-pulse" />}
                     </TDSButton>
                   ) : (
                     <button
                       onClick={() => {
-                        if (!isCurrent && tier.id !== 'free' && onUpgrade) {
+                        if (tier.id !== 'free' && onUpgrade) {
                           onUpgrade(tier.id as 'pro' | 'premium');
                         }
                       }}
-                      disabled={isCurrent || isDisabled}
+                      disabled={isDisabled || (isCurrent && tier.id === 'free')}
                       className={`w-full py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all duration-300 flex items-center justify-center gap-2 group/btn disabled:opacity-60 disabled:cursor-not-allowed ${
                         tier.theme === 'premium' ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-lg shadow-amber-500/20' : tier.theme === 'pro' ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/20' : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white'
                       }`}
                     >
-                      {isCurrent ? (isKo ? '사용 중인 플랜' : 'Current Plan') : tier.id === 'premium' ? (isKo ? '출시 알림 받기' : 'Get Notified') : (isKo ? '업그레이드하기' : 'Upgrade Now')}
+                      {isProTier && isCurrent
+                        ? (isKo ? '기간 연장하기' : 'Extend Period')
+                        : isCurrent
+                          ? (isKo ? '사용 중인 플랜' : 'Current Plan')
+                          : tier.id === 'premium'
+                            ? (isKo ? '출시 알림 받기' : 'Get Notified')
+                            : (isKo ? '업그레이드하기' : 'Upgrade Now')}
                       {!isCurrent && tier.id !== 'premium' && <ArrowRight size={16} className="transition-transform group-hover/btn:translate-x-1" />}
                       {tier.id === 'premium' && <Bell size={16} className="animate-pulse" />}
                     </button>

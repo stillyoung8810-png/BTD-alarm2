@@ -4,6 +4,7 @@ import { serve } from "std/http/server";
 import { createClient } from "@supabase/supabase-js";
 import { SignJWT, importPKCS8 } from "jose";
 import { getEffectiveSubscriptionState } from "../../../server/src/services/paymentFulfillment.ts";
+import { getCorsHeaders, getJsonCorsHeaders } from "../_shared/cors.ts";
 
 interface AlarmRequest {
   user_id: string;
@@ -250,13 +251,13 @@ async function sendFCMNotification(
   }
 }
 
-const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") || "https://btd-alarm2.pages.dev";
-
 serve(async (req) => {
-  const corsHeaders = {
-    "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-internal-alarm-secret",
-  };
+  const corsHeaders = getCorsHeaders(req, {
+    allowHeaders: "authorization, x-client-info, apikey, content-type, x-internal-alarm-secret",
+  });
+  const jsonHeaders = getJsonCorsHeaders(req, {
+    allowHeaders: "authorization, x-client-info, apikey, content-type, x-internal-alarm-secret",
+  });
 
   // OPTIONS 요청 처리
   if (req.method === "OPTIONS") {
@@ -271,7 +272,7 @@ serve(async (req) => {
     if (headerSecret !== internalSecret) {
       return new Response(
         JSON.stringify({ error: "Unauthorized", code: 401, message: "Invalid or missing X-Internal-Alarm-Secret" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 401, headers: jsonHeaders }
       );
     }
   }

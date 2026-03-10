@@ -14,6 +14,7 @@ import {
   fulfillPaidOrder,
   type PaidPlanId,
 } from "../../../server/src/services/paymentFulfillment.ts";
+import { getCorsHeaders, getJsonCorsHeaders } from "../_shared/cors.ts";
 
 // ---------------------------------------------------------------------------
 // 환경 변수
@@ -21,18 +22,11 @@ import {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const PORTONE_API_SECRET = Deno.env.get("PORTONE_API_SECRET") ?? "";
-const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") || "https://btd-alarm2.pages.dev";
 const PORTONE_API_BASE = "https://api.portone.io";
 
 // ---------------------------------------------------------------------------
 // CORS 헤더
 // ---------------------------------------------------------------------------
-const corsHeaders = {
-  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey",
-};
-
 // ---------------------------------------------------------------------------
 // ⚠ PRICE SOURCE OF TRUTH
 // 프론트엔드(constants/membership.ts)와 이 서버 환경변수가 반드시 일치해야 합니다.
@@ -92,6 +86,13 @@ async function getPortOnePayment(paymentId: string): Promise<PortOnePayment> {
 // 메인 핸들러
 // ---------------------------------------------------------------------------
 serve(async (req: Request) => {
+  const corsHeaders = getCorsHeaders(req, {
+    allowHeaders: "Content-Type, Authorization, apikey",
+  });
+  const jsonHeaders = getJsonCorsHeaders(req, {
+    allowHeaders: "Content-Type, Authorization, apikey",
+  });
+
   // CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
@@ -100,7 +101,7 @@ serve(async (req: Request) => {
   if (req.method !== "POST") {
     return new Response(
       JSON.stringify({ error: "Method not allowed" }),
-      { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { status: 405, headers: jsonHeaders },
     );
   }
 

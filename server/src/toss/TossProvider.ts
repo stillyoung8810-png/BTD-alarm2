@@ -1,7 +1,7 @@
 /**
  * TossProvider: 토스 API 통신 전담.
  * - mTLS 인증서/키를 env에서 로드, HTTPS Agent는 싱글톤으로 한 번만 생성·재사용.
- * - correlation_id를 인자로 받아 모든 로그에 포함 (Request Tracing).
+ * - Live/샌드박스 구분 없이 단일 TOSS_API_URL + 단일 mTLS만 사용 (공식 문서·커뮤니티 기준 별도 테스트 URL/인증서 없음).
  */
 
 import axios, { type AxiosInstance } from 'axios';
@@ -66,10 +66,9 @@ function getMtlsAgent(): https.Agent {
 
 function getClient(): AxiosInstance {
   if (singletonClient) return singletonClient;
-  const agent = getMtlsAgent();
   singletonClient = axios.create({
     baseURL: BASE_URL,
-    httpsAgent: agent,
+    httpsAgent: getMtlsAgent(),
     headers: { 'Content-Type': 'application/json' },
     timeout: 10000,
   });
@@ -100,7 +99,7 @@ export interface GetTokenFailure {
 }
 
 /**
- * AccessToken 발급. 성공 시 expiresIn 로그 필수; 토큰 값은 masking.
+ * AccessToken 발급. body는 반드시 authorizationCode(camelCase), referrer 로 전송 (스네이크 케이스 시 토스 API 에러).
  */
 export async function getToken(
   authorizationCode: string,
@@ -118,6 +117,16 @@ export async function getToken(
     authorizationCode: code,
     referrer,
   };
+
+  log.info(
+    {
+      url: `${BASE_URL}${GENERATE_TOKEN_PATH}`,
+      referrer,
+      bodyKeys: Object.keys(body),
+      codeLength: code.length,
+    },
+    '[Toss] generate-token request (debug)'
+  );
 
   try {
     const res = await client.post(GENERATE_TOKEN_PATH, body);
@@ -179,6 +188,10 @@ export interface GetLoginMeFailure {
  */
 export async function getLoginMe(accessToken: string, log: RequestLogger): Promise<GetLoginMeResult | GetLoginMeFailure> {
   const client = getClient();
+  log.info(
+    { url: `${BASE_URL}${LOGIN_ME_PATH}`, hasToken: !!accessToken },
+    '[Toss] login-me request (debug)'
+  );
   try {
     const res = await client.get(LOGIN_ME_PATH, {
       headers: { Authorization: `Bearer ${accessToken}` },

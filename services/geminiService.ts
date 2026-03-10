@@ -102,6 +102,12 @@ export const analyzeTradeScreenshot = async (
       if (res.status === 429) {
         throw new Error("RATE_LIMIT");
       }
+      if (res.status === 401) {
+        throw new Error("AUTH_REQUIRED");
+      }
+      if (res.status === 403) {
+        throw new Error("FORBIDDEN");
+      }
       return { trades: [] };
     }
 
@@ -112,6 +118,12 @@ export const analyzeTradeScreenshot = async (
     return { trades: data.trades };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    if (
+      err instanceof TypeError ||
+      /failed to fetch|networkerror|load failed|cors/i.test(msg)
+    ) {
+      throw new Error("NETWORK_OR_CORS");
+    }
     if (/429|resource exhausted|quota|rate limit/i.test(msg)) {
       throw new Error("RATE_LIMIT");
     }

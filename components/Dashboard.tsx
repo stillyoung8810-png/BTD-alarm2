@@ -21,6 +21,7 @@ import { useMultiSplitExecution } from '../hooks/useMultiSplitExecution';
 import { useTossApp } from '../contexts/TossAppContext';
 import { TDSButton, TDSList, TDSListRow } from './tds';
 import { getConditionalTypographyStyle, getConditionalColor } from '../utils/tossStyleHelpers';
+import Toast from './Toast';
 
 interface DashboardProps {
   lang: 'ko' | 'en';
@@ -215,6 +216,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <TDSListRow key={p.id} border="none" verticalPadding="large">
                   <PortfolioCard
                     portfolio={p}
+                    currentTier={currentTier}
                     lang={lang}
                     onOpenAlarm={() => onOpenAlarm(p.id)}
                     onOpenDetails={() => onOpenDetails(p.id)}
@@ -237,6 +239,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               <PortfolioCard
                 key={p.id}
                 portfolio={p}
+                currentTier={currentTier}
                 lang={lang}
                 onOpenAlarm={() => onOpenAlarm(p.id)}
                 onOpenDetails={() => onOpenDetails(p.id)}
@@ -261,6 +264,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
 const PortfolioCard: React.FC<{ 
   portfolio: Portfolio; 
+  currentTier: 'free' | 'pro' | 'premium';
   onClose: () => void;
   onDelete: () => void;
   onOpenAlarm: () => void;
@@ -271,12 +275,34 @@ const PortfolioCard: React.FC<{
   onUpdatePortfolio: (updated: Portfolio) => void;
   lang: 'ko' | 'en';
   onDailyExecutionBlock?: (id: string, block: string | null) => void;
-}> = ({ portfolio, onClose, onDelete, onOpenAlarm, onOpenDetails, onOpenQuickInput, onOpenExecution, onOpenAIImage, onUpdatePortfolio, lang, onDailyExecutionBlock }) => {
+}> = ({ portfolio, currentTier, onClose, onDelete, onOpenAlarm, onOpenDetails, onOpenQuickInput, onOpenExecution, onOpenAIImage, onUpdatePortfolio, lang, onDailyExecutionBlock }) => {
   const { isInTossApp } = useTossApp();
   const t = I18N[lang];
   // 다분할 매매법일 때는 multiSplit.targetStock을 사용, 아니면 ma0.stock 사용
   const ma0Ticker = portfolio.strategy.multiSplit?.targetStock || portfolio.strategy.ma0.stock;
   const isAlarmEnabled = portfolio.alarmconfig?.enabled;
+
+  const [freeAlarmToastSeq, setFreeAlarmToastSeq] = useState(0);
+
+  const openFreeAlarmToast = useCallback(() => {
+    setFreeAlarmToastSeq((prev) => prev + 1);
+  }, []);
+
+  const handleAlarmButtonClick = useCallback(() => {
+    if (currentTier === 'free') {
+      openFreeAlarmToast();
+      return;
+    }
+    onOpenAlarm();
+  }, [currentTier, onOpenAlarm, openFreeAlarmToast]);
+
+  const handleAlarmButtonClickWeb = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.stopPropagation();
+      handleAlarmButtonClick();
+    },
+    [handleAlarmButtonClick]
+  );
 
   // 콜백을 ref에 보관해 effect 의존성에서 제외 → 부모 리렌더 시 콜백 참조 변경으로 인한 반복 실행 방지
   const onDailyExecutionBlockRef = useRef(onDailyExecutionBlock);
@@ -567,9 +593,7 @@ const PortfolioCard: React.FC<{
             <TDSButton
               variant="tertiary"
               size="small"
-              onClick={() => {
-                onOpenAlarm();
-              }}
+              onClick={handleAlarmButtonClick}
               className={`w-9 h-9 min-w-0 p-0 rounded-lg flex items-center justify-center ${
                 isAlarmEnabled ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-500' : ''
               }`}
@@ -593,10 +617,7 @@ const PortfolioCard: React.FC<{
           <>
             <button
               type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenAlarm();
-              }}
+              onClick={handleAlarmButtonClickWeb}
               className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-300 ${
                 isAlarmEnabled
                   ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-500 border border-amber-200 dark:border-amber-500/30'
@@ -746,6 +767,18 @@ const PortfolioCard: React.FC<{
           )}
         </div>
       </div>
+
+      {freeAlarmToastSeq > 0 && (
+        <Toast
+          key={freeAlarmToastSeq}
+          message={
+            lang === 'ko'
+              ? '무료 회원을 위한 알림도 곧 만날 수 있어요.'
+              : 'Alerts for free members are coming soon.'
+          }
+          onDone={() => setFreeAlarmToastSeq(0)}
+        />
+      )}
 
       <div 
         onClick={onOpenExecution}

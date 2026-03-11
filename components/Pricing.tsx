@@ -103,7 +103,7 @@ const Pricing: React.FC<PricingProps> = ({ lang, currentTier, onUpgrade }) => {
         { text: isKo ? '기본 13개 ETF' : '13 core ETFs' },
         { text: isKo ? 'AI 매매 인식 (1회/일)' : 'AI Trade Recognition (1/day)' },
         { text: isKo ? '백테스트 (2회/일)' : 'Backtesting (2/day)', disabled: true },
-        { text: isKo ? '기본 알람 · 기록 기능' : 'Core alerts & history' },
+        { text: isKo ? '기본 알림 (준비 중이에요)' : 'Core notifications (coming soon)' },
         { text: isKo ? '광고 포함' : 'Includes ads' },
       ],
     },

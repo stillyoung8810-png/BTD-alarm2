@@ -90,17 +90,28 @@ const App: React.FC = () => {
   const KST_UPDATE_MINUTE = 20;
 
   useEffect(() => {
-    const syncTabFromHash = () => {
+    const syncTabFromLocation = () => {
+      if (typeof window === 'undefined') return;
       const hash = window.location.hash;
-      if (hash === '#terms') setActiveTab('terms');
-      else if (hash === '#privacy') setActiveTab('privacy');
+      if (hash === '#terms') {
+        setActiveTab('terms');
+        return;
+      }
+      if (hash === '#privacy') {
+        setActiveTab('privacy');
+        return;
+      }
+      const path = window.location.pathname;
+      if (path.startsWith('/markets')) {
+        setActiveTab('markets');
+      }
     };
-    syncTabFromHash();
-    window.addEventListener('hashchange', syncTabFromHash);
+    syncTabFromLocation();
+    window.addEventListener('hashchange', syncTabFromLocation);
     if (isTossApp()) {
       restorePendingIapOrders();
     }
-    return () => window.removeEventListener('hashchange', syncTabFromHash);
+    return () => window.removeEventListener('hashchange', syncTabFromLocation);
   }, []);
 
   const summaryToSave = useMemo(() => {

@@ -17,6 +17,8 @@ root.render(
         {/* 애드센스용 게시판 — 웹 전용, 토스 미니앱 미노출 */}
         <Route path="/posts" element={<PostsListPage />} />
         <Route path="/posts/:id" element={<PostDetailPage />} />
+        {/* 앱인토스 앱 내 기능: 시세 탭 바로 진입용 */}
+        <Route path="/markets" element={<App />} />
         <Route path="*" element={<App />} />
       </Routes>
     </BrowserRouter>

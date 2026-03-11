@@ -100,6 +100,7 @@ export interface GetTokenFailure {
 
 /**
  * AccessToken 발급. body는 반드시 authorizationCode(camelCase), referrer 로 전송 (스네이크 케이스 시 토스 API 에러).
+ * Toss 공식 실패 응답(200 OK + FAIL payload)도 여기서 명시적으로 처리한다.
  */
 export async function getToken(
   authorizationCode: string,
@@ -130,6 +131,44 @@ export async function getToken(
 
   try {
     const res = await client.post(GENERATE_TOKEN_PATH, body);
+
+    // Toss 공식 실패 규격 선제 처리 (HTTP 200 + 실패 payload)
+    if (res.data && typeof res.data === 'object') {
+      const d = res.data as {
+        error?: string | TossErrorPayload;
+        resultType?: string;
+      };
+
+      // 케이스 A: { error: "invalid_grant" } 형태
+      if (typeof d.error === 'string') {
+        const payload = normalizeTossError({ error: d.error });
+        log.warn(
+          {
+            raw: res.data,
+            error: payload.error,
+            errorCode: payload.errorCode,
+          },
+          'Toss generate-token returned error string'
+        );
+        return { success: false, error: payload };
+      }
+
+      // 케이스 B: { resultType: "FAIL", error: { errorCode, reason } } 형태
+      if (d.resultType === 'FAIL') {
+        const payload = normalizeTossError({ error: d.error });
+        log.warn(
+          {
+            raw: res.data,
+            error: payload.error,
+            errorCode: payload.errorCode,
+          },
+          'Toss generate-token returned FAIL resultType'
+        );
+        return { success: false, error: payload };
+      }
+    }
+
+    // 여기까지 왔으면 SUCCESS 케이스만 남음 → 기존 파서 사용
     const parsed = parseTokenResponse(res.data);
     if (!parsed) {
       log.warn({ raw: res.data }, 'Toss generate-token response shape invalid');
@@ -156,6 +195,7 @@ export async function getToken(
           axiosMessage: err.message,
           axiosIsTimeout: err.code === 'ECONNABORTED',
           axiosUrl: err.config ? `${err.config.baseURL || ''}${err.config.url || ''}` : undefined,
+          raw: err.response?.data,
         },
         'Toss generate-token failed'
       );

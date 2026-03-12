@@ -4,6 +4,11 @@ import { serve } from "std/http/server";
 import { createClient } from "@supabase/supabase-js";
 import { SignJWT, importPKCS8 } from "jose";
 import { getEffectiveSubscriptionState } from "../../../server/src/services/paymentFulfillment.ts";
+import {
+  BTD_TOSS_SMART_MESSAGE_TEMPLATE_CODE,
+  buildBtdTossSmartMessageContext,
+  type TossSmartMessageContext,
+} from "../../../server/src/toss/smartMessage.ts";
 import { getCorsHeaders, getJsonCorsHeaders } from "../_shared/cors.ts";
 
 interface AlarmRequest {
@@ -23,20 +28,6 @@ interface UserProfileRow {
   telegram_chat_id?: string | null;
   preferred_language?: string | null;
   toss_user_key?: string | null;
-}
-
-interface DailyExecutionSummaryRow {
-  summary_text: string;
-}
-
-// KST(Asia/Seoul) 기준 YYYY-MM-DD 문자열
-function getCurrentKSTDateString(): string {
-  const nowUtc = new Date();
-  const kstTime = new Date(nowUtc.getTime() + 9 * 60 * 60 * 1000);
-  const year = kstTime.getUTCFullYear();
-  const month = String(kstTime.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(kstTime.getUTCDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
 }
 
 /** 유료 구독 + 텔레그램 연결 시에만 텔레그램 발송 */
@@ -93,26 +84,11 @@ function truncateErrorForStorage(msg: string): string {
   return msg.slice(0, TELEGRAM_MAX_ERROR_STORAGE - 3) + "...";
 }
 
-function buildTossMessageContext(data?: Record<string, string>): Record<string, string> {
-  const localDate = data?.local_date?.trim();
-  const localTime = data?.time_local?.trim();
-  const timeKst = data?.time_kst?.trim();
-  const date =
-    localDate && localTime
-      ? `${localDate} ${localTime}`
-      : localTime || timeKst || getCurrentKSTDateString();
-
-  return {
-    date,
-    screenName: "markets",
-  };
-}
-
 async function sendTossSmartMessage(
   bffBase: string,
   internalSecret: string,
   userId: string,
-  context: Record<string, string>,
+  context: TossSmartMessageContext,
 ): Promise<{ success: boolean; errorMessage?: string }> {
   const url = `${bffBase.replace(/\/+$/, "")}/internal/toss/messages/send`;
 
@@ -451,6 +427,13 @@ serve(async (req) => {
     let fcmResults: PromiseSettledResult<{ success: boolean; shouldDeactivate: boolean }>[] = [];
     let tossPushSent = false;
     let tossPushError: string | null = null;
+    const tossMessageContext = shouldSendTossPush
+      ? buildBtdTossSmartMessageContext({
+          local_date: data?.local_date,
+          time_local: data?.time_local,
+          time_kst: data?.time_kst,
+        })
+      : null;
 
     if (shouldSendTossPush) {
       if (!bffBase) {
@@ -460,12 +443,11 @@ serve(async (req) => {
         tossPushError = "INTERNAL_ALARM_SECRET not set";
         console.warn(`Toss push skipped for user ${user_id}:`, tossPushError);
       } else {
-        const tossContext = buildTossMessageContext(data);
         const tossResult = await sendTossSmartMessage(
           bffBase,
           internalSecret,
           user_id,
-          tossContext,
+          tossMessageContext!,
         );
 
         tossPushSent = tossResult.success;
@@ -619,8 +601,8 @@ serve(async (req) => {
           timezone: alarmTimezone ?? undefined,
           local_date: alarmLocalDate ?? undefined,
           payload_snapshot: {
-            templateSetCode: "btdalarm-push_msg",
-            context: buildTossMessageContext(data),
+            templateSetCode: BTD_TOSS_SMART_MESSAGE_TEMPLATE_CODE,
+            context: tossMessageContext,
             time_kst: alarmTimeKst,
             time_local: alarmTimeLocal,
             timezone: alarmTimezone,

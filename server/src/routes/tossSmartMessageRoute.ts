@@ -2,11 +2,22 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { supabaseAdmin } from '../supabaseClient';
 import { sendMessage } from '../toss/TossProvider';
+import {
+  BTD_TOSS_SMART_MESSAGE_SCREEN_NAME,
+  BTD_TOSS_SMART_MESSAGE_TEMPLATE_CODE,
+} from '../toss/smartMessage';
+
+const tossSmartMessageContextSchema = z
+  .object({
+    date: z.string().trim().min(1, 'context.date is required'),
+    screenName: z.literal(BTD_TOSS_SMART_MESSAGE_SCREEN_NAME),
+  })
+  .strict();
 
 const tossSmartMessageBodySchema = z
   .object({
     userId: z.string().trim().min(1, 'userId is required'),
-    context: z.record(z.string(), z.string()),
+    context: tossSmartMessageContextSchema,
   })
   .strict();
 
@@ -77,7 +88,7 @@ export async function tossSmartMessageRoutes(fastify: FastifyInstance) {
 
     const result = await sendMessage(
       profile.toss_user_key,
-      'btdalarm-push_msg',
+      BTD_TOSS_SMART_MESSAGE_TEMPLATE_CODE,
       context,
       log
     );

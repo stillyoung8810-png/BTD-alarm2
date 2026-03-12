@@ -14,6 +14,49 @@ import { baseLogger, maskToken } from './logger';
 const BASE_URL = process.env.TOSS_API_URL || 'https://apps-in-toss-api.toss.im';
 const GENERATE_TOKEN_PATH = '/api-partner/v1/apps-in-toss/user/oauth2/generate-token';
 const LOGIN_ME_PATH = '/api-partner/v1/apps-in-toss/user/oauth2/login-me';
+const SEND_MESSAGE_PATH = '/api-partner/v1/apps-in-toss/messenger/send-message';
+
+/** 스마트 메시지 단건 발송: 템플릿 변수 객체 (userName은 토스가 자동 치환) */
+export interface SendMessageContext {
+  [key: string]: string;
+}
+
+/** 단건 발송 성공 시 result 객체 (문서 기준) */
+export interface SendMessageApiResult {
+  msgCount?: number;
+  sentPushCount?: number;
+  sentInboxCount?: number;
+  detail?: { sentPush?: unknown[]; sentInbox?: unknown[] };
+  fail?: { sentPush?: Array<{ contentId?: string; reachFailReason?: string }>; sentInbox?: unknown[] };
+}
+
+export interface SendMessageSuccess {
+  success: true;
+  data: SendMessageApiResult;
+}
+export interface SendMessageFailure {
+  success: false;
+  error: NormalizedTossError;
+}
+
+/** 대량 발송 시 한 명당 userKey + context */
+export interface BulkMessageItem {
+  userKey: string;
+  context: SendMessageContext;
+}
+
+/** 대량 발송 결과 한 건 */
+export interface BulkMessageItemResult {
+  userKey: string;
+  success: boolean;
+  error?: NormalizedTossError;
+}
+
+export interface SendBulkMessageResult {
+  successCount: number;
+  failCount: number;
+  results: BulkMessageItemResult[];
+}
 
 let singletonAgent: https.Agent | null = null;
 let singletonClient: AxiosInstance | null = null;
@@ -256,4 +299,130 @@ export async function getLoginMe(accessToken: string, log: RequestLogger): Promi
     log.error({ err }, 'Toss login-me unexpected error');
     return { success: false, error: { error: 'Internal Server Error' } };
   }
+}
+
+/**
+ * 스마트 메시지 단건 발송 (기능성 푸시/알림).
+ * - 헤더 x-toss-user-key 필수.
+ * - 토스 API는 실패 시에도 HTTP 200 + resultType: "FAIL"을 반환하므로, 응답 body로 성공/실패 구분.
+ */
+export async function sendMessage(
+  userKey: string,
+  templateSetCode: string,
+  context: SendMessageContext,
+  log: RequestLogger
+): Promise<SendMessageSuccess | SendMessageFailure> {
+  const key = String(userKey).trim();
+  if (!key) {
+    log.warn('sendMessage: userKey is empty');
+    return { success: false, error: { error: 'userKey is required' } };
+  }
+  if (!templateSetCode?.trim()) {
+    log.warn('sendMessage: templateSetCode is empty');
+    return { success: false, error: { error: 'templateSetCode is required' } };
+  }
+
+  const client = getClient();
+  const body = { templateSetCode: templateSetCode.trim(), context };
+
+  log.info(
+    { path: SEND_MESSAGE_PATH, templateSetCode, userKeyMasked: maskSecret(key, 4), contextKeys: Object.keys(context) },
+    '[Toss] send-message request (debug)'
+  );
+
+  try {
+    const res = await client.post(SEND_MESSAGE_PATH, body, {
+      headers: { 'x-toss-user-key': key },
+    });
+
+    const data = res.data as {
+      resultType?: string;
+      result?: SendMessageApiResult;
+      error?: TossErrorPayload | string;
+    };
+
+    if (data && typeof data === 'object' && data.resultType !== 'SUCCESS') {
+      const payload = normalizeTossError({ error: data.error });
+      log.warn(
+        { resultType: data.resultType, errorCode: payload.errorCode, reason: payload.error },
+        'Toss send-message returned non-SUCCESS resultType'
+      );
+      return { success: false, error: payload };
+    }
+
+    const result = data?.result;
+    if (!result || typeof result !== 'object') {
+      log.warn({ raw: data }, 'Toss send-message response shape invalid');
+      return { success: false, error: { error: 'Invalid send-message response shape' } };
+    }
+
+    if (result.fail) {
+      const pushFails = result.fail.sentPush ?? [];
+      for (const item of pushFails) {
+        const reason = (item as { reachFailReason?: string }).reachFailReason;
+        if (reason) log.warn({ reachFailReason: reason, contentId: (item as { contentId?: string }).contentId }, 'Toss send-message partial fail (push)');
+      }
+    }
+
+    log.info(
+      { msgCount: result.msgCount, sentPushCount: result.sentPushCount, sentInboxCount: result.sentInboxCount },
+      'Toss send-message success'
+    );
+    return { success: true, data: result };
+  } catch (err) {
+    if (axios.isAxiosError(err)) {
+      const payload = normalizeTossError(err.response?.data);
+      log.warn(
+        {
+          status: err.response?.status,
+          errorCode: payload.errorCode,
+          reason: payload.error,
+          axiosCode: err.code,
+          axiosIsTimeout: err.code === 'ECONNABORTED',
+        },
+        'Toss send-message failed'
+      );
+      return { success: false, error: payload };
+    }
+    const unknownErr = err as Error;
+    log.error({ errName: unknownErr?.name, errMessage: unknownErr?.message }, 'Toss send-message unexpected error');
+    return { success: false, error: { error: 'Internal Server Error' } };
+  }
+}
+
+/**
+ * 대량 스마트 메시지 발송 (단건 API 순차 호출).
+ * 레이트 리밋 완화를 위해 호출 간 delayMs(기본 100) 적용.
+ */
+export async function sendBulkMessage(
+  templateSetCode: string,
+  items: BulkMessageItem[],
+  log: RequestLogger,
+  options?: { delayMs?: number }
+): Promise<SendBulkMessageResult> {
+  const delayMs = Math.max(0, options?.delayMs ?? 100);
+  const results: BulkMessageItemResult[] = [];
+  let successCount = 0;
+  let failCount = 0;
+
+  for (let i = 0; i < items.length; i++) {
+    if (i > 0 && delayMs > 0) {
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+    const item = items[i];
+    const out = await sendMessage(item.userKey, templateSetCode, item.context, log);
+    if (out.success) {
+      successCount++;
+      results.push({ userKey: item.userKey, success: true });
+    } else {
+      failCount++;
+      results.push({ userKey: item.userKey, success: false, error: out.error });
+    }
+  }
+
+  log.info(
+    { templateSetCode, total: items.length, successCount, failCount },
+    'Toss send-bulk-message finished'
+  );
+  return { successCount, failCount, results };
 }

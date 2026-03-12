@@ -22,6 +22,7 @@ interface UserProfileRow {
   telegram_enabled?: boolean | null;
   telegram_chat_id?: string | null;
   preferred_language?: string | null;
+  toss_user_key?: string | null;
 }
 
 interface DailyExecutionSummaryRow {
@@ -90,6 +91,68 @@ function formatTelegramAlarmMessage(
 function truncateErrorForStorage(msg: string): string {
   if (!msg || msg.length <= TELEGRAM_MAX_ERROR_STORAGE) return msg;
   return msg.slice(0, TELEGRAM_MAX_ERROR_STORAGE - 3) + "...";
+}
+
+function buildTossMessageContext(data?: Record<string, string>): Record<string, string> {
+  const localDate = data?.local_date?.trim();
+  const localTime = data?.time_local?.trim();
+  const timeKst = data?.time_kst?.trim();
+  const date =
+    localDate && localTime
+      ? `${localDate} ${localTime}`
+      : localTime || timeKst || getCurrentKSTDateString();
+
+  return {
+    date,
+    screenName: "markets",
+  };
+}
+
+async function sendTossSmartMessage(
+  bffBase: string,
+  internalSecret: string,
+  userId: string,
+  context: Record<string, string>,
+): Promise<{ success: boolean; errorMessage?: string }> {
+  const url = `${bffBase.replace(/\/+$/, "")}/internal/toss/messages/send`;
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-internal-alarm-secret": internalSecret,
+      },
+      body: JSON.stringify({
+        userId,
+        context,
+      }),
+    });
+
+    const responseText = await response.text();
+    let responseJson: Record<string, unknown> | null = null;
+    try {
+      responseJson = responseText ? JSON.parse(responseText) as Record<string, unknown> : null;
+    } catch {
+      responseJson = null;
+    }
+
+    if (!response.ok || responseJson?.success !== true) {
+      const errorMessage =
+        typeof responseJson?.error === "string"
+          ? responseJson.error
+          : typeof responseJson?.message === "string"
+            ? responseJson.message
+            : responseText || `BFF request failed with ${response.status}`;
+
+      return { success: false, errorMessage: truncateErrorForStorage(errorMessage) };
+    }
+
+    return { success: true };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { success: false, errorMessage: truncateErrorForStorage(message) };
+  }
 }
 
 async function sendTelegramMessage(
@@ -326,10 +389,38 @@ serve(async (req) => {
     }
 
     const profileRow = (payload?.profile ?? null) as UserProfileRow | null;
+    let tossUserKey =
+      typeof profileRow?.toss_user_key === "string"
+        ? profileRow.toss_user_key.trim()
+        : "";
+
+    if (!tossUserKey) {
+      const { data: tossProfile, error: tossProfileError } = await supabase
+        .from("user_profiles")
+        .select("toss_user_key")
+        .eq("id", user_id)
+        .maybeSingle();
+
+      if (tossProfileError) {
+        console.error("Failed to load toss_user_key:", tossProfileError.message);
+        return new Response(
+          JSON.stringify({ error: "Failed to fetch toss_user_key" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      tossUserKey =
+        typeof tossProfile?.toss_user_key === "string"
+          ? tossProfile.toss_user_key.trim()
+          : "";
+    }
+
+    const shouldSendTossPush = tossUserKey.length > 0;
     const sendTelegram = shouldSendTelegram(profileRow);
     const preferredLang: 'ko' | 'en' =
       profileRow?.preferred_language === 'en' ? 'en' : 'ko';
     const telegramBotToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
+    const bffBase = (Deno.env.get("RAILWAY_BFF_URL") ?? Deno.env.get("railway_bff_url"))?.trim() || "";
 
     const dailyExecutionText: string | null = payload?.summary_text ?? null;
     const tokens: string[] = Array.isArray(payload?.fcm_tokens)
@@ -342,7 +433,7 @@ serve(async (req) => {
     const alarmTimeLocal = data?.time_local ?? null;
     const alarmTimezone = data?.timezone ?? null;
     const alarmLocalDate = data?.local_date ?? null;
-    if (tokens.length === 0) {
+    if (!shouldSendTossPush && tokens.length === 0) {
       console.warn(`No active FCM devices for user ${user_id}; will still try Telegram if enabled.`);
     }
 
@@ -358,9 +449,38 @@ serve(async (req) => {
     let failed = 0;
     const tokensToDeactivate: string[] = [];
     let fcmResults: PromiseSettledResult<{ success: boolean; shouldDeactivate: boolean }>[] = [];
+    let tossPushSent = false;
+    let tossPushError: string | null = null;
+
+    if (shouldSendTossPush) {
+      if (!bffBase) {
+        tossPushError = "RAILWAY_BFF_URL not set";
+        console.warn(`Toss push skipped for user ${user_id}:`, tossPushError);
+      } else if (!internalSecret) {
+        tossPushError = "INTERNAL_ALARM_SECRET not set";
+        console.warn(`Toss push skipped for user ${user_id}:`, tossPushError);
+      } else {
+        const tossContext = buildTossMessageContext(data);
+        const tossResult = await sendTossSmartMessage(
+          bffBase,
+          internalSecret,
+          user_id,
+          tossContext,
+        );
+
+        tossPushSent = tossResult.success;
+        tossPushError = tossResult.success ? null : tossResult.errorMessage ?? "Toss push send failed";
+
+        if (tossPushSent) {
+          console.log(`Toss push sent for user ${user_id}`);
+        } else {
+          console.warn(`Toss push failed for user ${user_id}:`, tossPushError);
+        }
+      }
+    }
 
     // FCM 발송: FIREBASE_SERVICE_ACCOUNT 있을 때만 수행
-    if (firebaseServiceAccount && tokens.length > 0) {
+    if (!shouldSendTossPush && firebaseServiceAccount && tokens.length > 0) {
       let serviceAccount: { project_id?: string } = {};
       try {
         serviceAccount = JSON.parse(firebaseServiceAccount);
@@ -406,6 +526,8 @@ serve(async (req) => {
         console.warn("Project ID not found in service account; skipping FCM.");
         failed = tokens.length;
       }
+    } else if (shouldSendTossPush && tokens.length > 0) {
+      console.log(`Skipping FCM for user ${user_id} because toss_user_key is present`);
     }
 
     // 텔레그램 발송 (Pro/Premium + telegram_enabled + chat_id 있을 때만)
@@ -457,7 +579,7 @@ serve(async (req) => {
       }> = [];
 
       // FCM 이력
-      if (tokens.length > 0) {
+      if (!shouldSendTossPush && tokens.length > 0) {
         const fcmStatus = successful > 0 ? "success" : "failure";
         const fcmError =
           failed > 0
@@ -477,6 +599,28 @@ serve(async (req) => {
           payload_snapshot: {
             title: localizedTitle,
             body: localizedBody,
+            time_kst: alarmTimeKst,
+            time_local: alarmTimeLocal,
+            timezone: alarmTimezone,
+            local_date: alarmLocalDate,
+          },
+        });
+      }
+
+      if (shouldSendTossPush) {
+        historyRows.push({
+          user_id,
+          channel: "toss_push",
+          status: tossPushSent ? "success" : "failure",
+          error_message: tossPushError,
+          alarm_type: alarmType ?? undefined,
+          time_kst: alarmTimeKst ?? undefined,
+          time_local: alarmTimeLocal ?? undefined,
+          timezone: alarmTimezone ?? undefined,
+          local_date: alarmLocalDate ?? undefined,
+          payload_snapshot: {
+            templateSetCode: "btdalarm-push_msg",
+            context: buildTossMessageContext(data),
             time_kst: alarmTimeKst,
             time_local: alarmTimeLocal,
             timezone: alarmTimezone,
@@ -535,14 +679,16 @@ serve(async (req) => {
       }
     }
 
-    console.log(`Alarm sent: ${successful} success, ${failed} failed; telegram: ${telegramSent}`);
+    console.log(`Alarm sent: fcm=${successful}/${failed}, toss=${tossPushSent}, telegram=${telegramSent}`);
 
     return new Response(
       JSON.stringify({
-        success: successful > 0 || telegramSent,
+        success: successful > 0 || tossPushSent || telegramSent,
         sent: successful,
         failed,
         total: tokens.length,
+        toss_push_sent: tossPushSent,
+        toss_push_error: tossPushError,
         telegram_sent: telegramSent,
       }),
       {
@@ -561,10 +707,7 @@ serve(async (req) => {
       }),
       {
         status: 500,
-        headers: {
-          "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-          "Content-Type": "application/json",
-        },
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       },
     );
   }

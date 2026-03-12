@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import { randomUUID } from "crypto";
 import { tossAuthRoutes } from "./routes/tossAuthRoute";
 import { paymentRoutes } from "./routes/payment";
+import { tossSmartMessageRoutes } from "./routes/tossSmartMessageRoute";
 import { tossWebhookRoutes } from "./routes/tossWebhook";
 
 dotenv.config();
@@ -37,6 +38,7 @@ const start = async () => {
 
         await server.register(tossAuthRoutes);
         await server.register(paymentRoutes);
+        await server.register(tossSmartMessageRoutes);
         await server.register(tossWebhookRoutes);
 
         server.get("/health", async () => ({ status: "ok" }));

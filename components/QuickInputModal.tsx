@@ -40,12 +40,14 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
   const holdings = Array.from(new Set(portfolio.trades.map(t => t.stock)));
 
   // 최신 종가 거래일 가져오기 (의존성: 원시/식별자만, effect 내부에서는 portfolio 사용)
-  const targetStockForDate = portfolio.strategy.multiSplit?.targetStock ?? portfolio.strategy.ma0?.stock;
+  const targetStockForDate = portfolio.strategy.multiSplit?.targetStock ?? portfolio.strategy.noStopMultiSplit?.targetStock ?? portfolio.strategy.ma0?.stock;
   useEffect(() => {
     const fetchLatestDate = async () => {
       const targetStock = portfolio.strategy.multiSplit
         ? portfolio.strategy.multiSplit.targetStock
-        : portfolio.strategy.ma0.stock;
+        : portfolio.strategy.noStopMultiSplit
+          ? portfolio.strategy.noStopMultiSplit.targetStock
+          : portfolio.strategy.ma0.stock;
 
       try {
         const latest = await getLatestLocalTradeDateFromDb(targetStock);

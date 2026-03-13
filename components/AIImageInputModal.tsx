@@ -166,6 +166,8 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
           portfolio.strategy.ma3?.stock,
           // 다분할 매매법
           portfolio.strategy.multiSplit?.targetStock,
+          // 다분할 매매법(무손절)
+          portfolio.strategy.noStopMultiSplit?.targetStock,
         ]
           .filter((s): s is string => !!s)
           .map((s) => s.toUpperCase().trim());

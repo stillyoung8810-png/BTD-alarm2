@@ -43,6 +43,13 @@ interface Strategy {
     targetReturnRate: number;
     totalSplitCount: number;
   };
+  noStopMultiSplit?: {
+    targetStock: string;
+    lowLocBudgetRatio: number;
+    highLocPremiumPct: number;
+    takeProfitPct: number;
+    totalSplitCount: number;
+  };
 }
 
 interface Trade {
@@ -128,6 +135,15 @@ interface QuarterStopLossData {
   locBuy?: { price: number; quantity: number };
   locSell?: { price: number; quantity: number };
   limitSell?: { price: number; quantity: number };
+}
+
+interface NoStopMultiSplitExecutionData {
+  currentRound: number;
+  isFirstBuy: boolean;
+  isSplitComplete: boolean;
+  lowLoc?: { price: number; quantity: number };
+  highLoc?: { price: number; quantity: number };
+  takeProfit?: { price: number; quantity: number };
 }
 
 const STANDARD_MA_PERIODS = [20, 60, 120];
@@ -402,6 +418,15 @@ function getCurrentRound(portfolio: Portfolio): number {
   return Math.ceil((totalInvested / oneTimeAmount) * 100) / 100;
 }
 
+function getNoStopCurrentRound(portfolio: Portfolio): number {
+  if (!portfolio.strategy.noStopMultiSplit) return 0;
+  const holdings = calculateHoldings(portfolio);
+  const totalInvested = holdings.reduce((sum, h) => sum + h.totalCost, 0);
+  const oneTimeAmount = portfolio.dailyBuyAmount;
+  if (oneTimeAmount <= 0) return 0;
+  return totalInvested / oneTimeAmount;
+}
+
 function getMultiSplitPhase(
   portfolio: Portfolio,
   currentRound: number,
@@ -602,6 +627,84 @@ async function calculateMultiSplitExecutionData(
   return result;
 }
 
+async function calculateNoStopMultiSplitExecutionData(
+  supabase: ReturnType<typeof createClient>,
+  historyCache: Map<string, StockHistory>,
+  snapshotCache: Map<string, StockSnapshot>,
+  portfolio: Portfolio,
+): Promise<NoStopMultiSplitExecutionData | null> {
+  const strategy = portfolio.strategy.noStopMultiSplit;
+  if (!strategy) return null;
+
+  const holdings = calculateHoldings(portfolio);
+  const targetHolding =
+    holdings.find((holding) => holding.stock === strategy.targetStock) ??
+    holdings.find((holding) => holding.quantity > 0) ??
+    null;
+
+  const avgPrice = targetHolding?.avgPrice ?? 0;
+  const currentQuantity = targetHolding?.quantity ?? 0;
+  const currentRound = getNoStopCurrentRound(portfolio);
+  const isFirstBuy = currentQuantity <= 0 || avgPrice <= 0;
+  const isSplitComplete = currentRound >= strategy.totalSplitCount;
+
+  const result: NoStopMultiSplitExecutionData = {
+    currentRound,
+    isFirstBuy,
+    isSplitComplete,
+  };
+
+  if (isFirstBuy) {
+    return result;
+  }
+
+  const takeProfitPrice = avgPrice * (1 + strategy.takeProfitPct / 100);
+  if (currentQuantity >= 1) {
+    result.takeProfit = {
+      price: Number(takeProfitPrice.toFixed(2)),
+      quantity: Math.floor(currentQuantity),
+    };
+  }
+
+  if (isSplitComplete || portfolio.dailyBuyAmount <= 0) {
+    return result;
+  }
+
+  const snapshot = await getStockSnapshot(
+    supabase,
+    historyCache,
+    snapshotCache,
+    strategy.targetStock,
+  );
+  const currentPrice = snapshot.price ?? 0;
+  if (currentPrice <= 0) return result;
+
+  const feeRate = portfolio.feeRate || 0.25;
+  const oneTimeAmount = portfolio.dailyBuyAmount;
+  const pLow = avgPrice;
+  const lowBudgetMax = oneTimeAmount * (strategy.lowLocBudgetRatio / 100);
+  const qtyLow = Math.max(0, Math.floor(lowBudgetMax / (pLow * (1 + feeRate / 100))));
+  const usedLow = qtyLow * pLow * (1 + feeRate / 100);
+  const highBudget = Math.max(0, oneTimeAmount - usedLow);
+  const pHigh = currentPrice * (1 + strategy.highLocPremiumPct / 100);
+  const qtyHigh = Math.max(0, Math.floor(highBudget / (pHigh * (1 + feeRate / 100))));
+
+  if (qtyLow >= 1) {
+    result.lowLoc = {
+      price: Number(pLow.toFixed(2)),
+      quantity: qtyLow,
+    };
+  }
+  if (qtyHigh >= 1) {
+    result.highLoc = {
+      price: Number(pHigh.toFixed(2)),
+      quantity: qtyHigh,
+    };
+  }
+
+  return result;
+}
+
 function linePriceQty(label: string, price: number, qty: number, unit: string): string {
   if (typeof price !== "number" || typeof qty !== "number" || Number.isNaN(price) || Number.isNaN(qty)) {
     return "";
@@ -613,6 +716,7 @@ function linePriceQty(label: string, price: number, qty: number, unit: string): 
 
 const STRINGS: Record<Lang, {
   strategyMultiSplit: string;
+  strategyNoStopMultiSplit: string;
   strategyMa: string;
   alarmTimes: string;
   noOrder: string;
@@ -626,10 +730,16 @@ const STRINGS: Record<Lang, {
   sectionWatchBothNotMet: string;
   locBuy1: string;
   locBuy2: string;
+  lowLoc: string;
+  highLoc: string;
   locSell: string;
   limitSell: string;
   mocSell: string;
   firstBuyAmount: string;
+  noStopFirstBuyHint: string;
+  noStopSplitComplete: string;
+  noStopTakeProfitTarget: string;
+  noStopGuaranteedDailyFill: string;
   quarterHint: string;
   firstRoundStartHint: string;
   multiSplitInsufficientAmount: string;
@@ -637,6 +747,7 @@ const STRINGS: Record<Lang, {
 }> = {
   ko: {
     strategyMultiSplit: "다분할 매매법",
+    strategyNoStopMultiSplit: "다분할 매매법(무손절)",
     strategyMa: "이평선 구간매수",
     alarmTimes: "알람 시간",
     noOrder: "오늘 주문 요약은 앱에서 확인해 주세요.",
@@ -650,10 +761,16 @@ const STRINGS: Record<Lang, {
     sectionWatchBothNotMet: "관망 (정배열 미충족, RSI 조건 미충족)",
     locBuy1: "LOC 매수1",
     locBuy2: "LOC 매수2",
+    lowLoc: "저가 LOC",
+    highLoc: "고가 LOC",
     locSell: "LOC 매도",
     limitSell: "지정가 매도",
     mocSell: "MOC 매도",
     firstBuyAmount: "1회 매수금",
+    noStopFirstBuyHint: "첫 매수는 장중 아무 때나, 자유롭게 매수해 주세요.",
+    noStopSplitComplete: "분할 매수가 모두 완료되었습니다. 추가 매수 없이 보유(존버)와 익절만 수행합니다.",
+    noStopTakeProfitTarget: "익절 목표",
+    noStopGuaranteedDailyFill: "매일 체결 보장용",
     quarterHint: "MOC 매도 하여 쿼터 손절 모드 시작",
     firstRoundStartHint: "1회차 매수를 시작하세요",
     multiSplitInsufficientAmount: "알림: 1회 매수금이 부족하여 주문을 생성할 수 없습니다. 설정을 확인해 주세요.",
@@ -661,6 +778,7 @@ const STRINGS: Record<Lang, {
   },
   en: {
     strategyMultiSplit: "Multi-Split Strategy",
+    strategyNoStopMultiSplit: "No-Stop Multi-Split",
     strategyMa: "Moving Average Strategy",
     alarmTimes: "Alarm times",
     noOrder: "Please check today's orders in the app.",
@@ -674,10 +792,16 @@ const STRINGS: Record<Lang, {
     sectionWatchBothNotMet: "Watch (alignment not met, RSI not met)",
     locBuy1: "LOC Buy1",
     locBuy2: "LOC Buy2",
+    lowLoc: "Low LOC",
+    highLoc: "High LOC",
     locSell: "LOC Sell",
     limitSell: "Limit Sell",
     mocSell: "MOC Sell",
     firstBuyAmount: "1st Buy Amount",
+    noStopFirstBuyHint: "For your first buy, feel free to buy anytime during market hours.",
+    noStopSplitComplete: "All split buys are complete. Hold and wait for take profit without additional buys.",
+    noStopTakeProfitTarget: "Take-profit target",
+    noStopGuaranteedDailyFill: "For guaranteed daily fill",
     quarterHint: "Execute MOC sell to start quarter stop-loss mode",
     firstRoundStartHint: "Start your 1st round buy",
     multiSplitInsufficientAmount: "Notice: 1st buy amount is too low to place orders. Please check your settings.",
@@ -691,6 +815,7 @@ function formatPortfolioDailyExecutionBlock(
   options: {
     multiSplitExecutionData?: MultiSplitExecutionData | null;
     quarterStopLossData?: QuarterStopLossData | null;
+    noStopMultiSplitExecutionData?: NoStopMultiSplitExecutionData | null;
     multiSplitPhase?: "first" | "second" | "quarter" | null;
     isQuarterStopLossActive?: boolean;
     multiSplitOverLimit?: boolean;
@@ -706,13 +831,21 @@ function formatPortfolioDailyExecutionBlock(
   const hours = (portfolio.alarmconfig?.selectedHours ?? []).join(", ");
   const lines: string[] = [];
   const portfolioName = portfolio?.name ?? "";
+  const isMultiSplit = !!portfolio.strategy.multiSplit;
+  const isNoStopMultiSplit = !!portfolio.strategy.noStopMultiSplit;
 
   lines.push(`📌 ${portfolioName}`);
-  lines.push(portfolio.strategy.multiSplit ? `- ${s.strategyMultiSplit}` : `- ${s.strategyMa}`);
+  lines.push(
+    isMultiSplit
+      ? `- ${s.strategyMultiSplit}`
+      : isNoStopMultiSplit
+        ? `- ${s.strategyNoStopMultiSplit}`
+        : `- ${s.strategyMa}`
+  );
   const tzLabel = portfolio.alarmconfig?.timezone || "Asia/Seoul";
   lines.push(`- ${s.alarmTimes} (${tzLabel}): ${hours || "-"}`);
 
-  if (!portfolio.strategy.multiSplit) {
+  if (!isMultiSplit && !isNoStopMultiSplit) {
     const { maActiveSection, maPartialProfitLines, maRsiNotMet, maAlignmentNotMet } = options;
     const rsiEnabled = portfolio.strategy.ma0?.rsiEnabled === true;
     const alignmentEnabled = portfolio.strategy.ma0?.alignmentEnabled === true;
@@ -759,6 +892,37 @@ function formatPortfolioDailyExecutionBlock(
     return lines.join("\n");
   }
 
+  const unit = s.sharesUnit;
+
+  if (isNoStopMultiSplit) {
+    const data = options.noStopMultiSplitExecutionData;
+    const takeProfitPct = portfolio.strategy.noStopMultiSplit?.takeProfitPct ?? 0;
+
+    if (data?.isFirstBuy) {
+      lines.push(`- ${s.noStopFirstBuyHint}`);
+      return lines.join("\n");
+    }
+    if (data?.lowLoc) {
+      lines.push(linePriceQty(s.lowLoc, data.lowLoc.price, data.lowLoc.quantity, unit));
+    }
+    if (data?.highLoc) {
+      const highLocLine = linePriceQty(s.highLoc, data.highLoc.price, data.highLoc.quantity, unit);
+      if (highLocLine) lines.push(`${highLocLine} (${s.noStopGuaranteedDailyFill})`);
+    }
+    if (data?.isSplitComplete) {
+      lines.push(`- ${s.noStopSplitComplete}`);
+    }
+    if (data?.takeProfit) {
+      lines.push(
+        lang === "ko"
+          ? `- ${s.noStopTakeProfitTarget}: 평단 대비 +${takeProfitPct}% (전량 지정가 매도)`
+          : `- ${s.noStopTakeProfitTarget}: Avg price +${takeProfitPct}% (full limit sell)`
+      );
+    }
+    if (lines.length <= 3) lines.push(`- ${s.noOrder}`);
+    return lines.join("\n");
+  }
+
   const {
     multiSplitExecutionData,
     quarterStopLossData,
@@ -778,8 +942,6 @@ function formatPortfolioDailyExecutionBlock(
     lines.push(`- ${s.noOrder}`);
     return lines.join("\n");
   }
-
-  const unit = s.sharesUnit;
 
   if (isQuarterStopLossActive && quarterStopLossData) {
     if (!quarterStopLossData.hasMOC) {
@@ -900,6 +1062,19 @@ async function buildPortfolioBlock(
       multiSplitOverLimit,
       multiSplitFirstRoundHint: currentRound >= 0 && currentRound < 0.5,
       multiSplitInsufficientAmount,
+    });
+  }
+
+  if (portfolio.strategy.noStopMultiSplit) {
+    const noStopMultiSplitExecutionData = await calculateNoStopMultiSplitExecutionData(
+      supabase,
+      historyCache,
+      snapshotCache,
+      portfolio,
+    );
+
+    return formatPortfolioDailyExecutionBlock(portfolio, lang, {
+      noStopMultiSplitExecutionData,
     });
   }
 

@@ -48,6 +48,14 @@ export interface Strategy {
     targetReturnRate: number; // A: 목표 수익률 (5-30)
     totalSplitCount: number; // a: 총 분할 횟수 (20-80)
   };
+  // 다분할 매매법(무손절) 전용 필드
+  noStopMultiSplit?: {
+    targetStock: string;
+    lowLocBudgetRatio: number; // 저가 LOC 예산 비율 (%)
+    highLocPremiumPct: number; // 고가 LOC 프리미엄 (%)
+    takeProfitPct: number; // 익절 목표 수익률 (%)
+    totalSplitCount: number; // 총 분할 횟수
+  };
 }
 
 export interface Trade {

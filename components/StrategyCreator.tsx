@@ -10,7 +10,7 @@ import InfoModal from './InfoModal';
 import { useTDSMenu } from './tds';
 
 // 전략 타입 정의 (확장 가능)
-export type StrategyType = 'rsi_ma_interval' | 'multi_split';
+export type StrategyType = 'rsi_ma_interval' | 'multi_split' | 'no_stop_multi_split';
 
 interface StrategyDefinition {
   id: StrategyType;
@@ -37,6 +37,14 @@ const getStrategyDefinitions = (t: any): StrategyDefinition[] => [
     id: 'multi_split',
     title: t.strategyMultiSplitTitle,
     description: t.strategyMultiSplitDesc,
+    tier: 'FREE',
+    icon: <Layers size={24} />,
+    gradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+  },
+  {
+    id: 'no_stop_multi_split',
+    title: t.strategyNoStopMultiSplitTitle,
+    description: t.strategyNoStopMultiSplitDesc,
     tier: 'FREE',
     icon: <Layers size={24} />,
     gradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
@@ -100,6 +108,14 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
   const [targetReturnRate, setTargetReturnRate] = useState(10); // A: 목표 수익률 (5-30)
   const [totalSplitCount, setTotalSplitCount] = useState(40); // a: 총 분할 횟수 (20-80)
   const [multiSplitMenuOpen, setMultiSplitMenuOpen] = useState(false);
+
+  // 다분할 매매법(무손절) 전용 state
+  const [noStopMultiSplitStock, setNoStopMultiSplitStock] = useState('TQQQ');
+  const [noStopTotalSplitCount, setNoStopTotalSplitCount] = useState(40);
+  const [lowLocBudgetRatio, setLowLocBudgetRatio] = useState(50);
+  const [highLocPremiumPct, setHighLocPremiumPct] = useState(15);
+  const [takeProfitPct, setTakeProfitPct] = useState(10);
+  const [noStopMultiSplitMenuOpen, setNoStopMultiSplitMenuOpen] = useState(false);
 
   // Step 3: Meta
   const [name, setName] = useState('');
@@ -214,6 +230,20 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
           targetStock: multiSplitStock,
           targetReturnRate: targetReturnRate,
           totalSplitCount: totalSplitCount,
+        }
+      };
+    } else if (selectedStrategy === 'no_stop_multi_split') {
+      strategy = {
+        ma0: { stock: noStopMultiSplitStock, rsiEnabled: false, alignmentEnabled: false, maAPeriod: 20, maBPeriod: 60 },
+        ma1: { stock: noStopMultiSplitStock },
+        ma2: { stock: noStopMultiSplitStock, splitCount: 1 },
+        ma3: { stock: noStopMultiSplitStock },
+        noStopMultiSplit: {
+          targetStock: noStopMultiSplitStock,
+          lowLocBudgetRatio,
+          highLocPremiumPct,
+          takeProfitPct,
+          totalSplitCount: noStopTotalSplitCount,
         }
       };
     } else {
@@ -1306,9 +1336,9 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
   // 다분할 매매법 Step 2: 포트폴리오 메타 정보
   const renderMultiSplitStep2 = () => (
     <div className="space-y-8 animate-in fade-in slide-in-from-right-8 duration-500">
-      <div className="space-y-6">
+        <div className="space-y-6">
         <div className="space-y-3">
-          <label className="text-[10px] font-black text-slate-600 dark:text-slate-500 uppercase tracking-[0.2em]">
+          <label className="text-xs md:text-sm font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-widest">
             {lang === 'ko' ? '포트폴리오 이름:' : 'Portfolio Name:'}
           </label>
           <div className="relative">
@@ -1324,7 +1354,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
         </div>
 
         <div className="space-y-3">
-          <label className="text-[10px] font-black text-slate-600 dark:text-slate-500 uppercase tracking-[0.2em]">
+          <label className="text-xs md:text-sm font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-widest">
             {lang === 'ko' ? '1회 매수 금액 ($):' : '1st Purchase Amount ($):'}
           </label>
           <div className="relative">
@@ -1370,6 +1400,303 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
               />
             </div>
             <p className="text-[9px] text-slate-500 font-bold uppercase">
+              {lang === 'ko' ? '미입력시 기본값 0.25%가 적용됩니다.' : 'Defaults to 0.25% if empty.'}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // 다분할 매매법(무손절) Step 1: 파라미터 설정
+  const renderNoStopMultiSplitStep1 = () => {
+    return (
+      <div className="space-y-8 animate-in fade-in slide-in-from-right-8 duration-500">
+        <div className="bg-gradient-to-br from-teal-500/5 via-emerald-500/5 to-green-500/5 dark:from-teal-500/10 dark:via-emerald-500/10 dark:to-green-500/10 border border-teal-500/20 dark:border-emerald-500/20 p-8 rounded-[2rem] space-y-6 backdrop-blur-xl shadow-xl">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 bg-emerald-500/20 rounded-full flex items-center justify-center border border-emerald-500/40">
+              <Target className="text-emerald-500 dark:text-emerald-400" size={20} />
+            </div>
+            <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-widest">
+              V1 PARAMETERS
+            </h3>
+          </div>
+
+          <div className="space-y-3">
+            <label className="text-xs md:text-sm font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-widest">
+              {lang === 'ko' ? '대상 종목' : 'Target Stock'}
+            </label>
+            {isInTossApp && Menu ? (
+              <Menu
+                open={noStopMultiSplitMenuOpen}
+                onOpen={() => setNoStopMultiSplitMenuOpen(true)}
+                onClose={() => setNoStopMultiSplitMenuOpen(false)}
+                placement="bottom"
+              >
+                <Menu.Trigger>
+                  <button className="w-full p-5 bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-600/50 rounded-xl text-base font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all cursor-pointer flex items-center justify-between backdrop-blur-sm shadow-sm">
+                    <span>{noStopMultiSplitStock}</span>
+                    <ChevronDown size={18} className="text-slate-500 dark:text-slate-400" />
+                  </button>
+                </Menu.Trigger>
+                <Menu.Dropdown>
+                  <Menu.Header>{lang === 'ko' ? '종목 선택' : 'Select Stock'}</Menu.Header>
+                  {ALL_STOCKS.map((stock) => {
+                    const locked = isLockedTicker(stock);
+                    if (locked) {
+                      return (
+                        <div
+                          key={stock}
+                          onClick={() => setProInfoOpen(true)}
+                          className="px-4 py-3 text-sm font-bold text-slate-400 dark:text-slate-600 flex items-center justify-between opacity-70 cursor-not-allowed"
+                        >
+                          <span className="flex items-center gap-2">
+                            <span>{stock}</span>
+                            <HoverTip text={lockedTooltip}>
+                              <span className="inline-flex items-center">
+                                <Lock size={14} className="text-slate-400 dark:text-slate-600" />
+                              </span>
+                            </HoverTip>
+                          </span>
+                          <span className="text-[9px] font-black uppercase tracking-widest bg-white/10 border border-white/10 px-2 py-0.5 rounded-full">
+                            PRO+
+                          </span>
+                        </div>
+                      );
+                    }
+                    return (
+                      <Menu.DropdownCheckItem
+                        key={stock}
+                        checked={noStopMultiSplitStock === stock}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setNoStopMultiSplitStock(stock);
+                            setNoStopMultiSplitMenuOpen(false);
+                          }
+                        }}
+                      >
+                        {stock}
+                      </Menu.DropdownCheckItem>
+                    );
+                  })}
+                </Menu.Dropdown>
+              </Menu>
+            ) : (
+              <CustomDropdown
+                value={noStopMultiSplitStock}
+                options={stockOptions}
+                onChange={(value) => setNoStopMultiSplitStock(value)}
+                header={lang === 'ko' ? '종목 선택' : 'Select Stock'}
+              />
+            )}
+            <p className="text-xs text-slate-500 dark:text-slate-300 leading-relaxed font-medium">
+              {lang === 'ko'
+                ? '1회 매수 금액은 최소 2주 이상 매수 가능 금액을 권유해요.'
+                : 'We recommend setting the 1st buy amount high enough to buy at least 2 shares.'}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 mt-6">
+            <div className="space-y-3">
+              <label className="text-xs md:text-sm font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-widest block">
+                {lang === 'ko' ? '총 분할 횟수 (회)' : 'Total Split Count'}
+              </label>
+              <input
+                type="number"
+                value={noStopTotalSplitCount}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  if (val >= 10 && val <= 80) {
+                    setNoStopTotalSplitCount(val);
+                  }
+                }}
+                onBlur={(e) => {
+                  const val = Number(e.target.value);
+                  if (val < 10) setNoStopTotalSplitCount(10);
+                  else if (val > 80) setNoStopTotalSplitCount(80);
+                }}
+                min="10"
+                max="80"
+                className="w-full px-5 py-3.5 bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-600/50 rounded-xl text-lg font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all backdrop-blur-sm shadow-sm"
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-300 font-medium">
+                {lang === 'ko'
+                  ? '최대 N회까지 분할 매수합니다.'
+                  : 'Split buys continue up to N rounds.'}
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-xs md:text-sm font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-widest block">
+                {lang === 'ko' ? '저가(평단가) LOC 예산 비율 (%)' : 'Low LOC Budget Ratio (%)'}
+              </label>
+              <input
+                type="number"
+                value={lowLocBudgetRatio}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  if (val >= 1 && val <= 99) {
+                    setLowLocBudgetRatio(val);
+                  }
+                }}
+                onBlur={(e) => {
+                  const val = Number(e.target.value);
+                  if (val < 1) setLowLocBudgetRatio(1);
+                  else if (val > 99) setLowLocBudgetRatio(99);
+                }}
+                min="1"
+                max="99"
+                className="w-full px-5 py-3.5 bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-600/50 rounded-xl text-lg font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all backdrop-blur-sm shadow-sm"
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-300 font-medium">
+                {lang === 'ko'
+                  ? '이 비율 안에서 정수 주 기준 최대치까지 저가 LOC에 사용합니다.'
+                  : 'Uses as much as possible for low LOC within this ratio.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 mt-2">
+            <div className="space-y-3">
+              <label className="text-xs md:text-sm font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-widest block">
+                {lang === 'ko'
+                  ? '고가 LOC 주문 버퍼 (%, 체결 보장용)'
+                  : 'High LOC Order Buffer (%, guaranteed fill)'}
+              </label>
+              <input
+                type="number"
+                value={highLocPremiumPct}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  if (val >= 1 && val <= 100) {
+                    setHighLocPremiumPct(val);
+                  }
+                }}
+                onBlur={(e) => {
+                  const val = Number(e.target.value);
+                  if (val < 1) setHighLocPremiumPct(1);
+                  else if (val > 100) setHighLocPremiumPct(100);
+                }}
+                min="1"
+                max="100"
+                className="w-full px-5 py-3.5 bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-600/50 rounded-xl text-lg font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all backdrop-blur-sm shadow-sm"
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-300 font-medium">
+                {lang === 'ko'
+                  ? '현재가 대비 +X% 가격에 LOC 주문을 겁니다.'
+                  : 'Places a LOC order at current price +X%.'}
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-xs md:text-sm font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-widest block">
+                {lang === 'ko' ? '익절 목표 수익률 (%)' : 'Take Profit (%)'}
+              </label>
+              <input
+                type="number"
+                value={takeProfitPct}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  if (val >= 5 && val <= 100) {
+                    setTakeProfitPct(val);
+                  }
+                }}
+                onBlur={(e) => {
+                  const val = Number(e.target.value);
+                  if (val < 5) setTakeProfitPct(5);
+                  else if (val > 100) setTakeProfitPct(100);
+                }}
+                min="5"
+                max="100"
+                className="w-full px-5 py-3.5 bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-600/50 rounded-xl text-lg font-black text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all backdrop-blur-sm shadow-sm"
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-300 font-medium">
+                {lang === 'ko'
+                  ? '평단 대비 +Y%에서 전량 지정가 매도합니다.'
+                  : 'Sell the full position at avg price +Y%.'}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // 다분할 매매법(무손절) Step 2: 포트폴리오 메타 정보
+  const renderNoStopMultiSplitStep2 = () => (
+    <div className="space-y-8 animate-in fade-in slide-in-from-right-8 duration-500">
+      <div className="space-y-6">
+        <div className="space-y-3">
+          <label className="text-xs md:text-sm font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-widest">
+            {lang === 'ko' ? '포트폴리오 이름:' : 'Portfolio Name:'}
+          </label>
+          <div className="relative">
+            <Settings2 className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+            <input
+              type="text"
+              placeholder={lang === 'ko' ? '예: 내 은퇴 자금 40분할(무손절)' : 'e.g., My no-stop 40-split'}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full px-5 py-3.5 pl-16 bg-slate-100/50 dark:bg-slate-900 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-white/10 focus:ring-4 focus:ring-emerald-500/20 font-black text-lg outline-none transition-all"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <label className="text-xs md:text-sm font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-widest">
+            {lang === 'ko' ? '1회 매수 금액 ($):' : '1st Purchase Amount ($):'}
+          </label>
+          <div className="relative">
+            <Wallet className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+            <div className="absolute right-8 top-1/2 -translate-y-1/2 text-xl font-black text-slate-600">$</div>
+            <input
+              type="number"
+              value={dailyBuy}
+              onChange={(e) => setDailyBuy(Number(e.target.value))}
+              className="w-full px-5 py-3.5 pl-16 bg-slate-100/50 dark:bg-slate-900 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-white/10 focus:ring-4 focus:ring-emerald-500/20 font-black text-xl outline-none transition-all"
+            />
+          </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {lang === 'ko'
+              ? '1회 매수 금액은 최소 2주 이상 매수 가능 금액을 권유해요.'
+              : 'We recommend setting the 1st buy amount high enough to buy at least 2 shares.'}
+          </p>
+          <p className="text-xs text-slate-500 dark:text-slate-300 font-bold uppercase">
+            {lang === 'ko' ? '총 원금 개념 = 1회 매수 금액 × 총 분할 횟수' : 'Total capital concept = 1st buy amount × total split count'}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-4">
+          <div className="space-y-3">
+            <label className="text-xs md:text-sm font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-widest">
+              {lang === 'ko' ? '시작일:' : 'Start Date:'}
+            </label>
+            <div className="relative">
+              <Calendar className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" size={18} />
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-full px-5 py-3.5 pl-14 bg-slate-100/50 dark:bg-slate-900 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-white/10 font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all"
+              />
+            </div>
+          </div>
+          <div className="space-y-3">
+            <label className="text-xs md:text-sm font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-widest">
+              {lang === 'ko' ? '수수료율 (선택):' : 'Fee Rate (%):'}
+            </label>
+            <div className="relative">
+              <Percent className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" size={18} />
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={feeRate}
+                onChange={(e) => setFeeRate(Math.max(0, Number(e.target.value)))}
+                className="w-full px-5 py-3.5 pl-14 bg-slate-100/50 dark:bg-slate-900 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-white/10 font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all"
+              />
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-300 font-bold uppercase">
               {lang === 'ko' ? '미입력시 기본값 0.25%가 적용됩니다.' : 'Defaults to 0.25% if empty.'}
             </p>
           </div>
@@ -1477,7 +1804,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                           ? [1, 2, 3].map(i => (
                               <div key={i} className={`h-1.5 rounded-full transition-all duration-500 ${step === i ? 'w-8 bg-blue-500' : 'w-3 bg-slate-700'}`}></div>
                             ))
-                          : selectedStrategy === 'multi_split'
+                          : selectedStrategy === 'multi_split' || selectedStrategy === 'no_stop_multi_split'
                           ? [1, 2].map(i => (
                               <div key={i} className={`h-1.5 rounded-full transition-all duration-500 ${step === i ? 'w-8 bg-emerald-500' : 'w-3 bg-slate-700'}`}></div>
                             ))
@@ -1485,11 +1812,11 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                         }
                      </div>
                      <span className={`text-[10px] font-black uppercase tracking-widest ml-2 ${
-                       selectedStrategy === 'multi_split' ? 'text-emerald-400' : 'text-blue-400'
+                       selectedStrategy === 'multi_split' || selectedStrategy === 'no_stop_multi_split' ? 'text-emerald-400' : 'text-blue-400'
                      }`}>
                        {selectedStrategy === 'rsi_ma_interval' 
                          ? `Step ${step} of 3`
-                         : selectedStrategy === 'multi_split'
+                         : selectedStrategy === 'multi_split' || selectedStrategy === 'no_stop_multi_split'
                          ? `Step ${step} of 2`
                          : ''}
                      </span>
@@ -1510,6 +1837,8 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
           {step === 3 && renderStep3()}
           {step === 1 && selectedStrategy === 'multi_split' && renderMultiSplitStep1()}
           {step === 2 && selectedStrategy === 'multi_split' && renderMultiSplitStep2()}
+          {step === 1 && selectedStrategy === 'no_stop_multi_split' && renderNoStopMultiSplitStep1()}
+          {step === 2 && selectedStrategy === 'no_stop_multi_split' && renderNoStopMultiSplitStep2()}
         </div>
 
         {/* Footer - 하단 고정 */}
@@ -1540,7 +1869,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
               )}
               <button 
                 onClick={() => {
-                  if (selectedStrategy === 'multi_split') {
+                  if (selectedStrategy === 'multi_split' || selectedStrategy === 'no_stop_multi_split') {
                     // 다분할 매매법: step 1 -> step 2 -> 저장
                     if (step === 1) {
                       setStep(2);
@@ -1559,11 +1888,11 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                 disabled={!selectedStrategy}
                 className="flex-1 py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 shadow-[0_12px_40px_rgba(37,99,235,0.6)] hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {selectedStrategy === 'multi_split' 
+                {selectedStrategy === 'multi_split' || selectedStrategy === 'no_stop_multi_split'
                   ? (step === 2 ? (lang === 'ko' ? '전략 시작' : 'Start Strategy') : (lang === 'ko' ? '다음' : 'Next'))
                   : (step < 3 ? (lang === 'ko' ? '다음' : 'Next') : (lang === 'ko' ? '저장' : 'Save'))
                 }
-                {((selectedStrategy === 'multi_split' && step < 2) || (selectedStrategy === 'rsi_ma_interval' && step < 3)) && <ChevronRight size={18} strokeWidth={3} />}
+                {(((selectedStrategy === 'multi_split' || selectedStrategy === 'no_stop_multi_split') && step < 2) || (selectedStrategy === 'rsi_ma_interval' && step < 3)) && <ChevronRight size={18} strokeWidth={3} />}
               </button>
             </>
           )}

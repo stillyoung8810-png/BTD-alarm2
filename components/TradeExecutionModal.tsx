@@ -4,6 +4,7 @@ import { Portfolio, Trade } from '../types';
 import { I18N, CUSTOM_GRADIENT_LOGOS, PAID_STOCKS } from '../constants';
 import { X, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import StockLogo from './StockLogo';
+import { useNoStopMultiSplitExecution } from '../hooks/useNoStopMultiSplitExecution';
 
 const CALENDAR_WEEKDAYS: Record<'ko' | 'en', string[]> = {
   ko: ['일', '월', '화', '수', '목', '금', '토'],
@@ -30,8 +31,22 @@ interface TradeExecutionModalProps {
 }
 
 const TradeExecutionModal: React.FC<TradeExecutionModalProps> = ({ lang, portfolio, onClose, onSave }) => {
+  const isNoStopMultiSplit = !!portfolio.strategy.noStopMultiSplit;
+  const targetStock = portfolio.strategy.noStopMultiSplit?.targetStock ?? portfolio.strategy.ma1.stock;
+  const strategyStocks = useMemo(
+    () => Array.from(new Set(
+      isNoStopMultiSplit
+        ? [targetStock]
+        : [
+            portfolio.strategy.ma1.stock,
+            portfolio.strategy.ma2.stock,
+            portfolio.strategy.ma3.stock,
+          ]
+    )),
+    [isNoStopMultiSplit, targetStock, portfolio.strategy.ma1.stock, portfolio.strategy.ma2.stock, portfolio.strategy.ma3.stock]
+  );
   const [type, setType] = useState<'buy' | 'sell'>('buy');
-  const [selectedStock, setSelectedStock] = useState<string>(portfolio.strategy.ma1.stock);
+  const [selectedStock, setSelectedStock] = useState<string>(strategyStocks[0] || '');
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [price, setPrice] = useState<number>(0);
   const [quantity, setQuantity] = useState<number>(0);
@@ -42,13 +57,8 @@ const TradeExecutionModal: React.FC<TradeExecutionModalProps> = ({ lang, portfol
 
   const t = I18N[lang];
   const feeRate = portfolio.feeRate || 0.25;
-
-  const strategyStocks = Array.from(new Set([
-    portfolio.strategy.ma1.stock, 
-    portfolio.strategy.ma2.stock, 
-    portfolio.strategy.ma3.stock
-  ]));
   const holdings = Array.from(new Set(portfolio.trades.map(t => t.stock)));
+  const { executionData: noStopExecutionData } = useNoStopMultiSplitExecution(portfolio);
 
   useEffect(() => {
     const commission = price * quantity * (feeRate / 100);
@@ -58,12 +68,12 @@ const TradeExecutionModal: React.FC<TradeExecutionModalProps> = ({ lang, portfol
 
   useEffect(() => {
     if (type === 'buy') {
-      setSelectedStock(strategyStocks[0]);
+      setSelectedStock(strategyStocks[0] || '');
       setIsMOC(false); // 매수일 때는 MOC 비활성화
     } else {
-      setSelectedStock(holdings[0] || '');
+      setSelectedStock((isNoStopMultiSplit ? (holdings[0] || targetStock) : holdings[0]) || '');
     }
-  }, [type]);
+  }, [type, strategyStocks, holdings, isNoStopMultiSplit, targetStock]);
 
   useEffect(() => {
     setCalendarMonth(dateKeyToLocalDate(date));
@@ -156,7 +166,7 @@ const TradeExecutionModal: React.FC<TradeExecutionModalProps> = ({ lang, portfol
             <button onClick={() => setType('sell')} className={`flex-1 py-5 rounded-2xl text-xs font-black transition-all ${type === 'sell' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-600 dark:text-slate-500'}`}>{t.sell}</button>
           </div>
 
-          {type === 'sell' && (
+          {type === 'sell' && !isNoStopMultiSplit && (
             <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-white/5 gap-4">
               <div className="flex-1">
                 <div className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest mb-1">{t.mocSell}</div>
@@ -178,6 +188,47 @@ const TradeExecutionModal: React.FC<TradeExecutionModalProps> = ({ lang, portfol
                   }`}
                 />
               </button>
+            </div>
+          )}
+
+          {isNoStopMultiSplit && (
+            <div className="flex flex-col gap-3 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-white/5">
+              <div className="text-[11px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">
+                {lang === 'ko' ? '전략 실행 가이드' : 'Strategy Execution Guide'}
+              </div>
+              {noStopExecutionData?.isFirstBuy ? (
+                <div className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                  {t.noStopFirstBuyHint}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {noStopExecutionData?.lowLoc && (
+                    <div className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                      {t.lowLoc}: ${noStopExecutionData.lowLoc.price.toFixed(2)} / {noStopExecutionData.lowLoc.quantity}{lang === 'ko' ? '주' : ' shares'}
+                    </div>
+                  )}
+                  {noStopExecutionData?.highLoc && (
+                    <div className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                      {t.highLoc}: ${noStopExecutionData.highLoc.price.toFixed(2)} / {noStopExecutionData.highLoc.quantity}{lang === 'ko' ? '주' : ' shares'}
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                        {t.noStopGuaranteedDailyFill}
+                      </div>
+                    </div>
+                  )}
+                  {noStopExecutionData?.isSplitComplete && (
+                    <div className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                      {t.noStopSplitComplete}
+                    </div>
+                  )}
+                  {noStopExecutionData?.takeProfit && (
+                    <div className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                      {t.noStopTakeProfitTarget}: {lang === 'ko'
+                        ? `평단 대비 +${portfolio.strategy.noStopMultiSplit?.takeProfitPct || 0}% (전량 지정가 매도)`
+                        : `Avg price +${portfolio.strategy.noStopMultiSplit?.takeProfitPct || 0}% (full limit sell)`}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

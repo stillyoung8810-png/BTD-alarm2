@@ -10,6 +10,7 @@ export type Lang = 'ko' | 'en';
 
 const STRINGS: Record<Lang, {
   strategyMultiSplit: string;
+  strategyNoStopMultiSplit: string;
   strategyMa: string;
   alarmTimes: string;
   noOrder: string;
@@ -23,10 +24,16 @@ const STRINGS: Record<Lang, {
   sectionWatchBothNotMet: string; // "관망 (정배열 미충족, RSI 조건 미충족)"
   locBuy1: string;
   locBuy2: string;
+  lowLoc: string;
+  highLoc: string;
   locSell: string;
   limitSell: string;
   mocSell: string;
   firstBuyAmount: string;
+  noStopFirstBuyHint: string;
+  noStopSplitComplete: string;
+  noStopTakeProfitTarget: string;
+  noStopGuaranteedDailyFill: string;
   quarterHint: string;
   /** 다분할: T가 0 이상 0.5 미만일 때 "1회차 매수를 시작하세요" */
   firstRoundStartHint: string;
@@ -36,6 +43,7 @@ const STRINGS: Record<Lang, {
 }> = {
   ko: {
     strategyMultiSplit: '다분할 매매법',
+    strategyNoStopMultiSplit: '다분할 매매법(무손절)',
     strategyMa: '이평선 구간매수',
     alarmTimes: '알람 시간',
     noOrder: '오늘 주문 요약은 앱에서 확인해 주세요.',
@@ -49,10 +57,16 @@ const STRINGS: Record<Lang, {
     sectionWatchBothNotMet: '관망 (정배열 미충족, RSI 조건 미충족)',
     locBuy1: 'LOC 매수1',
     locBuy2: 'LOC 매수2',
+    lowLoc: '저가 LOC',
+    highLoc: '고가 LOC',
     locSell: 'LOC 매도',
     limitSell: '지정가 매도',
     mocSell: 'MOC 매도',
     firstBuyAmount: '1회 매수금',
+    noStopFirstBuyHint: '첫 매수는 장중 아무 때나, 자유롭게 매수해 주세요.',
+    noStopSplitComplete: '분할 매수가 모두 완료되었습니다. 추가 매수 없이 보유(존버)와 익절만 수행합니다.',
+    noStopTakeProfitTarget: '익절 목표',
+    noStopGuaranteedDailyFill: '매일 체결 보장용',
     quarterHint: 'MOC 매도 하여 쿼터 손절 모드 시작',
     firstRoundStartHint: '1회차 매수를 시작하세요',
     multiSplitInsufficientAmount: '알림: 1회 매수금이 부족하여 주문을 생성할 수 없습니다. 설정을 확인해 주세요.',
@@ -60,6 +74,7 @@ const STRINGS: Record<Lang, {
   },
   en: {
     strategyMultiSplit: 'Multi-Split Strategy',
+    strategyNoStopMultiSplit: 'No-Stop Multi-Split',
     strategyMa: 'Moving Average Strategy',
     alarmTimes: 'Alarm times',
     noOrder: 'Please check today\'s orders in the app.',
@@ -73,10 +88,16 @@ const STRINGS: Record<Lang, {
     sectionWatchBothNotMet: 'Watch (alignment not met, RSI not met)',
     locBuy1: 'LOC Buy1',
     locBuy2: 'LOC Buy2',
+    lowLoc: 'Low LOC',
+    highLoc: 'High LOC',
     locSell: 'LOC Sell',
     limitSell: 'Limit Sell',
     mocSell: 'MOC Sell',
     firstBuyAmount: '1st Buy Amount',
+    noStopFirstBuyHint: 'For your first buy, feel free to buy anytime during market hours.',
+    noStopSplitComplete: 'All split buys are complete. Hold and wait for take profit without additional buys.',
+    noStopTakeProfitTarget: 'Take-profit target',
+    noStopGuaranteedDailyFill: 'For guaranteed daily fill',
     quarterHint: 'Execute MOC sell to start quarter stop-loss mode',
     firstRoundStartHint: 'Start your 1st round buy',
     multiSplitInsufficientAmount: 'Notice: 1st buy amount is too low to place orders. Please check your settings.',
@@ -102,6 +123,15 @@ export interface QuarterStopLossData {
   limitSell?: { price: number; quantity: number };
 }
 
+export interface NoStopMultiSplitExecutionData {
+  currentRound: number;
+  isFirstBuy: boolean;
+  isSplitComplete: boolean;
+  lowLoc?: { price: number; quantity: number };
+  highLoc?: { price: number; quantity: number };
+  takeProfit?: { price: number; quantity: number };
+}
+
 function linePriceQty(label: string, price: number, qty: number, unit: string): string {
   if (typeof price !== 'number' || typeof qty !== 'number' || Number.isNaN(price) || Number.isNaN(qty)) return '';
   const q = Math.round(qty);
@@ -119,6 +149,7 @@ export function formatPortfolioDailyExecutionBlock(
   options: {
     multiSplitExecutionData?: MultiSplitExecutionData | null;
     quarterStopLossData?: QuarterStopLossData | null;
+    noStopMultiSplitExecutionData?: NoStopMultiSplitExecutionData | null;
     multiSplitPhase?: 'first' | 'second' | 'quarter' | null;
     isQuarterStopLossActive?: boolean;
     /** 다분할 매매법: 총투자금이 1회 투자금 × a 를 초과한 경우 true */
@@ -142,14 +173,22 @@ export function formatPortfolioDailyExecutionBlock(
   const tzLabel = portfolio.alarmconfig?.timezone || 'Asia/Seoul';
   const lines: string[] = [];
   const portfolioName = portfolio?.name ?? '';
+  const isMultiSplit = !!portfolio.strategy.multiSplit;
+  const isNoStopMultiSplit = !!portfolio.strategy.noStopMultiSplit;
 
   lines.push(`📌 ${portfolioName}`);
-  lines.push(portfolio.strategy.multiSplit ? `- ${s.strategyMultiSplit}` : `- ${s.strategyMa}`);
+  lines.push(
+    isMultiSplit
+      ? `- ${s.strategyMultiSplit}`
+      : isNoStopMultiSplit
+        ? `- ${s.strategyNoStopMultiSplit}`
+        : `- ${s.strategyMa}`
+  );
   lines.push(`- ${s.alarmTimes} (${tzLabel}): ${hours || '-'}`);
 
   // 이평선 구간매수: 구간은 ma0.maAPeriod/maBPeriod 2개만 사용(백테스트와 동일). 계산은 Dashboard에서 수행.
   // RSI/정배열 관망 문구는 ma0.rsiEnabled / ma0.alignmentEnabled 가 true일 때만 출력.
-  if (!portfolio.strategy.multiSplit) {
+  if (!isMultiSplit && !isNoStopMultiSplit) {
     const { maActiveSection, maPartialProfitLines, maRsiNotMet, maAlignmentNotMet } = options;
     const rsiEnabled = portfolio.strategy.ma0?.rsiEnabled === true;
     const alignmentEnabled = portfolio.strategy.ma0?.alignmentEnabled === true;
@@ -189,6 +228,38 @@ export function formatPortfolioDailyExecutionBlock(
     return lines.join('\n');
   }
 
+  const unit = s.sharesUnit;
+
+  if (isNoStopMultiSplit) {
+    const data = options.noStopMultiSplitExecutionData;
+    const takeProfitPct = portfolio.strategy.noStopMultiSplit?.takeProfitPct ?? 0;
+
+    if (data?.isFirstBuy) {
+      lines.push(`- ${s.noStopFirstBuyHint}`);
+      return lines.join('\n');
+    }
+
+    if (data?.lowLoc) {
+      lines.push(linePriceQty(s.lowLoc, data.lowLoc.price, data.lowLoc.quantity, unit));
+    }
+    if (data?.highLoc) {
+      const highLocLine = linePriceQty(s.highLoc, data.highLoc.price, data.highLoc.quantity, unit);
+      if (highLocLine) lines.push(`${highLocLine} (${s.noStopGuaranteedDailyFill})`);
+    }
+    if (data?.isSplitComplete) {
+      lines.push(`- ${s.noStopSplitComplete}`);
+    }
+    if (data?.takeProfit) {
+      lines.push(
+        lang === 'ko'
+          ? `- ${s.noStopTakeProfitTarget}: 평단 대비 +${takeProfitPct}% (전량 지정가 매도)`
+          : `- ${s.noStopTakeProfitTarget}: Avg price +${takeProfitPct}% (full limit sell)`
+      );
+    }
+    if (lines.length <= 3) lines.push(`- ${s.noOrder}`);
+    return lines.join('\n');
+  }
+
   const { multiSplitExecutionData, quarterStopLossData, multiSplitPhase, isQuarterStopLossActive, multiSplitOverLimit, multiSplitFirstRoundHint, multiSplitInsufficientAmount } = options;
 
   // 다분할 매매법: 총투자금 초과 시 안내 문구만 표시
@@ -202,8 +273,6 @@ export function formatPortfolioDailyExecutionBlock(
     lines.push(`- ${s.noOrder}`);
     return lines.join('\n');
   }
-  const unit = s.sharesUnit;
-
   if (isQuarterStopLossActive && quarterStopLossData) {
     if (!quarterStopLossData.hasMOC) {
       const qty = quarterStopLossData.mocQuantity ?? 0;

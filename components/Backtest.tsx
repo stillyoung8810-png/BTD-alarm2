@@ -11,7 +11,7 @@ import { incrementUsage } from '../utils/subscriptionUtils';
 
 const BacktestResultsCharts = lazy(() => import('./BacktestResultsCharts'));
 
-export type BacktestStrategyId = 'rsi_ma_interval' | 'multi_split';
+export type BacktestStrategyId = 'rsi_ma_interval' | 'multi_split' | 'no_stop_multi_split';
 
 type Step = 'strategy' | 'params' | 'results';
 
@@ -45,6 +45,18 @@ export interface BacktestParamsMultiSplit {
   stock: string;
   targetReturnRate: number;
   totalSplitCount: number;
+  oneTimeAmount: number;
+  months: number;
+  feeRate: number;
+}
+
+// 다분할 매매법(무손절) 파라미터 (백테스트용)
+export interface BacktestParamsNoStopMultiSplit {
+  stock: string;
+  totalSplitCount: number;
+  lowLocBudgetRatio: number;
+  highLocPremiumPct: number;
+  takeProfitPct: number;
   oneTimeAmount: number;
   months: number;
   feeRate: number;
@@ -92,6 +104,17 @@ const DEFAULT_PARAMS_MULTI: BacktestParamsMultiSplit = {
   feeRate: 0.25,
 };
 
+const DEFAULT_PARAMS_NO_STOP_MULTI: BacktestParamsNoStopMultiSplit = {
+  stock: 'TQQQ',
+  totalSplitCount: 40,
+  lowLocBudgetRatio: 50,
+  highLocPremiumPct: 15,
+  takeProfitPct: 10,
+  oneTimeAmount: 1000,
+  months: 24,
+  feeRate: 0.25,
+};
+
 // 목업 결과 데이터
 function buildMockResult(): BacktestResult {
   const eq: { date: string; value: number }[] = [];
@@ -132,6 +155,7 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
   const [strategyId, setStrategyId] = useState<BacktestStrategyId | null>(null);
   const [paramsMa, setParamsMa] = useState<BacktestParamsMa>(DEFAULT_PARAMS_MA);
   const [paramsMulti, setParamsMulti] = useState<BacktestParamsMultiSplit>(DEFAULT_PARAMS_MULTI);
+  const [paramsNoStopMulti, setParamsNoStopMulti] = useState<BacktestParamsNoStopMultiSplit>(DEFAULT_PARAMS_NO_STOP_MULTI);
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [backtestError, setBacktestError] = useState<string | null>(null);
 
@@ -170,6 +194,53 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
               oneTimeAmount: paramsMulti.oneTimeAmount,
               months: paramsMulti.months,
               feeRate: paramsMulti.feeRate,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const body = typeof data.body === 'string' ? JSON.parse(data.body) : data;
+            if (body.error) {
+              setBacktestError(body.error);
+              setResult(null);
+              setStep('results');
+              return;
+            }
+            if (body.equityCurve) {
+              setBacktestError(null);
+              setResult({
+                totalReturnPct: body.totalReturnPct ?? 0,
+                cagrPct: body.cagrPct ?? 0,
+                mddPct: body.mddPct ?? 0,
+                winRatePct: body.winRatePct ?? 0,
+                sharpeRatio: body.sharpeRatio ?? 0,
+                avgHoldingDays: body.avgHoldingDays ?? 0,
+                equityCurve: body.equityCurve,
+                drawdownSeries: body.drawdownSeries ?? [],
+              });
+              setStep('results');
+              return;
+            }
+          }
+        } catch (_e) {
+          // fallback to mock
+        }
+      }
+    } else if (strategyId === 'no_stop_multi_split') {
+      const apiUrl = (import.meta as any).env?.VITE_BACKTEST_NO_STOP_MULTI_URL;
+      if (apiUrl) {
+        try {
+          const res = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              stock: paramsNoStopMulti.stock,
+              totalSplitCount: paramsNoStopMulti.totalSplitCount,
+              lowLocBudgetRatio: paramsNoStopMulti.lowLocBudgetRatio,
+              highLocPremiumPct: paramsNoStopMulti.highLocPremiumPct,
+              takeProfitPct: paramsNoStopMulti.takeProfitPct,
+              oneTimeAmount: paramsNoStopMulti.oneTimeAmount,
+              months: paramsNoStopMulti.months,
+              feeRate: paramsNoStopMulti.feeRate,
             }),
           });
           if (res.ok) {
@@ -257,6 +328,21 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
             </h2>
             <p className="text-sm text-slate-500 dark:text-slate-400">
               {t.strategyMultiSplitDesc}
+            </p>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSelectStrategy('no_stop_multi_split')}
+            className="bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-3xl p-8 shadow-lg hover:shadow-xl hover:border-emerald-500/30 dark:hover:border-emerald-400/30 transition-all text-left group"
+          >
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white mb-4 group-hover:scale-105 transition-transform">
+              <Layers size={24} />
+            </div>
+            <h2 className="text-lg font-black text-slate-900 dark:text-white mb-2">
+              {t.strategyNoStopMultiSplitTitle}
+            </h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              {t.strategyNoStopMultiSplitDesc}
             </p>
           </button>
         </div>
@@ -575,6 +661,148 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
               <div className="flex gap-3 pt-4">
                 <button type="button" onClick={() => { setStep('strategy'); setStrategyId(null); }} className="px-5 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">{t.cancel}</button>
                 <button type="button" onClick={handleRunBacktest} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black shadow-lg shadow-emerald-500/30 hover:scale-[1.02] active:scale-[0.98] transition-transform">
+                  <Zap size={18} /> {t.backtestRun}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {strategyId === 'no_stop_multi_split' && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-2">{t.stock}</label>
+                  <CustomDropdown
+                    value={paramsNoStopMulti.stock}
+                    options={stockOptions}
+                    onChange={(v) => setParamsNoStopMulti((p) => ({ ...p, stock: v }))}
+                    header={t.stock}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-2">{t.backtestPeriod}</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min={6}
+                      max={24}
+                      step={1}
+                      value={paramsNoStopMulti.months}
+                      onChange={(e) => setParamsNoStopMulti((p) => ({ ...p, months: Number(e.target.value) }))}
+                      className="flex-1 h-2 rounded-full bg-slate-200 dark:bg-white/10 accent-emerald-600"
+                    />
+                    <span className="text-sm font-black text-slate-900 dark:text-white w-14">
+                      {paramsNoStopMulti.months}{t.months}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">{t.totalSplitCount}</label>
+                  <input
+                    type="number"
+                    min={10}
+                    max={80}
+                    value={paramsNoStopMulti.totalSplitCount}
+                    onChange={(e) => setParamsNoStopMulti((p) => ({ ...p, totalSplitCount: Number(e.target.value) || 40 }))}
+                    className="w-full p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-white font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">
+                    {lang === 'ko' ? '저가(평단가) LOC 예산 비율 (%)' : 'Low LOC Budget Ratio (%)'}
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={99}
+                    value={paramsNoStopMulti.lowLocBudgetRatio}
+                    onChange={(e) => setParamsNoStopMulti((p) => ({ ...p, lowLocBudgetRatio: Number(e.target.value) || 50 }))}
+                    className="w-full p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-white font-bold"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">
+                    {lang === 'ko' ? '고가 LOC 프리미엄 (%)' : 'High LOC Premium (%)'}
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={paramsNoStopMulti.highLocPremiumPct}
+                    onChange={(e) => setParamsNoStopMulti((p) => ({ ...p, highLocPremiumPct: Number(e.target.value) || 15 }))}
+                    className="w-full p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-white font-bold"
+                  />
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                    {lang === 'ko' ? '현재가 대비 +X% 가격에 LOC 주문을 겁니다. (매일 체결 보장용)' : 'Places LOC at current price +X% (for daily fill).'}
+                  </p>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">
+                    {lang === 'ko' ? '익절 목표 수익률 (%)' : 'Take Profit (%)'}
+                  </label>
+                  <input
+                    type="number"
+                    min={5}
+                    max={100}
+                    value={paramsNoStopMulti.takeProfitPct}
+                    onChange={(e) => setParamsNoStopMulti((p) => ({ ...p, takeProfitPct: Number(e.target.value) || 10 }))}
+                    className="w-full p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-white font-bold"
+                  />
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                    {lang === 'ko'
+                      ? '평단 대비 +Y%에서 전량 지정가 매도합니다.'
+                      : 'Sell full position at avg price +Y%.'}
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">
+                    $ {t.oneTimeAmount}
+                  </label>
+                  <input
+                    type="number"
+                    value={paramsNoStopMulti.oneTimeAmount}
+                    onChange={(e) => setParamsNoStopMulti((p) => ({ ...p, oneTimeAmount: Number(e.target.value) || 1000 }))}
+                    className="w-full p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-white font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">
+                    {t.feeRate} (%)
+                  </label>
+                  <input
+                    type="number"
+                    step={0.01}
+                    value={paramsNoStopMulti.feeRate}
+                    onChange={(e) => setParamsNoStopMulti((p) => ({ ...p, feeRate: Number(e.target.value) || 0 }))}
+                    className="w-full p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-white font-bold"
+                  />
+                </div>
+              </div>
+              <div className="flex items-start gap-2 p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40">
+                <Info size={18} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <p className="text-sm text-slate-700 dark:text-slate-300 font-medium">
+                  {t.backtestMocNote}
+                </p>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => { setStep('strategy'); setStrategyId(null); }}
+                  className="px-5 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                >
+                  {t.cancel}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRunBacktest}
+                  className="flex-1 md:flex-none flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black shadow-lg shadow-emerald-500/30 hover:scale-[1.02] active:scale-[0.98] transition-transform"
+                >
                   <Zap size={18} /> {t.backtestRun}
                 </button>
               </div>

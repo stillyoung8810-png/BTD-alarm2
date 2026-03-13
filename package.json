@@ -14,7 +14,8 @@
     "deploy": "ait deploy",
     "supabase:deploy": "npx supabase functions deploy check-and-trigger-alarms && npx supabase functions deploy send-alarm",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:server": "vitest --config server/vitest.config.ts"
   },
   "dependencies": {
     "@apps-in-toss/web-framework": "2.0.2",

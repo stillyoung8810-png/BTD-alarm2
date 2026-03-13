@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockSignIn = vi.fn();
 const mockCreateUser = vi.fn();
+const mockListUsers = vi.fn();
 const mockFrom = vi.fn();
 
 vi.mock('../supabaseClient', () => ({
@@ -16,6 +17,7 @@ vi.mock('../supabaseClient', () => ({
       signInWithPassword: (...args: unknown[]) => mockSignIn(...args),
       admin: {
         createUser: (...args: unknown[]) => mockCreateUser(...args),
+        listUsers: (...args: unknown[]) => mockListUsers(...args),
       },
     },
   },
@@ -30,12 +32,21 @@ const mockLog = {
   error: vi.fn(),
 };
 
-function chain(impl: { maybeSingle?: () => Promise<{ data: { id: string } | null }> }) {
+function chain(impl: {
+  maybeSingle?: () => Promise<{ data: { id: string } | null }>;
+  update?: (values: Record<string, unknown>) => Promise<{ error: null }>;
+}) {
   return {
     select: () => ({
       eq: () => ({
         maybeSingle: () => (impl.maybeSingle ? impl.maybeSingle() : Promise.resolve({ data: null })),
       }),
+    }),
+    update: (values: Record<string, unknown>) => ({
+      eq: () =>
+        impl.update
+          ? impl.update(values)
+          : Promise.resolve<{ error: null }>({ error: null }),
     }),
   };
 }
@@ -44,9 +55,30 @@ describe('ensureSessionForTossUserKey', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFrom.mockImplementation((table: string) => {
+      if (table === 'toss_accounts') {
+        // 이미 매핑된 auth_user_id 가 있는 상태
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: () =>
+                Promise.resolve<{ data: { auth_user_id: string } | null }>({
+                  data: { auth_user_id: 'existing-user-uuid' },
+                }),
+            }),
+          }),
+        };
+      }
       if (table === 'user_profiles') {
+        // 프로필도 이미 존재하는 상태
         return chain({
-          maybeSingle: () => Promise.resolve({ data: { id: 'existing-user-uuid' } }),
+          maybeSingle: () =>
+            Promise.resolve<{ data: { id: string } | null }>({
+              data: { id: 'existing-user-uuid' },
+            }),
+          update: () =>
+            Promise.resolve<{ error: null }>({
+              error: null,
+            }),
         });
       }
       return chain({});
@@ -56,6 +88,11 @@ describe('ensureSessionForTossUserKey', () => {
         session: { access_token: 'at', refresh_token: 'rt' },
         user: { id: 'existing-user-uuid', email: 'toss_123@toss.placeholder' },
       },
+      error: null,
+    });
+    mockCreateUser.mockReset();
+    mockListUsers.mockResolvedValue({
+      data: { users: [] },
       error: null,
     });
   });

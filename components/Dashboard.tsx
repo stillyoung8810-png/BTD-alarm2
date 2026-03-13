@@ -18,6 +18,7 @@ import { fetchStockPrices } from '../services/stockService';
 import HoverTip from './HoverTip';
 import { formatPortfolioDailyExecutionBlock, joinDailyExecutionBlocks } from '../utils/dailyExecutionSummary';
 import { useMultiSplitExecution } from '../hooks/useMultiSplitExecution';
+import { useNoStopMultiSplitExecution } from '../hooks/useNoStopMultiSplitExecution';
 import { useTossApp } from '../contexts/TossAppContext';
 import { TDSButton, TDSList, TDSListRow } from './tds';
 import { getConditionalTypographyStyle, getConditionalColor } from '../utils/tossStyleHelpers';
@@ -278,8 +279,10 @@ const PortfolioCard: React.FC<{
 }> = ({ portfolio, currentTier, onClose, onDelete, onOpenAlarm, onOpenDetails, onOpenQuickInput, onOpenExecution, onOpenAIImage, onUpdatePortfolio, lang, onDailyExecutionBlock }) => {
   const { isInTossApp } = useTossApp();
   const t = I18N[lang];
+  const isMultiSplitStrategy = !!portfolio.strategy.multiSplit;
+  const isNoStopMultiSplitStrategy = !!portfolio.strategy.noStopMultiSplit;
   // 다분할 매매법일 때는 multiSplit.targetStock을 사용, 아니면 ma0.stock 사용
-  const ma0Ticker = portfolio.strategy.multiSplit?.targetStock || portfolio.strategy.ma0.stock;
+  const ma0Ticker = portfolio.strategy.multiSplit?.targetStock || portfolio.strategy.noStopMultiSplit?.targetStock || portfolio.strategy.ma0.stock;
   const isAlarmEnabled = portfolio.alarmconfig?.enabled;
 
   const [freeAlarmToastSeq, setFreeAlarmToastSeq] = useState(0);
@@ -326,15 +329,15 @@ const PortfolioCard: React.FC<{
   const { maAPeriod, maBPeriod } = getMaPeriods(portfolio);
   const maSectionDepsKey = React.useMemo(
     () =>
-      portfolio.strategy.multiSplit
+      portfolio.strategy.multiSplit || portfolio.strategy.noStopMultiSplit
         ? ''
         : `${portfolio.id}-${portfolio.strategy.ma0?.stock}-${maAPeriod}-${maBPeriod}`,
-    [portfolio.id, !!portfolio.strategy.multiSplit, portfolio.strategy.ma0?.stock, maAPeriod, maBPeriod]
+    [portfolio.id, !!portfolio.strategy.multiSplit, !!portfolio.strategy.noStopMultiSplit, portfolio.strategy.ma0?.stock, maAPeriod, maBPeriod]
   );
 
   // 이평선 구간매수: 구간 분석, RSI, 정배열, 익절 라인 체크 통합 로직
   useEffect(() => {
-    if (portfolio.strategy.multiSplit) {
+    if (portfolio.strategy.multiSplit || portfolio.strategy.noStopMultiSplit) {
       setMaActiveSection(null);
       setMaRsiNotMet(false);
       setMaAlignmentNotMet(false);
@@ -419,7 +422,7 @@ const PortfolioCard: React.FC<{
 
     runAnalysis();
     return () => { cancelled = true; };
-  }, [portfolio.id, portfolio.trades.length, portfolio.strategy.multiSplit, maSectionDepsKey]);
+  }, [portfolio.id, portfolio.trades.length, portfolio.strategy.multiSplit, portfolio.strategy.noStopMultiSplit, maSectionDepsKey]);
 
   // 다분할 매매법 통합 계산 훅 (cascade useEffect 제거)
   const {
@@ -431,6 +434,10 @@ const PortfolioCard: React.FC<{
     multiSplitExecutionData,
     multiSplitInsufficientAmount,
   } = useMultiSplitExecution(portfolio);
+  const {
+    currentRound: noStopCurrentRound,
+    executionData: noStopExecutionData,
+  } = useNoStopMultiSplitExecution(portfolio);
 
   // T > a-1 이고 플래그가 아직 false면 DB에 true로 갱신 (신규 쿼터 진입, 1회만)
   const quarterModeUpdateSentRef = React.useRef(false);
@@ -446,6 +453,11 @@ const PortfolioCard: React.FC<{
     if (portfolio.strategy.multiSplit) {
       return {
         name: lang === 'ko' ? '다분할 매매법' : 'Multi-Split Trading',
+        icon: <Layers size={14} className="text-emerald-500" />
+      };
+    } else if (portfolio.strategy.noStopMultiSplit) {
+      return {
+        name: lang === 'ko' ? '다분할 매매법(무손절)' : 'No-Stop Multi-Split',
         icon: <Layers size={14} className="text-emerald-500" />
       };
     } else {
@@ -486,22 +498,24 @@ const PortfolioCard: React.FC<{
     // 다분할 매매법: 총투자금 초과(T > a)일 때는 multiSplitExecutionData 없이도 "총투자금 초과" 블록 전달
     // 금액 부족 알림이 있으면 데이터 없어도 블록 전달. 그 외에는 비동기 데이터 준비 전까지 대기
     if (portfolio.strategy.multiSplit && !multiSplitOverLimit && multiSplitExecutionData == null && !multiSplitInsufficientAmount) return;
+    if (portfolio.strategy.noStopMultiSplit && noStopExecutionData == null) return;
 
     // 이평선 구간매수: 구간 계산(maBlockVersion)이 끝나기 전에는 report 안 함 → 알람 켜는 순간 report→부모 리렌더→effect 재실행 무한루프 방지
-    if (!portfolio.strategy.multiSplit && isAlarmEnabled && maBlockVersion === 0) return;
+    if (!portfolio.strategy.multiSplit && !portfolio.strategy.noStopMultiSplit && isAlarmEnabled && maBlockVersion === 0) return;
 
     const block = formatPortfolioDailyExecutionBlock(portfolio, lang, {
       multiSplitExecutionData: multiSplitExecutionData ?? undefined,
       quarterStopLossData: quarterStopLossData ?? undefined,
+      noStopMultiSplitExecutionData: noStopExecutionData ?? undefined,
       multiSplitPhase: multiSplitPhase ?? null,
       isQuarterStopLossActive: isInQuarterMode,
       multiSplitOverLimit: multiSplitOverLimit ?? false,
       multiSplitFirstRoundHint: portfolio.strategy.multiSplit && currentRound >= 0 && currentRound < 0.5,
       multiSplitInsufficientAmount: portfolio.strategy.multiSplit ? multiSplitInsufficientAmount : undefined,
-      maActiveSection: portfolio.strategy.multiSplit ? undefined : maActiveSection ?? undefined,
-      maPartialProfitLines: portfolio.strategy.multiSplit ? undefined : (maPartialProfitLines.length ? maPartialProfitLines : undefined),
-      maRsiNotMet: portfolio.strategy.multiSplit ? undefined : maRsiNotMet,
-      maAlignmentNotMet: portfolio.strategy.multiSplit ? undefined : maAlignmentNotMet,
+      maActiveSection: portfolio.strategy.multiSplit || portfolio.strategy.noStopMultiSplit ? undefined : maActiveSection ?? undefined,
+      maPartialProfitLines: portfolio.strategy.multiSplit || portfolio.strategy.noStopMultiSplit ? undefined : (maPartialProfitLines.length ? maPartialProfitLines : undefined),
+      maRsiNotMet: portfolio.strategy.multiSplit || portfolio.strategy.noStopMultiSplit ? undefined : maRsiNotMet,
+      maAlignmentNotMet: portfolio.strategy.multiSplit || portfolio.strategy.noStopMultiSplit ? undefined : maAlignmentNotMet,
     });
 
     // 내용이 이전과 동일하면 상위로 전달하지 않음
@@ -518,6 +532,8 @@ const PortfolioCard: React.FC<{
     multiSplitPhase,
     isInQuarterMode,
     currentRound,
+    noStopCurrentRound,
+    noStopExecutionData,
     maBlockVersion,
     maPartialProfitLines,
     maRsiNotMet,
@@ -529,6 +545,7 @@ const PortfolioCard: React.FC<{
     (portfolio.alarmconfig?.selectedHours ?? []).join(','),
     // 객체 참조 대신 원시값 사용 → 부모 리렌더 시 참조만 바뀌어도 effect 재실행되는 무한루프 방지
     !!portfolio.strategy.multiSplit,
+    !!portfolio.strategy.noStopMultiSplit,
   ]);
 
   // 최신 portfolio를 참조하기 위한 ref (metrics 계산용) — 의존성은 원시값만 사용해 불필요한 재실행·무한루프 위험 축소
@@ -578,7 +595,7 @@ const PortfolioCard: React.FC<{
   return (
     <div
       className={`glass light-card-depth p-7 rounded-[2.5rem] space-y-5 group hover:-translate-y-1 transition-all duration-500 relative overflow-hidden shadow-[0_12px_40px_rgba(0,0,0,0.06)] dark:shadow-2xl ${
-        portfolio.strategy.multiSplit ? 'px-4 py-5' : ''
+        isMultiSplitStrategy || isNoStopMultiSplitStrategy ? 'px-4 py-5' : ''
       }`}
     >
       
@@ -685,7 +702,7 @@ const PortfolioCard: React.FC<{
       </div>
 
       {/* 좌측 지표 + 우측 AI/퀵 입력 버튼 — 그리드로 퀵입력 상단=실현손익 상단, 버튼 세로축=알람·삭제 사이 */}
-      <div className={`grid grid-cols-[1fr_50px] gap-x-4 gap-y-6 items-start relative z-10 min-h-[140px] mr-[3px] ${portfolio.strategy.multiSplit ? 'mt-3' : ''}`}>
+      <div className={`grid grid-cols-[1fr_50px] gap-x-4 gap-y-6 items-start relative z-10 min-h-[140px] mr-[3px] ${isMultiSplitStrategy || isNoStopMultiSplitStrategy ? 'mt-3' : ''}`}>
         <div className="space-y-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
@@ -782,14 +799,14 @@ const PortfolioCard: React.FC<{
 
       <div 
         onClick={onOpenExecution}
-        className={`bg-blue-50/50 dark:bg-blue-600/15 rounded-[1.5rem] flex items-center justify-between shadow-md dark:shadow-lg dark:shadow-blue-500/20 relative overflow-visible group/action cursor-pointer border border-blue-100 dark:border-blue-500/20 min-h-[80px] ${portfolio.strategy.multiSplit ? 'p-4 mt-3' : 'p-5'}`}
+        className={`bg-blue-50/50 dark:bg-blue-600/15 rounded-[1.5rem] flex items-center justify-between shadow-md dark:shadow-lg dark:shadow-blue-500/20 relative overflow-visible group/action cursor-pointer border border-blue-100 dark:border-blue-500/20 min-h-[80px] ${isMultiSplitStrategy || isNoStopMultiSplitStrategy ? 'p-4 mt-3' : 'p-5'}`}
       >
         <div className="absolute inset-0 bg-blue-100/50 dark:bg-white/10 opacity-0 group-hover/action:opacity-100 transition-opacity rounded-[1.5rem]"></div>
         <div className="relative z-10 flex-1 overflow-visible">
           <div className="flex items-center gap-1.5 mb-1.5 opacity-80">
              <span className="text-[9px] font-black text-blue-700 dark:text-blue-300 uppercase tracking-widest">{t.dailyExecution}</span>
              <Info size={10} className="text-blue-700 dark:text-blue-300" />
-             {portfolio.strategy.multiSplit && (multiSplitPhase || isInQuarterMode) && (
+             {isMultiSplitStrategy && (multiSplitPhase || isInQuarterMode) && (
                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-md ${
                  isInQuarterMode
                    ? 'text-amber-500 dark:text-amber-300 bg-amber-200/50 dark:bg-amber-500/25'
@@ -805,7 +822,7 @@ const PortfolioCard: React.FC<{
                </span>
              )}
           </div>
-          {portfolio.strategy.multiSplit ? (
+          {isMultiSplitStrategy ? (
             <div className="text-sm font-black text-blue-900 dark:text-white space-y-2">
               {multiSplitInsufficientAmount && (
                 <div className="text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2 border border-red-200 dark:border-red-500/30">
@@ -983,6 +1000,50 @@ const PortfolioCard: React.FC<{
                         : t.strategyPreparing)}
                 </div>
               )}
+                </>
+              )}
+            </div>
+          ) : isNoStopMultiSplitStrategy ? (
+            <div className="text-sm font-black text-blue-900 dark:text-white space-y-2">
+              {noStopExecutionData?.isFirstBuy ? (
+                <div className="text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium">
+                  {t.noStopFirstBuyHint}
+                </div>
+              ) : (
+                <>
+                  {noStopExecutionData?.lowLoc ? (
+                    <div className="text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium">
+                      <span className="font-black">{t.lowLoc}:</span>{' '}
+                      ${noStopExecutionData.lowLoc.price.toFixed(2)} / {noStopExecutionData.lowLoc.quantity}
+                    </div>
+                  ) : null}
+                  {noStopExecutionData?.highLoc ? (
+                    <div className="text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium">
+                      <span className="font-black">{t.highLoc}:</span>{' '}
+                      ${noStopExecutionData.highLoc.price.toFixed(2)} / {noStopExecutionData.highLoc.quantity}
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                        {t.noStopGuaranteedDailyFill}
+                      </div>
+                    </div>
+                  ) : null}
+                  {noStopExecutionData?.isSplitComplete ? (
+                    <div className="text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium">
+                      {t.noStopSplitComplete}
+                    </div>
+                  ) : null}
+                  {noStopExecutionData?.takeProfit ? (
+                    <div className="text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium">
+                      <span className="font-black">{t.noStopTakeProfitTarget}:</span>{' '}
+                      {lang === 'ko'
+                        ? `평단 대비 +${portfolio.strategy.noStopMultiSplit?.takeProfitPct || 0}% (전량 지정가 매도)`
+                        : `Avg price +${portfolio.strategy.noStopMultiSplit?.takeProfitPct || 0}% (full limit sell)`}
+                    </div>
+                  ) : null}
+                  {!noStopExecutionData?.lowLoc && !noStopExecutionData?.highLoc && !noStopExecutionData?.takeProfit && (
+                    <div className="text-[12px] text-blue-600/70 dark:text-blue-400/70 font-medium">
+                      {t.noOrder}
+                    </div>
+                  )}
                 </>
               )}
             </div>

@@ -104,14 +104,97 @@ export const VR_TAB_ICONS: Record<'sell' | 'buy', string> = {
   buy: '🔵 ',
 };
 
+/** VR 전략 생성 폼 라벨 (단일 소스) */
+export const VR_CREATOR_LABELS: Record<
+  AppLang,
+  {
+    strategyTitle: string;
+    strategyDesc: string;
+    sectionTitle: string;
+    modeLabel: string;
+    modes: {
+      lump_sum: string;
+      accumulate: string;
+      withdraw: string;
+    };
+    initialCapital: string;
+    initialV: string;
+    bandUpper: string;
+    bandLower: string;
+    minOrderQty: string;
+    G: string;
+    poolUsage: string;
+    deltaCash: string;
+    feeRate: string;
+    portfolioName: string;
+    startDate: string;
+    submit: string;
+    next: string;
+    back: string;
+  }
+> = {
+  ko: {
+    strategyTitle: '타겟 밸류 채널',
+    strategyDesc:
+      '성장하는 목표 채널(Channel)을 설정하고, 주가가 채널을 벗어날 때마다 자동으로 비중을 조절해 안정성을 높입니다.',
+    sectionTitle: '타겟 밸류 채널 설정',
+    modeLabel: '운용 방식 선택',
+    modes: {
+      lump_sum: '거치식',
+      accumulate: '적립식 (매 사이클 적립금 추가)',
+      withdraw: '인출식 (매 사이클 인출금 제외)',
+    },
+    initialCapital: '초기 투자 원금 ($)',
+    initialV: '초기 V 값 ($)',
+    bandUpper: '상단 밴드 폭 (%)',
+    bandLower: '하단 밴드 폭 (%)',
+    minOrderQty: '최소 주문 수량 (주)',
+    G: 'G (풀-밴드 비율 계수)',
+    poolUsage: '매수 시 Pool 사용 비율 (%)',
+    deltaCash: '주기별 입·출금 금액 ($)',
+    feeRate: '수수료율 (%)',
+    portfolioName: '포트폴리오 이름',
+    startDate: '시작일',
+    submit: 'VR 전략 시작',
+    next: '다음',
+    back: '이전',
+  },
+  en: {
+    strategyTitle: 'Target Value Channel',
+    strategyDesc:
+      'Set a growing target channel and automatically adjust your position when the price deviates, enhancing stability.',
+    sectionTitle: 'Target Value Channel Settings',
+    modeLabel: 'Select Operation Mode',
+    modes: {
+      lump_sum: 'Lump-sum',
+      accumulate: 'Accumulate (Add funds per cycle)',
+      withdraw: 'Withdraw (Take out per cycle)',
+    },
+    initialCapital: 'Initial Capital ($)',
+    initialV: 'Initial V ($)',
+    bandUpper: 'Upper Band Width (%)',
+    bandLower: 'Lower Band Width (%)',
+    minOrderQty: 'Minimum Order Quantity (shares)',
+    G: 'G (Pool-to-band ratio)',
+    poolUsage: 'Pool Usage on Buy (%)',
+    deltaCash: 'Periodic Cash In/Out ($)',
+    feeRate: 'Fee Rate (%)',
+    portfolioName: 'Portfolio Name',
+    startDate: 'Start Date',
+    submit: 'Start VR Strategy',
+    next: 'Next',
+    back: 'Back',
+  },
+};
+
 /** 대시보드 VR 전략 안내 힌트 (단일 소스) */
 export const VR_DASHBOARD_HINT: Record<AppLang, { ready: string; pending: string }> = {
   ko: {
     ready: 'VR 밴드 룰에 따라 예약 주문표를 참고하여 매매하세요.',
-    pending: 'VR 밴드 전략 초기화 대기 중...',
+    pending: '첫 매수를 V값 안에서 진행하세요.',
   },
   en: {
     ready: 'Follow the VR Band rules using the reservation order table.',
-    pending: 'Waiting for VR band strategy initialization...',
+    pending: 'Please execute your first buy within the V value.',
   },
 };

@@ -1,16 +1,17 @@
 
 import React, { useState } from 'react';
-import { Portfolio, Strategy } from '../types';
+import { Portfolio, Strategy, VrBandStrategyParams } from '../types';
 import { AVAILABLE_STOCKS, ALL_STOCKS, PAID_STOCKS, I18N } from '../constants';
-import { X, ChevronRight, ChevronLeft, Info, Sparkles, Target, Zap, Settings2, Calendar, Wallet, Percent, AlertTriangle, ChevronDown, Lock, TrendingUp, Layers, BarChart2 } from 'lucide-react';
+import { X, ChevronRight, ChevronLeft, Info, Sparkles, Target, Zap, Settings2, Calendar, Wallet, Percent, AlertTriangle, ChevronDown, Lock, TrendingUp, Layers, BarChart2, Orbit } from 'lucide-react';
 import { useTossApp } from '../contexts/TossAppContext';
 import CustomDropdown from './CustomDropdown';
 import HoverTip from './HoverTip';
 import InfoModal from './InfoModal';
 import { useTDSMenu } from './tds';
+import { VR_CREATOR_LABELS } from '../constants/vrMessages';
 
 // 전략 타입 정의 (확장 가능)
-export type StrategyType = 'rsi_ma_interval' | 'multi_split' | 'no_stop_multi_split';
+export type StrategyType = 'rsi_ma_interval' | 'multi_split' | 'no_stop_multi_split' | 'vr_band';
 
 interface StrategyDefinition {
   id: StrategyType;
@@ -24,7 +25,7 @@ interface StrategyDefinition {
 }
 
 // 전략 정의 목록 (추가 전략은 여기에만 추가하면 됨)
-const getStrategyDefinitions = (t: any): StrategyDefinition[] => [
+const getStrategyDefinitions = (t: any, vrT: any): StrategyDefinition[] => [
   {
     id: 'rsi_ma_interval',
     title: t.strategyMaTitle,
@@ -48,6 +49,14 @@ const getStrategyDefinitions = (t: any): StrategyDefinition[] => [
     tier: 'FREE',
     icon: <Layers size={24} />,
     gradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+  },
+  {
+    id: 'vr_band',
+    title: vrT.strategyTitle,
+    description: vrT.strategyDesc,
+    tier: 'FREE',
+    icon: <Orbit size={24} className="text-indigo-600 dark:text-indigo-400" />,
+    gradient: 'linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%)',
   },
 ];
 
@@ -117,6 +126,18 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
   const [takeProfitPct, setTakeProfitPct] = useState(10);
   const [noStopMultiSplitMenuOpen, setNoStopMultiSplitMenuOpen] = useState(false);
 
+  // VR 밴드 전략 전용 state
+  const [vrMode, setVrMode] = useState<VrBandStrategyParams['vrMode']>('lump_sum');
+  const [vrInitialCapital, setVrInitialCapital] = useState(10000);
+  const [vrInitialV, setVrInitialV] = useState(10000);
+  const [vrMinOrderQty, setVrMinOrderQty] = useState(1);
+  const [vrBandUpperPct, setVrBandUpperPct] = useState(5);
+  const [vrBandLowerPct, setVrBandLowerPct] = useState(5);
+  const [vrG, setVrG] = useState(10);
+  const [vrPoolUsagePct, setVrPoolUsagePct] = useState(50);
+  const [vrDeltaCash, setVrDeltaCash] = useState(0);
+  const [vrShowErrors, setVrShowErrors] = useState(false);
+
   // Step 3: Meta
   const [name, setName] = useState('');
   const [dailyBuy, setDailyBuy] = useState(1000);
@@ -124,6 +145,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
   const [feeRate, setFeeRate] = useState(0.25);
 
   const t = I18N[lang];
+  const vrT = VR_CREATOR_LABELS[lang];
 
   const isLockedTicker = (ticker: string) => PAID_STOCKS.includes(ticker) && !canAccessPaidStocks;
   const lockedTooltip =
@@ -246,6 +268,37 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
           totalSplitCount: noStopTotalSplitCount,
         }
       };
+    } else if (selectedStrategy === 'vr_band') {
+      const bandUpper = Number.isFinite(vrBandUpperPct) ? vrBandUpperPct / 100 : 0;
+      const bandLower = Number.isFinite(vrBandLowerPct) ? vrBandLowerPct / 100 : 0;
+      const poolUsageRateBuy = Number.isFinite(vrPoolUsagePct) ? vrPoolUsagePct / 100 : 0;
+      const normalizedFeeRate = Number.isFinite(feeRate) ? feeRate / 100 : 0.0025;
+
+      if (!vrInitialCapital || vrInitialCapital <= 0 || !vrInitialV || vrInitialV <= 0 || !vrMinOrderQty || vrMinOrderQty <= 0) {
+        setVrShowErrors(true);
+        return;
+      }
+
+      const vrParams: VrBandStrategyParams = {
+        vrMode,
+        initialCapital: vrInitialCapital,
+        initialV: vrInitialV,
+        minOrderQty: vrMinOrderQty,
+        feeRate: normalizedFeeRate,
+        bandRateUpper: bandUpper,
+        bandRateLower: bandLower,
+        G: vrG,
+        poolUsageRateBuy,
+        deltaCash: vrMode === 'lump_sum' ? 0 : vrDeltaCash,
+      };
+
+      strategy = {
+        ma0: { stock: 'TQQQ', rsiEnabled: false, alignmentEnabled: false, maAPeriod: 20, maBPeriod: 60 },
+        ma1: { stock: 'TQQQ' },
+        ma2: { stock: 'TQQQ', splitCount: 1 },
+        ma3: { stock: 'TQQQ' },
+        vrBand: vrParams,
+      } as Strategy;
     } else {
       // 기본값
       strategy = {
@@ -260,7 +313,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
       name: name || (lang === 'ko' ? '커스텀 전략' : 'Custom Strategy'),
       dailyBuyAmount: dailyBuy,
       startDate: startDate,
-      feeRate: feeRate,
+      feeRate: selectedStrategy === 'vr_band' ? (Number.isFinite(feeRate) ? feeRate / 100 : 0.25 / 100) : feeRate,
       isClosed: false,
       trades: [],
       strategy
@@ -273,7 +326,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
   // 전략 선택 화면 렌더링
   const renderStrategySelection = () => {
     const handleStrategySelect = (strategyId: StrategyType) => {
-      const definitions = getStrategyDefinitions(t);
+      const definitions = getStrategyDefinitions(t, vrT);
       const strategyDef = definitions.find(s => s.id === strategyId);
       if (!strategyDef) return;
       
@@ -301,7 +354,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
         </div>
 
         <div className="space-y-4">
-          {getStrategyDefinitions(t).map((strategy) => {
+          {getStrategyDefinitions(t, vrT).map((strategy) => {
             const isLocked = (strategy.tier === 'PRO' || strategy.tier === 'PREMIUM') && !canAccessPaidStocks;
             const tierColors = {
               FREE: 'bg-slate-200/60 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300',
@@ -1705,64 +1758,276 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
     </div>
   );
 
+  // VR 밴드 전략 Step 1: 파라미터 설정
+  const renderVrBandStep1 = () => {
+    return (
+      <div className="space-y-8 animate-in fade-in slide-in-from-right-8 duration-500">
+        <div className="bg-gradient-to-br from-indigo-500/5 via-sky-500/5 to-violet-500/5 dark:from-indigo-500/10 dark:via-sky-500/10 dark:to-violet-600/20 border border-indigo-500/30 dark:border-indigo-500/40 p-8 rounded-[2rem] space-y-6 backdrop-blur-xl shadow-xl">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 bg-indigo-600/20 rounded-full flex items-center justify-center border border-indigo-500/60">
+              <Orbit className="text-indigo-600 dark:text-indigo-400" size={20} />
+            </div>
+            <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-widest">
+              {vrT.sectionTitle}
+            </h3>
+          </div>
+
+          {/* 운용 모드 선택 */}
+          <div className="space-y-4">
+            <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
+              {vrT.modeLabel}
+            </label>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {(['lump_sum', 'accumulate', 'withdraw'] as VrBandStrategyParams['vrMode'][]).map((mode) => {
+                const isActive = vrMode === mode;
+                const rawLabel =
+                  mode === 'lump_sum'
+                    ? vrT.modes.lump_sum
+                    : mode === 'accumulate'
+                    ? vrT.modes.accumulate
+                    : vrT.modes.withdraw;
+                const [title, subtitleRaw] = rawLabel.split('(');
+                const subtitle = subtitleRaw ? `(${subtitleRaw}` : '';
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setVrMode(mode)}
+                    className={`flex flex-col items-center justify-center text-center gap-1 px-4 py-3 rounded-2xl border transition-all ${
+                      isActive
+                        ? 'bg-indigo-50 border-indigo-400 text-indigo-700 shadow-md shadow-indigo-500/10 dark:bg-indigo-500/20 dark:border-indigo-400 dark:text-indigo-300'
+                        : 'border-slate-200 bg-white/60 text-slate-500 hover:border-indigo-300 dark:border-slate-700/60 dark:bg-slate-900/60 dark:text-slate-400'
+                    }`}
+                  >
+                    <span className="text-sm font-black tracking-widest">{title.trim()}</span>
+                    {subtitle && (
+                      <span className="text-[10px] font-semibold opacity-80">{subtitle.trim()}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 핵심 파라미터들 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-3">
+              <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
+                {vrT.initialCapital}
+              </label>
+              <div className="relative">
+                <Wallet className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                <input
+                  type="number"
+                  min={1}
+                  value={vrInitialCapital}
+                  onChange={(e) => setVrInitialCapital(Math.max(0, Number(e.target.value)))}
+                  className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
+                />
+              </div>
+              {vrShowErrors && (!vrInitialCapital || vrInitialCapital <= 0) && (
+                <p className="text-[10px] text-red-500 font-medium">
+                  {lang === 'ko' ? '초기 투자 원금은 0보다 커야 합니다.' : 'Initial capital must be greater than 0.'}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
+                {vrT.initialV}
+              </label>
+              <div className="relative">
+                <Target className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                <input
+                  type="number"
+                  min={1}
+                  value={vrInitialV}
+                  onChange={(e) => setVrInitialV(Math.max(0, Number(e.target.value)))}
+                  className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
+                />
+              </div>
+              {vrShowErrors && (!vrInitialV || vrInitialV <= 0) && (
+                <p className="text-[10px] text-red-500 font-medium">
+                  {lang === 'ko' ? '초기 V 값은 0보다 커야 합니다.' : 'Initial V must be greater than 0.'}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
+                {vrT.bandUpper}
+              </label>
+              <div className="relative">
+                <Percent className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={vrBandUpperPct}
+                  onChange={(e) => setVrBandUpperPct(Math.max(0, Number(e.target.value)))}
+                  className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
+                {vrT.bandLower}
+              </label>
+              <div className="relative">
+                <Percent className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={vrBandLowerPct}
+                  onChange={(e) => setVrBandLowerPct(Math.max(0, Number(e.target.value)))}
+                  className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-emerald-500/60 transition-all shadow-sm"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
+                {vrT.minOrderQty}
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={vrMinOrderQty}
+                onChange={(e) => setVrMinOrderQty(Math.max(1, Number(e.target.value)))}
+                className="w-full p-4 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
+              />
+              {vrShowErrors && (!vrMinOrderQty || vrMinOrderQty <= 0) && (
+                <p className="text-[10px] text-red-500 font-medium">
+                  {lang === 'ko' ? '최소 주문 수량은 1주 이상이어야 합니다.' : 'Minimum order quantity must be at least 1 share.'}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
+                {vrT.G}
+              </label>
+              <input
+                type="number"
+                min={1}
+                step="0.1"
+                value={vrG}
+                onChange={(e) => setVrG(Math.max(0, Number(e.target.value)))}
+                className="w-full p-4 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
+              />
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
+                {vrT.poolUsage}
+              </label>
+              <div className="relative">
+                <Percent className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step="0.1"
+                  value={vrPoolUsagePct}
+                  onChange={(e) => setVrPoolUsagePct(Math.max(0, Math.min(100, Number(e.target.value))))}
+                  className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
+                />
+              </div>
+            </div>
+
+            {vrMode !== 'lump_sum' && (
+              <div className="space-y-3 md:col-span-2">
+                <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
+                  {vrT.deltaCash}
+                </label>
+                <div className="relative max-w-xs">
+                  <Wallet className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                  <input
+                    type="number"
+                    step="1"
+                    value={vrDeltaCash}
+                    onChange={(e) => setVrDeltaCash(Number(e.target.value))}
+                    className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderStep3 = () => (
     <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
       <div className="space-y-6">
         <div className="space-y-3">
-          <label className="text-[10px] font-black text-slate-600 dark:text-slate-500 uppercase tracking-[0.2em]">{lang === 'ko' ? '포트폴리오 이름:' : 'Portfolio Name:'}</label>
+          <label className="text-[10px] font-black text-slate-600 dark:text-slate-500 uppercase tracking-[0.2em]">
+            {lang === 'ko' ? '포트폴리오 이름:' : 'Portfolio Name:'}
+          </label>
           <div className="relative">
-             <Settings2 className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-             <input 
-              type="text" 
+            <Settings2 className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+            <input
+              type="text"
               placeholder={lang === 'ko' ? '포트폴리오 이름을 입력하세요' : 'Enter portfolio name'}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full p-6 pl-16 bg-slate-100/50 dark:bg-slate-900 text-slate-900 dark:text-white rounded-2xl border border-slate-200 dark:border-white/10 focus:ring-4 focus:ring-blue-500/20 font-black text-lg outline-none transition-all" 
-             />
+              className="w-full p-6 pl-16 bg-slate-100/50 dark:bg-slate-900 text-slate-900 dark:text-white rounded-2xl border border-slate-200 dark:border-white/10 focus:ring-4 focus:ring-blue-500/20 font-black text-lg outline-none transition-all"
+            />
           </div>
         </div>
 
         <div className="space-y-3">
-          <label className="text-[10px] font-black text-slate-600 dark:text-slate-500 uppercase tracking-[0.2em]">{lang === 'ko' ? '매일 매수하는 금액:' : 'Daily Purchase Amount:'}</label>
+          <label className="text-[10px] font-black text-slate-600 dark:text-slate-500 uppercase tracking-[0.2em]">
+            {lang === 'ko' ? '매일 매수하는 금액:' : 'Daily Purchase Amount:'}
+          </label>
           <div className="relative">
-             <Wallet className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-             <div className="absolute right-8 top-1/2 -translate-y-1/2 text-xl font-black text-slate-600">$</div>
-             <input 
-              type="number" 
+            <Wallet className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+            <div className="absolute right-8 top-1/2 -translate-y-1/2 text-xl font-black text-slate-600">$</div>
+            <input
+              type="number"
               value={dailyBuy}
               onChange={(e) => setDailyBuy(Number(e.target.value))}
-              className="w-full p-6 pl-16 bg-slate-100/50 dark:bg-slate-900 text-slate-900 dark:text-white rounded-2xl border border-slate-200 dark:border-white/10 focus:ring-4 focus:ring-blue-500/20 font-black text-xl outline-none transition-all" 
-             />
+              className="w-full p-6 pl-16 bg-slate-100/50 dark:bg-slate-900 text-slate-900 dark:text-white rounded-2xl border border-slate-200 dark:border-white/10 focus:ring-4 focus:ring-blue-500/20 font-black text-xl outline-none transition-all"
+            />
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-4">
           <div className="space-y-3">
-            <label className="text-[10px] font-black text-slate-600 dark:text-slate-500 uppercase tracking-[0.2em]">{lang === 'ko' ? '시작일:' : 'Start Date:'}</label>
+            <label className="text-[10px] font-black text-slate-600 dark:text-slate-500 uppercase tracking-[0.2em]">
+              {lang === 'ko' ? '시작일:' : 'Start Date:'}
+            </label>
             <div className="relative">
-               <Calendar className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" size={18} />
-               <input 
-                type="date" 
+              <Calendar className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" size={18} />
+              <input
+                type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="w-full p-5 pl-14 bg-slate-100/50 dark:bg-slate-900 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-white/10 font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500/50 transition-all" 
-               />
+                className="w-full p-5 pl-14 bg-slate-100/50 dark:bg-slate-900 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-white/10 font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+              />
             </div>
           </div>
           <div className="space-y-3">
-            <label className="text-[10px] font-black text-slate-600 dark:text-slate-500 uppercase tracking-[0.2em]">{lang === 'ko' ? '수수료율 (선택):' : 'Fee Rate (%):'}</label>
+            <label className="text-[10px] font-black text-slate-600 dark:text-slate-500 uppercase tracking-[0.2em]">
+              {lang === 'ko' ? '수수료율 (선택):' : 'Fee Rate (%):'}
+            </label>
             <div className="relative">
-               <Percent className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" size={18} />
-               <input 
-                type="number" 
+              <Percent className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" size={18} />
+              <input
+                type="number"
                 min={0}
                 step="0.01"
                 value={feeRate}
                 onChange={(e) => setFeeRate(Math.max(0, Number(e.target.value)))}
-                className="w-full p-5 pl-14 bg-slate-100/50 dark:bg-slate-900 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-white/10 font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500/50 transition-all" 
-               />
+                className="w-full p-5 pl-14 bg-slate-100/50 dark:bg-slate-900 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-white/10 font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+              />
             </div>
-            <p className="text-[9px] text-slate-500 font-bold uppercase">{lang === 'ko' ? '미입력시 기본값 0.25%가 적용됩니다.' : 'Defaults to 0.25% if empty.'}</p>
+            <p className="text-[9px] text-slate-500 font-bold uppercase">
+              {lang === 'ko' ? '미입력시 기본값 0.25%가 적용됩니다.' : 'Defaults to 0.25% if empty.'}
+            </p>
           </div>
         </div>
       </div>
@@ -1800,26 +2065,39 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                 {step > 0 && (
                   <div className="flex items-center gap-2 mt-1">
                      <div className="flex gap-1">
-                        {selectedStrategy === 'rsi_ma_interval' 
-                          ? [1, 2, 3].map(i => (
-                              <div key={i} className={`h-1.5 rounded-full transition-all duration-500 ${step === i ? 'w-8 bg-blue-500' : 'w-3 bg-slate-700'}`}></div>
+                        {selectedStrategy === 'rsi_ma_interval'
+                          ? [1, 2, 3].map((i) => (
+                              <div
+                                key={i}
+                                className={`h-1.5 rounded-full transition-all duration-500 ${
+                                  step === i ? 'w-8 bg-blue-500' : 'w-3 bg-slate-700'
+                                }`}
+                              ></div>
                             ))
-                          : selectedStrategy === 'multi_split' || selectedStrategy === 'no_stop_multi_split'
-                          ? [1, 2].map(i => (
-                              <div key={i} className={`h-1.5 rounded-full transition-all duration-500 ${step === i ? 'w-8 bg-emerald-500' : 'w-3 bg-slate-700'}`}></div>
+                          : selectedStrategy === 'multi_split' || selectedStrategy === 'no_stop_multi_split' || selectedStrategy === 'vr_band'
+                          ? [1, 2].map((i) => (
+                              <div
+                                key={i}
+                                className={`h-1.5 rounded-full transition-all duration-500 ${
+                                  step === i ? 'w-8 bg-emerald-500' : 'w-3 bg-slate-700'
+                                }`}
+                              ></div>
                             ))
-                          : null
-                        }
+                          : null}
                      </div>
-                     <span className={`text-[10px] font-black uppercase tracking-widest ml-2 ${
-                       selectedStrategy === 'multi_split' || selectedStrategy === 'no_stop_multi_split' ? 'text-emerald-400' : 'text-blue-400'
-                     }`}>
-                       {selectedStrategy === 'rsi_ma_interval' 
-                         ? `Step ${step} of 3`
-                         : selectedStrategy === 'multi_split' || selectedStrategy === 'no_stop_multi_split'
-                         ? `Step ${step} of 2`
-                         : ''}
-                     </span>
+                     <span
+                      className={`text-[10px] font-black uppercase tracking-widest ml-2 ${
+                        selectedStrategy === 'multi_split' || selectedStrategy === 'no_stop_multi_split' || selectedStrategy === 'vr_band'
+                          ? 'text-emerald-400'
+                          : 'text-blue-400'
+                      }`}
+                    >
+                      {selectedStrategy === 'rsi_ma_interval'
+                        ? `Step ${step} of 3`
+                        : selectedStrategy === 'multi_split' || selectedStrategy === 'no_stop_multi_split' || selectedStrategy === 'vr_band'
+                        ? `Step ${step} of 2`
+                        : ''}
+                    </span>
                   </div>
                 )}
              </div>
@@ -1839,6 +2117,8 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
           {step === 2 && selectedStrategy === 'multi_split' && renderMultiSplitStep2()}
           {step === 1 && selectedStrategy === 'no_stop_multi_split' && renderNoStopMultiSplitStep1()}
           {step === 2 && selectedStrategy === 'no_stop_multi_split' && renderNoStopMultiSplitStep2()}
+          {step === 1 && selectedStrategy === 'vr_band' && renderVrBandStep1()}
+          {step === 2 && selectedStrategy === 'vr_band' && renderMultiSplitStep2()}
         </div>
 
         {/* Footer - 하단 고정 */}
@@ -1869,8 +2149,8 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
               )}
               <button 
                 onClick={() => {
-                  if (selectedStrategy === 'multi_split' || selectedStrategy === 'no_stop_multi_split') {
-                    // 다분할 매매법: step 1 -> step 2 -> 저장
+                  if (selectedStrategy === 'multi_split' || selectedStrategy === 'no_stop_multi_split' || selectedStrategy === 'vr_band') {
+                    // 다분할 매매법 & VR 밴드: step 1 -> step 2 -> 저장
                     if (step === 1) {
                       setStep(2);
                     } else if (step === 2) {

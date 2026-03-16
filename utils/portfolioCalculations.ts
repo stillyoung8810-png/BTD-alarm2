@@ -2,6 +2,13 @@ import { Portfolio, Trade } from '../types';
 import { fetchStockPrices, fetchStockPriceHistory } from '../services/stockService';
 import { calculateMA } from './technicalIndicators';
 
+/** Trade.metadata.pool_after 접근 표준화. VR 체결 직후 Pool 기록용. 유효하지 않으면 undefined. */
+export function getTradePoolAfter(trade: Trade): number | undefined {
+  const v = trade.metadata?.pool_after;
+  if (typeof v !== 'number' || !Number.isFinite(v)) return undefined;
+  return v;
+}
+
 /** 수량/원가가 이 값 미만이면 0으로 간주 (부동소수점 방어) */
 const HOLDINGS_QTY_EPSILON = 1e-10;
 

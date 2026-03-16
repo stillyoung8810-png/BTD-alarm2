@@ -15,14 +15,15 @@
     - 포트폴리오의 **가상의 목표 평가금(타겟 밸류)**.  
     - 실제 평가금이 따라가야 할 가이드 라인이며, **최소·최대 밴드**를 만드는 기준값이다.
 
-  - **밴드폭 (`bandRate`)**  
-    - 예: ±15%, ±10%, ±5% 중 하나를 선택.  
-    - 포트폴리오 생성 시 사용자가 선택하며 이후 **고정**된다.
+  - **밴드폭 (비대칭 지원)**  
+    - **상단 밴드폭 (`bandRateUpper`)**: 예: 0.15 → 상단은 V 대비 +15%.  
+    - **하단 밴드폭 (`bandRateLower`)**: 예: 0.10 → 하단은 V 대비 -10%.  
+    - 상/하단을 각각 다르게 설정 가능(예: 상단 +15%, 하단 -10%). 포트폴리오 생성 시 선택하며 이후 **고정**된다.
 
   - **최소·최대 밴드**
-    - \(\text{bandLow} = V \times (1 - \text{bandRate})\)  
-    - \(\text{bandHigh} = V \times (1 + \text{bandRate})\)  
-    - 실제 평가금이 이 구간을 벗어나면 **매수/매도 주문**을 통해 다시 밴드 안으로 돌아오도록 설계한다.
+    - \(\text{bandLow} = V \times (1 - \text{bandRateLower})\)  
+    - \(\text{bandHigh} = V \times (1 + \text{bandRateUpper})\)  
+    - 실제 평가금이 이 구간을 벗어나면 **매수/매도 예약 주문**을 통해 다시 밴드 안으로 돌아오도록 설계한다.
 
   - **Pool**  
     - 수수료까지 반영한 뒤 남은 **현금**.  
@@ -53,7 +54,8 @@
 
 - `initialCapital`: 총 자본금 (USD)
 - `initialV`: 최초 V 값 (가상의 목표 평가금)
-- `bandRate`: 밴드폭 (예: 0.15, 0.10, 0.05)
+- `bandRateUpper`: 상단 밴드폭 (예: 0.15)
+- `bandRateLower`: 하단 밴드폭 (예: 0.10 또는 0.15로 대칭)
 - `vrMode`: 적립식 / 거치식 / 인출식
 - `G`: gradient (기본값은 모드별 추천값, 필요 시 사용자 수정 허용)
 - `feeRate`: 수수료율 (예: 0.0005)
@@ -81,7 +83,7 @@
 - 기본 주기: **2주**마다 1회 (설정으로 조정 가능).
 - 각 사이클 시작 시:
   - 직전 사이클 종료 시점의 `V_current`, `Pool`, `vrMode` 등을 사용해 **새 V**를 계산한다.
-  - 이전 사이클의 **미체결 주문은 모두 취소**하고, 새 V 기준으로 주문표를 재생성한다.
+  - 이전 사이클의 **미체결 예약 주문은 모두 취소**하고, 새 V 기준으로 예약 주문표를 재생성한다.
 
 ### 3.2 전략 타입별 현금 흐름
 
@@ -96,21 +98,23 @@
   \]
 - 적립식일 경우 `+ deltaCash`, 인출식일 경우 `- |deltaCash|` 를 적용한다.
 - 새 V 기준으로 밴드를 다시 계산한다.
-  - `bandLow = V_next * (1 - bandRate)`
-  - `bandHigh = V_next * (1 + bandRate)`
+  - `bandLow = V_next * (1 - bandRateLower)`
+  - `bandHigh = V_next * (1 + bandRateUpper)`
 
 ---
 
-## 4. 밴드 기반 주문 생성 공통 원칙
+## 4. 밴드 기반 예약 주문 생성 공통 원칙
+
+본 전략에서 사용하는 매수/매도는 **예약 주문**으로, 사용자가 원하는 방식(지정가 등)으로 실행해도 되며 특정 주문 유형에 종속되지 않는다.
 
 ### 4.1 목표
 
 - **밴드 하단(매수)**  
-  - 매수 주문이 체결된 직후의 **세후 주식 평가금(보유 주식 평가금, Pool 제외)** 이  
+  - 매수 예약 주문이 체결된 직후의 **순수 주식 평가금(보유 주식 평가금, Pool 제외)** 이
     - **밴드 하단 안쪽(또는 근처)** 로 들어오도록 주문 가격을 설계한다.
 
 - **밴드 상단(매도)**  
-  - 매도 주문이 체결된 직후의 **세후 주식 평가금** 이  
+  - 매도 예약 주문이 체결된 직후의 **순수 주식 평가금** 이
     - **밴드 상단 안쪽(또는 근처)** 로 들어오도록 주문 가격을 설계한다.
 
 ### 4.2 수수료 반영
@@ -119,7 +123,7 @@
   - 주문 1건당 Pool 감소액 = `price * qty * (1 + feeRate)`.
 - 매도:
   - 주문 1건당 Pool 증가액 = `price * qty * (1 - feeRate)`.
-- 주문 가격 계산 시에는 **세후 평가금이 밴드 값에 맞도록** 수수료까지 고려한다.
+  - 주문 가격 계산 시에는 **순수 주식 평가금이 밴드 값에 맞도록** 고려한다.
 
 ### 4.3 소수점 처리 및 주문 단위
 
@@ -157,7 +161,7 @@
 
 - 현재 보유 수량 `shares` 에서 시작해, 레벨 k에서
   - 체결 후 보유량: `sharesAfter = shares + k * minOrderQty`.
-- 이상적인 목표는, 레벨 k까지 체결되었을 때의 **세후 주식 평가금(= sharesAfter × price_k)** 이 `bandLow` 에 가깝게 되는 가격 `price_k` 를 찾는 것이다.
+- 이상적인 목표는, 레벨 k까지 체결되었을 때의 **순수 주식 평가금(= sharesAfter × price_k)** 이 `bandLow` 에 가깝게 되는 가격 `price_k` 를 찾는 것이다.
 - 직관적인 기본 형태는 다음과 같다.
   - \[
     \text{targetPrice}_k = \frac{\text{bandLow}}{\text{shares} + (k - 1) \times \text{minOrderQty}}
@@ -185,18 +189,18 @@
 
 - 레벨 k에서 매도 후 보유량:
   - `sharesAfter = shares - k * minOrderQty`.
-- 목표는, 레벨 k까지 체결된 이후 **세후 주식 평가금(= sharesAfter × price_k)** 이 `bandHigh` 안쪽에 들어오도록 하는 가격 `price_k` 를 설정하는 것이다.
+- 목표는, 레벨 k까지 체결된 이후 **순수 주식 평가금(= sharesAfter × price_k)** 이 `bandHigh` 안쪽에 들어오도록 하는 가격 `price_k` 를 설정하는 것이다.
 - 직관적인 기본 형태:
   - \[
-    \text{roughPrice}_k \approx \frac{\text{bandHigh}}{\text{sharesAfter}}
+    price_k = \frac{\text{bandHigh}}{\text{shares} - (k - 1) \times \text{minOrderQty}}
     \]
-- 실제 구현에서는 매도 대금과 수수료를 반영하여, 세후 평가금이 `bandHigh` 근처에 위치하도록 가격을 보정한다.
+- 실제 구현에서는 위 식 그대로를 사용해 각 레벨의 매도 주문 가격을 계산하고, `price_k` 를 소수점 둘째 자리에서 반올림한 값을 주문가로 사용한다.
 
 ### 6.3 Pool 반영
 
 - 매도 주문 1건 체결 시:
   - Pool 증가액 = `price * minOrderQty * (1 - feeRate)`.
-- 주문 체결이 진행될수록 Pool이 증가하며, 이 값은 다음 사이클의 V 업데이트와 차기 주문표 생성에 사용된다.
+- 예약 주문 체결이 진행될수록 Pool이 증가하며, 이 값은 다음 사이클의 V 업데이트와 차기 예약 주문표 생성에 사용된다.
 
 ---
 
@@ -204,18 +208,18 @@
 
 ### 7.1 사이클 중 체결 처리
 
-- 시장 가격 변동에 따라, 미리 깔아 둔 매수/매도 주문 일부가 체결될 수 있다.
-- 주문 체결 시마다:
+- 시장 가격 변동에 따라, 미리 깔아 둔 매수/매도 예약 주문 일부가 체결될 수 있다.
+- 예약 주문 체결 시마다:
   - `shares`, `avgPrice`, `Pool` 을 갱신한다.
-  - 체결되지 않은 나머지 주문은 여전히 유효하다.
+  - 체결되지 않은 나머지 예약 주문은 여전히 유효하다.
 
 ### 7.2 새 사이클 시작 시
 
 - 직전 상태를 기준으로:
   - `V_next = V_current + Pool / G ± deltaCash` 를 계산한다.
   - `bandLow`, `bandHigh` 를 갱신한다.
-- 이전 사이클에서 남아 있던 **모든 미체결 주문은 취소**한다.
-- 새 밴드 기준으로 매수/매도 주문표를 **처음부터 다시 생성**한다.
+- 이전 사이클에서 남아 있던 **모든 미체결 예약 주문은 취소**한다.
+- 새 밴드 기준으로 매수/매도 예약 주문표를 **처음부터 다시 생성**한다.
 
 ---
 
@@ -224,13 +228,13 @@
 - **전략 설정 UI (React + TypeScript)**
   - 예: `StrategyCreator.tsx` 내에서 `strategyType === 'vr_band'` 분기.
   - 관리해야 할 주요 상태:
-    - `initialCapital`, `initialV`, `bandRate`, `vrMode`, `G`, `feeRate`, `minOrderQty`, 사이클당 `deltaCash`.
+    - `initialCapital`, `initialV`, `bandRateUpper`, `bandRateLower`, `vrMode`, `G`, `feeRate`, `minOrderQty`, 사이클당 `deltaCash`.
 
 - **공용 계산 모듈 (클라/서버 공용, 순수 함수)**
   - 예: `utils/vrBandStrategy.ts` (실제 경로는 프로젝트 구조에 맞춰 조정).
   - 대표 함수 예시:
     - `calculateNextV(params): number`
-    - `calculateBands(v, bandRate): { bandLow: number; bandHigh: number }`
+    - `calculateBands(v, bandRateUpper, bandRateLower): { bandLow: number; bandHigh: number }`
     - `generateBuyOrders(params): OrderLevel[]`
     - `generateSellOrders(params): OrderLevel[]`
     - `simulateCycle(params): PortfolioState`
@@ -249,18 +253,18 @@
 - **핵심 공식**  
   - \(V_{\text{next}} = V_{\text{current}} + \frac{Pool}{G} \pm (\text{적립/인출 금액})\)
 
-- **밴드**  
-  - 하단: `V * (1 - bandRate)`  
-  - 상단: `V * (1 + bandRate)`
+- **밴드 (비대칭)**  
+  - 하단: `V * (1 - bandRateLower)`  
+  - 상단: `V * (1 + bandRateUpper)`
 
 - **주문 가격**  
-  - 주문 체결 후 **세후 평가금이 밴드 안으로 들어오도록** 가격을 계산한다.
-  - 밴드값 ÷ (체결 후 보유수량)을 기본 아이디어로 하며, 수수료까지 고려해 보정한다.
+  - 주문 체결 후 **순수 주식 평가금이 밴드 안으로 들어오도록** 가격을 계산한다.
+  - 밴드값 ÷ (체결 후 보유수량)을 기본 아이디어로 한다.
 
 - **Pool 사용**  
   - 매수: Pool의 X%까지만 실제 주문을 생성하고, **추가로 2개 레벨에 대해 버퍼 가격을 표시**한다.
   - Pool 고갈 시: 해당 사이클에서는 추가 매수 없이 존버.
 
 - **사이클**  
-  - 2주(기본)마다 V 재계산 → 밴드 재설정 → 미체결 주문 취소 → 새 주문표 생성.
+  - 2주(기본)마다 V 재계산 → 밴드 재설정 → 미체결 예약 주문 취소 → 새 예약 주문표 생성.
 

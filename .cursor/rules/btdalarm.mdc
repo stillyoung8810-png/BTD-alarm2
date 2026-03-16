@@ -1,0 +1,82 @@
+---
+description: 
+alwaysApply: true
+---
+
+# [Core Principles]
+You are a strict, Senior Software Engineer from Google/Meta. Your code must be production-ready, highly maintainable, mathematically flawless, and deeply respect DRY, SRP, and OCP principles. Never write lazy or 'band-aid' code.
+
+## 1. Financial Math & Edge Cases (Zero-Tolerance)
+- **Divide by Zero:** NEVER divide by a variable without an explicit guard or fallback. If `shares === 0`, handle the initial step logically (e.g., use `minOrderQty`) instead of returning errors or halting the business flow.
+- **Infinite Loops (OOM Prevention):** In any `while` or `for` loop generating financial orders, ALWAYS assert that the calculated `price` is greater than 0. If `price <= 0`, `break` the loop immediately to prevent 0-dollar infinite generation.
+- **Floating-Point Precision:** Do not trust JavaScript's native math for currency. Always apply `Number.EPSILON` when rounding prices (e.g., `Math.round((val + Number.EPSILON) * 100) / 100`).
+- **Sign Enforcement:** Never trust raw inputs for financial deltas. Force absolute values and strict signs based on the business logic (e.g., Withdrawals MUST use `-Math.abs()`).
+- **Validation:** Use the central `validateFinancialArgs` function. Do not write inline `if (val < 0)` checks scattered throughout the code.
+
+## 2. React & UI Anti-Patterns
+- **No 3-Layer Nested Ternaries:** NEVER use nested ternary operators (`a ? b : c ? d : e`) in JSX. Extract them into a flat `if-return` helper function outside or at the top of the component.
+- **No Ref/State Mutation during Render:** NEVER mutate `useRef.current` or trigger side-effects directly inside the render body. Isolate ALL side effects inside `useEffect`.
+- **No Blind `useMemo`:** Do not wrap simple operations (like finding a max value in a small array) in `useMemo`. Only use it for referential equality (preventing re-renders in heavy children) or truly expensive calculations.
+- **Smart Default States:** When initializing `useState`, evaluate the data to show the most relevant default tab/view. Don't hide data behind a user click if it can be shown immediately.
+
+## 3. Strict I18N (Internationalization) & Hardcoding
+- **NO UI Text Hardcoding:** NEVER hardcode Korean or English strings directly in JSX (e.g., `<div>VR 밴드</div>`).
+- **Single Source of Truth:** All labels, messages, and placeholders MUST be defined in and imported from `constants/vrMessages.ts` (or the equivalent i18n dictionary).
+- **No String-based Logic:** Do not use translated strings for logic branching (e.g., `if (title === 'VR 예약 주문')`). Use specific IDs or keys.
+
+## 4. Accessibility (A11y) is Mandatory
+- **Interactive Divs:** If you add an `onClick` handler to a non-interactive element (like a `div` or `span` overlay/backdrop), you MUST also include:
+  1. `role="button"`
+  2. `tabIndex={0}`
+  3. `onKeyDown` (handling 'Enter' and 'Space' keys)
+  4. `aria-label`
+
+## 5. Architecture & DRY (Don't Repeat Yourself)
+- **Data-Driven UI:** Use configuration arrays (like `TABLE_COLUMNS`) and mapping to render repetitive UI elements (like Table Headers and Cells). Do not manually duplicate HTML for each field.
+- **Isolate Formatting:** Extract currency formatting (`$1,000.00`) or percentage calculations into reusable inline helper functions. Do not copy-paste `.toLocaleString()` across multiple lines.
+- **Contextual Awareness:** Before adding new strategy logic to a global dashboard, ALWAYS check how existing strategies (e.g., MA, Multi-split) are handled and explicitly isolate your new logic to avoid cross-contamination.
+
+## 6. Clean Code & Refactoring Standards (Strict Enforcement)
+You must apply the following principles to EVERY line of code you write or modify. Do not wait for a code review to apply them; enforce them preemptively.
+
+- **DRY (Don't Repeat Yourself):** - Scan for duplicated logic before writing new code. 
+  - If identical logic or UI structures appear more than twice, extract them into reusable utility functions, custom hooks, or shared components immediately.
+
+- **SRP (Single Responsibility Principle):** - A function or component must do EXACTLY ONE thing. 
+  - If a React component handles data fetching, complex business logic, and UI rendering simultaneously, you MUST split it. Separate business logic into hooks (`use...`) or pure utility functions.
+
+- **Zero Dead Code & Unused Props:** - Aggressively prune the codebase. 
+  - Delete ALL unused variables, unused imports, dead functions, and unreferenced props before finishing your response. 
+  - NEVER leave commented-out obsolete code (e.g., `// old code`). Delete it.
+
+- **Cognitive Complexity (Flattening):** - NEVER nest `if-else` statements more than 2 levels deep. 
+  - Use **Guard Clauses (Early Returns)** at the top of functions to handle errors or edge cases immediately. 
+  - Eliminate nested ternary operators (`a ? b : c ? d : e`). Flatten them into readable `if-return` blocks or mapping objects.
+
+- **React Anti-Patterns (Zero-Tolerance):** - Never use an array `index` as a `key` in `map()` if the list can be reordered or mutated. Use stable IDs.
+  - Never mutate state directly.
+  - Never omit necessary dependencies in `useEffect` or `useCallback` dependency arrays.
+  - Avoid unnecessary inline functions or objects in the render path if they cause cascading re-renders in memoized children.
+
+- **Error & Edge Case Resilience:** - Always assume network requests will fail and data will be missing.
+  - Strictly use Optional Chaining (`?.`) and Nullish Coalescing (`??`) for deep object access.
+  - Never allow "White Screen of Death". Always provide fallback values or render an Error/Empty state UI when data is `null`, `undefined`, or an empty array `[]`.
+
+## 7. Strict TypeScript (Zero 'any' Policy)
+- **NO `any`:** NEVER use `any`. If a type is truly unknown, use `unknown` and narrow it down with type guards.
+- **Exhaustive Checks:** When using `switch` statements on unions or enums, ALWAYS include a `default` case with a `never` type check to ensure compile-time safety when new types are added.
+- **No Non-Null Assertions (`!`):** Do not bypass the TypeScript compiler using `!` (e.g., `portfolio.strategy.vrBand!`). Handle the `undefined` or `null` case explicitly with early returns or fallback values.
+
+## 8. Naming Conventions & Magic Numbers
+- **Boolean Naming:** Boolean variables and props MUST start with `is`, `has`, `should`, or `can` (e.g., `isModalOpen`, `hasInsufficientFunds`).
+- **Handler Naming:** Functions that handle events must be prefixed with `handle` (e.g., `handleTradeSubmit`). Props that pass callbacks must be prefixed with `on` (e.g., `onUpdatePortfolio`).
+- **NO MAGIC NUMBERS:** Never hardcode unexplained numbers in the logic (e.g., `if (count >= 2)`, `setTimeout(..., 15000)`). Extract them to the top of the file as descriptive uppercase constants (e.g., `const MAX_BUFFER_COUNT = 2;`, `const PENDING_TIMEOUT_MS = 15000;`).
+
+## 9. Meaningful Comments ("Why", not "What")
+- **Ban Useless Comments:** Do not write comments that simply translate the code into English (e.g., `// adds 1 to count` or `// map over orders`).
+- **Explain the "Why":** Comments MUST explain the business context, mathematical reasoning, or why a non-obvious approach was taken (e.g., `// 0-share deadlock prevention: Set denominator to minOrderQty for the first entry`).
+
+## 10. Performance & State Management
+- **State Colocation:** Keep React state as close as possible to where it is used. Do not lift state up to parent components (like `Dashboard.tsx`) if it is only needed by a specific child (like `VrOrderModal.tsx`).
+- **Primitive Props:** When passing data to memoized children, prefer passing primitive values (strings, numbers, booleans) instead of large objects to prevent unnecessary re-renders. 
+- **Avoid Object/Function Recreation:** Never pass inline objects `{{ ... }}` or inline arrow functions `() => { ... }` as props to heavy child components inside a map loop.

@@ -17,12 +17,14 @@ import { calculateInvestedAmount, calculateYield, calculateCurrentValuation, det
 import { fetchStockPrices } from '../services/stockService';
 import HoverTip from './HoverTip';
 import { formatPortfolioDailyExecutionBlock, joinDailyExecutionBlocks } from '../utils/dailyExecutionSummary';
+import { VR_DASHBOARD_HINT } from '../constants/vrMessages';
 import { useMultiSplitExecution } from '../hooks/useMultiSplitExecution';
 import { useNoStopMultiSplitExecution } from '../hooks/useNoStopMultiSplitExecution';
 import { useTossApp } from '../contexts/TossAppContext';
 import { TDSButton, TDSList, TDSListRow } from './tds';
 import { getConditionalTypographyStyle, getConditionalColor } from '../utils/tossStyleHelpers';
 import Toast from './Toast';
+import VrPortfolioSummary from './VrPortfolioSummary';
 
 interface DashboardProps {
   lang: 'ko' | 'en';
@@ -281,8 +283,16 @@ const PortfolioCard: React.FC<{
   const t = I18N[lang];
   const isMultiSplitStrategy = !!portfolio.strategy.multiSplit;
   const isNoStopMultiSplitStrategy = !!portfolio.strategy.noStopMultiSplit;
-  // 다분할 매매법일 때는 multiSplit.targetStock을 사용, 아니면 ma0.stock 사용
-  const ma0Ticker = portfolio.strategy.multiSplit?.targetStock || portfolio.strategy.noStopMultiSplit?.targetStock || portfolio.strategy.ma0.stock;
+  // VR 밴드 전략: SSOT — 설정은 portfolio.strategy.vrBand 단 한 곳만 참조
+  const vrSettings = portfolio.strategy.vrBand;
+  const isVrStrategy = !!vrSettings;
+  // 다분할 매매법일 때는 multiSplit.targetStock을 사용,
+  // VR 전략일 때는 기본값 'TQQQ', 그 외에는 ma0.stock을 안전하게 참조
+  const ma0Ticker =
+    portfolio.strategy.multiSplit?.targetStock ||
+    portfolio.strategy.noStopMultiSplit?.targetStock ||
+    (isVrStrategy ? 'TQQQ' : portfolio.strategy.ma0?.stock) ||
+    'TQQQ';
   const isAlarmEnabled = portfolio.alarmconfig?.enabled;
 
   const [freeAlarmToastSeq, setFreeAlarmToastSeq] = useState(0);
@@ -337,7 +347,8 @@ const PortfolioCard: React.FC<{
 
   // 이평선 구간매수: 구간 분석, RSI, 정배열, 익절 라인 체크 통합 로직
   useEffect(() => {
-    if (portfolio.strategy.multiSplit || portfolio.strategy.noStopMultiSplit) {
+    // 다분할 또는 VR 전략일 경우 이평선 분석 비활성화
+    if (portfolio.strategy.multiSplit || portfolio.strategy.noStopMultiSplit || isVrStrategy) {
       setMaActiveSection(null);
       setMaRsiNotMet(false);
       setMaAlignmentNotMet(false);
@@ -441,16 +452,32 @@ const PortfolioCard: React.FC<{
 
   // T > a-1 이고 플래그가 아직 false면 DB에 true로 갱신 (신규 쿼터 진입, 1회만)
   const quarterModeUpdateSentRef = React.useRef(false);
-  if (portfolio.isQuarterMode === false) quarterModeUpdateSentRef.current = false;
   useEffect(() => {
-    if (!portfolio.strategy.multiSplit || !isInQuarterModeByT || portfolio.isQuarterMode === true || quarterModeUpdateSentRef.current) return;
+    if (portfolio.isQuarterMode === false) {
+      quarterModeUpdateSentRef.current = false;
+    }
+  }, [portfolio.isQuarterMode]);
+  useEffect(() => {
+    if (
+      !portfolio.strategy.multiSplit ||
+      !isInQuarterModeByT ||
+      portfolio.isQuarterMode === true ||
+      quarterModeUpdateSentRef.current
+    ) {
+      return;
+    }
     quarterModeUpdateSentRef.current = true;
     onUpdatePortfolio({ ...portfolio, isQuarterMode: true });
-  }, [portfolio.id, isInQuarterModeByT, portfolio.isQuarterMode]);
+  }, [portfolio.id, isInQuarterModeByT, portfolio.isQuarterMode, onUpdatePortfolio, portfolio.strategy.multiSplit]);
 
   // 전략 이름 및 아이콘 결정
   const getStrategyInfo = () => {
-    if (portfolio.strategy.multiSplit) {
+    if (isVrStrategy) {
+      return {
+        name: lang === 'ko' ? 'VR 밴드 전략' : 'VR Band Strategy',
+        icon: <Layers size={14} className="text-indigo-500" />,
+      };
+    } else if (portfolio.strategy.multiSplit) {
       return {
         name: lang === 'ko' ? '다분할 매매법' : 'Multi-Split Trading',
         icon: <Layers size={14} className="text-emerald-500" />
@@ -501,7 +528,8 @@ const PortfolioCard: React.FC<{
     if (portfolio.strategy.noStopMultiSplit && noStopExecutionData == null) return;
 
     // 이평선 구간매수: 구간 계산(maBlockVersion)이 끝나기 전에는 report 안 함 → 알람 켜는 순간 report→부모 리렌더→effect 재실행 무한루프 방지
-    if (!portfolio.strategy.multiSplit && !portfolio.strategy.noStopMultiSplit && isAlarmEnabled && maBlockVersion === 0) return;
+    // VR 전략은 이 경로를 타지 않아야 하므로 isVrStrategy를 함께 검사
+    if (!portfolio.strategy.multiSplit && !portfolio.strategy.noStopMultiSplit && !isVrStrategy && isAlarmEnabled && maBlockVersion === 0) return;
 
     const block = formatPortfolioDailyExecutionBlock(portfolio, lang, {
       multiSplitExecutionData: multiSplitExecutionData ?? undefined,
@@ -822,7 +850,13 @@ const PortfolioCard: React.FC<{
                </span>
              )}
           </div>
-          {isMultiSplitStrategy ? (
+          {isVrStrategy ? (
+            <div className="text-[12px] text-indigo-600/90 dark:text-indigo-400/90 font-medium">
+              {portfolio.vrSnapshot
+                ? VR_DASHBOARD_HINT[lang].ready
+                : VR_DASHBOARD_HINT[lang].pending}
+            </div>
+          ) : isMultiSplitStrategy ? (
             <div className="text-sm font-black text-blue-900 dark:text-white space-y-2">
               {multiSplitInsufficientAmount && (
                 <div className="text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2 border border-red-200 dark:border-red-500/30">
@@ -1069,6 +1103,14 @@ const PortfolioCard: React.FC<{
         </div>
         {/* 빠른 입력 버튼은 상단 섹션으로 이동하여, 일별 매매 실행 텍스트 폭을 침범하지 않도록 분리함 */}
       </div>
+
+      {vrSettings && (
+        <VrPortfolioSummary
+          vrSettings={vrSettings}
+          vrSnapshot={portfolio.vrSnapshot}
+          lang={lang}
+        />
+      )}
 
       {isInTossApp ? (
         <TDSButton variant="tertiary" onClick={onClose} className="w-full relative z-10">

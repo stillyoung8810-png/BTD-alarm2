@@ -233,7 +233,12 @@ export default function VrOrderModal({
       <div className="relative flex w-full max-w-md max-h-[85vh] flex-col bg-white dark:bg-[#161d2a] rounded-[2rem] border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden my-8">
         <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/40 shrink-0">
           <div className="flex items-start justify-between gap-4">
-            <h3 className="text-lg font-black text-slate-900 dark:text-white">{t.title}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-black text-slate-900 dark:text-white">{t.title}</h3>
+              <span className="px-2 py-0.5 text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-md whitespace-nowrap">
+                {lang === 'ko' ? '이번 사이클 고정' : 'Fixed for this cycle'}
+              </span>
+            </div>
             <button
               type="button"
               onClick={onClose}

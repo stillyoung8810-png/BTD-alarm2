@@ -500,7 +500,11 @@ VR 전략에서 **매매가 발생할 때** 다음 흐름이 코드와 주석으
    계산된 **`newPool`** 을 **`trade.metadata = { pool_after: newPool }`** 에 넣은 뒤, 기존 **`handleAddTrade(portfolioId, trade)`** 를 호출하여 **`Portfolio.trades`** 배열에 추가한다. 별도 체결 테이블은 만들지 않는다.
 
 4. **Snapshot 업데이트**  
-   **`newPool`**, 갱신된 **`shares`**, **`avgPrice`**, 필요 시 **`currentV`**, **`bandLow`**/**`bandHigh`**, **`buyOrders`**/**`sellOrders`** 를 반영한 **`portfolio.vrSnapshot`** 객체를 DB에 **덮어쓰기(Update)** 한다.
+  **`newPool`**, 갱신된 **`shares`**, **`avgPrice`** 를 반영한 **`portfolio.vrSnapshot`** 객체를 DB에 **덮어쓰기(Update)** 한다.
+
+  > **[중요 원칙: 사이클 고정 (재계산 금지)]**
+  > 일반 매매 체결 시(`computeVrSnapshotAfterTrade`), `generateBuyOrders`, `generateSellOrders`, `calculateBands`, `calculateNextV` 등을 호출하여 **주문표나 V값, 밴드 수치를 절대 새로 계산하지 않는다.**
+  > 체결 시점에는 오직 `pool`, `shares`, `avgPrice` 세 가지만 갱신하며, 나머지 `currentV`, `bandLow`, `bandHigh`, `buyOrders`, `sellOrders`는 무조건 이전 스냅샷(`prevSnapshot`)의 값을 그대로 복사(Spread)하여 이번 사이클 동안 고정해야 한다.
 
 **헬퍼: `calculatePoolDelta` (순수 함수, 단일 책임 + Invariant Guard)**
 

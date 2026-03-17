@@ -157,7 +157,6 @@ export function computeVrSnapshotAfterTrade(
   const prev: VrSnapshot | null = currentSnapshot ?? null;
   const prevShares = prev?.shares ?? 0;
   const prevAvgPrice = prev?.avgPrice ?? 0;
-  const prevV = prev?.currentV ?? params.initialV;
 
   const { type, price, quantity } = trade;
   validateFinancialArgs(
@@ -197,35 +196,32 @@ export function computeVrSnapshotAfterTrade(
     }
   }
 
-  const nextV = calculateNextV(prevV, newPool, params);
-  const { bandLow, bandHigh } = calculateBands(nextV, params.bandRateUpper, params.bandRateLower);
-
-  const buyOrders = generateBuyOrders({
-    shares,
-    pool: newPool,
-    bandLow,
-    minOrderQty: params.minOrderQty,
-    feeRate: params.feeRate,
-    poolUsageRateBuy: params.poolUsageRateBuy,
-  });
-
-  const sellOrders = generateSellOrders({
-    shares,
-    pool: newPool,
-    bandHigh,
-    minOrderQty: params.minOrderQty,
-    feeRate: params.feeRate,
-  });
+  // [사이클 고정 원칙] 체결 시에는 pool/shares/avgPrice만 갱신하고,
+  // currentV, 밴드, 주문표는 이전 스냅샷 값을 그대로 유지한다.
+  if (!prev) {
+    // prevSnapshot이 없는 경우에는 initial 값 기반의 최소 스냅샷을 생성한다.
+    return {
+      currentV: params.initialV,
+      pool: newPool,
+      shares,
+      avgPrice,
+      bandLow: params.initialV * (1 - params.bandRateLower),
+      bandHigh: params.initialV * (1 + params.bandRateUpper),
+      buyOrders: [],
+      sellOrders: [],
+    };
+  }
 
   return {
-    currentV: nextV,
+    ...prev,
     pool: newPool,
     shares,
     avgPrice,
-    bandLow,
-    bandHigh,
-    buyOrders,
-    sellOrders,
+    currentV: prev.currentV,
+    bandLow: prev.bandLow,
+    bandHigh: prev.bandHigh,
+    buyOrders: prev.buyOrders,
+    sellOrders: prev.sellOrders,
   };
 }
 

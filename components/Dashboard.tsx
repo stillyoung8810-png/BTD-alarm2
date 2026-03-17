@@ -12,12 +12,15 @@ import {
   TrendingUp,
   Layers,
   Camera,
+  Target,
 } from 'lucide-react';
 import { calculateInvestedAmount, calculateYield, calculateCurrentValuation, determineActiveSection, calculateHoldings, getMaPeriods, getMAValuesForAlignment } from '../utils/portfolioCalculations';
 import { fetchStockPrices } from '../services/stockService';
 import HoverTip from './HoverTip';
 import { formatPortfolioDailyExecutionBlock, joinDailyExecutionBlocks } from '../utils/dailyExecutionSummary';
-import { VR_DASHBOARD_HINT } from '../constants/vrMessages';
+import { VR_DASHBOARD_HINT, VR_SUMMARY } from '../constants/vrMessages';
+import VrBadge from './VrBadge';
+import VrOrderModal from './VrOrderModal';
 import { useMultiSplitExecution } from '../hooks/useMultiSplitExecution';
 import { useNoStopMultiSplitExecution } from '../hooks/useNoStopMultiSplitExecution';
 import { useTossApp } from '../contexts/TossAppContext';
@@ -449,6 +452,7 @@ const PortfolioCard: React.FC<{
     currentRound: noStopCurrentRound,
     executionData: noStopExecutionData,
   } = useNoStopMultiSplitExecution(portfolio);
+  const [isVrOrderModalOpen, setIsVrOrderModalOpen] = useState(false);
 
   // T > a-1 이고 플래그가 아직 false면 DB에 true로 갱신 (신규 쿼터 진입, 1회만)
   const quarterModeUpdateSentRef = React.useRef(false);
@@ -474,8 +478,8 @@ const PortfolioCard: React.FC<{
   const getStrategyInfo = () => {
     if (isVrStrategy) {
       return {
-        name: lang === 'ko' ? 'VR 밴드 전략' : 'VR Band Strategy',
-        icon: <Layers size={14} className="text-indigo-500" />,
+        name: lang === 'ko' ? '타겟 밸류 채널' : 'Target Value Channel',
+        icon: <Target size={14} className="text-indigo-500" />,
       };
     } else if (portfolio.strategy.multiSplit) {
       return {
@@ -834,6 +838,9 @@ const PortfolioCard: React.FC<{
           <div className="flex items-center gap-1.5 mb-1.5 opacity-80">
              <span className="text-[9px] font-black text-blue-700 dark:text-blue-300 uppercase tracking-widest">{t.dailyExecution}</span>
              <Info size={10} className="text-blue-700 dark:text-blue-300" />
+             {isVrStrategy && vrSettings && (
+               <VrBadge mode={vrSettings.vrMode} lang={lang} />
+             )}
              {isMultiSplitStrategy && (multiSplitPhase || isInQuarterMode) && (
                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-md ${
                  isInQuarterMode
@@ -851,11 +858,11 @@ const PortfolioCard: React.FC<{
              )}
           </div>
           {isVrStrategy ? (
-            <div className="text-[12px] text-indigo-600/90 dark:text-indigo-400/90 font-medium">
-              {portfolio.vrSnapshot
-                ? VR_DASHBOARD_HINT[lang].ready
-                : VR_DASHBOARD_HINT[lang].pending}
-            </div>
+            <VrPortfolioSummary
+              vrSettings={vrSettings!}
+              vrSnapshot={portfolio.vrSnapshot}
+              lang={lang}
+            />
           ) : isMultiSplitStrategy ? (
             <div className="text-sm font-black text-blue-900 dark:text-white space-y-2">
               {multiSplitInsufficientAmount && (
@@ -973,6 +980,58 @@ const PortfolioCard: React.FC<{
                   </div>
                 </>
               )}
+
+      {isVrStrategy && (
+        <>
+          <button
+            type="button"
+            onClick={() => portfolio.vrSnapshot && setIsVrOrderModalOpen(true)}
+            disabled={!portfolio.vrSnapshot}
+            className={`mt-3 w-full py-2.5 text-[11px] font-black rounded-2xl transition-colors ${
+              portfolio.vrSnapshot
+                ? 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700'
+                : 'bg-slate-100/60 dark:bg-slate-900/40 text-slate-400 dark:text-slate-500 cursor-not-allowed'
+            }`}
+          >
+            {VR_SUMMARY[lang].viewOrderTable}
+          </button>
+          <VrOrderModal
+            isOpen={isVrOrderModalOpen}
+            onClose={() => setIsVrOrderModalOpen(false)}
+            buyOrders={
+              portfolio.vrSnapshot
+                ? [
+                    {
+                      step: 0,
+                      price: 0,
+                      qty: 0,
+                      isBuffer: false,
+                      sharesAfter: portfolio.vrSnapshot.shares,
+                      poolAfter: portfolio.vrSnapshot.pool,
+                    },
+                    ...(portfolio.vrSnapshot.buyOrders ?? []),
+                  ]
+                : []
+            }
+            sellOrders={
+              portfolio.vrSnapshot
+                ? [
+                    {
+                      step: 0,
+                      price: 0,
+                      qty: 0,
+                      isBuffer: false,
+                      sharesAfter: portfolio.vrSnapshot.shares,
+                      poolAfter: portfolio.vrSnapshot.pool,
+                    },
+                    ...(portfolio.vrSnapshot.sellOrders ?? []),
+                  ]
+                : []
+            }
+            lang={lang}
+          />
+        </>
+      )}
               {multiSplitPhase === 'second' && multiSplitExecutionData && (
                 <>
                   {/* LOC 매수 (후반전은 1개만) */}
@@ -1104,12 +1163,56 @@ const PortfolioCard: React.FC<{
         {/* 빠른 입력 버튼은 상단 섹션으로 이동하여, 일별 매매 실행 텍스트 폭을 침범하지 않도록 분리함 */}
       </div>
 
-      {vrSettings && (
-        <VrPortfolioSummary
-          vrSettings={vrSettings}
-          vrSnapshot={portfolio.vrSnapshot}
-          lang={lang}
-        />
+      {isVrStrategy && (
+        <>
+          <button
+            type="button"
+            onClick={() => portfolio.vrSnapshot && setIsVrOrderModalOpen(true)}
+            disabled={!portfolio.vrSnapshot}
+            className={`mt-3 w-full py-2.5 text-[11px] font-black rounded-2xl transition-colors ${
+              portfolio.vrSnapshot
+                ? 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700'
+                : 'bg-slate-100/60 dark:bg-slate-900/40 text-slate-400 dark:text-slate-500 cursor-not-allowed'
+            }`}
+          >
+            {VR_SUMMARY[lang].viewOrderTable}
+          </button>
+          <VrOrderModal
+            isOpen={isVrOrderModalOpen}
+            onClose={() => setIsVrOrderModalOpen(false)}
+            buyOrders={
+              portfolio.vrSnapshot
+                ? [
+                    {
+                      step: 0,
+                      price: 0,
+                      qty: 0,
+                      isBuffer: false,
+                      sharesAfter: portfolio.vrSnapshot.shares,
+                      poolAfter: portfolio.vrSnapshot.pool,
+                    },
+                    ...(portfolio.vrSnapshot.buyOrders ?? []),
+                  ]
+                : []
+            }
+            sellOrders={
+              portfolio.vrSnapshot
+                ? [
+                    {
+                      step: 0,
+                      price: 0,
+                      qty: 0,
+                      isBuffer: false,
+                      sharesAfter: portfolio.vrSnapshot.shares,
+                      poolAfter: portfolio.vrSnapshot.pool,
+                    },
+                    ...(portfolio.vrSnapshot.sellOrders ?? []),
+                  ]
+                : []
+            }
+            lang={lang}
+          />
+        </>
       )}
 
       {isInTossApp ? (

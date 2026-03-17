@@ -5,6 +5,7 @@
  */
 
 import { Portfolio } from '../types';
+import { VR_DASHBOARD_HINT, VR_SUMMARY, VR_BADGE_CONFIG, VR_FALLBACK } from '../constants/vrMessages';
 
 export type Lang = 'ko' | 'en';
 
@@ -12,6 +13,7 @@ const STRINGS: Record<Lang, {
   strategyMultiSplit: string;
   strategyNoStopMultiSplit: string;
   strategyMa: string;
+  strategyVrBand: string;
   alarmTimes: string;
   noOrder: string;
   overLimit: string;
@@ -40,11 +42,15 @@ const STRINGS: Record<Lang, {
   /** 다분할: 1회 매수금 < 1주 가격 시 */
   multiSplitInsufficientAmount: string;
   sharesUnit: string;
+  vrV: string;
+  vrPool: string;
+  vrBand: string;
 }> = {
   ko: {
     strategyMultiSplit: '다분할 매매법',
     strategyNoStopMultiSplit: '다분할 매매법(무손절)',
     strategyMa: '이평선 구간매수',
+    strategyVrBand: '타겟 밸류 채널',
     alarmTimes: '알람 시간',
     noOrder: '오늘 주문 요약은 앱에서 확인해 주세요.',
     overLimit: '매매 내역을 확인하세요. 총투자금을 초과했습니다.',
@@ -71,11 +77,15 @@ const STRINGS: Record<Lang, {
     firstRoundStartHint: '1회차 매수를 시작하세요',
     multiSplitInsufficientAmount: '알림: 1회 매수금이 부족하여 주문을 생성할 수 없습니다. 설정을 확인해 주세요.',
     sharesUnit: '주',
+    vrV: 'V (목표 밸류)',
+    vrPool: 'Pool (가상 금고)',
+    vrBand: '밴드',
   },
   en: {
     strategyMultiSplit: 'Multi-Split Strategy',
     strategyNoStopMultiSplit: 'No-Stop Multi-Split',
     strategyMa: 'Moving Average Strategy',
+    strategyVrBand: 'Target Value Channel',
     alarmTimes: 'Alarm times',
     noOrder: 'Please check today\'s orders in the app.',
     overLimit: 'Check your trades. Total invested has exceeded the limit.',
@@ -102,6 +112,9 @@ const STRINGS: Record<Lang, {
     firstRoundStartHint: 'Start your 1st round buy',
     multiSplitInsufficientAmount: 'Notice: 1st buy amount is too low to place orders. Please check your settings.',
     sharesUnit: 'shares',
+    vrV: 'V (Target Value)',
+    vrPool: 'Pool',
+    vrBand: 'Band',
   },
 };
 
@@ -139,6 +152,60 @@ function linePriceQty(label: string, price: number, qty: number, unit: string): 
   return `- ${label}: ${price.toFixed(2)} / ${q}${unit}`;
 }
 
+function formatCurrency(value: number | null | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '$0.00';
+  return `$${value.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function formatVrBandBlock(
+  portfolio: Portfolio,
+  lang: Lang,
+  options: { vrMaxBuyStep?: number },
+): string {
+  const s = STRINGS[lang] ?? STRINGS.ko;
+  const snapshot = portfolio.vrSnapshot;
+
+  // 스냅샷이 없으면 대기 메시지
+  if (!snapshot) {
+    const pending = VR_DASHBOARD_HINT[lang]?.pending ?? VR_DASHBOARD_HINT.ko.pending;
+    const fallbackPending = VR_FALLBACK[lang]?.pending ?? VR_FALLBACK.ko.pending;
+    return [`- ${fallbackPending}`, `- ${pending}`].join('\n');
+  }
+
+  const lines: string[] = [];
+  const vrParams: any = (portfolio.strategy as any).vrBand ?? {};
+  const vrMode = vrParams.vrMode as keyof typeof VR_BADGE_CONFIG | undefined;
+  if (vrMode && VR_BADGE_CONFIG[vrMode]) {
+    const badge = VR_BADGE_CONFIG[vrMode];
+    const modeLabel = lang === 'ko' ? badge.textKo : badge.textEn;
+    lines.push(`[${modeLabel}]`);
+  }
+
+  const { currentV, pool, bandLow, bandHigh } = snapshot as any;
+
+  lines.push(`- ${s.vrV}: ${formatCurrency(currentV)}`);
+  lines.push(`- ${s.vrPool}: ${formatCurrency(pool)}`);
+  if (typeof bandLow === 'number' && typeof bandHigh === 'number') {
+    lines.push(`- ${s.vrBand}: ${bandLow.toFixed(2)} ~ ${bandHigh.toFixed(2)}`);
+  }
+
+  const maxStep = options.vrMaxBuyStep ?? 0;
+  if (maxStep > 0) {
+    const hint = VR_SUMMARY[lang]?.maxBuyHint(maxStep) ?? VR_SUMMARY.ko.maxBuyHint(maxStep);
+    lines.push(`- ${hint}`);
+  } else {
+    lines.push(`- ${s.noOrder}`);
+  }
+
+  const readyHint = VR_DASHBOARD_HINT[lang]?.ready ?? VR_DASHBOARD_HINT.ko.ready;
+  lines.push(`- ${readyHint}`);
+
+  return lines.join('\n');
+}
+
 /**
  * 이미 계산된 데이터만 받아서, 한 포트폴리오에 대한 텔레그램용 블록 문자열을 반환합니다.
  * 계산 로직은 없습니다.
@@ -166,6 +233,8 @@ export function formatPortfolioDailyExecutionBlock(
     maRsiNotMet?: boolean;
     /** 이평선 구간매수 + 정배열 사용 시: 정배열 미충족(maA ≤ maB)이면 true → "구간 N: 관망 (정배열 미충족)" 표시 */
     maAlignmentNotMet?: boolean;
+    /** VR 밴드 전략: 예약 매수 가이드용 최대 매수 스텝 */
+    vrMaxBuyStep?: number;
   },
 ): string {
   const s = STRINGS[lang] ?? STRINGS.ko;
@@ -173,18 +242,29 @@ export function formatPortfolioDailyExecutionBlock(
   const tzLabel = portfolio.alarmconfig?.timezone || 'Asia/Seoul';
   const lines: string[] = [];
   const portfolioName = portfolio?.name ?? '';
+   const isVrBand = !!(portfolio.strategy as any).vrBand;
   const isMultiSplit = !!portfolio.strategy.multiSplit;
   const isNoStopMultiSplit = !!portfolio.strategy.noStopMultiSplit;
 
   lines.push(`📌 ${portfolioName}`);
   lines.push(
-    isMultiSplit
-      ? `- ${s.strategyMultiSplit}`
-      : isNoStopMultiSplit
-        ? `- ${s.strategyNoStopMultiSplit}`
-        : `- ${s.strategyMa}`
+    isVrBand
+      ? `- ${s.strategyVrBand}`
+      : isMultiSplit
+        ? `- ${s.strategyMultiSplit}`
+        : isNoStopMultiSplit
+          ? `- ${s.strategyNoStopMultiSplit}`
+          : `- ${s.strategyMa}`,
   );
   lines.push(`- ${s.alarmTimes} (${tzLabel}): ${hours || '-'}`);
+
+  if (isVrBand) {
+    const vrBlock = formatVrBandBlock(portfolio, lang, { vrMaxBuyStep: options.vrMaxBuyStep ?? 0 });
+    if (vrBlock) {
+      lines.push(vrBlock);
+    }
+    return lines.join('\n');
+  }
 
   // 이평선 구간매수: 구간은 ma0.maAPeriod/maBPeriod 2개만 사용(백테스트와 동일). 계산은 Dashboard에서 수행.
   // RSI/정배열 관망 문구는 ma0.rsiEnabled / ma0.alignmentEnabled 가 true일 때만 출력.

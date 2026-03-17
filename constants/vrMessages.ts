@@ -23,21 +23,21 @@ export const VR_MODAL_LABELS: Record<
 > = {
   ko: {
     title: 'VR 예약 주문',
-    tabSell: '상단 매도 주문',
-    tabBuy: '하단 매수 주문',
+    tabSell: '매도 주문',
+    tabBuy: '매수 주문',
     step: '단계',
-    price: '주문가($)',
+    price: '가격 ($)',
     qty: '수량',
-    sharesAfter: '체결 후 주수',
-    poolAfter: '체결 후 Pool',
-    currentState: '현재 상태',
+    sharesAfter: '보유량',
+    poolAfter: 'Pool',
+    currentState: '현재',
     guide: '가이드',
     emptyOrder: '해당 탭에 예약 주문 내역이 없습니다.',
   },
   en: {
     title: 'VR Limit Orders',
-    tabSell: 'Sell (Band Top)',
-    tabBuy: 'Buy (Band Bottom)',
+    tabSell: 'Sell Orders',
+    tabBuy: 'Buy Orders',
     step: 'Step',
     price: 'Price ($)',
     qty: 'Qty',
@@ -82,7 +82,7 @@ export const VR_BADGE_CONFIG: Record<
     textKo: '거치식',
     textEn: 'Lump Sum',
     classes:
-      'text-[9px] font-bold px-2 py-0.5 rounded-md text-slate-600 dark:text-slate-300 bg-slate-100/50 dark:bg-slate-500/20',
+      'text-[9px] font-bold px-2 py-0.5 rounded-md text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/30',
   },
   accumulate: {
     textKo: '적립식',
@@ -191,10 +191,10 @@ export const VR_CREATOR_LABELS: Record<
 export const VR_DASHBOARD_HINT: Record<AppLang, { ready: string; pending: string }> = {
   ko: {
     ready: 'VR 밴드 룰에 따라 예약 주문표를 참고하여 매매하세요.',
-    pending: '첫 매수를 V값 안에서 진행하세요.',
+    pending: '아직 첫 매매를 진행하지 않았습니다. 설정된 V값에 맞춰 첫 매수를 진행해 주세요.',
   },
   en: {
     ready: 'Follow the VR Band rules using the reservation order table.',
-    pending: 'Please execute your first buy within the V value.',
+    pending: 'No trades have been executed yet. Please place your first buy according to the configured V value.',
   },
 };

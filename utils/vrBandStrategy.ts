@@ -1,4 +1,4 @@
-import type { OrderLevel, VrBandStrategyParams } from '../types';
+import type { OrderLevel, VrBandStrategyParams, VrSnapshot, Trade } from '../types';
 import { getVrDeltaCashForNextV } from '../types';
 
 /**
@@ -140,6 +140,92 @@ export function calculateBands(
   return {
     bandLow: v * (1 - bandRateLower),
     bandHigh: v * (1 + bandRateUpper),
+  };
+}
+
+/**
+ * 단일 Trade 이후 VR 스냅샷 갱신.
+ * - currentSnapshot이 없을 때: 첫 진입으로 간주, shares/avgPrice는 0에서 시작.
+ * - params.initialV / params.initialCapital을 기반으로 currentV, pool 기본값 설정.
+ */
+export function computeVrSnapshotAfterTrade(
+  currentSnapshot: VrSnapshot | null | undefined,
+  trade: Trade,
+  newPool: number,
+  params: VrBandStrategyParams,
+): VrSnapshot {
+  const prev: VrSnapshot | null = currentSnapshot ?? null;
+  const prevShares = prev?.shares ?? 0;
+  const prevAvgPrice = prev?.avgPrice ?? 0;
+  const prevV = prev?.currentV ?? params.initialV;
+
+  const { type, price, quantity } = trade;
+  validateFinancialArgs(
+    {
+      price,
+      quantity,
+      feeRate: params.feeRate,
+      newPool,
+    },
+    {
+      price: { strictPositive: true },
+      quantity: { strictPositive: true },
+      feeRate: { min: 0 },
+      newPool: {},
+    },
+    'computeVrSnapshotAfterTrade',
+  );
+
+  let shares = prevShares;
+  let avgPrice = prevAvgPrice;
+
+  if (type === 'buy') {
+    const totalCost = price * quantity;
+    const newShares = prevShares + quantity;
+    if (newShares > 0) {
+      const prevCost = prevShares * prevAvgPrice;
+      avgPrice = (prevCost + totalCost) / newShares;
+    } else {
+      avgPrice = 0;
+    }
+    shares = newShares;
+  } else if (type === 'sell') {
+    const newShares = prevShares - quantity;
+    shares = Math.max(0, newShares);
+    if (shares <= 0) {
+      avgPrice = 0;
+    }
+  }
+
+  const nextV = calculateNextV(prevV, newPool, params);
+  const { bandLow, bandHigh } = calculateBands(nextV, params.bandRateUpper, params.bandRateLower);
+
+  const buyOrders = generateBuyOrders({
+    shares,
+    pool: newPool,
+    bandLow,
+    minOrderQty: params.minOrderQty,
+    feeRate: params.feeRate,
+    poolUsageRateBuy: params.poolUsageRateBuy,
+  });
+
+  const sellOrders = generateSellOrders({
+    shares,
+    pool: newPool,
+    bandHigh,
+    minOrderQty: params.minOrderQty,
+    feeRate: params.feeRate,
+  });
+
+  return {
+    currentV: nextV,
+    pool: newPool,
+    shares,
+    avgPrice,
+    bandLow,
+    bandHigh,
+    buyOrders,
+    sellOrders,
   };
 }
 

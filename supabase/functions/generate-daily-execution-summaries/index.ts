@@ -50,6 +50,7 @@ interface Strategy {
     takeProfitPct: number;
     totalSplitCount: number;
   };
+  vrBand?: any;
 }
 
 interface Trade {
@@ -72,6 +73,13 @@ interface Portfolio {
   isClosed: boolean;
   alarmconfig?: AlarmConfig | null;
   isQuarterMode?: boolean;
+  vrSnapshot?: {
+    currentV: number;
+    pool: number;
+    bandLow: number;
+    bandHigh: number;
+    buyOrders?: { step: number; isBuffer?: boolean }[];
+  } | null;
 }
 
 interface PortfolioRow {
@@ -85,6 +93,7 @@ interface PortfolioRow {
   alarm_config: AlarmConfig | null;
   is_quarter_mode: boolean | null;
   is_closed: boolean | null;
+  vr_snapshot: Portfolio["vrSnapshot"] | null;
 }
 
 interface UserProfileRow {
@@ -195,6 +204,7 @@ function mapPortfolioRow(row: PortfolioRow): Portfolio | null {
     isClosed: row.is_closed ?? false,
     alarmconfig: row.alarm_config ?? null,
     isQuarterMode: row.is_quarter_mode ?? false,
+    vrSnapshot: row.vr_snapshot ?? null,
   };
 }
 
@@ -714,10 +724,83 @@ function linePriceQty(label: string, price: number, qty: number, unit: string): 
   return `- ${label}: ${price.toFixed(2)} / ${q}${unit}`;
 }
 
+function formatCurrency(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "$0.00";
+  return `$${value.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function formatVrBandBlock(
+  portfolio: Portfolio,
+  lang: Lang,
+  options: { vrMaxBuyStep?: number },
+): string {
+  const s = STRINGS[lang] ?? STRINGS.ko;
+  const snapshot = portfolio.vrSnapshot;
+
+  if (!snapshot) {
+    const pending =
+      lang === "ko"
+        ? "VR 밴드 전략 데이터를 계산하는 중입니다. 첫 매수를 V값 안에서 진행해 주세요."
+        : "Calculating VR band data. Please execute your first buy within the V value.";
+    return `- ${pending}`;
+  }
+
+  const lines: string[] = [];
+  const vrMode = (portfolio.strategy as any).vrBand?.vrMode as
+    | "lump_sum"
+    | "accumulate"
+    | "withdraw"
+    | undefined;
+
+  if (vrMode) {
+    const modeLabel =
+      vrMode === "lump_sum"
+        ? lang === "ko"
+          ? "거치식"
+          : "Lump-sum"
+        : vrMode === "accumulate"
+        ? lang === "ko"
+          ? "적립식"
+          : "Accumulate"
+        : lang === "ko"
+        ? "인출식"
+        : "Withdraw";
+    lines.push(`[${modeLabel}]`);
+  }
+
+  const { currentV, pool, bandLow, bandHigh } = snapshot;
+  lines.push(`- V: ${formatCurrency(currentV)}`);
+  lines.push(`- Pool: ${formatCurrency(pool)}`);
+  if (typeof bandLow === "number" && typeof bandHigh === "number") {
+    lines.push(`- Band: ${bandLow.toFixed(2)} ~ ${bandHigh.toFixed(2)}`);
+  }
+
+  const maxStep = options.vrMaxBuyStep ?? 0;
+  if (maxStep > 0) {
+    const hint =
+      lang === "ko"
+        ? `예약 매수는 표의 ${maxStep}번까지 주문하세요`
+        : `Place reserve buy orders up to row ${maxStep}.`;
+    lines.push(`- ${hint}`);
+  }
+
+  const readyHint =
+    lang === "ko"
+      ? "VR 밴드 룰에 따라 예약 주문표를 참고하여 매매하세요."
+      : "Follow the VR band rules using the reservation order table.";
+  lines.push(`- ${readyHint}`);
+
+  return lines.join("\n");
+}
+
 const STRINGS: Record<Lang, {
   strategyMultiSplit: string;
   strategyNoStopMultiSplit: string;
   strategyMa: string;
+  strategyVrBand: string;
   alarmTimes: string;
   noOrder: string;
   overLimit: string;
@@ -749,6 +832,7 @@ const STRINGS: Record<Lang, {
     strategyMultiSplit: "다분할 매매법",
     strategyNoStopMultiSplit: "다분할 매매법(무손절)",
     strategyMa: "이평선 구간매수",
+    strategyVrBand: "타겟 밸류 채널",
     alarmTimes: "알람 시간",
     noOrder: "오늘 주문 요약은 앱에서 확인해 주세요.",
     overLimit: "매매 내역을 확인하세요. 총투자금을 초과했습니다.",
@@ -780,6 +864,7 @@ const STRINGS: Record<Lang, {
     strategyMultiSplit: "Multi-Split Strategy",
     strategyNoStopMultiSplit: "No-Stop Multi-Split",
     strategyMa: "Moving Average Strategy",
+    strategyVrBand: "Target Value Channel",
     alarmTimes: "Alarm times",
     noOrder: "Please check today's orders in the app.",
     overLimit: "Check your trades. Total invested has exceeded the limit.",
@@ -825,25 +910,35 @@ function formatPortfolioDailyExecutionBlock(
     maPartialProfitLines?: { section: 1 | 2 | 3; stock: string; quantity: number }[];
     maRsiNotMet?: boolean;
     maAlignmentNotMet?: boolean;
+    vrMaxBuyStep?: number;
   },
 ): string {
   const s = STRINGS[lang] ?? STRINGS.ko;
   const hours = (portfolio.alarmconfig?.selectedHours ?? []).join(", ");
   const lines: string[] = [];
   const portfolioName = portfolio?.name ?? "";
+  const isVrBand = !!(portfolio.strategy as any).vrBand;
   const isMultiSplit = !!portfolio.strategy.multiSplit;
   const isNoStopMultiSplit = !!portfolio.strategy.noStopMultiSplit;
 
   lines.push(`📌 ${portfolioName}`);
   lines.push(
-    isMultiSplit
-      ? `- ${s.strategyMultiSplit}`
-      : isNoStopMultiSplit
-        ? `- ${s.strategyNoStopMultiSplit}`
-        : `- ${s.strategyMa}`
+    isVrBand
+      ? `- ${s.strategyVrBand}`
+      : isMultiSplit
+        ? `- ${s.strategyMultiSplit}`
+        : isNoStopMultiSplit
+          ? `- ${s.strategyNoStopMultiSplit}`
+          : `- ${s.strategyMa}`,
   );
   const tzLabel = portfolio.alarmconfig?.timezone || "Asia/Seoul";
   lines.push(`- ${s.alarmTimes} (${tzLabel}): ${hours || "-"}`);
+
+  if (isVrBand) {
+    const vrBlock = formatVrBandBlock(portfolio, lang, { vrMaxBuyStep: options.vrMaxBuyStep ?? 0 });
+    if (vrBlock) lines.push(vrBlock);
+    return lines.join("\n");
+  }
 
   if (!isMultiSplit && !isNoStopMultiSplit) {
     const { maActiveSection, maPartialProfitLines, maRsiNotMet, maAlignmentNotMet } = options;
@@ -1020,6 +1115,24 @@ async function buildPortfolioBlock(
   if (!alarm?.enabled) return null;
   if (!Array.isArray(alarm.selectedHours) || alarm.selectedHours.length === 0) return null;
 
+  if ((portfolio.strategy as any).vrBand) {
+    const snapshot = portfolio.vrSnapshot;
+    let vrMaxBuyStep = 0;
+    if (snapshot?.buyOrders && Array.isArray(snapshot.buyOrders)) {
+      snapshot.buyOrders
+        .filter((o) => !o.isBuffer)
+        .forEach((o) => {
+          if (typeof o.step === "number" && o.step > vrMaxBuyStep) {
+            vrMaxBuyStep = o.step;
+          }
+        });
+    }
+
+    return formatPortfolioDailyExecutionBlock(portfolio, lang, {
+      vrMaxBuyStep,
+    });
+  }
+
   if (portfolio.strategy.multiSplit) {
     const currentRound = getCurrentRound(portfolio);
     const multiSplitPhase = getMultiSplitPhase(portfolio, currentRound);
@@ -1146,7 +1259,7 @@ async function fetchPortfoliosForUsers(
     const chunk = userIds.slice(i, i + PORTFOLIO_USER_CHUNK);
     const { data, error } = await supabase
       .from("portfolios")
-      .select("id, user_id, name, daily_buy_amount, fee_rate, strategy, trades, alarm_config, is_quarter_mode, is_closed")
+      .select("id, user_id, name, daily_buy_amount, fee_rate, strategy, trades, alarm_config, is_quarter_mode, is_closed, vr_snapshot")
       .in("user_id", chunk)
       .eq("is_closed", false);
     if (error) {

@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 import { normalizePortfolioData } from '../utils/portfolioNormalize';
 import { calculateHoldings, calculateTotalInvested, getTotalSellProceeds } from '../utils/portfolioCalculations';
+import { calculatePoolDelta, computeVrSnapshotAfterTrade } from '../utils/vrBandStrategy';
 import { getEffectiveSubscription } from '../utils/subscriptionUtils';
 import type { Portfolio, Trade } from '../types';
 import type { AppUserProfile } from '../types/appUserProfile';
@@ -89,7 +90,7 @@ export function usePortfolios({
       timeoutId = setTimeout(() => controller.abort(), 10000);
       const { data, error } = await supabase
         .from('portfolios')
-        .select('id, created_at, name, daily_buy_amount, start_date, fee_rate, is_closed, closed_at, final_sell_amount, trades, strategy, alarm_config, is_quarter_mode, user_id')
+        .select('id, created_at, name, daily_buy_amount, start_date, fee_rate, is_closed, closed_at, final_sell_amount, trades, strategy, alarm_config, is_quarter_mode, user_id, vr_snapshot')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .abortSignal(controller.signal);
@@ -361,12 +362,69 @@ export function usePortfolios({
       const target = portfolios.find((p) => p.id === portfolioId);
       if (!target) return;
 
-      const updatedTrades = [trade, ...target.trades];
-      const updatedPortfolio = { ...target, trades: updatedTrades };
+      const normalizedTrade: Trade = {
+        ...trade,
+        price: Number(trade.price),
+        quantity: Number(trade.quantity),
+        fee: trade.fee !== undefined ? Number(trade.fee) : trade.fee,
+      };
+
+      const vrParams =
+        target.strategy.vrBand ||
+        (target.strategy as any).vr_band ||
+        (target.strategy as any).vrBandStrategy;
+      const isVrStrategy = !!vrParams;
+
+      let vrSnapshot = target.vrSnapshot ?? null;
+      let poolAfter: number | undefined;
+
+      if (isVrStrategy && vrParams) {
+        const params = vrParams;
+        const currentPool =
+          vrSnapshot?.pool ??
+          params.initialCapital;
+
+        try {
+          const feeRate = Number(target.feeRate ?? params.feeRate);
+          const delta = calculatePoolDelta(
+            normalizedTrade.type,
+            normalizedTrade.price,
+            normalizedTrade.quantity,
+            feeRate
+          );
+          poolAfter = currentPool + delta;
+          vrSnapshot = computeVrSnapshotAfterTrade(
+            vrSnapshot,
+            normalizedTrade,
+            poolAfter,
+            params
+          );
+        } catch (err) {
+          console.error('🚨 [VR_FATAL_ERROR] 계산 중 크래시 발생:', err);
+        }
+      }
+
+      const tradeWithMeta: Trade =
+        isVrStrategy && poolAfter !== undefined
+          ? {
+              ...normalizedTrade,
+              metadata: { ...(trade.metadata ?? {}), pool_after: poolAfter },
+            }
+          : normalizedTrade;
+
+      const updatedTrades = [tradeWithMeta, ...target.trades];
+      const updatedPortfolio: Portfolio = {
+        ...target,
+        trades: updatedTrades,
+        vrSnapshot: vrSnapshot ?? target.vrSnapshot,
+      };
 
       const { error } = await supabase
         .from('portfolios')
-        .update({ trades: updatedTrades })
+        .update({
+          trades: updatedTrades,
+          vr_snapshot: updatedPortfolio.vrSnapshot ?? null,
+        })
         .eq('id', portfolioId);
 
       if (error) {
@@ -390,7 +448,11 @@ export function usePortfolios({
       }
 
       setPortfolios((prev) =>
-        prev.map((p) => (p.id === portfolioId ? { ...updatedPortfolio, isQuarterMode: nextIsQuarterMode } : p))
+        prev.map((p) =>
+          p.id === portfolioId
+            ? { ...updatedPortfolio, isQuarterMode: nextIsQuarterMode }
+            : p
+        )
       );
     },
     [lang, portfolios]

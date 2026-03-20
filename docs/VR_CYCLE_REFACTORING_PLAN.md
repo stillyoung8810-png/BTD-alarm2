@@ -1349,7 +1349,7 @@ const cycleWeeks = sanitizeVrCycleWeeks(vrSettings.cycleWeeks);
    }
 
    // 🚨 [SSOT — 단일 구현] `processAllVrPortfolios` 전체 본문은 **§4.2** `refresh-vr-snapshots/index.ts` 코드 펜스만 따른다.
-   //    청크(PAGE_SIZE + .range) + 청크마다 Promise.allSettled(batch.map) — 순차 for...of 전면 금지. (문서 중복·모순 방지)
+   //    청크(PAGE_SIZE + .range) + 청크마다 Promise.allSettled(batch.map) — 순차 for...of 절대 금지(Core Principles §10·§6). (문서 중복·모순 방지)
    ```
 
    > **핵심 (T+1 Forward Calculation)**:
@@ -1501,7 +1501,9 @@ const handleSave = async () => {
     if (vrMode === 'lump_sum') enforcedDeltaCash = 0;
     else if (vrMode === 'withdraw') enforcedDeltaCash = -Math.abs(rawDeltaCash);
 
-    const vrParams = {
+    // 🚨 [Strict TS / Core Principles §7] `as VrBandStrategyParams` 금지 — 유니온별 deltaCash 계약을 컴파일러가 검증하게 한다.
+    //    `deltaCash`는 `vrMode === 'lump_sum' ? 0 : enforcedDeltaCash` 패턴으로 리터럴 0을 보장한다.
+    const vrParams: VrBandStrategyParams = {
       vrMode,
       initialCapital: safeInitialCapital,
       initialV: safeInitialV,
@@ -1512,16 +1514,17 @@ const handleSave = async () => {
       G: safeG,
       poolUsageRateBuy,
       cycleWeeks: vrCycleWeeks,
-      deltaCash: enforcedDeltaCash,
-    } as VrBandStrategyParams;
+      deltaCash: vrMode === 'lump_sum' ? 0 : enforcedDeltaCash,
+    };
 
+    // 🚨 [Strict TS / Core Principles §7] `as Strategy` 금지 — 필수 ma0~ma3 + vrBand가 Strategy 계약을 만족하는지 컴파일러 검증.
     strategy = {
       ma0: { stock: 'TQQQ', rsiEnabled: false, alignmentEnabled: false, maAPeriod: 20, maBPeriod: 60 },
       ma1: { stock: 'TQQQ' },
       ma2: { stock: 'TQQQ', splitCount: 1 },
       ma3: { stock: 'TQQQ' },
       vrBand: vrParams,
-    } as Strategy;
+    };
 
     initialVrSnapshot = createInitialVrSnapshot(vrParams);
   } else {
@@ -1643,8 +1646,8 @@ function mapPortfolioRow(row: PortfolioRow): Portfolio | null {
   };
 }
 
-// 🚨 [SSOT — §4.2 단일 구현] `calculateNextCycleIndex`·`refreshVrSnapshotForPortfolio`·`mapPortfolioRow`는 본 파일(또는 동일 모듈)에 두고,
-//    아래는 **청크 조회 + 병렬 처리만** 담당한다. 순차 `for...of`로 행 처리 금지(Timeout 방어).
+// 🚨 [SSOT — §4.2 단일 구현 / Core Principles §10·§6] `calculateNextCycleIndex`·`refreshVrSnapshotForPortfolio`·`mapPortfolioRow`는 본 파일(또는 동일 모듈)에 두고,
+//    아래는 **청크 조회 + 병렬 처리만** 담당한다. **순차 `for...of` 절대 금지** — Edge Timeout·장애 격리를 위해 청크마다 `Promise.allSettled` 필수.
 // import type { SupabaseClient } from 'npm:@supabase/supabase-js@2'; // Deno Edge — 프로젝트가 쓰는 spec URL로 교체
 
 const PAGE_SIZE = 1000;
@@ -1667,7 +1670,7 @@ export async function processAllVrPortfolios(supabase: SupabaseClient) {
     const batch = rows ?? [];
     if (batch.length === 0) break;
 
-    // 🚨 [Timeout 방어] 순차 루프(for...of) 전면 금지. 반드시 병렬 처리(Promise.allSettled)로 I/O 시간 단축 및 에러 격리.
+    // 🚨 [Performance & Resilience / Core Principles §10·§6] 순차 루프(for...of) 절대 금지. Promise.allSettled 병렬화로 Timeout 방어·개별 실패 격리.
     await Promise.allSettled(
       batch.map(async (row) => {
         try {
@@ -1918,6 +1921,7 @@ if (newShares <= 0) {
 - **대상 파일:** `utils/portfolioNormalize.ts`
 - **문제점:** 파라미터 타입이 `export function normalizePortfolioData(data: any[])`로 열려 있어 타입스크립트의 방어선이 무의미하며, 이를 단순히 `unknown[]`로 바꾸면 하위의 모든 속성 접근(`item.fee_rate` 등)에서 컴파일 에러가 폭발한다.
 - **해결책:** Supabase 응답 행 타입은 **`types.ts`의 `PortfolioRow`(§2.1.4) 단일 SSOT**만 사용한다 — **`interface RawPortfolioRow` 등 판박이 타입을 본 파일에 새로 정의하지 않는다.** `unknown[]` 입력에 대해 행 단위 가드 후 `as PortfolioRow`로 1회 캐스팅하여 `any`를 멸균한다. 반환 시 **`acc.push({ ... } as Portfolio);` 형태의 게으른 단언 금지** — 반드시 **`const portfolio: Portfolio = { ... }; acc.push(portfolio);`** 로 컴파일러가 필수 필드 누락을 검증하게 한다 (`strategy`가 없으면 행 스킵 가드 필수).
+- **🚨 [Strict TS / Core Principles §7 — VR 밴드 JSON]** `strategy.vrBand` 조립 시 **`} as VrBandStrategyParams` 금지**. DB JSON의 **`vrMode`는 `'lump_sum' | 'accumulate' | 'withdraw'` 유니온**으로 런타임 멸균하고, **`VrBandLumpSum`은 `deltaCash: 0` 리터럴**, withdraw/accumulate는 부호 규칙에 맞는 `deltaCash`를 써서 **`const sanitizedVrParams: VrBandStrategyParams` 명시 선언 + 모드별 분기**로 컴파일러 검증을 받는다 (오타·누락 시 스프레드로 오염 유입 방지).
 - **🚨 [SSOT] 수수료 이중 잣대 방지 (레거시 보호):**  
   - **포트폴리오 루트**(`Portfolio.feeRate` / 행의 `fee_rate`): 비 VR 전략은 **퍼센트** 계약이므로 누락 시 **`LEGACY_FEE_RATE_PCT`(0.25)** 만 폴백 — `DEFAULT_FEE_RATE`(소수 0.0025)를 여기에 쓰면 **타 전략 수학 붕괴**.  
   - **`strategy.vrBand.feeRate`**: 항상 **소수** SSOT — 누락 시 **`DEFAULT_FEE_RATE`** 만.
@@ -1952,21 +1956,43 @@ export function normalizePortfolioData(data: unknown[]): Portfolio[] {
 
       const cycleWeeks = sanitizeVrCycleWeeks(vrRecord.cycleWeeks);
 
+      // 🚨 [Strict TS & 런타임 방어] vrMode 유니온 멸균 — 없음/오타 시 accumulate 폴백 (레거시 JSON 보호)
+      const rawVrMode = vrRecord.vrMode;
+      const validVrMode: VrBandStrategyParams['vrMode'] =
+        rawVrMode === 'lump_sum' || rawVrMode === 'withdraw' || rawVrMode === 'accumulate'
+          ? rawVrMode
+          : 'accumulate';
+
+      const n = (v: unknown) => Number(v ?? 0);
+      const baseFields = {
+        initialV: n(vrRecord.initialV),
+        initialCapital: n(vrRecord.initialCapital),
+        bandRateUpper: n(vrRecord.bandRateUpper),
+        bandRateLower: n(vrRecord.bandRateLower),
+        G: n(vrRecord.G),
+        minOrderQty: n(vrRecord.minOrderQty),
+        poolUsageRateBuy: n(vrRecord.poolUsageRateBuy),
+        feeRate: n(vrRecord.feeRate ?? DEFAULT_FEE_RATE),
+        cycleWeeks,
+      };
+
+      const rawDeltaCash = n(vrRecord.deltaCash);
+
+      // 🚨 [Strict TS] `as VrBandStrategyParams` 금지 — 유니온 구성원별 deltaCash 계약을 분기로 강제
+      const sanitizedVrParams: VrBandStrategyParams =
+        validVrMode === 'lump_sum'
+          ? { ...baseFields, vrMode: 'lump_sum', deltaCash: 0 }
+          : validVrMode === 'withdraw'
+            ? {
+                ...baseFields,
+                vrMode: 'withdraw',
+                deltaCash: rawDeltaCash <= 0 ? rawDeltaCash : -Math.abs(rawDeltaCash),
+              }
+            : { ...baseFields, vrMode: 'accumulate', deltaCash: Math.abs(rawDeltaCash) };
+
       normalizedStrategy = {
         ...normalizedStrategy,
-        vrBand: {
-          ...vrRecord,
-          initialV: Number(vrRecord.initialV ?? 0),
-          initialCapital: Number(vrRecord.initialCapital ?? 0),
-          bandRateUpper: Number(vrRecord.bandRateUpper ?? 0),
-          bandRateLower: Number(vrRecord.bandRateLower ?? 0),
-          G: Number(vrRecord.G ?? 0),
-          minOrderQty: Number(vrRecord.minOrderQty ?? 0),
-          poolUsageRateBuy: Number(vrRecord.poolUsageRateBuy ?? 0),
-          deltaCash: Number(vrRecord.deltaCash ?? 0),
-          feeRate: Number(vrRecord.feeRate ?? DEFAULT_FEE_RATE),
-          cycleWeeks,
-        } as VrBandStrategyParams,
+        vrBand: sanitizedVrParams,
       };
     }
 
@@ -2379,14 +2405,14 @@ const poolAfter = toFixedMoney(pool + cumulativeProceeds);
 - [ ] `StrategyCreator.tsx`: `toDecimalRate`가 **`RATE_PRECISION_MULTIPLIER`만** 참조 (지역 `1_000_000_000` 금지) — §2.0 import 경로 준수
 - [ ] `constants/vrMessages.ts`(또는 `StrategyCreator`가 쓰는 메인 I18N 딕셔너리): `cycleWeeks`, `cycleWeeksError`, `cycleWeeksOption`, `cyclePeriodFormat` + **`portfolioLimitReached(max: number)`**, **`needDifferentStocks`** (§4.0 `handleSave` alert — 인라인 ko/en 금지)
 - [ ] `components/strategies/VrBandStrategyForm.tsx`: 인터페이스 확장 + 1~12주 선택 UI 추가
-- [ ] `components/StrategyCreator.tsx`: `vrCycleWeeks` 상태 추가 + props 연동 + `handleSave` vrParams 포함 + **`validateFinancialArgs`에 `G: safeG` / `strictPositive` 규칙** (§4.0) + **VR 저장 시 루트 `feeRate` 퍼센트 유지·`vrDecimalFeeRate`만 `vrBand`** (§4.0) + VR `startDate`는 **`handleStrategySelect` 내부(과금 검증 이후)** 에만 동기화 — 새 핸들러로 PRO 분기 우회 금지 (§2.4.2) + **`handleSave` 상단 `alert` 2곳은 `t.portfolioLimitReached` / `t.needDifferentStocks`만** (§4.0 Strict I18N)
+- [ ] `components/StrategyCreator.tsx`: `vrCycleWeeks` 상태 추가 + props 연동 + `handleSave` vrParams 포함 + **`validateFinancialArgs`에 `G: safeG` / `strictPositive` 규칙** (§4.0) + **VR 저장 시 루트 `feeRate` 퍼센트 유지·`vrDecimalFeeRate`만 `vrBand`** (§4.0) + VR `startDate`는 **`handleStrategySelect` 내부(과금 검증 이후)** 에만 동기화 — 새 핸들러로 PRO 분기 우회 금지 (§2.4.2) + **`handleSave` 상단 `alert` 2곳은 `t.portfolioLimitReached` / `t.needDifferentStocks`만** (§4.0 Strict I18N) + **Core Principles §7: `as VrBandStrategyParams` / `as Strategy` 금지** — `const vrParams: VrBandStrategyParams` + `deltaCash: vrMode === 'lump_sum' ? 0 : …` + `strategy = { … vrBand: vrParams }` (§4.0)
 - [ ] `hooks/useVrOrders.ts`: Step 0 + `safeBuyOrders` / `safeSellOrders` SSOT 훅 신설 (`EMPTY_VR_ORDERS` 폴백) — §5.4.1
 - [ ] `components/Dashboard.tsx`: 헤더에 사이클 기간 배지 추가 (`getVrCyclePeriodText`) + **`useVrOrders(portfolio.vrSnapshot)`** 로 모달에 주입, 듀얼 모달 동일 props — `buyOrders ?? EMPTY_VR_ORDERS` 단독 금지 (§5.4)
 - [ ] `components/VrPortfolioSummary.tsx`: **`useVrOrders(vrSnapshot)`** 로 테이블·스프레드 주문 배열 통일 (§5.4 · §9.8.4)
 - [ ] `utils/vrBandStrategy.ts`: `sanitizeVrCycleWeeks`, `getVrCyclePeriodText` 헬퍼 추가, `roundPrice2` 삭제
-- [ ] `utils/portfolioNormalize.ts`: `cycleWeeks` 정규화 + `any` 시그니처 제거 + 루트 `feeRate` 폴백 **`LEGACY_FEE_RATE_PCT`** / `vrBand.feeRate` 폴백 **`DEFAULT_FEE_RATE`** (§9.8.2)
+- [ ] `utils/portfolioNormalize.ts`: `cycleWeeks` 정규화 + `any` 시그니처 제거 + 루트 `feeRate` 폴백 **`LEGACY_FEE_RATE_PCT`** / `vrBand.feeRate` 폴백 **`DEFAULT_FEE_RATE`** + **`vrMode` 유니온 런타임 멸균** + **`as VrBandStrategyParams` 금지** — `sanitizedVrParams` 모드별 분기(§9.8.2 · Core Principles §7)
 - [ ] `utils/dailyExecutionSummary.ts`: VR 알람 헤더에 사이클 정보 추가 + V/Pool 라벨 `STRINGS[lang]` 참조로 I18N 준수
-- [ ] 백엔드: `supabase/functions/refresh-vr-snapshots/` 신규 Edge Function 생성 (T+1 선행 계산) + `mapPortfolioRow` 루트 `feeRate` 폴백 **`LEGACY_FEE_RATE_PCT`** (§4.2) + **`processAllVrPortfolios`는 §4.2 SSOT 단일 스니펫만** — **`PAGE_SIZE` 청크 `.range` + 청크마다 `Promise.allSettled(batch.map)`** (순차 `for...of` 금지, OOM·Timeout 방어)
+- [ ] 백엔드: `supabase/functions/refresh-vr-snapshots/` 신규 Edge Function 생성 (T+1 선행 계산) + `mapPortfolioRow` 루트 `feeRate` 폴백 **`LEGACY_FEE_RATE_PCT`** (§4.2) + **`processAllVrPortfolios`는 §4.2 SSOT 단일 스니펫만** — **`PAGE_SIZE` 청크 `.range` + 청크마다 `Promise.allSettled(batch.map)`** (순차 `for...of` 절대 금지, **Core Principles §10·§6**, OOM·Timeout·에러 격리)
 - [ ] 백엔드: Cron 마이그레이션 SQL (`10 21 * * 1-5` UTC = KST 06:10 화~토)
 - [ ] DB 마이그레이션: 기존 VR 포트폴리오에 `cycleWeeks` 기본값 2 주입 SQL
 

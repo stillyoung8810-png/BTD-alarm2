@@ -1,10 +1,44 @@
 import type { OrderLevel, VrBandStrategyParams, VrSnapshot, Trade } from '../types';
 import { getVrDeltaCashForNextV } from '../types';
+import { TIME_MS } from '../constants/vrConstants';
 
 /**
  * VR 밴드 전략 — Pool 변동액·N번 계산·표시용 Guard (순수 함수).
  * 매매 실행 로직에서 DRY·Fail-Fast 원칙 적용.
  */
+
+/** 부동소수점 오차 방어: 소수점 2자리까지 반올림 (금융 계산 전용). */
+export const toFixedMoney = (val: number): number =>
+  Math.round((val + Number.EPSILON) * 100) / 100;
+
+/** 부동소수점 오차를 방어하며 4자리까지 표시하는 수량 포맷터 */
+export const formatSharesDisplay = (val: number): string =>
+  (Math.round((val + Number.EPSILON) * 10000) / 10000).toFixed(4);
+
+/** vrMode에 따라 deltaCash 부호를 강제 정규화. 인출=음수, 적립=양수, 거치=0. */
+export function getSanitizedDeltaCash(
+  mode: VrBandStrategyParams['vrMode'],
+  amount: number
+): number {
+  if (mode === 'lump_sum') return 0;
+  return mode === 'withdraw' ? -Math.abs(amount) : Math.abs(amount);
+}
+
+/**
+ * [DRY/SSOT] 두 날짜(UTC ms) 사이의 리밸런싱 사이클 인덱스를 계산.
+ * 프론트엔드(getVrCyclePeriodText)와 백엔드(calculateNextCycleIndex) 공통 사용.
+ * T+1 Forward Calculation: 사이클 마지막 날에 다음 회차로 미리 선행 판정.
+ */
+export function calculateCycleIndexFromDates(
+  startDateMs: number,
+  targetDateMs: number,
+  cycleWeeks: number,
+): number {
+  const diffMs = targetDateMs - startDateMs;
+  if (diffMs < 0) return 0;
+  const cycleLengthMs = cycleWeeks * TIME_MS.PER_WEEK;
+  return Math.floor((diffMs + TIME_MS.PER_DAY) / cycleLengthMs);
+}
 
 /** 표시용 숫자 검증. 유효하지 않으면 console.error 후 null 반환(에러 은폐 없음). */
 export function toDisplayNumber(value: unknown): number | null {
@@ -298,6 +332,8 @@ export function generateBuyOrders({
     if (price <= 0) break;
     const qty = minOrderQty;
     const orderCost = price * qty * (1 + feeRate);
+    // OOM 방어: 비용 소모가 없으면 예산이 닳지 않아 무한 루프 위험 (minOrderQty 등 비정상 입력 최후 보루)
+    if (orderCost <= 0) break;
 
     const nextCumulativeCost = cumulativeCost + orderCost;
     const isWithinBudget = nextCumulativeCost <= maxBuyBudget;
@@ -374,6 +410,8 @@ export function generateSellOrders({
     if (cumulativeSold > shares) break;
 
     const proceeds = price * qty * (1 - feeRate);
+    // OOM 방어: 대금이 0 이하면 Pool 누적이 멈추지 않거나 의미 없는 스텝만 반복될 수 있음
+    if (proceeds <= 0) break;
     cumulativeProceeds += proceeds;
 
     const sharesAfter = shares - cumulativeSold;

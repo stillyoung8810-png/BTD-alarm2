@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import type { AppLang, OrderLevel } from '../types';
-import { toDisplayNumber } from '../utils/vrBandStrategy';
+import { toDisplayNumber, toFixedMoney } from '../utils/vrBandStrategy';
 import { VR_MODAL_LABELS, VR_TAB_ICONS } from '../constants/vrMessages';
 
 type TabId = 'sell' | 'buy';
@@ -104,6 +104,10 @@ const TABLE_COLUMNS: Array<{
   { id: 'poolAfter', labelKey: 'poolAfter', align: 'center', format: 'decimal' },
 ];
 
+const PriceCell = ({ val }: { val: number }) => (
+  <span className="font-mono">{toFixedMoney(val).toLocaleString()}</span>
+);
+
 function defaultCellContent(
   order: OrderLevel,
   column: { id: OrderTableColumnId; format?: 'integer' | 'decimal' }
@@ -111,7 +115,7 @@ function defaultCellContent(
   const raw = order[column.id];
   const n = toDisplayNumber(raw);
   if (n === null) return '-';
-  if (column.format === 'decimal') return n.toFixed(2);
+  if (column.format === 'decimal') return <PriceCell val={n} />;
   if (column.format === 'integer') return Math.round(n);
   return n;
 }
@@ -224,7 +228,10 @@ export default function VrOrderModal({
         className="absolute inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-md cursor-pointer"
         onClick={onClose}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') onClose();
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onClose();
+          }
         }}
         role="button"
         tabIndex={0}

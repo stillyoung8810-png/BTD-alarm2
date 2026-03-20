@@ -506,6 +506,19 @@ VR 전략에서 **매매가 발생할 때** 다음 흐름이 코드와 주석으
   > 일반 매매 체결 시(`computeVrSnapshotAfterTrade`), `generateBuyOrders`, `generateSellOrders`, `calculateBands`, `calculateNextV` 등을 호출하여 **주문표나 V값, 밴드 수치를 절대 새로 계산하지 않는다.**
   > 체결 시점에는 오직 `pool`, `shares`, `avgPrice` 세 가지만 갱신하며, 나머지 `currentV`, `bandLow`, `bandHigh`, `buyOrders`, `sellOrders`는 무조건 이전 스냅샷(`prevSnapshot`)의 값을 그대로 복사(Spread)하여 이번 사이클 동안 고정해야 한다.
 
+  > **[예외 원칙: 첫 매수 (First-Buy Exception)]**
+  > 단, 전략 가동 후 최초로 주식을 매수하는 경우에는 임시 주문표를 폐기하고 실제 잔고 기준으로 전면 재계산해야 한다.
+
+  ```typescript
+  // [첫 매수 예외 조항] 이전 보유량이 0이었는데 체결 후 주식이 생겼다면 최초 매수로 간주
+  if (prevSnapshot.shares === 0 && newShares > 0) {
+      // 이때에 한해서만 예약 주문표(Grid)를 현재 잔고 기준으로 전면 재계산한다.
+      const newBuyOrders = generateBuyOrders({ ...params, bandLow: prevSnapshot.bandLow, shares: newShares, pool: newPool });
+      const newSellOrders = generateSellOrders({ ...params, bandHigh: prevSnapshot.bandHigh, pool: newPool, shares: newShares });
+      return { ...prevSnapshot, pool: newPool, shares: newShares, avgPrice: newAvgPrice, buyOrders: newBuyOrders, sellOrders: newSellOrders };
+  }
+  ```
+
 **헬퍼: `calculatePoolDelta` (순수 함수, 단일 책임 + Invariant Guard)**
 
 매수/매도 타입과 가격·수량·수수료율을 받아 **Pool 변동액(부호 포함)** 을 반환한다. 매수 시 비용이므로 음수, 매도 시 수령액이므로 양수.
@@ -788,6 +801,25 @@ async function handleVrTrade(
   - **toDisplayNumber**: 유효하지 않은 숫자 유입 시 **fallback 반환 전에 `console.error`** 를 남겨 버그 추적이 가능하도록 한다.
 - **VrPortfolioSummary.tsx**
   - **실효성 없는 useMemo** 제거. maxBuyStep 같은 단순 연산은 **렌더 시점에 직접** `calculateMaxBuyStep(vrSnapshot.buyOrders)` 로 수행하여 코드를 평탄하게 유지한다.
+
+---
+
+## 11. 클린 코드 및 리팩토링 확정 내역 (문서화 부채 청산)
+실제 코드 구현 단계에서 시스템 유지보수성 및 프로덕션 수준의 안정성을 위해 다음의 아키텍처 원칙이 적용 및 확정되었다. 이 원칙들은 향후 코드 수정 시에도 반드시 유지되어야 한다.
+
+### 11.1 금융 계산 유틸리티 강제화 (DRY & Precision)
+- **위치:** `utils/vrBandStrategy.ts`
+- **내용:** 부동 소수점 오차 방지를 위한 `toFixedMoney` 함수(`Number.EPSILON` 적용)와, 적립/인출식에 따른 부호 강제 정규화 함수 `getSanitizedDeltaCash`를 구현하여 모든 계산 파이프라인에서 공통으로 사용한다. 중복된 라운딩 로직(`roundPrice2` 등)은 폐기 및 금지한다.
+
+### 11.2 UI 렌더링 책임 분리 (SRP 준수)
+- **위치:** `components/VrOrderModal.tsx`
+- **내용:** `VrOrderModal` 모달 컴포넌트는 레이아웃과 포탈 렌더링만 담당한다. 복잡한 데이터 테이블 렌더링 로직은 `VrOrderTable`이라는 별도의 독립된 컴포넌트로 완전히 추출하여 인지 복잡도를 낮추고 재사용성을 확보했다. 가격 표시 셀 또한 `PriceCell`로 분리하여 관리한다.
+
+### 11.3 화이트 스크린 방어 및 접근성 표준화 (UX/A11y)
+- **위치:** `components/VrPortfolioSummary.tsx`
+- **내용:**
+  1. **Guard Clause (조기 리턴):** `vrSnapshot` 데이터가 없을 경우 컴포넌트가 크래시되는 것을 막기 위해 최상단에 조기 리턴(Early Return)을 적용하여 Pending 상태 텍스트만 안전하게 표시한다.
+  2. **접근성(A11y):** 최상위 컨테이너에 시각장애인용 스크린 리더를 위한 `role="region"` 속성과 다국어 지원 `aria-label` 속성을 강제 적용하여 웹 접근성 표준을 준수한다.
 
 ---
 

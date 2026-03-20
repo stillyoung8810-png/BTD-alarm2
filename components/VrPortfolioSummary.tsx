@@ -57,19 +57,19 @@ export default function VrPortfolioSummary({
 
   if (!hasSnapshot) {
     return (
-      <div className="text-sm text-blue-700 dark:text-blue-300">
+      <div role="status" className="text-sm text-blue-700 dark:text-blue-300">
         {VR_DASHBOARD_HINT[lang].pending}
       </div>
     );
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" role="region" aria-label={lang === 'ko' ? 'VR 전략 요약' : 'VR Strategy Summary'}>
       <div className="text-xs font-bold text-slate-700 dark:text-slate-300 space-y-0.5">
         <div>V: {formatCurrency(currentV)}</div>
         <div>Pool: {formatCurrency(pool)}</div>
         <div>
-          밴드:{' '}
+          {lang === 'ko' ? '밴드' : 'Band'}:{' '}
           {bandLow === null || bandHigh === null ? '-' : `${bandLow.toFixed(2)} ~ ${bandHigh.toFixed(2)}`}
         </div>
       </div>

@@ -1,6 +1,7 @@
 
-import React, { useState } from 'react';
-import { Portfolio, Strategy, VrBandStrategyParams } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Portfolio, Strategy, VrBandStrategyParams, VrSnapshot } from '../types';
+import { generateBuyOrders, generateSellOrders, calculateBands } from '../utils/vrBandStrategy';
 import { AVAILABLE_STOCKS, ALL_STOCKS, PAID_STOCKS, I18N } from '../constants';
 import { X, ChevronRight, ChevronLeft, Info, Sparkles, Target, Zap, Settings2, Calendar, Wallet, Percent, AlertTriangle, ChevronDown, Lock, TrendingUp, Layers, BarChart2, Orbit } from 'lucide-react';
 import { useTossApp } from '../contexts/TossAppContext';
@@ -9,6 +10,13 @@ import HoverTip from './HoverTip';
 import InfoModal from './InfoModal';
 import { useTDSMenu } from './tds';
 import { VR_CREATOR_LABELS } from '../constants/vrMessages';
+import { DEFAULT_FEE_RATE, RATE_PRECISION_MULTIPLIER, VR_LIMITS } from '../constants/vrConstants';
+
+/** 퍼센트 입력(예: 5.1 = 5.1%) → 소수 비율(0.051) — RATE_PRECISION_MULTIPLIER SSOT */
+const toDecimalRate = (pct: number): number =>
+  Math.round((pct / 100 + Number.EPSILON) * RATE_PRECISION_MULTIPLIER) / RATE_PRECISION_MULTIPLIER;
+import VrBandStrategyForm from './strategies/VrBandStrategyForm';
+import { getLocalTodayString } from '../utils/dateHelpers';
 
 // 전략 타입 정의 (확장 가능)
 export type StrategyType = 'rsi_ma_interval' | 'multi_split' | 'no_stop_multi_split' | 'vr_band';
@@ -82,6 +90,12 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
   const [step, setStep] = useState(0); // 0: 전략 선택, 1-3: 기존 단계
   const [selectedStrategy, setSelectedStrategy] = useState<StrategyType | null>(null);
   const [proInfoOpen, setProInfoOpen] = useState(false);
+
+  useEffect(() => {
+    if (selectedStrategy === 'vr_band') {
+      setStartDate(getLocalTodayString());
+    }
+  }, [selectedStrategy]);
   
   // Step 1: Section 0 (기준 주식 + 단기/장기 이평선 기간)
   const [ma0Stock, setMa0Stock] = useState('QQQ');
@@ -228,6 +242,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
 
     // 전략별로 다른 strategy 객체 생성
     let strategy: Strategy;
+    let initialVrSnapshot: VrSnapshot | null = null;
     
     if (selectedStrategy === 'rsi_ma_interval') {
       if (ma1Stock === ma2Stock || ma2Stock === ma3Stock || ma1Stock === ma3Stock) {
@@ -269,10 +284,10 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
         }
       };
     } else if (selectedStrategy === 'vr_band') {
-      const bandUpper = Number.isFinite(vrBandUpperPct) ? vrBandUpperPct / 100 : 0;
-      const bandLower = Number.isFinite(vrBandLowerPct) ? vrBandLowerPct / 100 : 0;
-      const poolUsageRateBuy = Number.isFinite(vrPoolUsagePct) ? vrPoolUsagePct / 100 : 0;
-      const normalizedFeeRate = Number.isFinite(feeRate) ? feeRate / 100 : 0.0025;
+      const bandUpper = Number.isFinite(vrBandUpperPct) ? toDecimalRate(vrBandUpperPct) : 0;
+      const bandLower = Number.isFinite(vrBandLowerPct) ? toDecimalRate(vrBandLowerPct) : 0;
+      const poolUsageRateBuy = Number.isFinite(vrPoolUsagePct) ? toDecimalRate(vrPoolUsagePct) : 0;
+      const normalizedFeeRate = Number.isFinite(feeRate) ? toDecimalRate(feeRate) : DEFAULT_FEE_RATE;
 
       if (!vrInitialCapital || vrInitialCapital <= 0 || !vrInitialV || vrInitialV <= 0 || !vrMinOrderQty || vrMinOrderQty <= 0) {
         setVrShowErrors(true);
@@ -299,6 +314,22 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
         ma3: { stock: 'TQQQ' },
         vrBand: vrParams,
       } as Strategy;
+
+      const { bandLow, bandHigh } = calculateBands(vrInitialV, bandUpper, bandLower);
+      const buyOrders = generateBuyOrders({ bandLow, pool: vrInitialCapital, shares: 0, ...vrParams });
+      const sellOrders = generateSellOrders({ bandHigh, pool: vrInitialCapital, shares: 0, ...vrParams });
+
+      initialVrSnapshot = {
+        cycleIndex: 0,
+        currentV: vrInitialV,
+        pool: vrInitialCapital,
+        shares: 0,
+        avgPrice: 0,
+        bandLow,
+        bandHigh,
+        buyOrders,
+        sellOrders,
+      } as VrSnapshot;
     } else {
       // 기본값
       strategy = {
@@ -313,10 +344,11 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
       name: name || (lang === 'ko' ? '커스텀 전략' : 'Custom Strategy'),
       dailyBuyAmount: dailyBuy,
       startDate: startDate,
-      feeRate: selectedStrategy === 'vr_band' ? (Number.isFinite(feeRate) ? feeRate / 100 : 0.25 / 100) : feeRate,
+      feeRate: selectedStrategy === 'vr_band' ? (Number.isFinite(feeRate) ? toDecimalRate(feeRate) : DEFAULT_FEE_RATE) : feeRate,
       isClosed: false,
       trades: [],
-      strategy
+      strategy,
+      ...(initialVrSnapshot ? { vrSnapshot: initialVrSnapshot } : {}),
     };
     console.log('부모 함수 호출 시작');
     await onSave(newP);
@@ -1730,7 +1762,8 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="w-full px-5 py-3.5 pl-14 bg-slate-100/50 dark:bg-slate-900 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-white/10 font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all"
+                disabled={selectedStrategy === 'vr_band'}
+                className={`w-full px-5 py-3.5 pl-14 bg-slate-100/50 dark:bg-slate-900 text-slate-900 dark:text-white rounded-xl border border-slate-200 dark:border-white/10 font-bold text-sm outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all ${selectedStrategy === 'vr_band' ? 'opacity-50 cursor-not-allowed' : ''}`}
               />
             </div>
           </div>
@@ -1758,207 +1791,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
     </div>
   );
 
-  // VR 밴드 전략 Step 1: 파라미터 설정
-  const renderVrBandStep1 = () => {
-    return (
-      <div className="space-y-8 animate-in fade-in slide-in-from-right-8 duration-500">
-        <div className="bg-gradient-to-br from-indigo-500/5 via-sky-500/5 to-violet-500/5 dark:from-indigo-500/10 dark:via-sky-500/10 dark:to-violet-600/20 border border-indigo-500/30 dark:border-indigo-500/40 p-8 rounded-[2rem] space-y-6 backdrop-blur-xl shadow-xl">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 bg-indigo-600/20 rounded-full flex items-center justify-center border border-indigo-500/60">
-              <Orbit className="text-indigo-600 dark:text-indigo-400" size={20} />
-            </div>
-            <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-widest">
-              {vrT.sectionTitle}
-            </h3>
-          </div>
-
-          {/* 운용 모드 선택 */}
-          <div className="space-y-4">
-            <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
-              {vrT.modeLabel}
-            </label>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {(['lump_sum', 'accumulate', 'withdraw'] as VrBandStrategyParams['vrMode'][]).map((mode) => {
-                const isActive = vrMode === mode;
-                const rawLabel =
-                  mode === 'lump_sum'
-                    ? vrT.modes.lump_sum
-                    : mode === 'accumulate'
-                    ? vrT.modes.accumulate
-                    : vrT.modes.withdraw;
-                const [title, subtitleRaw] = rawLabel.split('(');
-                const subtitle = subtitleRaw ? `(${subtitleRaw}` : '';
-                return (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setVrMode(mode)}
-                    className={`flex flex-col items-center justify-center text-center gap-1 px-4 py-3 rounded-2xl border transition-all ${
-                      isActive
-                        ? 'bg-indigo-50 border-indigo-400 text-indigo-700 shadow-md shadow-indigo-500/10 dark:bg-indigo-500/20 dark:border-indigo-400 dark:text-indigo-300'
-                        : 'border-slate-200 bg-white/60 text-slate-500 hover:border-indigo-300 dark:border-slate-700/60 dark:bg-slate-900/60 dark:text-slate-400'
-                    }`}
-                  >
-                    <span className="text-sm font-black tracking-widest">{title.trim()}</span>
-                    {subtitle && (
-                      <span className="text-[10px] font-semibold opacity-80">{subtitle.trim()}</span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 핵심 파라미터들 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-3">
-              <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
-                {vrT.initialCapital}
-              </label>
-              <div className="relative">
-                <Wallet className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                <input
-                  type="number"
-                  min={1}
-                  value={vrInitialCapital}
-                  onChange={(e) => setVrInitialCapital(Math.max(0, Number(e.target.value)))}
-                  className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
-                />
-              </div>
-              {vrShowErrors && (!vrInitialCapital || vrInitialCapital <= 0) && (
-                <p className="text-[10px] text-red-500 font-medium">
-                  {lang === 'ko' ? '초기 투자 원금은 0보다 커야 합니다.' : 'Initial capital must be greater than 0.'}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-3">
-              <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
-                {vrT.initialV}
-              </label>
-              <div className="relative">
-                <Target className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                <input
-                  type="number"
-                  min={1}
-                  value={vrInitialV}
-                  onChange={(e) => setVrInitialV(Math.max(0, Number(e.target.value)))}
-                  className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
-                />
-              </div>
-              {vrShowErrors && (!vrInitialV || vrInitialV <= 0) && (
-                <p className="text-[10px] text-red-500 font-medium">
-                  {lang === 'ko' ? '초기 V 값은 0보다 커야 합니다.' : 'Initial V must be greater than 0.'}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-3">
-              <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
-                {vrT.bandUpper}
-              </label>
-              <div className="relative">
-                <Percent className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={vrBandUpperPct}
-                  onChange={(e) => setVrBandUpperPct(Math.max(0, Number(e.target.value)))}
-                  className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
-                {vrT.bandLower}
-              </label>
-              <div className="relative">
-                <Percent className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={vrBandLowerPct}
-                  onChange={(e) => setVrBandLowerPct(Math.max(0, Number(e.target.value)))}
-                  className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-emerald-500/60 transition-all shadow-sm"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
-                {vrT.minOrderQty}
-              </label>
-              <input
-                type="number"
-                min={1}
-                value={vrMinOrderQty}
-                onChange={(e) => setVrMinOrderQty(Math.max(1, Number(e.target.value)))}
-                className="w-full p-4 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
-              />
-              {vrShowErrors && (!vrMinOrderQty || vrMinOrderQty <= 0) && (
-                <p className="text-[10px] text-red-500 font-medium">
-                  {lang === 'ko' ? '최소 주문 수량은 1주 이상이어야 합니다.' : 'Minimum order quantity must be at least 1 share.'}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-3">
-              <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
-                {vrT.G}
-              </label>
-              <input
-                type="number"
-                min={1}
-                step="0.1"
-                value={vrG}
-                onChange={(e) => setVrG(Math.max(0, Number(e.target.value)))}
-                className="w-full p-4 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
-              />
-            </div>
-
-            <div className="space-y-3">
-              <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
-                {vrT.poolUsage}
-              </label>
-              <div className="relative">
-                <Percent className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step="0.1"
-                  value={vrPoolUsagePct}
-                  onChange={(e) => setVrPoolUsagePct(Math.max(0, Math.min(100, Number(e.target.value))))}
-                  className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
-                />
-              </div>
-            </div>
-
-            {vrMode !== 'lump_sum' && (
-              <div className="space-y-3 md:col-span-2">
-                <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
-                  {vrT.deltaCash}
-                </label>
-                <div className="relative max-w-xs">
-                  <Wallet className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                  <input
-                    type="number"
-                    step="1"
-                    value={vrDeltaCash}
-                    onChange={(e) => setVrDeltaCash(Number(e.target.value))}
-                    className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
+  // VR 밴드 전략 Step 1: 파라미터 설정 → VrBandStrategyForm으로 분리됨
 
   const renderStep3 = () => (
     <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
@@ -2117,7 +1950,14 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
           {step === 2 && selectedStrategy === 'multi_split' && renderMultiSplitStep2()}
           {step === 1 && selectedStrategy === 'no_stop_multi_split' && renderNoStopMultiSplitStep1()}
           {step === 2 && selectedStrategy === 'no_stop_multi_split' && renderNoStopMultiSplitStep2()}
-          {step === 1 && selectedStrategy === 'vr_band' && renderVrBandStep1()}
+          {step === 1 && selectedStrategy === 'vr_band' && (
+            <VrBandStrategyForm
+              lang={lang}
+              values={{ vrMode, vrInitialCapital, vrInitialV, vrMinOrderQty, vrBandUpperPct, vrBandLowerPct, vrG, vrPoolUsagePct, vrDeltaCash }}
+              callbacks={{ setVrMode, setVrInitialCapital, setVrInitialV, setVrMinOrderQty, setVrBandUpperPct, setVrBandLowerPct, setVrG, setVrPoolUsagePct, setVrDeltaCash }}
+              showErrors={vrShowErrors}
+            />
+          )}
           {step === 2 && selectedStrategy === 'vr_band' && renderMultiSplitStep2()}
         </div>
 

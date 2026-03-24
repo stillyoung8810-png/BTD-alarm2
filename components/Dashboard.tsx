@@ -17,12 +17,17 @@ import {
 import { calculateInvestedAmount, calculateYield, calculateCurrentValuation, determineActiveSection, calculateHoldings, getMaPeriods, getMAValuesForAlignment } from '../utils/portfolioCalculations';
 import { fetchStockPrices } from '../services/stockService';
 import HoverTip from './HoverTip';
-import { formatPortfolioDailyExecutionBlock, joinDailyExecutionBlocks } from '../utils/dailyExecutionSummary';
+import {
+  formatPortfolioDailyExecutionBlock,
+  getVrDailyExecutionCycleHeaderLabel,
+  joinDailyExecutionBlocks,
+} from '../utils/dailyExecutionSummary';
 import { VR_DASHBOARD_HINT, VR_SUMMARY } from '../constants/vrMessages';
 import VrBadge from './VrBadge';
 import VrOrderModal from './VrOrderModal';
 import { useMultiSplitExecution } from '../hooks/useMultiSplitExecution';
 import { useNoStopMultiSplitExecution } from '../hooks/useNoStopMultiSplitExecution';
+import { useVrOrders } from '../hooks/useVrOrders';
 import { useTossApp } from '../contexts/TossAppContext';
 import { TDSButton, TDSList, TDSListRow } from './tds';
 import { getConditionalTypographyStyle, getConditionalColor } from '../utils/tossStyleHelpers';
@@ -289,6 +294,7 @@ const PortfolioCard: React.FC<{
   // VR 밴드 전략: SSOT — 설정은 portfolio.strategy.vrBand 단 한 곳만 참조
   const vrSettings = portfolio.strategy.vrBand;
   const isVrStrategy = !!vrSettings;
+  const hasEverBought = portfolio.trades?.some((t) => t.type === 'buy') || false;
   // 다분할 매매법일 때는 multiSplit.targetStock을 사용,
   // VR 전략일 때는 기본값 'TQQQ', 그 외에는 ma0.stock을 안전하게 참조
   const ma0Ticker =
@@ -297,6 +303,11 @@ const PortfolioCard: React.FC<{
     (isVrStrategy ? 'TQQQ' : portfolio.strategy.ma0?.stock) ||
     'TQQQ';
   const isAlarmEnabled = portfolio.alarmconfig?.enabled;
+
+  const vrCycleHeaderLabel = useMemo(
+    () => getVrDailyExecutionCycleHeaderLabel(portfolio, lang),
+    [portfolio, lang],
+  );
 
   const [freeAlarmToastSeq, setFreeAlarmToastSeq] = useState(0);
 
@@ -453,6 +464,7 @@ const PortfolioCard: React.FC<{
     executionData: noStopExecutionData,
   } = useNoStopMultiSplitExecution(portfolio);
   const [isVrOrderModalOpen, setIsVrOrderModalOpen] = useState(false);
+  const { safeBuyOrders, safeSellOrders } = useVrOrders(portfolio.vrSnapshot);
 
   // T > a-1 이고 플래그가 아직 false면 DB에 true로 갱신 (신규 쿼터 진입, 1회만)
   const quarterModeUpdateSentRef = React.useRef(false);
@@ -835,11 +847,21 @@ const PortfolioCard: React.FC<{
       >
         <div className="absolute inset-0 bg-blue-100/50 dark:bg-white/10 opacity-0 group-hover/action:opacity-100 transition-opacity rounded-[1.5rem]"></div>
         <div className="relative z-10 flex-1 overflow-visible">
-          <div className="flex items-center gap-1.5 mb-1.5 opacity-80">
+          <div className="flex flex-wrap items-center gap-1.5 mb-1.5 opacity-80">
              <span className="text-[9px] font-black text-blue-700 dark:text-blue-300 uppercase tracking-widest">{t.dailyExecution}</span>
-             <Info size={10} className="text-blue-700 dark:text-blue-300" />
+             <Info size={10} className="text-blue-700 dark:text-blue-300 shrink-0" />
              {isVrStrategy && vrSettings && (
-               <VrBadge mode={vrSettings.vrMode} lang={lang} />
+               <>
+                 <VrBadge mode={vrSettings.vrMode} lang={lang} />
+                 {vrCycleHeaderLabel && (
+                   <span
+                     className="text-[9px] font-bold px-2 py-0.5 rounded-md text-blue-800 dark:text-blue-200 bg-blue-100/60 dark:bg-blue-500/20"
+                     title={lang === 'ko' ? '현재 리밸런싱 사이클 기간' : 'Current rebalancing cycle'}
+                   >
+                     {vrCycleHeaderLabel}
+                   </span>
+                 )}
+               </>
              )}
              {isMultiSplitStrategy && (multiSplitPhase || isInQuarterMode) && (
                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-md ${
@@ -862,6 +884,7 @@ const PortfolioCard: React.FC<{
               vrSettings={vrSettings!}
               vrSnapshot={portfolio.vrSnapshot}
               lang={lang}
+              hasEverBought={hasEverBought}
             />
           ) : isMultiSplitStrategy ? (
             <div className="text-sm font-black text-blue-900 dark:text-white space-y-2">
@@ -998,36 +1021,8 @@ const PortfolioCard: React.FC<{
           <VrOrderModal
             isOpen={isVrOrderModalOpen}
             onClose={() => setIsVrOrderModalOpen(false)}
-            buyOrders={
-              portfolio.vrSnapshot
-                ? [
-                    {
-                      step: 0,
-                      price: 0,
-                      qty: 0,
-                      isBuffer: false,
-                      sharesAfter: portfolio.vrSnapshot.shares,
-                      poolAfter: portfolio.vrSnapshot.pool,
-                    },
-                    ...(portfolio.vrSnapshot.buyOrders ?? []),
-                  ]
-                : []
-            }
-            sellOrders={
-              portfolio.vrSnapshot
-                ? [
-                    {
-                      step: 0,
-                      price: 0,
-                      qty: 0,
-                      isBuffer: false,
-                      sharesAfter: portfolio.vrSnapshot.shares,
-                      poolAfter: portfolio.vrSnapshot.pool,
-                    },
-                    ...(portfolio.vrSnapshot.sellOrders ?? []),
-                  ]
-                : []
-            }
+            buyOrders={safeBuyOrders}
+            sellOrders={safeSellOrders}
             lang={lang}
           />
         </>
@@ -1180,36 +1175,8 @@ const PortfolioCard: React.FC<{
           <VrOrderModal
             isOpen={isVrOrderModalOpen}
             onClose={() => setIsVrOrderModalOpen(false)}
-            buyOrders={
-              portfolio.vrSnapshot
-                ? [
-                    {
-                      step: 0,
-                      price: 0,
-                      qty: 0,
-                      isBuffer: false,
-                      sharesAfter: portfolio.vrSnapshot.shares,
-                      poolAfter: portfolio.vrSnapshot.pool,
-                    },
-                    ...(portfolio.vrSnapshot.buyOrders ?? []),
-                  ]
-                : []
-            }
-            sellOrders={
-              portfolio.vrSnapshot
-                ? [
-                    {
-                      step: 0,
-                      price: 0,
-                      qty: 0,
-                      isBuffer: false,
-                      sharesAfter: portfolio.vrSnapshot.shares,
-                      poolAfter: portfolio.vrSnapshot.pool,
-                    },
-                    ...(portfolio.vrSnapshot.sellOrders ?? []),
-                  ]
-                : []
-            }
+            buyOrders={safeBuyOrders}
+            sellOrders={safeSellOrders}
             lang={lang}
           />
         </>

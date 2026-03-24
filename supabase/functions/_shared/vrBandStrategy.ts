@@ -1,12 +1,6 @@
-import type {
-  AppLang,
-  OrderLevel,
-  VrBandStrategyParams,
-  VrSnapshot,
-  Trade,
-} from '../types';
-import { getVrDeltaCashForNextV } from '../types';
-import { TIME_MS, VR_CYCLE } from '../constants/vrConstants';
+import type { AppLang, OrderLevel, VrBandStrategyParams, VrSnapshot, Trade } from './types.ts';
+import { getVrDeltaCashForNextV } from './types.ts';
+import { TIME_MS, VR_CYCLE } from './vrConstants.ts';
 
 /**
  * VR 밴드 전략 — Pool 변동액·N번 계산·표시용 Guard (순수 함수).

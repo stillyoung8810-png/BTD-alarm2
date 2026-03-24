@@ -38,6 +38,7 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
   const feeRate = portfolio.feeRate || 0.25;
 
   const holdings = Array.from(new Set(portfolio.trades.map(t => t.stock)));
+  const isVrStrategy = Boolean(portfolio.strategy.vrBand);
 
   // 최신 종가 거래일 가져오기 (의존성: 원시/식별자만, effect 내부에서는 portfolio 사용)
   const targetStockForDate = portfolio.strategy.multiSplit?.targetStock ?? portfolio.strategy.noStopMultiSplit?.targetStock ?? portfolio.strategy.ma0?.stock;
@@ -73,8 +74,11 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
     if (type === 'buy') {
       setSelectedStock(getActiveSectionStock());
       setIsMOC(false); // 매수일 때는 MOC 비활성화
+      if (isVrStrategy) {
+        setQuantity(0);
+      }
     }
-  }, [type, activeSection, portfolio.strategy.ma1?.stock, portfolio.strategy.ma2?.stock, portfolio.strategy.ma3?.stock]);
+  }, [type, isVrStrategy, activeSection, portfolio.strategy.ma1?.stock, portfolio.strategy.ma2?.stock, portfolio.strategy.ma3?.stock]);
 
   // MOC 활성화 시 체결 단가 입력하면 전체 보유 수량의 25% 자동 계산 (의존성: 원시/식별자만)
   useEffect(() => {
@@ -89,14 +93,14 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
   }, [type, isMOC, price, selectedStock, portfolio.id, portfolio.trades.length]);
 
   useEffect(() => {
-    if (type === 'buy' && price > 0) {
+    if (type === 'buy' && !isVrStrategy && price > 0) {
       const availableFunds = portfolio.dailyBuyAmount;
       const feePerUnit = price * (feeRate / 100);
       const totalCostPerUnit = price + feePerUnit;
       const qty = Math.floor(availableFunds / totalCostPerUnit);
       setQuantity(qty);
     }
-  }, [type, price, portfolio.dailyBuyAmount, feeRate]);
+  }, [type, isVrStrategy, price, portfolio.dailyBuyAmount, feeRate]);
 
   const commission = price * quantity * (feeRate / 100);
   const secFee = type === 'sell' ? (price * quantity * 0.00003) : 0;
@@ -247,7 +251,7 @@ const QuickInputModal: React.FC<QuickInputModalProps> = ({ lang, portfolio, acti
               </div>
             </div>
 
-            {type === 'sell' && (
+            {(type === 'sell' || (type === 'buy' && isVrStrategy)) && (
               <div className="space-y-2 animate-in slide-in-from-top-2">
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.quantity}</label>
                 <input 

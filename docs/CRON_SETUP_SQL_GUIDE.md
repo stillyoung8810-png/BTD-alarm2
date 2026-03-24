@@ -128,3 +128,9 @@ select cron.unschedule('trigger-btd-alarms-every-10-min');
 - [ ] `cron.job` 조회로 `*/10 * * * *` 와 `check-and-trigger-alarms` URL 확인
 
 이후에는 **매 10분(:00, :10, :20, :30, :40, :50)** 마다 `check-and-trigger-alarms`가 자동으로 호출됩니다.
+
+---
+
+## 7. (별도) VR 스냅샷 갱신 `refresh-vr-snapshots`
+
+알람 10분 크론과 별도로, VR 사이클 갱신용 Edge 함수를 **월~금 21:10 UTC**(KST 기준 화~토 아침 06:10에 대응) 등으로 호출하려면 **[VR_REFRESH_SNAPSHOTS_CRON.md](./VR_REFRESH_SNAPSHOTS_CRON.md)** 의 SQL 템플릿을 사용하세요. `service_role` 키는 동일하게 SQL Editor에서만 교체·실행하고 레포에 커밋하지 않습니다.

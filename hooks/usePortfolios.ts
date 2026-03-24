@@ -153,6 +153,8 @@ export function usePortfolios({
         closedAt,
         finalSellAmount,
         alarmconfig,
+        isQuarterMode,
+        vrSnapshot,
         ...rest
       } = newP;
       if (!rest.name?.trim()) {
@@ -190,6 +192,8 @@ export function usePortfolios({
         closed_at: closedAt || null,
         final_sell_amount: finalSellAmount || null,
         alarm_config: alarmconfig || null,
+        is_quarter_mode: isQuarterMode ?? false,
+        vr_snapshot: vrSnapshot ?? null,
       };
       const { data, error } = await supabase.from('portfolios').insert([payload]).select();
       if (error) {
@@ -345,6 +349,7 @@ export function usePortfolios({
           final_sell_amount: updated.finalSellAmount || null,
           alarm_config: updated.alarmconfig || null,
           is_quarter_mode: updated.isQuarterMode ?? false,
+          vr_snapshot: updated.vrSnapshot ?? null,
         })
         .eq('id', updated.id);
 

@@ -22,14 +22,40 @@ export function isSessionRecoverableError(err: unknown): boolean {
   );
 }
 
+const HTTP_PROTOCOL_RE = /^https?:\/\//i;
+
+function normalizeBaseUrl(raw: string): string {
+  return raw.trim().replace(/\/+$/, '');
+}
+
+/**
+ * OAuth/이메일 인증 redirect 베이스 URL.
+ * 토스 WebView 등에서는 window.location.origin을 최우선해 빌드 시점 VITE_SITE_URL에 묶이지 않게 합니다.
+ */
+export function getRuntimeOrigin(): string {
+  if (typeof window !== 'undefined') {
+    const runtimeOrigin = window.location.origin?.trim();
+    if (
+      runtimeOrigin &&
+      runtimeOrigin !== 'null' &&
+      HTTP_PROTOCOL_RE.test(runtimeOrigin)
+    ) {
+      return normalizeBaseUrl(runtimeOrigin);
+    }
+  }
+
+  const envOrigin = import.meta.env.VITE_SITE_URL?.trim();
+  if (envOrigin && HTTP_PROTOCOL_RE.test(envOrigin)) {
+    return normalizeBaseUrl(envOrigin);
+  }
+
+  throw new Error('Auth redirect base URL could not be resolved.');
+}
+
 /**
  * 베이스 URL과 경로를 안전하게 합쳐서 슬래시 중복/누락 방지
  */
 export function buildRedirectUrl(path: string): string {
-  const rawBase =
-    import.meta.env.VITE_SITE_URL ||
-    (typeof window !== 'undefined' ? window.location.origin : '');
-  const base = rawBase.replace(/\/+$/, '');
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  return `${base}${normalizedPath}`;
+  return new URL(normalizedPath, `${getRuntimeOrigin()}/`).toString();
 }

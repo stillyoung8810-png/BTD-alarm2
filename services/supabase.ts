@@ -1,7 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
+import {
+  createSupabaseAuthStorage,
+  clearSupabaseAuthStorage,
+} from '../utils/supabaseAuthStorage';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const authStorage = createSupabaseAuthStorage();
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error('Supabase 환경 변수가 설정되지 않았습니다.');
@@ -13,7 +18,7 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
     autoRefreshToken: true,
     detectSessionInUrl: true, // URL에서 세션 토큰 자동 감지 (OAuth 콜백 등)
     flowType: 'pkce', // PKCE 플로우 사용 (보안 강화)
-    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+    storage: authStorage,
     storageKey: 'sb-auth-token', // 일관된 스토리지 키 사용
   },
   global: {
@@ -74,26 +79,13 @@ export const ensureValidSession = async (): Promise<boolean> => {
 };
 
 /**
- * 인증 관련 localStorage 키를 정리하는 헬퍼 함수
+ * 인증 관련 저장소(localStorage·sessionStorage·cookie·memory) 정리
  * 세션 에러 발생 시 호출하여 깨진 토큰 정리
  */
 export const clearAuthStorage = (): void => {
-  if (typeof window === 'undefined') return;
-  
   try {
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && (
-        key.startsWith('sb-') || 
-        key.includes('supabase') ||
-        key === 'sb-auth-token'
-      )) {
-        keysToRemove.push(key);
-      }
-    }
-    keysToRemove.forEach(key => localStorage.removeItem(key));
-    console.log('[Supabase] Cleared auth storage keys:', keysToRemove);
+    clearSupabaseAuthStorage();
+    console.log('[Supabase] Cleared auth storage (adapter chain)');
   } catch (e) {
     console.warn('[Supabase] Failed to clear auth storage:', e);
   }

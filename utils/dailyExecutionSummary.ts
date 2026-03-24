@@ -5,7 +5,12 @@
  */
 
 import { Portfolio } from '../types';
-import { VR_DASHBOARD_HINT, VR_SUMMARY, VR_BADGE_CONFIG, VR_FALLBACK } from '../constants/vrMessages';
+import { DEFAULT_TIMEZONE } from '../constants/vrConstants';
+import {
+  formatCurrency,
+  getVrCyclePeriodText,
+  sanitizeVrCycleWeeks,
+} from './vrBandStrategy';
 
 export type Lang = 'ko' | 'en';
 
@@ -45,6 +50,13 @@ const STRINGS: Record<Lang, {
   vrV: string;
   vrPool: string;
   vrBand: string;
+  cyclePeriodFormat: (cycleIndex: number, start: string, end: string) => string;
+  vrModeLumpSum: string;
+  vrModeAccumulate: string;
+  vrModeWithdraw: string;
+  vrMaxBuyHint: (step: number) => string;
+  vrNoOrder: string;
+  vrReadyHint: string;
 }> = {
   ko: {
     strategyMultiSplit: '다분할 매매법',
@@ -80,6 +92,13 @@ const STRINGS: Record<Lang, {
     vrV: 'V (목표 밸류)',
     vrPool: 'Pool (가상 금고)',
     vrBand: '밴드',
+    cyclePeriodFormat: (n, s, e) => `#${n}: ${s} ~ ${e}`,
+    vrModeLumpSum: '거치식',
+    vrModeAccumulate: '적립식',
+    vrModeWithdraw: '인출식',
+    vrMaxBuyHint: (step) => `예약 매수는 표의 ${step}번까지 주문하세요`,
+    vrNoOrder: '대기 중인 주문 없음',
+    vrReadyHint: 'VR 밴드 룰에 따라 예약 주문표를 참고하여 매매하세요.',
   },
   en: {
     strategyMultiSplit: 'Multi-Split Strategy',
@@ -115,6 +134,13 @@ const STRINGS: Record<Lang, {
     vrV: 'V (Target Value)',
     vrPool: 'Pool',
     vrBand: 'Band',
+    cyclePeriodFormat: (n, s, e) => `Cycle ${n}: ${s} to ${e}`,
+    vrModeLumpSum: 'Lump sum',
+    vrModeAccumulate: 'Accumulate',
+    vrModeWithdraw: 'Withdraw',
+    vrMaxBuyHint: (step) => `Place reserve buy orders up to row ${step}.`,
+    vrNoOrder: 'No pending orders',
+    vrReadyHint: 'Follow the VR band rules using the reservation order table.',
   },
 };
 
@@ -152,12 +178,29 @@ function linePriceQty(label: string, price: number, qty: number, unit: string): 
   return `- ${label}: ${price.toFixed(2)} / ${q}${unit}`;
 }
 
-function formatCurrency(value: number | null | undefined): string {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return '$0.00';
-  return `$${value.toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+/** 대시보드 VR 일별실행 헤더·알람 VR 블록과 동일한 사이클·타임존·포맷 규칙. */
+export function getVrDailyExecutionCycleHeaderLabel(
+  portfolio: Portfolio,
+  lang: Lang,
+): string | null {
+  const vrParams = portfolio.strategy.vrBand;
+  if (!vrParams) return null;
+
+  const s = STRINGS[lang] ?? STRINGS.ko;
+  const snapshot = portfolio.vrSnapshot;
+  const tz = portfolio.alarmconfig?.timezone || DEFAULT_TIMEZONE;
+
+  const text = getVrCyclePeriodText({
+    startDate: portfolio.startDate,
+    cycleWeeks: sanitizeVrCycleWeeks(vrParams.cycleWeeks),
+    currentCycleIndex: snapshot?.cycleIndex,
+    lang,
+    timezone: tz,
+    cycleFormat: (idx, start, end) => s.cyclePeriodFormat(idx, start, end),
+  });
+
+  if (!text || text === '-') return null;
+  return text;
 }
 
 function formatVrBandBlock(
@@ -167,41 +210,57 @@ function formatVrBandBlock(
 ): string {
   const s = STRINGS[lang] ?? STRINGS.ko;
   const snapshot = portfolio.vrSnapshot;
+  const vrParams = portfolio.strategy.vrBand;
 
-  // 스냅샷이 없으면 대기 메시지
   if (!snapshot) {
-    const pending = VR_DASHBOARD_HINT[lang]?.pending ?? VR_DASHBOARD_HINT.ko.pending;
-    const fallbackPending = VR_FALLBACK[lang]?.pending ?? VR_FALLBACK.ko.pending;
-    return [`- ${fallbackPending}`, `- ${pending}`].join('\n');
+    const mode = vrParams?.vrMode;
+    const fallbackMode =
+      mode === 'lump_sum'
+        ? s.vrModeLumpSum
+        : mode === 'withdraw'
+          ? s.vrModeWithdraw
+          : s.vrModeAccumulate;
+    return `[${fallbackMode}]\n- ${s.vrNoOrder}\n- ${s.vrReadyHint}`;
   }
 
   const lines: string[] = [];
-  const vrParams: any = (portfolio.strategy as any).vrBand ?? {};
-  const vrMode = vrParams.vrMode as keyof typeof VR_BADGE_CONFIG | undefined;
-  if (vrMode && VR_BADGE_CONFIG[vrMode]) {
-    const badge = VR_BADGE_CONFIG[vrMode];
-    const modeLabel = lang === 'ko' ? badge.textKo : badge.textEn;
-    lines.push(`[${modeLabel}]`);
+  let headerLine = '';
+
+  if (vrParams?.vrMode) {
+    const modeLabelMap: Record<'lump_sum' | 'accumulate' | 'withdraw', string> = {
+      lump_sum: s.vrModeLumpSum,
+      accumulate: s.vrModeAccumulate,
+      withdraw: s.vrModeWithdraw,
+    };
+    const modeLabel = modeLabelMap[vrParams.vrMode];
+    headerLine += `[${modeLabel}]`;
   }
 
-  const { currentV, pool, bandLow, bandHigh } = snapshot as any;
+  const cycleText = getVrDailyExecutionCycleHeaderLabel(portfolio, lang);
+  if (cycleText) {
+    headerLine += ` (${cycleText})`;
+  }
 
-  lines.push(`- ${s.vrV}: ${formatCurrency(currentV)}`);
-  lines.push(`- ${s.vrPool}: ${formatCurrency(pool)}`);
-  if (typeof bandLow === 'number' && typeof bandHigh === 'number') {
-    lines.push(`- ${s.vrBand}: ${bandLow.toFixed(2)} ~ ${bandHigh.toFixed(2)}`);
+  if (headerLine) {
+    lines.push(headerLine);
+  }
+
+  lines.push(`- ${s.vrV}: ${formatCurrency(snapshot.currentV)}`);
+  lines.push(`- ${s.vrPool}: ${formatCurrency(snapshot.pool)}`);
+  if (typeof snapshot.bandLow === 'number' && typeof snapshot.bandHigh === 'number') {
+    lines.push(
+      `- ${s.vrBand}: ${formatCurrency(snapshot.bandLow)} ~ ${formatCurrency(snapshot.bandHigh)}`,
+    );
   }
 
   const maxStep = options.vrMaxBuyStep ?? 0;
   if (maxStep > 0) {
-    const hint = VR_SUMMARY[lang]?.maxBuyHint(maxStep) ?? VR_SUMMARY.ko.maxBuyHint(maxStep);
-    lines.push(`- ${hint}`);
+    lines.push(`- ${s.vrMaxBuyHint(maxStep)}`);
   } else {
-    lines.push(`- ${s.noOrder}`);
+    lines.push(`- ${s.vrNoOrder}`);
   }
 
-  const readyHint = VR_DASHBOARD_HINT[lang]?.ready ?? VR_DASHBOARD_HINT.ko.ready;
-  lines.push(`- ${readyHint}`);
+  lines.push(`- ${s.vrReadyHint}`);
 
   return lines.join('\n');
 }
@@ -242,7 +301,7 @@ export function formatPortfolioDailyExecutionBlock(
   const tzLabel = portfolio.alarmconfig?.timezone || 'Asia/Seoul';
   const lines: string[] = [];
   const portfolioName = portfolio?.name ?? '';
-   const isVrBand = !!(portfolio.strategy as any).vrBand;
+  const isVrBand = !!portfolio.strategy.vrBand;
   const isMultiSplit = !!portfolio.strategy.multiSplit;
   const isNoStopMultiSplit = !!portfolio.strategy.noStopMultiSplit;
 

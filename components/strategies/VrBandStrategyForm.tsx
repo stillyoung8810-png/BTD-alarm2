@@ -1,50 +1,68 @@
 import React from 'react';
 import { VrBandStrategyParams } from '../../types';
 import { Orbit, Wallet, Target, Percent } from 'lucide-react';
-import { VR_CREATOR_LABELS } from '../../constants/vrMessages';
-import { VR_LIMITS } from '../../constants/vrConstants';
+import { VR_CREATOR_LABELS, VR_MODE_KEYS } from '../../constants/vrMessages';
+import { VR_CYCLE, VR_LIMITS } from '../../constants/vrConstants';
 
-export interface VrBandFormValues {
-  vrMode: VrBandStrategyParams['vrMode'];
-  vrInitialCapital: number;
-  vrInitialV: number;
-  vrMinOrderQty: number;
-  vrBandUpperPct: number;
-  vrBandLowerPct: number;
-  vrG: number;
-  vrPoolUsagePct: number;
-  vrDeltaCash: number;
-}
-
-export interface VrBandFormCallbacks {
-  setVrMode: (mode: VrBandStrategyParams['vrMode']) => void;
-  setVrInitialCapital: (v: number) => void;
-  setVrInitialV: (v: number) => void;
-  setVrMinOrderQty: (v: number) => void;
-  setVrBandUpperPct: (v: number) => void;
-  setVrBandLowerPct: (v: number) => void;
-  setVrG: (v: number) => void;
-  setVrPoolUsagePct: (v: number) => void;
-  setVrDeltaCash: (v: number) => void;
-}
-
-interface VrBandStrategyFormProps {
+export interface VrBandStrategyFormProps {
   lang: 'ko' | 'en';
-  values: VrBandFormValues;
-  callbacks: VrBandFormCallbacks;
   showErrors: boolean;
+  vrMode: VrBandStrategyParams['vrMode'];
+  onVrModeChange: (mode: VrBandStrategyParams['vrMode']) => void;
+  vrInitialCapital: number;
+  onVrInitialCapitalChange: (v: number) => void;
+  vrInitialV: number;
+  onVrInitialVChange: (v: number) => void;
+  vrMinOrderQty: number;
+  onVrMinOrderQtyChange: (v: number) => void;
+  vrBandUpperPct: number;
+  onVrBandUpperPctChange: (v: number) => void;
+  vrBandLowerPct: number;
+  onVrBandLowerPctChange: (v: number) => void;
+  vrG: number;
+  onVrGChange: (v: number) => void;
+  vrPoolUsagePct: number;
+  onVrPoolUsagePctChange: (v: number) => void;
+  vrDeltaCash: number;
+  onVrDeltaCashChange: (v: number) => void;
+  vrCycleWeeks: number;
+  onVrCycleWeeksChange: (v: number) => void;
 }
 
-const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({ lang, values, callbacks, showErrors }) => {
+const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({
+  lang,
+  showErrors,
+  vrMode,
+  onVrModeChange,
+  vrInitialCapital,
+  onVrInitialCapitalChange,
+  vrInitialV,
+  onVrInitialVChange,
+  vrMinOrderQty,
+  onVrMinOrderQtyChange,
+  vrBandUpperPct,
+  onVrBandUpperPctChange,
+  vrBandLowerPct,
+  onVrBandLowerPctChange,
+  vrG,
+  onVrGChange,
+  vrPoolUsagePct,
+  onVrPoolUsagePctChange,
+  vrDeltaCash,
+  onVrDeltaCashChange,
+  vrCycleWeeks,
+  onVrCycleWeeksChange,
+}) => {
   const vrT = VR_CREATOR_LABELS[lang];
-  const {
-    vrMode, vrInitialCapital, vrInitialV, vrMinOrderQty,
-    vrBandUpperPct, vrBandLowerPct, vrG, vrPoolUsagePct, vrDeltaCash,
-  } = values;
-  const {
-    setVrMode, setVrInitialCapital, setVrInitialV, setVrMinOrderQty,
-    setVrBandUpperPct, setVrBandLowerPct, setVrG, setVrPoolUsagePct, setVrDeltaCash,
-  } = callbacks;
+
+  const cycleWeekOptions = React.useMemo(
+    () =>
+      Array.from(
+        { length: VR_CYCLE.MAX_WEEKS - VR_CYCLE.MIN_WEEKS + 1 },
+        (_, i) => VR_CYCLE.MIN_WEEKS + i
+      ),
+    []
+  );
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-right-8 duration-500">
@@ -63,21 +81,21 @@ const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({ lang, values, c
             {vrT.modeLabel}
           </label>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {(['lump_sum', 'accumulate', 'withdraw'] as VrBandStrategyParams['vrMode'][]).map((mode) => {
+            {VR_MODE_KEYS.map((mode) => {
               const isActive = vrMode === mode;
               const rawLabel =
                 mode === 'lump_sum'
                   ? vrT.modes.lump_sum
                   : mode === 'accumulate'
-                  ? vrT.modes.accumulate
-                  : vrT.modes.withdraw;
+                    ? vrT.modes.accumulate
+                    : vrT.modes.withdraw;
               const [title, subtitleRaw] = rawLabel.split('(');
               const subtitle = subtitleRaw ? `(${subtitleRaw}` : '';
               return (
                 <button
                   key={mode}
                   type="button"
-                  onClick={() => setVrMode(mode)}
+                  onClick={() => onVrModeChange(mode)}
                   className={`flex flex-col items-center justify-center text-center gap-1 px-4 py-3 rounded-2xl border transition-all ${
                     isActive
                       ? 'bg-indigo-50 border-indigo-400 text-indigo-700 shadow-md shadow-indigo-500/10 dark:bg-indigo-500/20 dark:border-indigo-400 dark:text-indigo-300'
@@ -94,6 +112,23 @@ const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({ lang, values, c
           </div>
         </div>
 
+        <div className="space-y-3 max-w-xs">
+          <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
+            {vrT.cycleWeeks}
+          </label>
+          <select
+            value={vrCycleWeeks}
+            onChange={(e) => onVrCycleWeeksChange(Number(e.target.value))}
+            className="w-full p-4 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
+          >
+            {cycleWeekOptions.map((w) => (
+              <option key={w} value={w}>
+                {w}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-3">
             <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
@@ -105,7 +140,7 @@ const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({ lang, values, c
                 type="number"
                 min={1}
                 value={vrInitialCapital}
-                onChange={(e) => setVrInitialCapital(Math.max(0, Number(e.target.value)))}
+                onChange={(e) => onVrInitialCapitalChange(Math.max(0, Number(e.target.value)))}
                 className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
               />
             </div>
@@ -126,7 +161,7 @@ const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({ lang, values, c
                 type="number"
                 min={1}
                 value={vrInitialV}
-                onChange={(e) => setVrInitialV(Math.max(0, Number(e.target.value)))}
+                onChange={(e) => onVrInitialVChange(Math.max(0, Number(e.target.value)))}
                 className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
               />
             </div>
@@ -148,7 +183,7 @@ const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({ lang, values, c
                 min={0}
                 step="0.01"
                 value={vrBandUpperPct}
-                onChange={(e) => setVrBandUpperPct(Math.max(0, Number(e.target.value)))}
+                onChange={(e) => onVrBandUpperPctChange(Math.max(0, Number(e.target.value)))}
                 className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
               />
             </div>
@@ -165,7 +200,7 @@ const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({ lang, values, c
                 min={0}
                 step="0.01"
                 value={vrBandLowerPct}
-                onChange={(e) => setVrBandLowerPct(Math.max(0, Number(e.target.value)))}
+                onChange={(e) => onVrBandLowerPctChange(Math.max(0, Number(e.target.value)))}
                 className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-emerald-500/60 transition-all shadow-sm"
               />
             </div>
@@ -179,7 +214,7 @@ const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({ lang, values, c
               type="number"
               min={1}
               value={vrMinOrderQty}
-              onChange={(e) => setVrMinOrderQty(Math.max(1, Number(e.target.value)))}
+              onChange={(e) => onVrMinOrderQtyChange(Math.max(1, Number(e.target.value)))}
               className="w-full p-4 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
             />
             {showErrors && (!vrMinOrderQty || vrMinOrderQty <= 0) && (
@@ -198,7 +233,7 @@ const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({ lang, values, c
               min={VR_LIMITS.MIN_G_VALUE}
               step="0.1"
               value={vrG}
-              onChange={(e) => setVrG(Math.max(VR_LIMITS.MIN_G_VALUE, Number(e.target.value)))}
+              onChange={(e) => onVrGChange(Math.max(VR_LIMITS.MIN_G_VALUE, Number(e.target.value)))}
               className="w-full p-4 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
             />
           </div>
@@ -215,7 +250,7 @@ const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({ lang, values, c
                 max={100}
                 step="0.1"
                 value={vrPoolUsagePct}
-                onChange={(e) => setVrPoolUsagePct(Math.max(0, Math.min(100, Number(e.target.value))))}
+                onChange={(e) => onVrPoolUsagePctChange(Math.max(0, Math.min(100, Number(e.target.value))))}
                 className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
               />
             </div>
@@ -232,7 +267,7 @@ const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({ lang, values, c
                   type="number"
                   step="1"
                   value={vrDeltaCash}
-                  onChange={(e) => setVrDeltaCash(Number(e.target.value))}
+                  onChange={(e) => onVrDeltaCashChange(Number(e.target.value))}
                   className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
                 />
               </div>

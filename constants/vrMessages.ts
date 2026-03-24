@@ -4,6 +4,9 @@ import type { VrBandStrategyParams } from '../types';
 /** VR 타입 배지 모드. VrBandStrategyParams에서 추출. */
 export type VrMode = VrBandStrategyParams['vrMode'];
 
+/** VR 운용 방식 — 폼에서 as 없이 순회용 SSOT */
+export const VR_MODE_KEYS: readonly VrMode[] = ['lump_sum', 'accumulate', 'withdraw'];
+
 /** VR 예약 주문 모달 — 탭/테이블 라벨 (단일 소스) */
 export const VR_MODAL_LABELS: Record<
   AppLang,
@@ -125,6 +128,8 @@ export const VR_CREATOR_LABELS: Record<
     G: string;
     poolUsage: string;
     deltaCash: string;
+    /** 리밸런싱 주기(주) 선택 라벨 */
+    cycleWeeks: string;
     feeRate: string;
     portfolioName: string;
     startDate: string;
@@ -152,6 +157,7 @@ export const VR_CREATOR_LABELS: Record<
     G: 'G (풀-밴드 비율 계수)',
     poolUsage: '매수 시 Pool 사용 비율 (%)',
     deltaCash: '주기별 입·출금 금액 ($)',
+    cycleWeeks: '리밸런싱 주기 (주)',
     feeRate: '수수료율 (%)',
     portfolioName: '포트폴리오 이름',
     startDate: '시작일',
@@ -178,6 +184,7 @@ export const VR_CREATOR_LABELS: Record<
     G: 'G (Pool-to-band ratio)',
     poolUsage: 'Pool Usage on Buy (%)',
     deltaCash: 'Periodic Cash In/Out ($)',
+    cycleWeeks: 'Rebalancing cycle (weeks)',
     feeRate: 'Fee Rate (%)',
     portfolioName: 'Portfolio Name',
     startDate: 'Start Date',
@@ -188,13 +195,20 @@ export const VR_CREATOR_LABELS: Record<
 };
 
 /** 대시보드 VR 전략 안내 힌트 (단일 소스) */
-export const VR_DASHBOARD_HINT: Record<AppLang, { ready: string; pending: string }> = {
+export const VR_DASHBOARD_HINT: Record<
+  AppLang,
+  { ready: string; pending: string; firstBuyPrompt: string; soldOutWaiting: string }
+> = {
   ko: {
     ready: 'VR 밴드 룰에 따라 예약 주문표를 참고하여 매매하세요.',
     pending: '아직 첫 매매를 진행하지 않았습니다. 설정된 V값에 맞춰 첫 매수를 진행해 주세요.',
+    firstBuyPrompt: '설정된 V값에 맞춰 첫 매수를 진행해 주세요.',
+    soldOutWaiting: '전량 매도 상태, 다음 진입 시점 대기.',
   },
   en: {
     ready: 'Follow the VR Band rules using the reservation order table.',
     pending: 'No trades have been executed yet. Please place your first buy according to the configured V value.',
+    firstBuyPrompt: 'Please place your first buy according to the configured V value.',
+    soldOutWaiting: 'Completely sold out, waiting for the next entry.',
   },
 };

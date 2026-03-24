@@ -15,7 +15,8 @@ $noVerifyJwt = @(
   "generate-daily-execution-summaries",
   "push-notification",
   "send-alarm",
-  "update-stock-prices"
+  "update-stock-prices",
+  "refresh-vr-snapshots"
 )
 
 # 기본 JWT 검증 사용 함수 (클라이언트 호출, Bearer 토큰 전달)
@@ -25,7 +26,7 @@ $withJwt = @(
   "delete-account"
 )
 
-Write-Host "Deploying functions that require --no-verify-jwt (8)..." -ForegroundColor Cyan
+Write-Host "Deploying functions that require --no-verify-jwt (9)..." -ForegroundColor Cyan
 foreach ($name in $noVerifyJwt) {
   Write-Host "  deploy $name --no-verify-jwt"
   npx supabase functions deploy $name --no-verify-jwt
@@ -39,4 +40,4 @@ foreach ($name in $withJwt) {
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
-Write-Host "All 11 Edge Functions deployed." -ForegroundColor Green
+Write-Host "All 12 Edge Functions deployed." -ForegroundColor Green

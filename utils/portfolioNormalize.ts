@@ -2,47 +2,155 @@
  * Supabase 응답(snake_case) → 앱에서 사용하는 Portfolio(camelCase) 정규화
  * DRY: App.tsx 및 handleAddPortfolio 내 중복 제거
  */
-import type { Portfolio } from '../types';
+import type {
+  AlarmConfig,
+  Portfolio,
+  PortfolioRow,
+  Strategy,
+  Trade,
+  VrBandStrategyParams,
+  VrSnapshot,
+} from '../types';
+import {
+  DEFAULT_FEE_RATE,
+  LEGACY_FEE_RATE_PCT,
+  RATE_PRECISION_MULTIPLIER,
+  VR_ROOT_FEE_DECIMAL_HEAL_MAX,
+  VR_ROOT_FEE_DECIMAL_MATCH_EPS,
+} from '../constants/vrConstants';
+import { sanitizeVrCycleWeeks } from './vrBandStrategy';
 
-export function normalizePortfolioData(data: any[]): Portfolio[] {
-  return (data as any[]).map((item) => {
-    const rawFeeRate = item.fee_rate ?? item.feeRate ?? 0.25;
-    const feeRate = Number(rawFeeRate);
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object';
+}
 
-    const rawStrategy = item.strategy;
-    let normalizedStrategy = rawStrategy;
+function readVrSnapshotFromRow(item: PortfolioRow): VrSnapshot | undefined {
+  const raw = item.vr_snapshot ?? item['vrSnapshot'];
+  if (raw == null) return undefined;
+  if (!isRecord(raw)) return undefined;
+  return raw as unknown as VrSnapshot;
+}
 
-    if (rawStrategy?.vrBand) {
-      const vr = rawStrategy.vrBand;
+function coerceAlarmConfig(raw: unknown): AlarmConfig | undefined {
+  if (!isRecord(raw)) return undefined;
+  if (typeof raw.enabled !== 'boolean') return undefined;
+  if (!Array.isArray(raw.selectedHours)) return undefined;
+  const selectedHours = raw.selectedHours.filter((h): h is string => typeof h === 'string');
+  const timezone = raw.timezone;
+  const base: AlarmConfig = { enabled: raw.enabled, selectedHours };
+  if (typeof timezone === 'string') {
+    return { ...base, timezone };
+  }
+  return base;
+}
+
+export function normalizePortfolioData(data: unknown[]): Portfolio[] {
+  if (!Array.isArray(data)) return [];
+
+  return data.reduce<Portfolio[]>((acc, rawItem) => {
+    if (!isRecord(rawItem)) {
+      console.warn('[VR_Normalize_Warning] Invalid portfolio row skipped', rawItem);
+      return acc;
+    }
+
+    const item: PortfolioRow = rawItem;
+    const rawFeeRate = item.fee_rate ?? item.feeRate ?? LEGACY_FEE_RATE_PCT;
+
+    let normalizedStrategy: Strategy | undefined = item.strategy ?? undefined;
+
+    if (
+      normalizedStrategy &&
+      isRecord(normalizedStrategy) &&
+      'vrBand' in normalizedStrategy &&
+      normalizedStrategy.vrBand != null &&
+      isRecord(normalizedStrategy.vrBand)
+    ) {
+      const vrRecord = normalizedStrategy.vrBand;
+      const cycleWeeks = sanitizeVrCycleWeeks(vrRecord.cycleWeeks);
+
+      const rawVrMode = vrRecord.vrMode;
+      const validVrMode: VrBandStrategyParams['vrMode'] =
+        rawVrMode === 'lump_sum' || rawVrMode === 'withdraw' || rawVrMode === 'accumulate'
+          ? rawVrMode
+          : 'accumulate';
+
+      const n = (v: unknown) => Number(v ?? 0);
+      const baseFields = {
+        initialV: n(vrRecord.initialV),
+        initialCapital: n(vrRecord.initialCapital),
+        bandRateUpper: n(vrRecord.bandRateUpper),
+        bandRateLower: n(vrRecord.bandRateLower),
+        G: n(vrRecord.G),
+        minOrderQty: n(vrRecord.minOrderQty),
+        poolUsageRateBuy: n(vrRecord.poolUsageRateBuy),
+        feeRate: n(vrRecord.feeRate ?? DEFAULT_FEE_RATE),
+        cycleWeeks,
+      };
+
+      const rawDeltaCash = n(vrRecord.deltaCash);
+
+      const sanitizedVrParams: VrBandStrategyParams =
+        validVrMode === 'lump_sum'
+          ? { ...baseFields, vrMode: 'lump_sum', deltaCash: 0 }
+          : validVrMode === 'withdraw'
+            ? {
+                ...baseFields,
+                vrMode: 'withdraw',
+                deltaCash: rawDeltaCash <= 0 ? rawDeltaCash : -Math.abs(rawDeltaCash),
+              }
+            : { ...baseFields, vrMode: 'accumulate', deltaCash: Math.abs(rawDeltaCash) };
+
       normalizedStrategy = {
-        ...rawStrategy,
-        vrBand: {
-          ...vr,
-          initialV: Number(vr.initialV),
-          initialCapital: Number(vr.initialCapital),
-          bandRateUpper: Number(vr.bandRateUpper),
-          bandRateLower: Number(vr.bandRateLower),
-          G: Number(vr.G),
-          minOrderQty: Number(vr.minOrderQty),
-          poolUsageRateBuy: Number(vr.poolUsageRateBuy),
-          deltaCash: Number(vr.deltaCash),
-          feeRate: Number(vr.feeRate),
-        },
+        ...normalizedStrategy,
+        vrBand: sanitizedVrParams,
       };
     }
 
-    return {
-      ...item,
-      dailyBuyAmount: item.daily_buy_amount ?? 0,
-      startDate: item.start_date ?? item.startDate ?? '',
-      feeRate,
-      isClosed: item.is_closed ?? item.isClosed ?? false,
-      closedAt: item.closed_at ?? item.closedAt ?? undefined,
-      finalSellAmount: item.final_sell_amount ?? item.finalSellAmount ?? undefined,
-      alarmconfig: item.alarm_config ?? item.alarmconfig ?? undefined,
-      isQuarterMode: item.is_quarter_mode ?? item.isQuarterMode ?? false,
+    if (normalizedStrategy === undefined) {
+      console.warn('[VR_Normalize_Warning] Row skipped: missing strategy', item.id);
+      return acc;
+    }
+
+    const rawTrades: unknown = item.trades;
+    const trades: Trade[] = Array.isArray(rawTrades) ? (rawTrades as Trade[]) : [];
+
+    const closedRaw = item.closed_at ?? item.closedAt;
+    const closedAt = closedRaw == null ? undefined : String(closedRaw);
+
+    const finalRaw = item.final_sell_amount ?? item.finalSellAmount;
+    const finalSellAmount = finalRaw == null ? undefined : Number(finalRaw);
+
+    // VR 생성 시 루트 fee_rate에 소수(0.0025)를 넣던 버그 복구: vrBand.feeRate(소수)와 동일하면 퍼센트로 환산.
+    let portfolioFeeRate = Number(rawFeeRate);
+    const vrBand = normalizedStrategy.vrBand;
+    if (
+      vrBand != null &&
+      portfolioFeeRate > 0 &&
+      portfolioFeeRate < VR_ROOT_FEE_DECIMAL_HEAL_MAX &&
+      Math.abs(portfolioFeeRate - vrBand.feeRate) < VR_ROOT_FEE_DECIMAL_MATCH_EPS
+    ) {
+      portfolioFeeRate =
+        Math.round((portfolioFeeRate * 100 + Number.EPSILON) * RATE_PRECISION_MULTIPLIER) /
+        RATE_PRECISION_MULTIPLIER;
+    }
+
+    const portfolio: Portfolio = {
+      id: item.id == null ? '' : String(item.id),
+      name: item.name == null ? '' : String(item.name),
+      dailyBuyAmount: Number(item.daily_buy_amount ?? 0),
+      startDate: String(item.start_date ?? item.startDate ?? ''),
+      feeRate: portfolioFeeRate,
       strategy: normalizedStrategy,
-      vrSnapshot: item.vr_snapshot ?? item.vrSnapshot ?? null,
-    } as Portfolio;
-  });
+      isClosed: Boolean(item.is_closed ?? item.isClosed ?? false),
+      trades,
+      closedAt,
+      finalSellAmount,
+      alarmconfig: coerceAlarmConfig(item.alarm_config ?? item.alarmconfig),
+      isQuarterMode: Boolean(item.is_quarter_mode ?? item.isQuarterMode ?? false),
+      vrSnapshot: readVrSnapshotFromRow(item),
+    };
+
+    acc.push(portfolio);
+    return acc;
+  }, []);
 }

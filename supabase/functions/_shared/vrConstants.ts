@@ -1,4 +1,4 @@
-import type { OrderLevel } from '../types';
+import type { OrderLevel } from './types.ts';
 
 export const VR_CYCLE = {
   DEFAULT_WEEKS: 2,

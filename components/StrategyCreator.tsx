@@ -1,7 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { Portfolio, Strategy, VrBandStrategyParams, VrSnapshot } from '../types';
-import { generateBuyOrders, generateSellOrders, calculateBands } from '../utils/vrBandStrategy';
+import {
+  createInitialVrSnapshot,
+  sanitizeVrCycleWeeks,
+} from '../utils/vrBandStrategy';
 import { AVAILABLE_STOCKS, ALL_STOCKS, PAID_STOCKS, I18N } from '../constants';
 import { X, ChevronRight, ChevronLeft, Info, Sparkles, Target, Zap, Settings2, Calendar, Wallet, Percent, AlertTriangle, ChevronDown, Lock, TrendingUp, Layers, BarChart2, Orbit } from 'lucide-react';
 import { useTossApp } from '../contexts/TossAppContext';
@@ -10,7 +13,13 @@ import HoverTip from './HoverTip';
 import InfoModal from './InfoModal';
 import { useTDSMenu } from './tds';
 import { VR_CREATOR_LABELS } from '../constants/vrMessages';
-import { DEFAULT_FEE_RATE, RATE_PRECISION_MULTIPLIER, VR_LIMITS } from '../constants/vrConstants';
+import {
+  DEFAULT_FEE_RATE,
+  LEGACY_FEE_RATE_PCT,
+  RATE_PRECISION_MULTIPLIER,
+  VR_CYCLE,
+  VR_LIMITS,
+} from '../constants/vrConstants';
 
 /** 퍼센트 입력(예: 5.1 = 5.1%) → 소수 비율(0.051) — RATE_PRECISION_MULTIPLIER SSOT */
 const toDecimalRate = (pct: number): number =>
@@ -150,6 +159,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
   const [vrG, setVrG] = useState(10);
   const [vrPoolUsagePct, setVrPoolUsagePct] = useState(50);
   const [vrDeltaCash, setVrDeltaCash] = useState(0);
+  const [vrCycleWeeks, setVrCycleWeeks] = useState(VR_CYCLE.DEFAULT_WEEKS);
   const [vrShowErrors, setVrShowErrors] = useState(false);
 
   // Step 3: Meta
@@ -304,32 +314,20 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
         bandRateLower: bandLower,
         G: vrG,
         poolUsageRateBuy,
+        cycleWeeks: sanitizeVrCycleWeeks(vrCycleWeeks),
         deltaCash: vrMode === 'lump_sum' ? 0 : vrDeltaCash,
       };
 
+      // 🚨 [Strict TS] 'as' 캐스팅 완전 삭제. 누락된 필드가 있다면 여기서 빨간줄이 떠야 정상입니다.
       strategy = {
         ma0: { stock: 'TQQQ', rsiEnabled: false, alignmentEnabled: false, maAPeriod: 20, maBPeriod: 60 },
         ma1: { stock: 'TQQQ' },
         ma2: { stock: 'TQQQ', splitCount: 1 },
         ma3: { stock: 'TQQQ' },
         vrBand: vrParams,
-      } as Strategy;
+      };
 
-      const { bandLow, bandHigh } = calculateBands(vrInitialV, bandUpper, bandLower);
-      const buyOrders = generateBuyOrders({ bandLow, pool: vrInitialCapital, shares: 0, ...vrParams });
-      const sellOrders = generateSellOrders({ bandHigh, pool: vrInitialCapital, shares: 0, ...vrParams });
-
-      initialVrSnapshot = {
-        cycleIndex: 0,
-        currentV: vrInitialV,
-        pool: vrInitialCapital,
-        shares: 0,
-        avgPrice: 0,
-        bandLow,
-        bandHigh,
-        buyOrders,
-        sellOrders,
-      } as VrSnapshot;
+      initialVrSnapshot = createInitialVrSnapshot(vrParams);
     } else {
       // 기본값
       strategy = {
@@ -344,7 +342,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
       name: name || (lang === 'ko' ? '커스텀 전략' : 'Custom Strategy'),
       dailyBuyAmount: dailyBuy,
       startDate: startDate,
-      feeRate: selectedStrategy === 'vr_band' ? (Number.isFinite(feeRate) ? toDecimalRate(feeRate) : DEFAULT_FEE_RATE) : feeRate,
+      feeRate: Number.isFinite(feeRate) ? feeRate : LEGACY_FEE_RATE_PCT,
       isClosed: false,
       trades: [],
       strategy,
@@ -1419,7 +1417,10 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
   };
 
   // 다분할 매매법 Step 2: 포트폴리오 메타 정보
-  const renderMultiSplitStep2 = () => (
+  const renderMultiSplitStep2 = () => {
+    const isVrStrategy = selectedStrategy === 'vr_band';
+
+    return (
     <div className="space-y-8 animate-in fade-in slide-in-from-right-8 duration-500">
         <div className="space-y-6">
         <div className="space-y-3">
@@ -1438,6 +1439,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
           </div>
         </div>
 
+        {!isVrStrategy && (
         <div className="space-y-3">
           <label className="text-xs md:text-sm font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-widest">
             {lang === 'ko' ? '1회 매수 금액 ($):' : '1st Purchase Amount ($):'}
@@ -1453,6 +1455,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
             />
           </div>
         </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-4">
           <div className="space-y-3">
@@ -1491,7 +1494,8 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
         </div>
       </div>
     </div>
-  );
+    );
+  };
 
   // 다분할 매매법(무손절) Step 1: 파라미터 설정
   const renderNoStopMultiSplitStep1 = () => {
@@ -1953,9 +1957,27 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
           {step === 1 && selectedStrategy === 'vr_band' && (
             <VrBandStrategyForm
               lang={lang}
-              values={{ vrMode, vrInitialCapital, vrInitialV, vrMinOrderQty, vrBandUpperPct, vrBandLowerPct, vrG, vrPoolUsagePct, vrDeltaCash }}
-              callbacks={{ setVrMode, setVrInitialCapital, setVrInitialV, setVrMinOrderQty, setVrBandUpperPct, setVrBandLowerPct, setVrG, setVrPoolUsagePct, setVrDeltaCash }}
               showErrors={vrShowErrors}
+              vrMode={vrMode}
+              onVrModeChange={setVrMode}
+              vrInitialCapital={vrInitialCapital}
+              onVrInitialCapitalChange={setVrInitialCapital}
+              vrInitialV={vrInitialV}
+              onVrInitialVChange={setVrInitialV}
+              vrMinOrderQty={vrMinOrderQty}
+              onVrMinOrderQtyChange={setVrMinOrderQty}
+              vrBandUpperPct={vrBandUpperPct}
+              onVrBandUpperPctChange={setVrBandUpperPct}
+              vrBandLowerPct={vrBandLowerPct}
+              onVrBandLowerPctChange={setVrBandLowerPct}
+              vrG={vrG}
+              onVrGChange={setVrG}
+              vrPoolUsagePct={vrPoolUsagePct}
+              onVrPoolUsagePctChange={setVrPoolUsagePct}
+              vrDeltaCash={vrDeltaCash}
+              onVrDeltaCashChange={setVrDeltaCash}
+              vrCycleWeeks={vrCycleWeeks}
+              onVrCycleWeeksChange={setVrCycleWeeks}
             />
           )}
           {step === 2 && selectedStrategy === 'vr_band' && renderMultiSplitStep2()}

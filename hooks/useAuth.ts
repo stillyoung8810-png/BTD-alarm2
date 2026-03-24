@@ -1,8 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { supabase, clearAuthStorage } from '../services/supabase';
 import { isSessionRecoverableError } from '../utils/authHelpers';
 import { getDeviceTimeZone } from '../utils/dateUtils';
 import type { AppUserProfile } from '../types/appUserProfile';
+
+function getSessionFingerprint(session: Session | null): string | null {
+  if (!session?.user) return null;
+  return session.access_token
+    ? `${session.user.id}:${session.access_token}`
+    : session.user.id;
+}
 
 export interface UseAuthOptions {
   lang: 'ko' | 'en';
@@ -38,6 +46,7 @@ export function useAuth({
   const authModalRef = useRef(authModal);
   const justLoggedInRef = useRef(false);
   const userIdRef = useRef<string | null>(null);
+  const lastHandledSessionFingerprintRef = useRef<string | null>(null);
   const unhandledRejectionHandlerRef = useRef<((e: PromiseRejectionEvent) => void) | null>(null);
 
   const fetchUserProfile = useCallback(async (userId: string): Promise<void> => {
@@ -104,9 +113,11 @@ export function useAuth({
 
     const fetchUserData = async (sessionUser: { id: string; email?: string | null }) => {
       if (!sessionUser?.id || !isMounted) return;
+
       try {
         const currentUser = { id: sessionUser.id, email: sessionUser.email || '' };
         if (!isMounted) return;
+
         setUser(currentUser);
         setUserProfile({
           subscription_tier: 'free',
@@ -115,6 +126,7 @@ export function useAuth({
           preferred_language: 'ko',
           timezone: getDeviceTimeZone(),
         });
+
         fetchUserProfile(currentUser.id);
         fetchPortfoliosRef.current?.(currentUser.id);
       } catch (err) {
@@ -124,27 +136,87 @@ export function useAuth({
 
     const clearAuthState = async (showAlert: boolean = true) => {
       if (!isMounted) return;
+
       console.log('[Auth] Clearing auth state due to session error');
       clearAuthStorage();
+
       try {
         await supabase.auth.signOut({ scope: 'local' });
       } catch (e) {
         console.warn('[Auth] signOut during clearAuthState failed (expected):', e);
       }
+
+      lastHandledSessionFingerprintRef.current = null;
       setUser(null);
       setUserProfile(null);
       setPortfolios([]);
+
       if (showAlert) {
         alert(lang === 'ko' ? '세션이 만료되었습니다. 다시 로그인해 주세요.' : 'Session expired. Please log in again.');
       }
     };
 
+    const applySession = async (
+      session: Session | null,
+      event: AuthChangeEvent | 'CHECK_USER',
+    ): Promise<void> => {
+      if (!isMounted) return;
+
+      if (!session?.user) {
+        lastHandledSessionFingerprintRef.current = null;
+        setUser(null);
+        setUserProfile(null);
+        setPortfolios([]);
+        return;
+      }
+
+      const fingerprint = getSessionFingerprint(session);
+      if (fingerprint && lastHandledSessionFingerprintRef.current === fingerprint) {
+        if (event === 'SIGNED_IN') {
+          justLoggedInRef.current = false;
+        }
+        if (event === 'PASSWORD_RECOVERY') {
+          setAuthModal('reset-password');
+        }
+        return;
+      }
+
+      lastHandledSessionFingerprintRef.current = fingerprint;
+      await fetchUserData(session.user);
+
+      if (event === 'SIGNED_IN') {
+        justLoggedInRef.current = false;
+      }
+
+      if (session.user.id) {
+        saveFCMToken(session.user.id).catch((err) =>
+          console.debug('[FCM] token save on auth sync:', err),
+        );
+      }
+
+      if (event === 'PASSWORD_RECOVERY') {
+        setAuthModal('reset-password');
+      }
+
+      if (event === 'USER_UPDATED' && authModalRef.current === 'reset-password') {
+        setAuthModal(null);
+        alert(lang === 'ko' ? '비밀번호가 성공적으로 변경되었습니다.' : 'Password updated successfully.');
+      }
+    };
+
     const checkUser = async () => {
       if (!isMounted) return;
+
       try {
         setIsLoading(true);
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
+
         if (!isMounted) return;
+
         if (sessionError && sessionError.name !== 'AbortError') {
           console.error('[checkUser] Session error:', sessionError);
           if (isSessionRecoverableError(sessionError)) {
@@ -152,74 +224,79 @@ export function useAuth({
             return;
           }
         }
-        if (session?.user) {
-          await fetchUserData(session.user);
-          if (session.user.id) {
-            saveFCMToken(session.user.id).catch((err) =>
-              console.debug('[FCM] token save on session restore:', err)
-            );
-          }
-        } else {
-          setUser(null);
-          setUserProfile(null);
-          setPortfolios([]);
-        }
+
+        await applySession(session, 'CHECK_USER');
       } catch (err: unknown) {
-        if (err && typeof err === 'object' && 'name' in err && (err as { name: string }).name !== 'AbortError' && isMounted && isSessionRecoverableError(err)) {
+        if (
+          err &&
+          typeof err === 'object' &&
+          'name' in err &&
+          (err as { name: string }).name !== 'AbortError' &&
+          isMounted &&
+          isSessionRecoverableError(err)
+        ) {
           await clearAuthState(false);
         }
       } finally {
-        if (isMounted) setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
-    checkUser();
+    void checkUser();
 
-    let initialSessionLoaded = false;
+    let initialSessionResolved = false;
+
     const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!isMounted) return;
+
       try {
-        const currentUser = session?.user ?? null;
-        if (event === 'INITIAL_SESSION') {
-          initialSessionLoaded = true;
-          return;
-        }
         if (event === 'TOKEN_REFRESHED') return;
-        if (event === 'SIGNED_IN') {
-          if (typeof window !== 'undefined') {
-            window.history.replaceState(null, '', window.location.pathname + window.location.search);
+
+        if (event === 'INITIAL_SESSION') {
+          initialSessionResolved = true;
+          await applySession(session, event);
+          if (isMounted) {
+            setIsLoading(false);
           }
-          if (!initialSessionLoaded || justLoggedInRef.current) return;
-        }
-        if (event === 'SIGNED_OUT') {
-          setUser(null);
-          setUserProfile(null);
-          setPortfolios([]);
           return;
         }
-        if (currentUser && initialSessionLoaded) {
-          if (justLoggedInRef.current) {
-            justLoggedInRef.current = false;
-          } else if (event === 'SIGNED_IN' && currentUser.id === userIdRef.current) {
-            return;
-          } else {
-            await fetchUserData(currentUser);
-          }
-          if (event === 'SIGNED_IN' && currentUser.id) {
-            saveFCMToken(currentUser.id).catch(() => {});
-          }
-          if (event === 'PASSWORD_RECOVERY' && isMounted) setAuthModal('reset-password');
-          if (event === 'USER_UPDATED' && isMounted && authModalRef.current === 'reset-password') {
-            setAuthModal(null);
-            alert(lang === 'ko' ? '비밀번호가 성공적으로 변경되었습니다.' : 'Password updated successfully.');
-          }
-        } else if (initialSessionLoaded && !currentUser) {
-          setUser(null);
-          setUserProfile(null);
-          setPortfolios([]);
+
+        if (!initialSessionResolved) {
+          initialSessionResolved = true;
         }
+
+        if (event === 'SIGNED_OUT') {
+          await applySession(null, event);
+          return;
+        }
+
+        if (
+          event === 'SIGNED_IN' &&
+          justLoggedInRef.current &&
+          session?.user?.id === userIdRef.current
+        ) {
+          justLoggedInRef.current = false;
+          lastHandledSessionFingerprintRef.current = getSessionFingerprint(session);
+          return;
+        }
+
+        if (event === 'SIGNED_IN' && typeof window !== 'undefined') {
+          const cleanUrl = `${window.location.pathname}${window.location.search}`;
+          window.history.replaceState(null, '', cleanUrl);
+        }
+
+        await applySession(session, event);
       } catch (err: unknown) {
-        if (err && typeof err === 'object' && 'name' in err && (err as { name: string }).name !== 'AbortError' && isMounted && isSessionRecoverableError(err)) {
+        if (
+          err &&
+          typeof err === 'object' &&
+          'name' in err &&
+          (err as { name: string }).name !== 'AbortError' &&
+          isMounted &&
+          isSessionRecoverableError(err)
+        ) {
           await clearAuthState(true);
         }
       }
@@ -232,7 +309,9 @@ export function useAuth({
         await clearAuthState(true);
       }
     };
+
     unhandledRejectionHandlerRef.current = handleAuthError;
+
     if (typeof window !== 'undefined') {
       window.addEventListener('unhandledrejection', handleAuthError);
     }
@@ -240,6 +319,7 @@ export function useAuth({
     return () => {
       isMounted = false;
       listener.subscription.unsubscribe();
+
       if (typeof window !== 'undefined' && unhandledRejectionHandlerRef.current) {
         window.removeEventListener('unhandledrejection', unhandledRejectionHandlerRef.current);
         unhandledRejectionHandlerRef.current = null;

@@ -119,25 +119,44 @@ function createMemoryDriver(): StorageDriver {
   };
 }
 
-const persistentDrivers: StorageDriver[] = [
-  createWebStorageDriver('localStorage'),
-  createWebStorageDriver('sessionStorage'),
-  createCookieDriver(),
+const localStorageDriver = createWebStorageDriver('localStorage');
+const sessionStorageDriver = createWebStorageDriver('sessionStorage');
+const cookieDriver = createCookieDriver();
+
+/** 쓰기: 가능한 한 모든 저장소에 동기화 */
+const persistentDriversForWrite: StorageDriver[] = [
+  localStorageDriver,
+  sessionStorageDriver,
+  cookieDriver,
+].filter((driver): driver is StorageDriver => driver !== null);
+
+/**
+ * 읽기: OAuth PKCE 왕복 직후에는 sessionStorage가 최신인 경우가 많고,
+ * localStorage는 쓰기 실패(용량 등)로 이전 값만 남는 경우가 있어 sessionStorage를 먼저 본다.
+ */
+const persistentDriversForRead: StorageDriver[] = [
+  sessionStorageDriver,
+  localStorageDriver,
+  cookieDriver,
 ].filter((driver): driver is StorageDriver => driver !== null);
 
 const memoryDriver = createMemoryDriver();
 
-function getAllDrivers(): StorageDriver[] {
-  return [...persistentDrivers, memoryDriver];
+function getDriversForRead(): StorageDriver[] {
+  return [...persistentDriversForRead, memoryDriver];
+}
+
+function getDriversForRemove(): StorageDriver[] {
+  return [...persistentDriversForWrite, memoryDriver];
 }
 
 export function createSupabaseAuthStorage(): SupabaseStorageLike {
   return {
     getItem(key) {
-      for (const driver of getAllDrivers()) {
+      for (const driver of getDriversForRead()) {
         try {
           const value = driver.getItem(key);
-          if (value !== null) {
+          if (value !== null && value !== '') {
             memoryDriver.setItem(key, value);
             return value;
           }
@@ -152,17 +171,21 @@ export function createSupabaseAuthStorage(): SupabaseStorageLike {
     setItem(key, value) {
       memoryDriver.setItem(key, value);
 
-      for (const driver of persistentDrivers) {
+      for (const driver of persistentDriversForWrite) {
         try {
           driver.setItem(key, value);
         } catch {
-          // 일부 저장소가 막혀 있어도 다른 저장소로 계속 진행
+          try {
+            driver.removeItem(key);
+          } catch {
+            // 쓰기 실패 시 이전(깨진) 값이 남으면 getItem이 잘못된 세션/PKCE를 읽을 수 있음
+          }
         }
       }
     },
 
     removeItem(key) {
-      for (const driver of getAllDrivers()) {
+      for (const driver of getDriversForRemove()) {
         try {
           driver.removeItem(key);
         } catch {

@@ -337,6 +337,24 @@ export const clearAuthStorage = (): void => {
 
 ---
 
+## 5. 트러블슈팅 (빌드 후 `Missing Signature…` / 로그인 전면 실패)
+
+화면에 `Missing Signature` / `Missing Signature query parameter or cookie value` 비슷한 문구가 나오면, **PKCE·세션 JSON이 저장소에 일치하지 않을 때** Supabase 쪽 검증이 실패하는 경우가 많습니다.
+
+**원인(Step 2 저장소 체인)**: `getItem`이 **localStorage를 먼저** 읽으면, `setItem`은 **localStorage 쓰기 실패(용량 등)** 후 **sessionStorage에만** 최신 값이 있는데도 **옛날 localStorage 값**을 쓰는 레이스가 날 수 있습니다.
+
+**코드 대응(저장소 모듈에 반영됨)**
+
+- 읽기 순서: **sessionStorage → localStorage → cookie → memory**
+- `setItem`이 특정 드라이버에서 실패하면 해당 드라이버에서 **같은 키 `removeItem`** 으로 남은 깨진 값 제거
+- 빈 문자열(`''`)은 유효한 세션 값이 아니므로 `getItem`에서 건너뜀
+
+**사용자 측 1회 조치**: 토스 WebView / 사파리에서 **미니앱 사이트 데이터(쿠키·로컬 저장소) 삭제** 후 다시 로그인해 보세요. 이미 꼬인 `sb-*` 키가 있으면 위 오류가 반복될 수 있습니다.
+
+> 부록 A의 긴 스니펫은 초기 버전입니다. **실제 구현은 항상 `utils/supabaseAuthStorage.ts` 파일**을 기준으로 하세요.
+
+---
+
 ## 부록 A — `utils/supabaseAuthStorage.ts` 전문
 
 ```ts

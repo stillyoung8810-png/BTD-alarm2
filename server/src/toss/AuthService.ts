@@ -37,18 +37,40 @@ function isUniqueEmailError(error: unknown): boolean {
   return false;
 }
 
+const LIST_USERS_PAGE_SIZE = 1000;
+const LIST_USERS_MAX_PAGES = 100;
+
 async function findAuthUserByEmail(email: string, log: RequestLogger) {
   if (!email) return null;
 
-  const { data, error } = await supabaseAdmin.auth.admin.listUsers();
+  const normalized = email.trim().toLowerCase();
+  let page = 1;
 
-  if (error) {
-    log.error({ error }, 'findAuthUserByEmail: listUsers failed');
-    throw new Error('Auth 사용자 조회 실패');
+  while (page <= LIST_USERS_MAX_PAGES) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({
+      page,
+      perPage: LIST_USERS_PAGE_SIZE,
+    });
+
+    if (error) {
+      log.error({ error }, 'findAuthUserByEmail: listUsers failed');
+      throw new Error('Auth 사용자 조회 실패');
+    }
+
+    const users = data?.users ?? [];
+    const match = users.find((u) => (u.email ?? '').trim().toLowerCase() === normalized);
+    if (match) {
+      return match;
+    }
+
+    if (users.length < LIST_USERS_PAGE_SIZE) {
+      break;
+    }
+
+    page += 1;
   }
 
-  const user = data?.users?.[0];
-  return user ?? null;
+  return null;
 }
 
 async function createSupabaseUserForToss(

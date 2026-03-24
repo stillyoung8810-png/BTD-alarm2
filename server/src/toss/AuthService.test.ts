@@ -35,6 +35,7 @@ const mockLog = {
 function chain(impl: {
   maybeSingle?: () => Promise<{ data: { id: string } | null }>;
   update?: (values: Record<string, unknown>) => Promise<{ error: null }>;
+  insert?: (values: Record<string, unknown>) => Promise<{ error: null }>;
 }) {
   return {
     select: () => ({
@@ -48,6 +49,10 @@ function chain(impl: {
           ? impl.update(values)
           : Promise.resolve<{ error: null }>({ error: null }),
     }),
+    insert: (values: Record<string, unknown>) =>
+      impl.insert
+        ? impl.insert(values)
+        : Promise.resolve<{ error: null }>({ error: null }),
   };
 }
 
@@ -105,5 +110,55 @@ describe('ensureSessionForTossUserKey', () => {
     expect(mockCreateUser).not.toHaveBeenCalled();
     expect(result.access_token).toBe('at');
     expect(result.user.id).toBe('existing-user-uuid');
+  });
+
+  it('매핑 없을 때 listUsers 첫 행이 아니라 toss placeholder 이메일과 일치하는 유저만 사용한다', async () => {
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'toss_accounts') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: () =>
+                Promise.resolve<{ data: { auth_user_id: string } | null }>({
+                  data: null,
+                }),
+            }),
+          }),
+          upsert: () => Promise.resolve({ error: null }),
+        };
+      }
+      if (table === 'user_profiles') {
+        return chain({
+          maybeSingle: () => Promise.resolve({ data: null }),
+          update: () => Promise.resolve({ error: null }),
+          insert: () => Promise.resolve({ error: null }),
+        });
+      }
+      return chain({});
+    });
+
+    mockListUsers.mockResolvedValue({
+      data: {
+        users: [
+          { id: 'wrong-first-user', email: 'human@example.com' },
+          { id: 'correct-toss-user', email: 'toss_999@toss.placeholder' },
+        ],
+      },
+      error: null,
+    });
+
+    mockSignIn.mockResolvedValue({
+      data: {
+        session: { access_token: 'at2', refresh_token: 'rt2' },
+        user: { id: 'correct-toss-user', email: 'toss_999@toss.placeholder' },
+      },
+      error: null,
+    });
+
+    const result = await ensureSessionForTossUserKey('999', mockLog);
+
+    expect(mockCreateUser).not.toHaveBeenCalled();
+    expect(mockFrom).toHaveBeenCalledWith('toss_accounts');
+    expect(result.user.id).toBe('correct-toss-user');
   });
 });

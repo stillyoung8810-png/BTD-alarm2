@@ -1,5 +1,6 @@
 ## 모든 supabase 240일 데이터 소실시 채우는 .py####
 
+import argparse
 import os
 import datetime as dt
 import json
@@ -50,6 +51,10 @@ TICKERS: List[str] = [
     "MSTR",
     "MSTX",
     "BMNR",
+    "FNGU",
+    "TECL",
+    "BULZ",
+    "GDXU",
 ]
 
 
@@ -117,9 +122,34 @@ def upsert_to_supabase(rows: List[Dict[str, Any]]) -> None:
         raise RuntimeError(f"Supabase upsert failed: {resp.status_code} {resp.text}")
 
 
+def _parse_tickers_csv(value: str) -> List[str]:
+    return [t.strip().upper() for t in value.split(",") if t.strip()]
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Fetch daily close history from Yahoo and upsert into Supabase stock_prices."
+    )
+    parser.add_argument(
+        "--tickers",
+        type=str,
+        default="",
+        help='쉼표로 구분한 티커만 처리 (예: "FNGU,TECL"). 비우면 TICKERS 전체.',
+    )
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=240,
+        help="가져올 거래일 구간 길이(yfinance period=Nd). 기본 240.",
+    )
+    args = parser.parse_args()
+    tickers_to_run = _parse_tickers_csv(args.tickers) if args.tickers.strip() else TICKERS
+    days = args.days if args.days > 0 else 240
+
     print("=" * 60)
-    print("Backfilling ALL tickers 240-day history into Supabase")
+    print("Backfilling tickers history into Supabase")
+    print(f"Tickers ({len(tickers_to_run)}): {', '.join(tickers_to_run)}")
+    print(f"Days: {days}")
     print("=" * 60)
 
     # 1) 기존 데이터 전체 삭제는 위험하므로 하지 않고,
@@ -132,9 +162,9 @@ def main() -> None:
 
     all_rows: List[Dict[str, Any]] = []
 
-    for ticker in TICKERS:
+    for ticker in tickers_to_run:
         try:
-            rows = fetch_history_for_ticker(ticker, 240)
+            rows = fetch_history_for_ticker(ticker, days)
             all_rows.extend(rows)
         except Exception as e:
             print(f"✗ Error fetching history for {ticker}: {e}")

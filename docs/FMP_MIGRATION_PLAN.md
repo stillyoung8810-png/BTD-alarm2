@@ -165,7 +165,7 @@ Yahoo 관련 코드는 계속 건드리지 않는다.
 
 ## 10. 우리 서비스 종목 vs FMP 플랜 (유료에서 전부 가능한지)
 
-### 10.1 우리가 쓰는 종목 목록 (27개, 전부 미국 거래)
+### 10.1 우리가 쓰는 종목 목록 (31개, 전부 미국 거래)
 
 `scripts/fetch_stock_prices.py` 기준:
 
@@ -173,6 +173,7 @@ Yahoo 관련 코드는 계속 건드리지 않는다.
 |------|------|
 | **ETF** | SPY, SSO, UPRO, QQQ, QLD, TQQQ, SOXX, USD, SOXL, STRC, BIL, ICSH, SGOV |
 | **개별주/레버리지ETF** | TSLA, TSLL, NVDA, NVDL, GOOGL, GGLL, PLTR, PTIR, COIN, CONL, MSTR, MSTX, BMNR |
+| **추가 레버리지·테마 ETF/ETN** | FNGU, TECL, BULZ, GDXU |
 
 - 전부 **미국 거래소** 상장 (US Coverage 범위).
 
@@ -185,21 +186,21 @@ Yahoo 관련 코드는 계속 건드리지 않는다.
 | **Premium** | $59/월(연결) | 30년 히스토리, Intraday 등 | US + UK + Canada |
 | **Ultimate** | $149/월(연결) | **ETF & Mutual Fund Holdings**, Full Historical Access, Bulk | **Full Global Coverage** |
 
-- **Starter 이상**이면 문서상 “US Coverage” + “Historical Stock Price Data”로 **우리 27개(전부 미국)는 포함될 가능성이 높음**.
+- **Starter 이상**이면 문서상 “US Coverage” + “Historical Stock Price Data”로 **우리 31개(전부 미국)는 포함될 가능성이 높음**.
 - **Ultimate**는 “ETF & Mutual Fund Holdings”, “Full Historical Access”를 명시해 **ETF(SPY, QQQ, BIL 등)까지 유료에서 제공**하는 것으로 해석됨.
 
 ### 10.3 결론 및 권장
 
-- **문서만으로 “우리 27개 전부 유료에서 100% 가능”이라고 단정할 수는 없음.**  
+- **문서만으로 “우리 31개 전부 유료에서 100% 가능”이라고 단정할 수는 없음.**  
   플랜별로 실제로 어떤 심볼이 제한되는지는 FMP 측만 정확히 알고 있음.
 - **권장:**
-  1. **Starter(또는 trial)로 먼저** 우리 티커 27개에 대해 `historical-price-eod/full` 호출이 전부 200으로 오는지 확인.
+  1. **Starter(또는 trial)로 먼저** 우리 티커 31개에 대해 `historical-price-eod/full` 호출이 전부 200으로 오는지 확인.
   2. 여전히 특정 심볼에서 402가 나오면 **FMP 고객 지원(Help Center / Contact)**에 아래 종목 리스트를 보내고, “Starter(또는 사용 예정 플랜)에서 이 목록 전부 EOD 제공 가능한지” 문의.
 
 문의 시 첨부할 종목 리스트 (복사용):
 
 ```
-SPY, SSO, UPRO, QQQ, QLD, TQQQ, SOXX, USD, SOXL, STRC, BIL, ICSH, SGOV, TSLA, TSLL, NVDA, NVDL, GOOGL, GGLL, PLTR, PTIR, COIN, CONL, MSTR, MSTX, BMNR
+SPY, SSO, UPRO, QQQ, QLD, TQQQ, SOXX, USD, SOXL, STRC, BIL, ICSH, SGOV, TSLA, TSLL, NVDA, NVDL, GOOGL, GGLL, PLTR, PTIR, COIN, CONL, MSTR, MSTX, BMNR, FNGU, TECL, BULZ, GDXU
 ```
 
 ---

@@ -10,7 +10,7 @@
 |------|------|-----|---------|
 | **최대 포트폴리오 수** | 2개 | 4개 | 4개 |
 | **최대 알람 수** | 2개 | 4개 | 4개 |
-| **사용 가능 종목** | 기본 종목만 (SPY, QQQ, TQQQ 등 13종) | 기본 + PRO 전용 종목 (TSLA, NVDA, MSTR 등 13종 추가) | Pro와 동일 |
+| **사용 가능 종목** | 기본 종목만 (SPY, QQQ, TQQQ 등 13종) | 기본 + PRO 전용 종목 (TSLA, NVDA, MSTR, FNGU 등 **17종** 추가) | Pro와 동일 |
 | **텔레그램 연결·알림** | 불가 (UI 비노출) | 가능 (연결 + 알림 발송) | Pro와 동일 |
 | **텔레그램 알람 수신** | 발송 안 함 | 발송함 (연결 시) | Pro와 동일 |
 | **광고 노출** | 노출 (유료 아님) | 유료 활성·미만료 시 비노출 | Pro와 동일 |
@@ -44,7 +44,7 @@
 
 - **Pro / Premium**  
   - 위 기본 종목 + **PAID_STOCKS** 사용 가능:  
-    `TSLA`, `TSLL`, `NVDA`, `NVDL`, `GOOGL`, `GGLL`, `PLTR`, `PTIR`, `COIN`, `CONL`, `MSTR`, `MSTX`, `BMNR`
+    `TSLA`, `TSLL`, `NVDA`, `NVDL`, `GOOGL`, `GGLL`, `PLTR`, `PTIR`, `COIN`, `CONL`, `MSTR`, `MSTX`, `BMNR`, `FNGU`, `TECL`, `BULZ`, `GDXU`
 
 - **구현 위치**  
   - `constants.tsx`: `PAID_STOCKS`, `ALL_STOCKS`  

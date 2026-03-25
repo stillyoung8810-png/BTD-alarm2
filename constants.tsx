@@ -5,7 +5,8 @@ export const AVAILABLE_STOCKS = [
 
 // PRO/PREMIUM 전용 추가 종목
 export const PAID_STOCKS = [
-  'TSLA', 'TSLL', 'NVDA', 'NVDL', 'GOOGL', 'GGLL', 'PLTR', 'PTIR', 'COIN', 'CONL', 'MSTR', 'MSTX', 'BMNR'
+  'TSLA', 'TSLL', 'NVDA', 'NVDL', 'GOOGL', 'GGLL', 'PLTR', 'PTIR', 'COIN', 'CONL', 'MSTR', 'MSTX', 'BMNR',
+  'FNGU', 'TECL', 'BULZ', 'GDXU',
 ];
 
 // UI 리스트/필터링용 전체 종목
@@ -30,7 +31,8 @@ export const STOCK_COLORS: Record<string, string> = {
   'PLTR': '#a855f7', 'PTIR': '#c084fc',
   'COIN': '#f59e0b', 'CONL': '#fbbf24',
   'MSTR': '#06b6d4', 'MSTX': '#22d3ee',
-  'BMNR': '#64748b'
+  'BMNR': '#64748b',
+  'FNGU': '#6366f1', 'TECL': '#0ea5e9', 'BULZ': '#f97316', 'GDXU': '#eab308',
 };
 
 export const CUSTOM_GRADIENT_LOGOS: Record<string, { gradient: string; label: string }> = {
@@ -61,7 +63,11 @@ export const CUSTOM_GRADIENT_LOGOS: Record<string, { gradient: string; label: st
     'CONL': { gradient: 'linear-gradient(135deg, #fbbf24 0%, #b45309 100%)', label: '2X COIN' },
     'MSTR': { gradient: 'linear-gradient(135deg, #06b6d4 0%, #164e63 100%)', label: 'MICROSTRAT' },
     'MSTX': { gradient: 'linear-gradient(135deg, #22d3ee 0%, #0e7490 100%)', label: '2X MSTR' },
-    'BMNR': { gradient: 'linear-gradient(135deg, #64748b 0%, #0f172a 100%)', label: 'BMNR' }
+    'BMNR': { gradient: 'linear-gradient(135deg, #64748b 0%, #0f172a 100%)', label: 'BMNR' },
+    'FNGU': { gradient: 'linear-gradient(135deg, #6366f1 0%, #312e81 100%)', label: 'BIG TECH 10' },
+    'TECL': { gradient: 'linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%)', label: 'S&P TECH 3X' },
+    'BULZ': { gradient: 'linear-gradient(135deg, #f97316 0%, #9a3412 100%)', label: 'INNOV TECH' },
+    'GDXU': { gradient: 'linear-gradient(135deg, #eab308 0%, #854d0e 100%)', label: 'GOLD MINERS 3X' },
 };
 
 export const MOCK_PRICES: Record<string, number> = {

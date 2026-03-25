@@ -12,7 +12,7 @@ import CustomDropdown from './CustomDropdown';
 import HoverTip from './HoverTip';
 import InfoModal from './InfoModal';
 import { useTDSMenu } from './tds';
-import { VR_CREATOR_LABELS } from '../constants/vrMessages';
+import { LAOER_CREDIT_LABELS, VR_CREATOR_LABELS } from '../constants/vrMessages';
 import {
   DEFAULT_FEE_RATE,
   LEGACY_FEE_RATE_PCT,
@@ -24,6 +24,7 @@ import {
 /** 퍼센트 입력(예: 5.1 = 5.1%) → 소수 비율(0.051) — RATE_PRECISION_MULTIPLIER SSOT */
 const toDecimalRate = (pct: number): number =>
   Math.round((pct / 100 + Number.EPSILON) * RATE_PRECISION_MULTIPLIER) / RATE_PRECISION_MULTIPLIER;
+import LaoerCreditBanner from './strategies/LaoerCreditBanner';
 import VrBandStrategyForm from './strategies/VrBandStrategyForm';
 import { getLocalTodayString } from '../utils/dateHelpers';
 
@@ -39,6 +40,7 @@ interface StrategyDefinition {
   gradient: string;
   disabled?: boolean;
   comingSoon?: boolean;
+  isLaoerOriginal?: boolean;
 }
 
 // 전략 정의 목록 (추가 전략은 여기에만 추가하면 됨)
@@ -58,6 +60,7 @@ const getStrategyDefinitions = (t: any, vrT: any): StrategyDefinition[] => [
     tier: 'FREE',
     icon: <Layers size={24} />,
     gradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+    isLaoerOriginal: true,
   },
   {
     id: 'no_stop_multi_split',
@@ -66,6 +69,7 @@ const getStrategyDefinitions = (t: any, vrT: any): StrategyDefinition[] => [
     tier: 'FREE',
     icon: <Layers size={24} />,
     gradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+    isLaoerOriginal: true,
   },
   {
     id: 'vr_band',
@@ -74,8 +78,42 @@ const getStrategyDefinitions = (t: any, vrT: any): StrategyDefinition[] => [
     tier: 'FREE',
     icon: <Orbit size={24} className="text-indigo-600 dark:text-indigo-400" />,
     gradient: 'linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%)',
+    isLaoerOriginal: true,
   },
 ];
+
+const TWO_STEP_STRATEGY_IDS: readonly StrategyType[] = ['multi_split', 'no_stop_multi_split', 'vr_band'];
+
+/** multi_split · no_stop_multi_split · vr_band 마법사의 마지막 스텝 번호 (이 스텝에서 저장) */
+const WIZARD_LAST_STEP_TWO_FLOW = 2;
+/** rsi_ma_interval 마법사의 마지막 스텝 번호 */
+const WIZARD_LAST_STEP_RSI = 3;
+
+function isTwoStepWizardStrategy(id: StrategyType | null): boolean {
+  return id !== null && TWO_STEP_STRATEGY_IDS.includes(id);
+}
+
+function getFooterPrimaryCtaLabel(
+  selectedStrategy: StrategyType | null,
+  step: number,
+  lang: 'ko' | 'en'
+): string {
+  if (isTwoStepWizardStrategy(selectedStrategy)) {
+    if (step === WIZARD_LAST_STEP_TWO_FLOW) return lang === 'ko' ? '전략 시작' : 'Start Strategy';
+    return lang === 'ko' ? '다음' : 'Next';
+  }
+  if (selectedStrategy === 'rsi_ma_interval') {
+    if (step < WIZARD_LAST_STEP_RSI) return lang === 'ko' ? '다음' : 'Next';
+    return lang === 'ko' ? '저장' : 'Save';
+  }
+  return lang === 'ko' ? '다음' : 'Next';
+}
+
+function shouldShowFooterNextChevron(selectedStrategy: StrategyType | null, step: number): boolean {
+  if (isTwoStepWizardStrategy(selectedStrategy)) return step < WIZARD_LAST_STEP_TWO_FLOW;
+  if (selectedStrategy === 'rsi_ma_interval') return step < WIZARD_LAST_STEP_RSI;
+  return false;
+}
 
 interface StrategyCreatorProps {
   lang: 'ko' | 'en';
@@ -170,6 +208,14 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
 
   const t = I18N[lang];
   const vrT = VR_CREATOR_LABELS[lang];
+
+  const strategyDefinitions = React.useMemo(() => getStrategyDefinitions(t, vrT), [t, vrT]);
+
+  const isSelectedStrategyLaoer = React.useMemo(() => {
+    if (!selectedStrategy) return false;
+    const def = strategyDefinitions.find((s) => s.id === selectedStrategy);
+    return Boolean(def?.isLaoerOriginal);
+  }, [selectedStrategy, strategyDefinitions]);
 
   const isLockedTicker = (ticker: string) => PAID_STOCKS.includes(ticker) && !canAccessPaidStocks;
   const lockedTooltip =
@@ -353,11 +399,32 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
     console.log('부모 함수 호출 완료');
   };
 
+  const handleSaveRef = React.useRef(handleSave);
+  handleSaveRef.current = handleSave;
+
+  const handleFooterAction = React.useCallback(() => {
+    if (!selectedStrategy) return;
+    if (isTwoStepWizardStrategy(selectedStrategy)) {
+      if (step < WIZARD_LAST_STEP_TWO_FLOW) {
+        setStep((s) => s + 1);
+      } else {
+        void handleSaveRef.current();
+      }
+      return;
+    }
+    if (selectedStrategy === 'rsi_ma_interval') {
+      if (step < WIZARD_LAST_STEP_RSI) {
+        setStep((s) => s + 1);
+      } else {
+        void handleSaveRef.current();
+      }
+    }
+  }, [selectedStrategy, step]);
+
   // 전략 선택 화면 렌더링
   const renderStrategySelection = () => {
     const handleStrategySelect = (strategyId: StrategyType) => {
-      const definitions = getStrategyDefinitions(t, vrT);
-      const strategyDef = definitions.find(s => s.id === strategyId);
+      const strategyDef = strategyDefinitions.find((s) => s.id === strategyId);
       if (!strategyDef) return;
       
       // PRO/PREMIUM 전용 전략 체크
@@ -384,7 +451,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
         </div>
 
         <div className="space-y-4">
-          {getStrategyDefinitions(t, vrT).map((strategy) => {
+          {strategyDefinitions.map((strategy) => {
             const isLocked = (strategy.tier === 'PRO' || strategy.tier === 'PREMIUM') && !canAccessPaidStocks;
             const tierColors = {
               FREE: 'bg-slate-200/60 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300',
@@ -421,8 +488,8 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
 
                     {/* 내용 */}
                     <div className="flex-1 text-left space-y-2">
-                      <div className="flex items-center gap-3">
-                        <h4 className="text-base font-black text-slate-900 dark:text-white">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <h4 className="min-w-0 text-base font-black text-slate-900 dark:text-white">
                           {strategy.title}
                         </h4>
                         <span
@@ -432,6 +499,14 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                         >
                           {strategy.tier}
                         </span>
+                        {strategy.isLaoerOriginal && (
+                          <div className="ml-1.5 inline-flex items-center gap-1 rounded-full border border-amber-200/50 bg-amber-50 px-1.5 py-0.5 align-middle shadow-sm dark:border-amber-700/30 dark:bg-amber-900/20">
+                            <Sparkles size={10} className="animate-pulse text-amber-500" aria-hidden />
+                            <span className="whitespace-nowrap text-[10px] font-bold tracking-tight text-amber-700 dark:text-amber-400">
+                              {LAOER_CREDIT_LABELS[lang].badge}
+                            </span>
+                          </div>
+                        )}
                         {strategy.comingSoon && (
                           <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
                             ({lang === 'ko' ? '준비중' : 'Coming Soon'})
@@ -1397,19 +1472,6 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
               <li>• {lang === 'ko' ? '쿼터 손절 모드: a-1 < T ≤ a (자금이 1회치 남았거나 모두 소진된 상태)' : 'Quarter Stop-Loss Mode: a-1 < T ≤ a (Funds left for 1 round or exhausted)'}</li>
               <li>• {lang === 'ko' ? '매도: 1/4은 LOC 지점, 3/4은 +A% 지정가' : 'Sell: 1/4 at LOC, 3/4 at +A% limit'}</li>
             </ul>
-            <div className="mt-3 pt-3 border-t border-slate-700/30 dark:border-slate-600/30">
-              <p className="text-[9px] text-slate-400 dark:text-slate-500">
-                {lang === 'ko' ? '출처 : ' : 'Source : '}
-                <a 
-                  href="https://www.youtube.com/@laofus" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="text-emerald-400 hover:text-emerald-300 underline"
-                >
-                  https://www.youtube.com/@laofus
-                </a>
-              </p>
-            </div>
           </div>
         </div>
       </div>
@@ -1903,7 +1965,7 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                   <div className="flex items-center gap-2 mt-1">
                      <div className="flex gap-1">
                         {selectedStrategy === 'rsi_ma_interval'
-                          ? [1, 2, 3].map((i) => (
+                          ? Array.from({ length: WIZARD_LAST_STEP_RSI }, (_, idx) => idx + 1).map((i) => (
                               <div
                                 key={i}
                                 className={`h-1.5 rounded-full transition-all duration-500 ${
@@ -1911,8 +1973,8 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                                 }`}
                               ></div>
                             ))
-                          : selectedStrategy === 'multi_split' || selectedStrategy === 'no_stop_multi_split' || selectedStrategy === 'vr_band'
-                          ? [1, 2].map((i) => (
+                          : isTwoStepWizardStrategy(selectedStrategy)
+                          ? Array.from({ length: WIZARD_LAST_STEP_TWO_FLOW }, (_, idx) => idx + 1).map((i) => (
                               <div
                                 key={i}
                                 className={`h-1.5 rounded-full transition-all duration-500 ${
@@ -1924,15 +1986,13 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                      </div>
                      <span
                       className={`text-[10px] font-black uppercase tracking-widest ml-2 ${
-                        selectedStrategy === 'multi_split' || selectedStrategy === 'no_stop_multi_split' || selectedStrategy === 'vr_band'
-                          ? 'text-emerald-400'
-                          : 'text-blue-400'
+                        isTwoStepWizardStrategy(selectedStrategy) ? 'text-emerald-400' : 'text-blue-400'
                       }`}
                     >
                       {selectedStrategy === 'rsi_ma_interval'
-                        ? `Step ${step} of 3`
-                        : selectedStrategy === 'multi_split' || selectedStrategy === 'no_stop_multi_split' || selectedStrategy === 'vr_band'
-                        ? `Step ${step} of 2`
+                        ? `Step ${step} of ${WIZARD_LAST_STEP_RSI}`
+                        : isTwoStepWizardStrategy(selectedStrategy)
+                        ? `Step ${step} of ${WIZARD_LAST_STEP_TWO_FLOW}`
                         : ''}
                     </span>
                   </div>
@@ -1944,43 +2004,46 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
           </button>
         </div>
 
-        {/* Content Area - 스크롤 가능 */}
-        <div className="flex-1 overflow-y-auto overscroll-contain p-6 md:p-8 scrollbar-hide bg-slate-50/50 dark:bg-gradient-to-b dark:from-slate-900/80 dark:via-slate-950/80 dark:to-slate-950">
-          {step === 0 && renderStrategySelection()}
-          {step === 1 && selectedStrategy === 'rsi_ma_interval' && renderStep1()}
-          {step === 2 && selectedStrategy === 'rsi_ma_interval' && renderStep2()}
-          {step === 3 && renderStep3()}
-          {step === 1 && selectedStrategy === 'multi_split' && renderMultiSplitStep1()}
-          {step === 2 && selectedStrategy === 'multi_split' && renderMultiSplitStep2()}
-          {step === 1 && selectedStrategy === 'no_stop_multi_split' && renderNoStopMultiSplitStep1()}
-          {step === 2 && selectedStrategy === 'no_stop_multi_split' && renderNoStopMultiSplitStep2()}
-          {step === 1 && selectedStrategy === 'vr_band' && (
-            <VrBandStrategyForm
-              lang={lang}
-              showErrors={vrShowErrors}
-              vrMode={vrMode}
-              onVrModeChange={setVrMode}
-              vrInitialCapital={vrInitialCapital}
-              onVrInitialCapitalChange={setVrInitialCapital}
-              vrInitialV={vrInitialV}
-              onVrInitialVChange={setVrInitialV}
-              vrMinOrderQty={vrMinOrderQty}
-              onVrMinOrderQtyChange={setVrMinOrderQty}
-              vrBandUpperPct={vrBandUpperPct}
-              onVrBandUpperPctChange={setVrBandUpperPct}
-              vrBandLowerPct={vrBandLowerPct}
-              onVrBandLowerPctChange={setVrBandLowerPct}
-              vrG={vrG}
-              onVrGChange={setVrG}
-              vrPoolUsagePct={vrPoolUsagePct}
-              onVrPoolUsagePctChange={setVrPoolUsagePct}
-              vrDeltaCash={vrDeltaCash}
-              onVrDeltaCashChange={setVrDeltaCash}
-              vrCycleWeeks={vrCycleWeeks}
-              onVrCycleWeeksChange={setVrCycleWeeks}
-            />
-          )}
-          {step === 2 && selectedStrategy === 'vr_band' && renderMultiSplitStep2()}
+        {/* Content Area — 단일 스크롤: 폼 래퍼는 intrinsic 높이만 사용해 배너와 세로 스택(겹침 방지) */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain p-6 md:p-8 scrollbar-hide bg-slate-50/50 dark:bg-gradient-to-b dark:from-slate-900/80 dark:via-slate-950/80 dark:to-slate-950">
+          <div className="pb-4">
+            {step === 0 && renderStrategySelection()}
+            {step === 1 && selectedStrategy === 'rsi_ma_interval' && renderStep1()}
+            {step === 2 && selectedStrategy === 'rsi_ma_interval' && renderStep2()}
+            {step === 3 && renderStep3()}
+            {step === 1 && selectedStrategy === 'multi_split' && renderMultiSplitStep1()}
+            {step === 2 && selectedStrategy === 'multi_split' && renderMultiSplitStep2()}
+            {step === 1 && selectedStrategy === 'no_stop_multi_split' && renderNoStopMultiSplitStep1()}
+            {step === 2 && selectedStrategy === 'no_stop_multi_split' && renderNoStopMultiSplitStep2()}
+            {step === 1 && selectedStrategy === 'vr_band' && (
+              <VrBandStrategyForm
+                lang={lang}
+                showErrors={vrShowErrors}
+                vrMode={vrMode}
+                onVrModeChange={setVrMode}
+                vrInitialCapital={vrInitialCapital}
+                onVrInitialCapitalChange={setVrInitialCapital}
+                vrInitialV={vrInitialV}
+                onVrInitialVChange={setVrInitialV}
+                vrMinOrderQty={vrMinOrderQty}
+                onVrMinOrderQtyChange={setVrMinOrderQty}
+                vrBandUpperPct={vrBandUpperPct}
+                onVrBandUpperPctChange={setVrBandUpperPct}
+                vrBandLowerPct={vrBandLowerPct}
+                onVrBandLowerPctChange={setVrBandLowerPct}
+                vrG={vrG}
+                onVrGChange={setVrG}
+                vrPoolUsagePct={vrPoolUsagePct}
+                onVrPoolUsagePctChange={setVrPoolUsagePct}
+                vrDeltaCash={vrDeltaCash}
+                onVrDeltaCashChange={setVrDeltaCash}
+                vrCycleWeeks={vrCycleWeeks}
+                onVrCycleWeeksChange={setVrCycleWeeks}
+              />
+            )}
+            {step === 2 && selectedStrategy === 'vr_band' && renderMultiSplitStep2()}
+          </div>
+          {step === 1 && isSelectedStrategyLaoer && <LaoerCreditBanner lang={lang} />}
         </div>
 
         {/* Footer - 하단 고정 */}
@@ -2009,32 +2072,16 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
                   <ChevronLeft size={18} strokeWidth={3} /> {lang === 'ko' ? '이전' : 'Back'}
                 </button>
               )}
-              <button 
-                onClick={() => {
-                  if (selectedStrategy === 'multi_split' || selectedStrategy === 'no_stop_multi_split' || selectedStrategy === 'vr_band') {
-                    // 다분할 매매법 & VR 밴드: step 1 -> step 2 -> 저장
-                    if (step === 1) {
-                      setStep(2);
-                    } else if (step === 2) {
-                      handleSave();
-                    }
-                  } else if (selectedStrategy === 'rsi_ma_interval') {
-                    // RSI & 이평선: step 1 -> step 2 -> step 3 -> 저장
-                    if (step < 3) {
-                      setStep(step + 1);
-                    } else {
-                      handleSave();
-                    }
-                  }
-                }}
+              <button
+                type="button"
+                onClick={handleFooterAction}
                 disabled={!selectedStrategy}
                 className="flex-1 py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 shadow-[0_12px_40px_rgba(37,99,235,0.6)] hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {selectedStrategy === 'multi_split' || selectedStrategy === 'no_stop_multi_split'
-                  ? (step === 2 ? (lang === 'ko' ? '전략 시작' : 'Start Strategy') : (lang === 'ko' ? '다음' : 'Next'))
-                  : (step < 3 ? (lang === 'ko' ? '다음' : 'Next') : (lang === 'ko' ? '저장' : 'Save'))
-                }
-                {(((selectedStrategy === 'multi_split' || selectedStrategy === 'no_stop_multi_split') && step < 2) || (selectedStrategy === 'rsi_ma_interval' && step < 3)) && <ChevronRight size={18} strokeWidth={3} />}
+                {getFooterPrimaryCtaLabel(selectedStrategy, step, lang)}
+                {shouldShowFooterNextChevron(selectedStrategy, step) && (
+                  <ChevronRight size={18} strokeWidth={3} />
+                )}
               </button>
             </>
           )}

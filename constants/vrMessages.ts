@@ -1,3 +1,4 @@
+import { BookOpen, Users, Youtube, type LucideIcon } from 'lucide-react';
 import type { AppLang } from '../types';
 import type { VrBandStrategyParams } from '../types';
 
@@ -210,5 +211,50 @@ export const VR_DASHBOARD_HINT: Record<
     pending: 'No trades have been executed yet. Please place your first buy according to the configured V value.',
     firstBuyPrompt: 'Please place your first buy according to the configured V value.',
     soldOutWaiting: 'Completely sold out, waiting for the next entry.',
+  },
+};
+
+export type LaoerCreditLinkId = 'youtube' | 'cafe' | 'blog';
+
+export interface LaoerCreditLabels {
+  badge: string;
+  title: string;
+  desc: string;
+  ariaRegion: string;
+  linkLabels: Record<LaoerCreditLinkId, string>;
+}
+
+export const LAOER_CREDIT_LINKS: readonly {
+  id: LaoerCreditLinkId;
+  url: string;
+  icon: LucideIcon;
+}[] = [
+  { id: 'youtube', url: 'https://www.youtube.com/@laofus', icon: Youtube },
+  { id: 'cafe', url: 'http://cafe.naver.com/infinitebuying', icon: Users },
+  { id: 'blog', url: 'http://m.blog.naver.com/edgar0418', icon: BookOpen },
+];
+
+export const LAOER_CREDIT_LABELS: Record<AppLang, LaoerCreditLabels> = {
+  ko: {
+    badge: '라오어 Original',
+    title: 'Official Strategy Credit',
+    desc: "본 전략은 작가 '라오어'님의 독창적인 투자 철학을 바탕으로 설계되었습니다. 전략의 깊은 이해를 위해 원작자의 철학을 꼭 확인해 보세요.",
+    ariaRegion: '전략 출처 및 공식 채널',
+    linkLabels: {
+      youtube: '유튜브',
+      cafe: '네이버 카페',
+      blog: '블로그',
+    },
+  },
+  en: {
+    badge: 'Laoer Original',
+    title: 'Official Strategy Credit',
+    desc: "This strategy is based on the original investment philosophy of author 'Laoer'. Be sure to review the author's philosophy for a deeper understanding.",
+    ariaRegion: 'Strategy Credit and Official Channels',
+    linkLabels: {
+      youtube: 'YouTube',
+      cafe: 'Naver Cafe',
+      blog: 'Blog',
+    },
   },
 };

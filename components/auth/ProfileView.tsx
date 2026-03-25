@@ -68,6 +68,14 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   };
 
   const handleRefundConfirm = async () => {
+    if (isInTossApp) {
+      const tossRefundGuide = lang === 'ko'
+        ? '토스 앱 > 결제내역에서 "환불받기"를 이용하시거나(안드로이드), 애플 고객센터를 통해 환불을 진행해 주세요(iOS).'
+        : 'Please use "Get Refund" in Toss > Payment History on Android, or request a refund through Apple Support on iOS.';
+      alert(tossRefundGuide);
+      setShowCancelSub(false);
+      return;
+    }
     setCancelSubLoading(true);
     setError(null);
     setInfo(null);

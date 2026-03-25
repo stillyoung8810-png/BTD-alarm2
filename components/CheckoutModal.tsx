@@ -1,7 +1,7 @@
 /**
  * CheckoutModal — 주문 요약 & 결제 수단 선택 모달
  *
- * 이용권 개수 선택, 유료 서비스 이용 기간 표시, 결제 요청(포트원/토스) 지원.
+ * 이용권 개수 선택, 유료 서비스 이용 기간 표시, 결제 요청(포트원/IAP) 지원.
  */
 
 import React, { useState, useCallback } from 'react';
@@ -210,7 +210,9 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const styles = PLAN_STYLES[selectedPlanId];
   const primaryCtaLabel = isPremiumComingSoon
     ? (isKo ? 'PREMIUM 플랜은 출시 예정입니다' : 'PREMIUM plan is coming soon')
-    : (isKo ? '지금 결제하기' : 'Pay Now');
+    : isInTossApp
+      ? (isKo ? '구독하기' : 'Subscribe')
+      : (isKo ? '지금 결제하기' : 'Pay Now');
 
   const buildPayReq = useCallback((): PaymentRequest => ({
     orderName: `${activePlan.label} ${getPlanDurationLabel(quantity, isKo)}`,
@@ -223,7 +225,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
     ...(payMethod === 'EASY_PAY' ? { easyPayProvider: 'KAKAOPAY' as EasyPayProvider } : {}),
   }), [activePlan.label, quantity, totalAmount, payMethod, customerEmail, customerId, isKo, selectedPlanId]);
 
-  const handleTossPay = useCallback(async (payReq: PaymentRequest) => {
+  const handleTossIapPay = useCallback(async (payReq: PaymentRequest) => {
     const result = await requestTossIAP(selectedPlanId, payReq.quantity ?? 1);
 
     if (!result.success) {
@@ -263,7 +265,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
     const msgs = PAY_MSGS[lang];
 
     try {
-      const handler = isTossApp() ? handleTossPay : handlePortOnePay;
+      const handler = isTossApp() ? handleTossIapPay : handlePortOnePay;
       const outcome = await handler(payReq);
 
       if (outcome.cancel) return;
@@ -292,7 +294,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
     isProcessing,
     isPremiumComingSoon,
     buildPayReq,
-    handleTossPay,
+    handleTossIapPay,
     handlePortOnePay,
     lang,
     onPaymentSuccess,
@@ -405,7 +407,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </p>
         </div>
 
-        {/* 결제 수단 — 토스 미니앱에서는 PG 선택 비노출, 토스페이만 사용 */}
+        {/* 결제 수단 — 토스 미니앱에서는 PG 선택 비노출, 인앱결제만 사용 */}
         {!isInTossApp && (
           <div>
             <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-3">
@@ -438,7 +440,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
         {isInTossApp && (
           <div className="p-4 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5">
             <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
-              {isKo ? '토스페이로 결제됩니다.' : 'Payment will be processed with Toss Pay.'}
+              {isKo ? '토스 앱 인앱결제로 진행됩니다.' : 'Payment will be processed through Toss in-app purchase.'}
             </p>
           </div>
         )}

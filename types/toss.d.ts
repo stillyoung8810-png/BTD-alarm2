@@ -5,7 +5,7 @@
 interface TossAppBridgeGlobal {
   /** 토스 로그인: 인증 코드 요청 (토스 앱 내에서만 동작). 공식: authorizationCode, referrer */
   requestAuth?: () => Promise<{ authorizationCode?: string; code?: string; referrer?: string }>;
-  /** 토스페이 결제 요청 */
+  /** 레거시 브릿지 결제 요청 타입 */
   requestPayment?: (params: TossPaymentRequest) => Promise<TossPaymentBridgeResponse>;
   /** 광고 표시 (리워드/전면). 실제 API는 토스 문서 확인 후 보강 */
   ads?: {

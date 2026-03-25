@@ -1,5 +1,6 @@
 import React from 'react';
 import { ArrowLeft } from 'lucide-react';
+import { useTossApp } from '../contexts/TossAppContext';
 
 interface TermsProps {
   lang: 'ko' | 'en';
@@ -9,6 +10,7 @@ interface TermsProps {
 const EFFECTIVE_DATE = '2026년 2월 10일';
 
 const Terms: React.FC<TermsProps> = ({ lang, onBack }) => {
+  const { isInTossApp } = useTossApp();
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">
       {/* 뒤로가기 */}
@@ -131,7 +133,11 @@ const Terms: React.FC<TermsProps> = ({ lang, onBack }) => {
           <ol className="list-decimal list-inside space-y-1 text-[13px]">
             <li>회사는 무료 서비스 외에 유료 구독 서비스(PRO, PREMIUM 등)를 제공할 수 있습니다.</li>
             <li>유료 서비스의 이용 요금 및 결제 방법은 서비스 내 해당 페이지에 명시합니다.</li>
-            <li>결제는 Stripe, Inc.를 통해 처리되며, 결제에 관한 사항은 해당 결제 서비스의 이용약관을 따릅니다.</li>
+            <li>
+              {isInTossApp
+                ? '본 서비스의 결제는 토스 앱의 인앱결제(Google Play, Apple App Store)를 통해 처리되며, 결제 및 환불 정책은 각 앱마켓의 규정을 따릅니다.'
+                : '결제는 Stripe, Inc.를 통해 처리되며, 결제에 관한 사항은 해당 결제 서비스의 이용약관을 따릅니다.'}
+            </li>
             <li>구독 해지 시 이미 결제된 구독 기간에 대한 환불은 관련 법령 및 회사의 환불 정책에 따릅니다.</li>
           </ol>
         </Section>
@@ -205,7 +211,13 @@ const Terms: React.FC<TermsProps> = ({ lang, onBack }) => {
             <li>
               <strong>{lang === 'ko' ? '환불 처리 기간' : 'Refund Processing Time'}</strong>
               <br />
-              {lang === 'ko' ? '환불 승인 후 결제 수단에 따라 3~7영업일 이내에 환불 금액이 반영됩니다.' : 'Refunds are processed within 3-7 business days after approval, depending on the payment method.'}
+              {isInTossApp
+                ? (lang === 'ko'
+                    ? '토스 미니앱에서 결제한 디지털 상품의 환불 처리 기간과 승인 기준은 Google Play 또는 Apple App Store 정책에 따릅니다.'
+                    : 'For digital purchases made in the Toss mini app, refund timing and approval are governed by Google Play or Apple App Store policies.')
+                : (lang === 'ko'
+                    ? '환불 승인 후 결제 수단에 따라 3~7영업일 이내에 환불 금액이 반영됩니다.'
+                    : 'Refunds are processed within 3-7 business days after approval, depending on the payment method.')}
             </li>
           </ol>
         </Section>
@@ -235,14 +247,22 @@ const Terms: React.FC<TermsProps> = ({ lang, onBack }) => {
         <Section num={18} title={lang === 'ko' ? '환불 절차' : 'Refund Procedure'}>
           <ol className="list-decimal list-inside space-y-2 text-[13px] pl-1">
             <li>
-              {lang === 'ko'
-                ? '앱 내 [프로필] → [환불 요청] 버튼을 통해 환불을 신청할 수 있습니다.'
-                : 'Refund requests can be made via the [Profile] → [Request Refund] button in the app.'}
+              {isInTossApp
+                ? (lang === 'ko'
+                    ? '토스 앱에서 결제한 경우 토스 앱 > 결제내역에서 "환불받기"를 이용하시거나(안드로이드), Apple 고객센터를 통해 환불을 진행해 주세요(iOS).'
+                    : 'For purchases made in the Toss app, please use "Get Refund" in Toss > Payment History on Android, or request a refund through Apple Support on iOS.')
+                : (lang === 'ko'
+                    ? '앱 내 [프로필] → [환불 요청] 버튼을 통해 환불을 신청할 수 있습니다.'
+                    : 'Refund requests can be made via the [Profile] → [Request Refund] button in the app.')}
             </li>
             <li>
-              {lang === 'ko'
-                ? '자동 환불 처리가 불가능한 경우, 회사 지정 이메일로 환불을 요청하실 수 있습니다.'
-                : 'If automatic refund is not possible, you may contact us via the company email below.'}
+              {isInTossApp
+                ? (lang === 'ko'
+                    ? '앱마켓 정책상 회사가 직접 환불을 처리할 수 없는 경우, 아래 이메일로 결제 내역 확인을 요청하실 수 있습니다.'
+                    : 'If the company cannot process the refund directly under app market policy, you may contact us below for payment verification support.')
+                : (lang === 'ko'
+                    ? '자동 환불 처리가 불가능한 경우, 회사 지정 이메일로 환불을 요청하실 수 있습니다.'
+                    : 'If automatic refund is not possible, you may contact us via the company email below.')}
             </li>
           </ol>
         </Section>

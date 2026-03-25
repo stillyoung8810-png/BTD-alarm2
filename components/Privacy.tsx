@@ -1,5 +1,6 @@
 import React from 'react';
 import { ArrowLeft } from 'lucide-react';
+import { useTossApp } from '../contexts/TossAppContext';
 
 interface PrivacyProps {
   lang: 'ko' | 'en';
@@ -9,6 +10,7 @@ interface PrivacyProps {
 const EFFECTIVE_DATE = '2026년 2월 10일';
 
 const Privacy: React.FC<PrivacyProps> = ({ lang, onBack }) => {
+  const { isInTossApp } = useTossApp();
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">
       {/* 뒤로가기 */}
@@ -131,9 +133,9 @@ const Privacy: React.FC<PrivacyProps> = ({ lang, onBack }) => {
                   <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">구독 및 결제</td>
                   <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">구독 상태 관리, 결제 처리</td>
                   <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">
-                    구독 등급, 구독 상태, 구독 시작·만료일,
-                    결제 수단 정보(카드사명, 카드번호 일부 등),
-                    결제 기록(결제 일시, 결제 금액, 승인·취소·환불 이력 등 결제 이행에 필요한 정보)
+                    {isInTossApp
+                      ? '구독 등급, 구독 상태, 구독 시작·만료일, 앱마켓 주문 식별자, 결제 기록(결제 일시, 결제 금액, 승인·취소·환불 상태 등 인앱결제 이행에 필요한 정보)'
+                      : '구독 등급, 구독 상태, 구독 시작·만료일, 결제 수단 정보(카드사명, 카드번호 일부 등), 결제 기록(결제 일시, 결제 금액, 승인·취소·환불 이력 등 결제 이행에 필요한 정보)'}
                   </td>
                 </tr>
               </tbody>
@@ -219,7 +221,9 @@ const Privacy: React.FC<PrivacyProps> = ({ lang, onBack }) => {
                 <tr>
                   <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">구독 및 결제</td>
                   <td className="border border-slate-300 dark:border-slate-600 px-3 py-2"><strong>회원 탈퇴 시까지</strong> (단, 법령에 따라 보존이 필요한 경우 해당 기간까지)</td>
-                  <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">구독 등급, 구독 상태, Stripe 고객 ID</td>
+                  <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">
+                    {isInTossApp ? '구독 등급, 구독 상태, 앱마켓 주문 식별자' : '구독 등급, 구독 상태, Stripe 고객 ID'}
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -295,6 +299,12 @@ const Privacy: React.FC<PrivacyProps> = ({ lang, onBack }) => {
         {/* ================================================================ */}
         <Section id="pp-6" num={6} title="개인정보 처리업무의 위탁에 관한 사항">
           <p>회사는 원활한 서비스 제공을 위하여 다음과 같이 개인정보 처리 업무를 위탁하고 있습니다.</p>
+          {isInTossApp && (
+            <p className="mt-3 text-[13px]">
+              토스 미니앱 내 디지털 상품 결제는 토스 앱의 인앱결제(Google Play, Apple App Store)를 통해 처리되며,
+              회사는 앱마켓 결제 확인 및 구독 상태 반영에 필요한 최소 주문 정보만 확인합니다.
+            </p>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-[12px] border-collapse border border-slate-300 dark:border-slate-600 mt-4">
               <thead>
@@ -304,19 +314,23 @@ const Privacy: React.FC<PrivacyProps> = ({ lang, onBack }) => {
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">Stripe, Inc.</td>
-                  <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">구독 결제 처리 및 결제 정보 관리</td>
-                </tr>
-                <tr>
-                  <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">주식회사 코리아포트원 (포트원)</td>
-                  <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">
-                    결제 정보 전달 및 결제 연동 서비스 제공<br />
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                      (위탁 기간: 서비스 회원 탈퇴 시 또는 위탁 계약 종료 시까지)
-                    </span>
-                  </td>
-                </tr>
+                {!isInTossApp && (
+                  <>
+                    <tr>
+                      <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">Stripe, Inc.</td>
+                      <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">구독 결제 처리 및 결제 정보 관리</td>
+                    </tr>
+                    <tr>
+                      <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">주식회사 코리아포트원 (포트원)</td>
+                      <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">
+                        결제 정보 전달 및 결제 연동 서비스 제공<br />
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                          (위탁 기간: 서비스 회원 탈퇴 시 또는 위탁 계약 종료 시까지)
+                        </span>
+                      </td>
+                    </tr>
+                  </>
+                )}
               </tbody>
             </table>
           </div>
@@ -398,17 +412,19 @@ const Privacy: React.FC<PrivacyProps> = ({ lang, onBack }) => {
                   <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">메시지 발송 완료 시까지</td>
                   <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">「개인정보 보호법」 제28조의8제1항제3호</td>
                 </tr>
-                <tr>
-                  <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">
-                    Stripe, Inc.<br />
-                    <span className="text-[11px] text-slate-400">(privacy@stripe.com)</span>
-                  </td>
-                  <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">미국</td>
-                  <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">Stripe 고객 ID, 결제 처리 정보</td>
-                  <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">구독 결제 처리 (처리위탁)</td>
-                  <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">구독 해지 및 정산 완료 시까지</td>
-                  <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">「개인정보 보호법」 제28조의8제1항제3호</td>
-                </tr>
+                {!isInTossApp && (
+                  <tr>
+                    <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">
+                      Stripe, Inc.<br />
+                      <span className="text-[11px] text-slate-400">(privacy@stripe.com)</span>
+                    </td>
+                    <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">미국</td>
+                    <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">Stripe 고객 ID, 결제 처리 정보</td>
+                    <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">구독 결제 처리 (처리위탁)</td>
+                    <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">구독 해지 및 정산 완료 시까지</td>
+                    <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">「개인정보 보호법」 제28조의8제1항제3호</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

@@ -65,7 +65,10 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [isCreatorOpen, setIsCreatorOpen] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(true);
+  /** 웹: 기존과 동일 기본 다크. 토스 미니앱: 출시 가이드(라이트 테마)에 맞춰 라이트 고정. */
+  const [isDarkMode, setIsDarkMode] = useState(() =>
+    typeof window !== 'undefined' && isTossApp() ? false : true,
+  );
   const [checkoutPlan, setCheckoutPlan] = useState<'pro' | 'premium' | null>(null);
   const fetchPortfoliosRef = useRef<(userId: string) => void>(() => {});
 
@@ -200,6 +203,11 @@ const App: React.FC = () => {
 
   const t = I18N[lang];
   const isInTossApp = isTossApp();
+
+  useEffect(() => {
+    if (!isInTossApp) return;
+    setIsDarkMode(false);
+  }, [isInTossApp]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -641,12 +649,15 @@ const App: React.FC = () => {
               {lang}
             </button>
             
-            <button 
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              className="w-10 h-10 rounded-full flex items-center justify-center glass hover:scale-110 transition-all text-lg"
-            >
-              {isDarkMode ? '☀️' : '🌙'}
-            </button>
+            {!isInTossApp && (
+              <button
+                type="button"
+                onClick={() => setIsDarkMode(!isDarkMode)}
+                className="w-10 h-10 rounded-full flex items-center justify-center glass hover:scale-110 transition-all text-lg"
+              >
+                {isDarkMode ? '☀️' : '🌙'}
+              </button>
+            )}
 
             <div className="flex items-center gap-4 pl-4 border-l border-slate-200 dark:border-slate-800">
               <button 

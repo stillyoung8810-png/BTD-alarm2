@@ -8,15 +8,12 @@
 
 import { supabase } from '../supabase';
 import { isTossApp } from '../tossAppBridge';
-import { requestTossPayment } from '../toss/tossPayment';
 import type {
   PayMethod,
   PaymentRequest,
   PaymentResult,
   OrderRecord,
 } from './types';
-
-const BFF_URL = import.meta.env.VITE_RAILWAY_BFF_URL as string | undefined;
 
 // ---------------------------------------------------------------------------
 // 상수 (식별 정보 — 환경변수에서 가져옴)
@@ -118,15 +115,13 @@ function generatePaymentId(): string {
 export async function requestPayment(req: PaymentRequest): Promise<PaymentResult> {
   const paymentId = generatePaymentId();
 
-  // ── 토스 미니앱 환경: 토스페이 브릿지 사용. 검증은 호출부에서 verifyTossPaymentOnServer로 BFF 경유 필수.
   if (isTossApp()) {
-    return requestTossPayment({
+    return {
+      success: false,
       paymentId,
-      orderName: req.orderName,
-      totalAmount: req.totalAmount,
-      planId: req.planId,
-      customerId: req.customerId,
-    });
+      code: 'IAP_ONLY',
+      message: '토스 앱에서는 인앱결제(IAP) 전용 경로만 사용할 수 있습니다.',
+    };
   }
 
   // ── 포트원 V2 표준 결제창 ──────────────────────────────────
@@ -204,7 +199,7 @@ export async function requestPayment(req: PaymentRequest): Promise<PaymentResult
 export interface RequestPaymentWithVerifyResult {
   success: boolean;
   paymentId: string;
-  /** 포트원 경로에서만 채워짐. 토스는 호출부에서 verifyTossPaymentOnServer 호출 */
+  /** 포트원 경로에서만 채워짐 */
   verification?: VerifyPaymentResult;
   code?: string;
   message?: string;
@@ -212,10 +207,10 @@ export interface RequestPaymentWithVerifyResult {
 
 /**
  * VITE_PORTONE_STORE_ID, VITE_PORTONE_CHANNEL_KEY로 결제창을 띄우고,
- * 결제 성공 시(포트원 경로) verify-payment Edge Function을 호출해 서버 검증까지 수행합니다.
+ * 결제 성공 시 verify-payment Edge Function을 호출해 서버 검증까지 수행합니다.
  *
  * - 웹(포트원): requestPayment → 성공 시 verifyPaymentOnServer 호출 후 결과 반환.
- * - 토스 미니앱: requestPayment만 수행. 호출부에서 verifyTossPaymentOnServer 필수 호출.
+ * - 토스 미니앱: 이 함수 대신 IAP 전용 경로를 사용해야 합니다.
  */
 export async function requestPaymentWithServerVerify(
   req: PaymentRequest,
@@ -229,10 +224,6 @@ export async function requestPaymentWithServerVerify(
       code: result.code,
       message: result.message,
     };
-  }
-
-  if (isTossApp()) {
-    return { success: true, paymentId: result.paymentId };
   }
 
   const verification = await verifyPaymentOnServer(result.paymentId, req.planId, req.quantity);
@@ -310,56 +301,6 @@ export async function verifyPaymentOnServer(
 }
 
 // ---------------------------------------------------------------------------
-// 토스페이 결제 검증 (Railway BFF 경유, mTLS)
-// ---------------------------------------------------------------------------
-/**
- * 토스 미니앱 결제 후 반드시 BFF를 통해 토스 API로 최종 성공 여부를 검증한 뒤 구독 활성화.
- */
-export async function verifyTossPaymentOnServer(
-  paymentId: string,
-  planId: string,
-  quantity?: number,
-): Promise<VerifyPaymentResult> {
-  if (!BFF_URL?.trim()) {
-    return { success: false, error: 'BFF URL이 설정되지 않았습니다.' };
-  }
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) {
-      return { success: false, error: '인증 세션이 없습니다. 다시 로그인해주세요.' };
-    }
-
-    const base = BFF_URL.replace(/\/+$/, '');
-    const res = await fetch(`${base}/payment/toss/verify`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({ paymentId, planId, ...(quantity != null ? { quantity } : {}) }),
-    });
-
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      return {
-        success: false,
-        error: data?.message ?? data?.error ?? '토스 결제 검증에 실패했습니다.',
-      };
-    }
-
-    return {
-      success: true,
-      message: data.message,
-      subscription: data.subscription,
-    };
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : '결제 검증 중 네트워크 오류';
-    return { success: false, error: msg };
-  }
-}
-
-// ---------------------------------------------------------------------------
 // 주문 기록 저장 (클라이언트 직접 — fallback용)
 // ---------------------------------------------------------------------------
 /**
@@ -418,6 +359,12 @@ export interface CancelSubscriptionResult {
  *  - 그 외 → 환불 거부 안내 (단발성 결제이므로 만료 시 자동 종료)
  */
 export async function cancelSubscription(): Promise<CancelSubscriptionResult> {
+  if (isTossApp()) {
+    return {
+      success: false,
+      message: '토스 앱 > 결제내역에서 "환불받기"를 이용하시거나(안드로이드), 애플 고객센터를 통해 환불을 진행해 주세요(iOS).',
+    };
+  }
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) {

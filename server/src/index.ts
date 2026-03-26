@@ -24,8 +24,7 @@ server.addHook("onRequest", async (request) => {
   const correlationId =
     (typeof headerId === "string" && headerId.trim()) || randomUUID();
   request.correlationId = correlationId;
-  (request as { log: ReturnType<typeof request.log.child> }).log =
-    request.log.child({ correlationId });
+  request.log = request.log.child({ correlationId });
 });
 
 const start = async () => {

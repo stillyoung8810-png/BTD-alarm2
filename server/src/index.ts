@@ -6,6 +6,7 @@ import { tossAuthRoutes } from "./routes/tossAuthRoute";
 import { paymentRoutes } from "./routes/payment";
 import { tossSmartMessageRoutes } from "./routes/tossSmartMessageRoute";
 import { tossWebhookRoutes } from "./routes/tossWebhook";
+import { tossDisconnectCallbackRoutes } from "./routes/tossDisconnectCallbackRoute";
 
 dotenv.config();
 
@@ -39,6 +40,7 @@ const start = async () => {
         await server.register(paymentRoutes);
         await server.register(tossSmartMessageRoutes);
         await server.register(tossWebhookRoutes);
+        await server.register(tossDisconnectCallbackRoutes);
 
         server.get("/health", async () => ({ status: "ok" }));
 

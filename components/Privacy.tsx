@@ -314,7 +314,16 @@ const Privacy: React.FC<PrivacyProps> = ({ lang, onBack }) => {
                 </tr>
               </thead>
               <tbody>
-                {!isInTossApp && (
+                {isInTossApp ? (
+                  <tr>
+                    <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">
+                      Google LLC (Google Play) / Apple Inc. (App Store)
+                    </td>
+                    <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">
+                      토스 미니앱 내 디지털 상품 인앱결제 처리(앱마켓 결제 시스템)
+                    </td>
+                  </tr>
+                ) : (
                   <>
                     <tr>
                       <td className="border border-slate-300 dark:border-slate-600 px-3 py-2">Stripe, Inc.</td>

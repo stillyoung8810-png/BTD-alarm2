@@ -138,7 +138,11 @@ const Terms: React.FC<TermsProps> = ({ lang, onBack }) => {
                 ? '본 서비스의 결제는 토스 앱의 인앱결제(Google Play, Apple App Store)를 통해 처리되며, 결제 및 환불 정책은 각 앱마켓의 규정을 따릅니다.'
                 : '결제는 Stripe, Inc.를 통해 처리되며, 결제에 관한 사항은 해당 결제 서비스의 이용약관을 따릅니다.'}
             </li>
-            <li>구독 해지 시 이미 결제된 구독 기간에 대한 환불은 관련 법령 및 회사의 환불 정책에 따릅니다.</li>
+            <li>
+              {isInTossApp
+                ? '환불 및 구독(이용권) 해지와 관련하여는 Google Play·Apple App Store의 정책 및 본 약관의 환불 규정이 적용됩니다.'
+                : '구독 해지 시 이미 결제된 구독 기간에 대한 환불은 관련 법령 및 회사의 환불 정책에 따릅니다.'}
+            </li>
           </ol>
         </Section>
 

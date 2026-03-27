@@ -18,3 +18,17 @@ export function formatPriceKRW(amount: number): string {
   }
   return krwFormatter.format(amount);
 }
+
+/** KRW 총액: 제품 정책 내림, 비정상 입력 시 0 (렌더 경로 throw 금지). */
+export function calculateSafeTotalAmountKRW(
+  price: number | undefined,
+  quantity: number,
+): number {
+  if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0) {
+    return 0;
+  }
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    return 0;
+  }
+  return Math.floor(price * quantity + Number.EPSILON);
+}

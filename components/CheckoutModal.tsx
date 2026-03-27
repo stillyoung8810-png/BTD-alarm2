@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useCallback } from 'react';
-import { formatPriceKRW } from '../utils/currency';
+import { calculateSafeTotalAmountKRW, formatPriceKRW } from '../utils/currency';
 import {
   X,
   Star,
@@ -26,47 +26,29 @@ import {
   PLAN_DAYS_PER_UNIT,
   QUANTITY_MAX,
   DEFAULT_QUANTITY,
+  TOSS_IAP_FIXED_PLAN_ID,
+  TOSS_IAP_FIXED_QUANTITY,
   type PayMethod,
   type EasyPayProvider,
+  type CheckoutPlanId,
 } from '../services/payment/types';
 import type { PaymentRequest } from '../services/payment/types';
 import { requestPaymentWithServerVerify } from '../services/payment/paymentService';
 import { requestTossIAP } from '../services/payment/tossIapService';
-import { isTossApp } from '../services/tossAppBridge';
 import { useTossApp } from '../contexts/TossAppContext';
 import { TDSModal, TDSButton } from './tds';
 import { getServicePeriodDisplay } from '../utils/dateUtils';
 import { MembershipConfig } from '../constants/membership';
+import {
+  PAYMENT_CHECKOUT_MESSAGES,
+  PAYMENT_CHECKOUT_REFUND_EMAIL,
+  type PaymentCheckoutMessageSet,
+  type TossIapErrorCode,
+} from '../constants/paymentCheckoutMessages';
 
 // ---------------------------------------------------------------------------
-// 상수 — DRY: 메시지·기간 라벨·플랜 스타일
+// 플랜 카드 스타일 (시각만; 카피는 paymentCheckoutMessages)
 // ---------------------------------------------------------------------------
-const PAY_MSGS = {
-  ko: {
-    success: '결제가 완료되었습니다! 서비스가 활성화됩니다.',
-    failed: (msg: string) => `결제에 실패했습니다: ${msg}`,
-    verifyFailed: (err: string) =>
-      `결제는 완료되었으나 검증에 실패했습니다. 잠시 후 자동 반영되거나 고객센터에 문의하세요.\n(${err})`,
-    configMissing: '결제 환경이 설정되지 않았습니다. 관리자에게 문의해 주세요.',
-    unknown: '알 수 없는 오류',
-    processingError: '결제 처리 중 오류가 발생했습니다.',
-  },
-  en: {
-    success: 'Payment complete! Your service is now active.',
-    failed: (msg: string) => `Payment failed: ${msg}`,
-    verifyFailed: (err: string) =>
-      `Payment succeeded but verification failed. It will be reflected shortly or contact support.\n(${err})`,
-    configMissing: 'Payment is not configured. Please contact support.',
-    unknown: 'Unknown error',
-    processingError: 'An error occurred during payment.',
-  },
-} as const;
-
-function getPlanDurationLabel(quantity: number, isKo: boolean): string {
-  const days = PLAN_DAYS_PER_UNIT * quantity;
-  return isKo ? `이용권 (${days}일)` : `Plan (${days} days)`;
-}
-
 const PLAN_STYLES = {
   pro: {
     card: 'bg-blue-50 dark:bg-blue-500/5 border-blue-200 dark:border-blue-500/20',
@@ -94,9 +76,47 @@ const PLAN_STYLES = {
   },
 } as const;
 
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
+function getPrimaryCheckoutCtaLabel(
+  m: PaymentCheckoutMessageSet,
+  isPremiumComingSoon: boolean,
+  isInTossApp: boolean,
+): string {
+  if (isPremiumComingSoon) {
+    return m.PREMIUM_COMING_SOON;
+  }
+  if (isInTossApp) {
+    return m.PAY;
+  }
+  return m.PAY_NOW;
+}
+
+const METHOD_ICON_MAP: Record<string, React.ReactNode> = {
+  CreditCard: <CreditCard size={20} />,
+  Landmark: <Landmark size={20} />,
+  ArrowLeftRight: <ArrowLeftRight size={20} />,
+  Smartphone: <Smartphone size={20} />,
+  Wallet: <Wallet size={20} />,
+};
+
+function notifyCheckoutError(message: string): void {
+  alert(message);
+}
+
+function getTossIapAlertMessage(
+  messages: PaymentCheckoutMessageSet,
+  errorCode: TossIapErrorCode | undefined,
+  rawMessage: string | undefined,
+): string {
+  if (!errorCode) {
+    return messages.TOSS_IAP_ERROR_MESSAGES.UNKNOWN;
+  }
+  const mapped = messages.TOSS_IAP_ERROR_MESSAGES[errorCode];
+  if (mapped) {
+    return mapped;
+  }
+  return messages.FAILED(rawMessage ?? messages.UNKNOWN);
+}
+
 interface CheckoutModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -114,26 +134,26 @@ interface CheckoutModalProps {
   onPaymentSuccess?: () => void;
 }
 
-const METHOD_ICON_MAP: Record<string, React.ReactNode> = {
-  CreditCard: <CreditCard size={20} />,
-  Landmark: <Landmark size={20} />,
-  ArrowLeftRight: <ArrowLeftRight size={20} />,
-  Smartphone: <Smartphone size={20} />,
-  Wallet: <Wallet size={20} />,
-};
-
-/** 모달 래퍼 — 토스 TDS vs 일반 고정 레이어 분기 일원화 */
 function ModalWrapper({
   children,
   open,
   onClose,
   useToss,
+  closeLabel,
 }: {
   children: React.ReactNode;
   open: boolean;
   onClose: () => void;
   useToss: boolean;
+  closeLabel: string;
 }) {
+  const handleBackdropKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onClose();
+    }
+  };
+
   if (useToss) {
     return <TDSModal open={open} onClose={onClose}>{children}</TDSModal>;
   }
@@ -141,8 +161,11 @@ function ModalWrapper({
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-slate-900/50 dark:bg-[#0B0F19]/90 backdrop-blur-xl"
+        role="button"
+        tabIndex={0}
+        aria-label={closeLabel}
         onClick={onClose}
-        aria-hidden
+        onKeyDown={handleBackdropKeyDown}
       />
       <div className="relative w-full max-w-md bg-white dark:bg-[#0E1525] rounded-[2.5rem] border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         {children}
@@ -151,9 +174,15 @@ function ModalWrapper({
   );
 }
 
-// ---------------------------------------------------------------------------
-// 컴포넌트
-// ---------------------------------------------------------------------------
+type CheckoutPlanRow = {
+  id: CheckoutPlanId;
+  label: string;
+  subtitle: string;
+  price: number;
+  priceFormatted: string;
+  features: string[];
+};
+
 const CheckoutModal: React.FC<CheckoutModalProps> = ({
   isOpen,
   onClose,
@@ -163,26 +192,18 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
   customerId,
   onPaymentSuccess,
 }) => {
-  const isKo = lang === 'ko';
   const { isInTossApp } = useTossApp();
-  const [selectedPlanId, setSelectedPlanId] = useState<'pro' | 'premium'>(plan.id);
+  const messages = PAYMENT_CHECKOUT_MESSAGES[lang];
+  const lk: 'ko' | 'en' = lang;
+  const [selectedPlanId, setSelectedPlanId] = useState<CheckoutPlanId>(plan.id);
   const [payMethod, setPayMethod] = useState<PayMethod>('CARD');
   const [quantity, setQuantity] = useState<number>(DEFAULT_QUANTITY);
   const [isProcessing, setIsProcessing] = useState(false);
-  const lk = isKo ? 'ko' : 'en';
 
-  // PRO / PREMIUM 플랜 정의 — MembershipConfig 기반 (App.tsx와 동일 소스)
   const proCfg = MembershipConfig.byType.pro;
   const premiumCfg = MembershipConfig.byType.premium;
 
-  const planMap: Record<'pro' | 'premium', {
-    id: 'pro' | 'premium';
-    label: string;
-    subtitle: string;
-    price: number;
-    priceFormatted: string;
-    features: string[];
-  }> = {
+  const planMap: Record<CheckoutPlanId, CheckoutPlanRow> = {
     pro: {
       id: 'pro',
       label: proCfg.displayName,
@@ -201,46 +222,80 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
     },
   };
 
-  const activePlan = planMap[selectedPlanId];
-  const isPremiumComingSoon = selectedPlanId === 'premium';
+  const effectivePlanId: CheckoutPlanId = isInTossApp
+    ? TOSS_IAP_FIXED_PLAN_ID
+    : selectedPlanId;
 
-  const totalDays = PLAN_DAYS_PER_UNIT * quantity;
-  const totalAmount = activePlan.price * quantity;
+  const effectiveQuantity = isInTossApp
+    ? TOSS_IAP_FIXED_QUANTITY
+    : quantity;
+
+  const activePlanCandidate = planMap[effectivePlanId];
+  if (!activePlanCandidate) {
+    console.error('[CheckoutModal] Invalid plan ID for planMap', { effectivePlanId });
+  }
+
+  const activePlan =
+    activePlanCandidate ?? planMap[TOSS_IAP_FIXED_PLAN_ID];
+
+  if (!activePlan) {
+    console.error('[CheckoutModal] planMap missing TOSS_IAP_FIXED_PLAN_ID; check MembershipConfig wiring');
+  }
+
+  const isPremiumComingSoon = !isInTossApp && effectivePlanId === 'premium';
+
+  const totalDays = PLAN_DAYS_PER_UNIT * effectiveQuantity;
+  const totalAmount = calculateSafeTotalAmountKRW(activePlan?.price, effectiveQuantity);
   const totalFormatted = formatPriceKRW(totalAmount);
-  const styles = PLAN_STYLES[selectedPlanId];
-  const primaryCtaLabel = isPremiumComingSoon
-    ? (isKo ? 'PREMIUM 플랜은 출시 예정입니다' : 'PREMIUM plan is coming soon')
-    : isInTossApp
-      ? (isKo ? '구독하기' : 'Subscribe')
-      : (isKo ? '지금 결제하기' : 'Pay Now');
+  const isInvalidPrice = totalAmount <= 0;
 
-  const buildPayReq = useCallback((): PaymentRequest => ({
-    orderName: `${activePlan.label} ${getPlanDurationLabel(quantity, isKo)}`,
+  const styles = PLAN_STYLES[effectivePlanId];
+  const primaryCtaLabel = getPrimaryCheckoutCtaLabel(
+    messages,
+    isPremiumComingSoon,
+    isInTossApp,
+  );
+
+  const buildPayReq = useCallback((): PaymentRequest => {
+    const safePlanLabel = activePlan?.label ?? messages.UNKNOWN_PLAN_LABEL;
+    const baseRequest: PaymentRequest = {
+      orderName: `${safePlanLabel} ${messages.DURATION_PACKAGE_LABEL(PLAN_DAYS_PER_UNIT * effectiveQuantity)}`,
+      totalAmount,
+      customerEmail,
+      customerId,
+      payMethod,
+      planId: effectivePlanId,
+      quantity: effectiveQuantity,
+    };
+    if (payMethod === 'EASY_PAY') {
+      baseRequest.easyPayProvider = 'KAKAOPAY';
+    }
+    return baseRequest;
+  }, [
+    activePlan?.label,
+    messages.UNKNOWN_PLAN_LABEL,
+    messages.DURATION_PACKAGE_LABEL,
+    effectiveQuantity,
     totalAmount,
     customerEmail,
     customerId,
     payMethod,
-    planId: selectedPlanId,
-    quantity,
-    ...(payMethod === 'EASY_PAY' ? { easyPayProvider: 'KAKAOPAY' as EasyPayProvider } : {}),
-  }), [activePlan.label, quantity, totalAmount, payMethod, customerEmail, customerId, isKo, selectedPlanId]);
+    effectivePlanId,
+    lang,
+  ]);
 
-  const handleTossIapPay = useCallback(async (payReq: PaymentRequest) => {
-    const result = await requestTossIAP(selectedPlanId, payReq.quantity ?? 1);
-
+  const handleTossIapPay = useCallback(async () => {
+    const result = await requestTossIAP(effectivePlanId, effectiveQuantity);
     if (!result.success) {
       return {
-        ok: false,
+        ok: false as const,
         cancel: result.cancel,
-        message: result.message,
+        errorCode: result.errorCode,
+        rawMessage: result.rawMessage,
       };
     }
-
-    return {
-      ok: true,
-      needRefresh: true,
-    };
-  }, [selectedPlanId]);
+    return { ok: true as const, needRefresh: true as const };
+  }, [effectivePlanId, effectiveQuantity]);
 
   const handlePortOnePay = useCallback(async (payReq: PaymentRequest) => {
     const result = await requestPaymentWithServerVerify(payReq);
@@ -259,49 +314,98 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
   }, []);
 
   const handlePay = useCallback(async () => {
-    if (isProcessing || isPremiumComingSoon) return;
+    if (isProcessing || isPremiumComingSoon) {
+      return;
+    }
+    if (isInvalidPrice) {
+      alert(PAYMENT_CHECKOUT_MESSAGES[lang].ERR_INVALID_PRICE);
+      return;
+    }
+
+    const msgs = PAYMENT_CHECKOUT_MESSAGES[lang];
     setIsProcessing(true);
-    const payReq = buildPayReq();
-    const msgs = PAY_MSGS[lang];
 
     try {
-      const handler = isTossApp() ? handleTossIapPay : handlePortOnePay;
-      const outcome = await handler(payReq);
+      const outcome = isInTossApp
+        ? await handleTossIapPay()
+        : await handlePortOnePay(buildPayReq());
 
-      if (outcome.cancel) return;
+      if (outcome.cancel) {
+        return;
+      }
+
       if (outcome.ok) {
-        alert(msgs.success);
+        alert(msgs.SUCCESS);
         onPaymentSuccess?.();
         onClose();
         return;
       }
-      const alertMsg = ('configMissing' in outcome && outcome.configMissing)
-        ? msgs.configMissing
-        : outcome.needRefresh
-          ? msgs.verifyFailed(outcome.message ?? '')
-          : msgs.failed(outcome.message ?? msgs.unknown);
-      alert(alertMsg);
+
+      let extractedMessage: string | undefined;
+      if ('rawMessage' in outcome && typeof outcome.rawMessage === 'string') {
+        extractedMessage = outcome.rawMessage;
+      } else if ('message' in outcome && typeof outcome.message === 'string') {
+        extractedMessage = outcome.message;
+      }
+
+      let alertMessage = msgs.UNKNOWN;
+      if ('configMissing' in outcome && outcome.configMissing) {
+        alertMessage = msgs.CONFIG_MISSING;
+      } else if ('errorCode' in outcome && outcome.errorCode) {
+        alertMessage = getTossIapAlertMessage(
+          msgs,
+          outcome.errorCode as TossIapErrorCode,
+          extractedMessage,
+        );
+      } else if ('needRefresh' in outcome && outcome.needRefresh) {
+        alertMessage = msgs.VERIFY_FAILED(extractedMessage ?? '');
+      } else {
+        alertMessage = msgs.FAILED(extractedMessage ?? msgs.UNKNOWN);
+      }
+
+      notifyCheckoutError(alertMessage);
+
       if (outcome.needRefresh) {
         onPaymentSuccess?.();
         onClose();
       }
-    } catch {
-      alert(msgs.processingError);
+    } catch (error) {
+      console.error('[Payment Error]', error);
+      alert(msgs.PROCESSING_ERROR);
     } finally {
       setIsProcessing(false);
     }
   }, [
     isProcessing,
     isPremiumComingSoon,
-    buildPayReq,
+    isInvalidPrice,
+    lang,
+    isInTossApp,
     handleTossIapPay,
     handlePortOnePay,
-    lang,
+    buildPayReq,
     onPaymentSuccess,
     onClose,
   ]);
 
-  if (!isOpen) return null;
+  if (!isOpen) {
+    return null;
+  }
+
+  if (!activePlan) {
+    return (
+      <ModalWrapper
+        open={isOpen}
+        onClose={onClose}
+        useToss={isInTossApp}
+        closeLabel={messages.CLOSE_MODAL}
+      >
+        <div className="p-6 text-center text-slate-500 dark:text-slate-400">
+          {messages.CONFIG_MISSING}
+        </div>
+      </ModalWrapper>
+    );
+  }
 
   const periodLabel = getServicePeriodDisplay(totalDays, lang);
 
@@ -310,81 +414,102 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
       <div className="p-6 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-[#0B0F19]">
         <h2 className="text-lg font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
           <span className="text-xl">{'<'}</span>
-          {isKo ? '주문 요약' : 'Order Summary'}
+          {messages.ORDER_SUMMARY}
         </h2>
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
           <Shield size={14} className="text-emerald-600 dark:text-emerald-400" />
           <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
-            Secure Checkout
+            {messages.SECURE_CHECKOUT}
           </span>
         </div>
       </div>
 
       <div className="overflow-y-auto max-h-[calc(100vh-8rem)] p-6 space-y-6">
-        {/* 플랜 선택 토글 (PRO / PREMIUM) */}
-        <div className="flex justify-center">
-          <div className="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 p-1">
-            {(['pro', 'premium'] as const).map((id) => {
-              const isSelected = selectedPlanId === id;
-              const isPro = id === 'pro';
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setSelectedPlanId(id)}
-                  className={`px-4 py-1.5 text-xs font-semibold rounded-full transition-colors ${
-                    isSelected
-                      ? isPro
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-amber-400 text-black'
-                      : 'text-slate-500 dark:text-slate-300'
-                  }`}
-                >
-                  {id.toUpperCase()}
-                </button>
-              );
-            })}
+        {!isInTossApp && (
+          <div className="flex justify-center">
+            <div className="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 p-1">
+              {(['pro', 'premium'] as const).map((id) => {
+                const isSelected = selectedPlanId === id;
+                const isPro = id === 'pro';
+                let toggleClass = 'text-slate-500 dark:text-slate-300';
+                if (isSelected && isPro) {
+                  toggleClass = 'bg-blue-600 text-white';
+                } else if (isSelected && !isPro) {
+                  toggleClass = 'bg-amber-400 text-black';
+                }
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setSelectedPlanId(id)}
+                    className={`px-4 py-1.5 text-xs font-semibold rounded-full transition-colors ${toggleClass}`}
+                  >
+                    {id.toUpperCase()}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* 플랜 카드 */}
         <div className={`p-5 rounded-2xl border ${styles.card}`}>
           <div className="flex items-center gap-3 mb-4">
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${styles.iconBg}`}>
-              {selectedPlanId === 'pro' ? <Star size={20} className={styles.icon} /> : <Crown size={20} className={styles.icon} />}
+              {effectivePlanId === 'pro' ? (
+                <Star size={20} className={styles.icon} />
+              ) : (
+                <Crown size={20} className={styles.icon} />
+              )}
             </div>
             <div>
               <p className="font-black text-slate-900 dark:text-white text-base tracking-tight">
-                {activePlan.label} PLAN
+                {messages.PLAN_NAME_WITH_SUFFIX(activePlan.label)}
               </p>
               <p className={`text-xs font-semibold ${styles.subtitle}`}>
-                {getPlanDurationLabel(quantity, isKo)}
+                {messages.DURATION_PACKAGE_LABEL(totalDays)}
               </p>
             </div>
           </div>
 
-          {/* 이용권 개수 선택 — 다크모드에서 드롭다운 옵션 가독성 확보 */}
-          <div className="mb-4">
-            <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-2">
-              {isKo ? '이용 기간 (개수)' : 'Duration (quantity)'}
-            </label>
-            <select
-              value={quantity}
-              onChange={(e) => setQuantity(Number(e.target.value))}
-              className="w-full py-2 px-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-medium"
-              aria-label={isKo ? '이용권 개수 선택' : 'Select quantity'}
+          {isInTossApp ? (
+            <div
+              className="mb-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] p-4"
+              role="group"
+              aria-labelledby="toss-fixed-duration-label"
             >
-              {Array.from({ length: QUANTITY_MAX }, (_, i) => i + 1).map((n) => (
-                <option key={n} value={n}>
-                  {isKo ? `${n}개 (${PLAN_DAYS_PER_UNIT * n}일)` : `${n} (${PLAN_DAYS_PER_UNIT * n} days)`}
-                </option>
-              ))}
-            </select>
-          </div>
+              <p
+                id="toss-fixed-duration-label"
+                className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2"
+              >
+                {messages.TOSS_FIXED_DURATION_LABEL}
+              </p>
+              <p className="text-sm font-bold text-slate-900 dark:text-white">
+                {messages.TOSS_FIXED_DURATION_VALUE(totalDays)}
+              </p>
+            </div>
+          ) : (
+            <div className="mb-4">
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-2">
+                {messages.DURATION_LABEL}
+              </label>
+              <select
+                value={quantity}
+                onChange={(event) => setQuantity(Number(event.target.value))}
+                className="w-full py-2 px-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm font-medium"
+                aria-label={messages.DURATION_SELECT_ARIA}
+              >
+                {Array.from({ length: QUANTITY_MAX }, (_, index) => index + 1).map((count) => (
+                  <option key={count} value={count}>
+                    {messages.QUANTITY_OPTION(count, PLAN_DAYS_PER_UNIT * count)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <ul className="space-y-2">
-            {activePlan.features.map((feat, i) => (
-              <li key={`feat-${i}-${feat.slice(0, 20)}`} className="flex items-center gap-2">
+            {activePlan.features.map((feat, featIndex) => (
+              <li key={`${effectivePlanId}-feat-${featIndex}-${feat.slice(0, 24)}`} className="flex items-center gap-2">
                 <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${styles.check}`}>
                   <Check size={10} className={styles.checkIcon} />
                 </div>
@@ -394,24 +519,22 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </ul>
         </div>
 
-        {/* 유료 서비스 이용 기간 */}
         <div className="p-4 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5">
           <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
-            {isKo ? '유료 서비스 이용 기간' : 'Paid service period'}
+            {messages.PAID_SERVICE_PERIOD}
           </p>
           <p className="text-sm font-semibold text-slate-900 dark:text-white">
             {periodLabel}
           </p>
           <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
-            {isKo ? '(결제일 기준 예정)' : '(Expected from payment date)'}
+            {messages.PAID_SERVICE_PERIOD_HINT}
           </p>
         </div>
 
-        {/* 결제 수단 — 토스 미니앱에서는 PG 선택 비노출, 인앱결제만 사용 */}
         {!isInTossApp && (
           <div>
             <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-3">
-              {isKo ? '결제 수단 선택' : 'Payment Method'}
+              {messages.PAYMENT_METHOD_HEADING}
             </h3>
             <div className="grid grid-cols-3 gap-2">
               {PAY_METHOD_OPTIONS.map((opt) => {
@@ -429,7 +552,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       {METHOD_ICON_MAP[opt.icon] ?? <CreditCard size={20} />}
                     </span>
                     <span className={`text-[10px] font-bold leading-tight ${isSelected ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}>
-                      {isKo ? opt.label.ko : opt.label.en}
+                      {messages.PAY_METHOD_LABELS[opt.id]}
                     </span>
                   </button>
                 );
@@ -440,34 +563,35 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
         {isInTossApp && (
           <div className="p-4 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5">
             <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
-              {isKo ? '토스 앱 인앱결제로 진행됩니다.' : 'Payment will be processed through Toss in-app purchase.'}
+              {messages.TOSS_IAP_NOTICE}
             </p>
           </div>
         )}
 
-        {/* 금액 */}
         <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-white/5">
           <div className="flex justify-between items-center">
             <span className="text-sm text-slate-500 dark:text-slate-400 font-medium">
-              {isKo ? '이용권 금액' : 'Plan Price'}
+              {messages.PLAN_PRICE}
             </span>
             <span className="text-sm font-bold text-slate-900 dark:text-white">
-              {activePlan.priceFormatted} × {quantity} = {totalFormatted}
+              {activePlan?.priceFormatted ?? formatPriceKRW(0)} × {effectiveQuantity} = {totalFormatted}
             </span>
           </div>
           <div className="flex justify-between items-center">
             <span className="text-sm text-slate-500 dark:text-slate-400 font-medium">
-              {isKo ? '할인 금액' : 'Discount'}
+              {messages.DISCOUNT}
             </span>
-            <span className="text-sm font-bold text-emerald-500">-₩0</span>
+            <span className="text-sm font-bold text-emerald-500">
+              {messages.DISCOUNT_ZERO_LINE(formatPriceKRW(0))}
+            </span>
           </div>
           <div className="flex justify-between items-center pt-3 border-t border-slate-200 dark:border-white/5">
             <div>
               <p className="text-sm font-black text-slate-900 dark:text-white">
-                {isKo ? '최종 결제 금액' : 'Total'}
+                {messages.TOTAL}
               </p>
               <p className="text-[10px] text-slate-400 dark:text-slate-500">
-                {isKo ? '부가세 포함' : 'VAT included'}
+                {messages.VAT_INCLUDED}
               </p>
             </div>
             <p className={`text-2xl font-black ${styles.total}`}>{totalFormatted}</p>
@@ -478,21 +602,22 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
           <TDSButton
             fullWidth
             loading={isProcessing}
-            disabled={isProcessing || isPremiumComingSoon}
+            disabled={isProcessing || isPremiumComingSoon || isInvalidPrice}
             onClick={handlePay}
           >
-            {isProcessing ? (isKo ? '결제 처리 중...' : 'Processing...') : primaryCtaLabel}
+            {isProcessing ? messages.PROCESSING : primaryCtaLabel}
           </TDSButton>
         ) : (
           <button
+            type="button"
             onClick={handlePay}
-            disabled={isProcessing || isPremiumComingSoon}
+            disabled={isProcessing || isPremiumComingSoon || isInvalidPrice}
             className={`w-full py-4 rounded-2xl text-sm font-black uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed ${styles.button}`}
           >
             {isProcessing ? (
               <>
                 <Loader2 size={18} className="animate-spin" />
-                {isKo ? '결제 처리 중...' : 'Processing...'}
+                {messages.PROCESSING}
               </>
             ) : (
               <>
@@ -506,46 +631,28 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
         {isPremiumComingSoon && (
           <p className="mt-2 text-xs font-semibold text-amber-600 dark:text-amber-400 text-center">
-            {isKo
-              ? 'PREMIUM 플랜은 아직 결제가 불가합니다. 준비되는 대로 안내드릴게요.'
-              : 'The PREMIUM plan is not available for purchase yet.'}
+            {messages.PREMIUM_UNAVAILABLE_DETAIL}
           </p>
         )}
 
         <div className="text-center space-y-1 pt-2">
           <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed">
-            {isKo ? '결제 시 서비스 이용 약관에 동의하는 것으로 간주합니다.' : 'By purchasing, you agree to our Terms of Service.'}
+            {messages.TERMS_CONSENT_NOTICE}
           </p>
           <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed">
-            {isKo
-              ? `이용권은 결제일로부터 ${totalDays}일간 유효합니다.`
-              : `This plan is valid for ${totalDays} days from the date of purchase.`}
+            {messages.VALIDITY_NOTICE(totalDays)}
           </p>
         </div>
 
         <div className="mt-4 p-4 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5">
           <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-            {isKo ? '환불 및 취소 규정' : 'Refund & Cancellation Policy'}
+            {messages.REFUND_SECTION_TITLE}
           </p>
           <ul className="text-[9px] text-slate-400 dark:text-slate-500 leading-[1.7] space-y-1 list-disc pl-3.5">
-            <li>
-              {isKo
-                ? '결제 후 7일 이내에 서비스 이용 기록(AI 매매 인식, 백테스트, 텔레그램 연동 등)이 없는 경우 전액 환불이 가능합니다.'
-                : 'Full refund available within 7 days if no service usage (AI recognition, backtesting, Telegram sync, etc.) has occurred.'}
-            </li>
-            <li>
-              {isKo
-                ? '유료 서비스를 1회 이상 이용한 경우, 전자상거래법 제17조 제2항 제5호에 따라 청약철회가 제한됩니다.'
-                : 'If paid features have been used, withdrawal is restricted per the E-Commerce Act.'}
-            </li>
-            <li>
-              {isKo
-                ? `본 결제는 단발성 이용권(${totalDays}일)이며, 자동 갱신되지 않습니다.`
-                : `This is a one-time purchase valid for ${totalDays} days. No auto-renewal.`}
-            </li>
-            <li>
-              {isKo ? '환불 문의: grrrvv@naver.com' : 'Refund inquiries: grrrvv@naver.com'}
-            </li>
+            <li>{messages.REFUND_BULLET_1}</li>
+            <li>{messages.REFUND_BULLET_2}</li>
+            <li>{messages.REFUND_BULLET_3(totalDays)}</li>
+            <li>{messages.REFUND_INQUIRY(PAYMENT_CHECKOUT_REFUND_EMAIL)}</li>
           </ul>
         </div>
       </div>
@@ -554,7 +661,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
         type="button"
         onClick={onClose}
         className="absolute top-5 right-5 w-8 h-8 rounded-full bg-slate-200/50 dark:bg-white/10 flex items-center justify-center hover:bg-slate-300/50 dark:hover:bg-white/20 transition-colors"
-        aria-label="Close"
+        aria-label={messages.CLOSE_MODAL}
       >
         <X size={16} className="text-slate-500 dark:text-slate-400" />
       </button>
@@ -562,7 +669,12 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
   );
 
   return (
-    <ModalWrapper open={isOpen} onClose={onClose} useToss={isInTossApp}>
+    <ModalWrapper
+      open={isOpen}
+      onClose={onClose}
+      useToss={isInTossApp}
+      closeLabel={messages.CLOSE_MODAL}
+    >
       {modalBody}
     </ModalWrapper>
   );

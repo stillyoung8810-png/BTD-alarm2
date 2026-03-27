@@ -1,6 +1,6 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { Portfolio, Trade } from '../types';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { Portfolio } from '../types';
 import { X, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import { PAID_STOCKS, I18N } from '../constants';
 import { fetchStockPrices } from '../services/stockService';
@@ -44,6 +44,16 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
   const [currentMonth, setCurrentMonth] = useState(new Date()); 
 
   const t = I18N[lang];
+
+  const handleBackdropKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onClose();
+      }
+    },
+    [onClose],
+  );
 
   const [stockPrices, setStockPrices] = useState<Record<string, number>>({});
   const isReadOnly = isHistory ?? !!portfolio.isClosed;
@@ -157,7 +167,14 @@ const PortfolioDetailsModal: React.FC<PortfolioDetailsModalProps> = ({ lang, por
 
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/50 dark:bg-slate-950/80 backdrop-blur-md" onClick={onClose}></div>
+      <div
+        className="absolute inset-0 bg-slate-900/50 dark:bg-slate-950/80 backdrop-blur-md"
+        onClick={onClose}
+        onKeyDown={handleBackdropKeyDown}
+        role="button"
+        tabIndex={0}
+        aria-label={t.closePortfolioDetailsBackdrop}
+      />
       <div 
         className="relative w-full max-w-4xl bg-white dark:bg-[#161d2a] rounded-[2.5rem] border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)] animate-in zoom-in-95 duration-200"
         style={{ touchAction: 'pan-y' }}

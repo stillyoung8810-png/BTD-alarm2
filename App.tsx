@@ -18,7 +18,7 @@ import { useFCMToken } from './hooks/useFCMToken';
 import { useAuth } from './hooks/useAuth';
 import { usePortfolios } from './hooks/usePortfolios';
 import { isTossApp } from './services/tossAppBridge';
-import { showInterstitialOnTransition, AdPlacement } from './services/ads/adService';
+import { showInterstitialOnTransition, AdPlacement, type UserTier } from './services/ads/adService';
 import { restorePendingIapOrders } from './services/payment/tossIapService';
 import { TossAppProvider } from './contexts/TossAppContext';
 import { buildDailyExecutionSummary } from './utils/dailyExecutionSummary';
@@ -57,6 +57,11 @@ const AIImageInputModal = React.lazy(() => import('./components/AIImageInputModa
 const LAZY_MODAL_FALLBACK = (
   <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/50 dark:bg-slate-950/80 text-slate-400 font-bold">…</div>
 );
+
+/** 정산 상세 닫기 전면: 실제 노출 후 재호출 쿨타임 */
+const SETTLEMENT_DETAIL_EXIT_INTERSTITIAL_COOLDOWN_MS = 5_000;
+/** 동일 openId 닫기: setTimeout 기반 물리적 더블 입력 디듀프 */
+const UI_DOUBLE_CLICK_PREVENTION_MS = 300;
 
 type ActiveTab = 'dashboard' | 'markets' | 'history' | 'backtest' | 'pricing' | 'privacy' | 'terms';
 
@@ -172,6 +177,13 @@ const App: React.FC = () => {
 
   // 현재 유저의 실효 구독 티어 (pending_plan / 만료 반영)
   const currentTier = effectiveSubscription.tier.toLowerCase();
+
+  const adsUserTier = useMemo((): UserTier => {
+    if (currentTier === 'pro' || currentTier === 'premium') {
+      return currentTier;
+    }
+    return 'free';
+  }, [currentTier]);
 
   const canAccessPaidStocks = useMemo(() => {
     const tierOk = currentTier === 'pro' || currentTier === 'premium';
@@ -448,9 +460,112 @@ const App: React.FC = () => {
 
   // 🚀 패치 1: 퀵입력/실행 모달 저장 (currentTier 주입)
   const handleAddTradeWithAd = async (portfolioId: string, trade: Trade) => {
-    await handleAddTrade(portfolioId, trade); // 1. 저장 먼저
-    await showInterstitialOnTransition(AdPlacement.INTERSTITIAL_TRADE_SAVE, currentTier as any); // 2. 창 닫히기 전 전면광고 띄우고 대기
+    await handleAddTrade(portfolioId, trade);
+    await showInterstitialOnTransition(AdPlacement.INTERSTITIAL_TRADE_SAVE, adsUserTier);
   };
+
+  const portfoliosRef = useRef<Portfolio[]>(portfolios);
+  useEffect(() => {
+    portfoliosRef.current = portfolios;
+  }, [portfolios]);
+
+  const isSettlementExitAdPipelineActiveRef = useRef(false);
+  const lastSettlementExitInterstitialShownAtMsRef = useRef(0);
+  const settlementDetailsCloseUiDedupeOpenIdRef = useRef<string | null>(null);
+  const settlementDetailsCloseUiDedupeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (settlementDetailsCloseUiDedupeTimerRef.current !== null) {
+        window.clearTimeout(settlementDetailsCloseUiDedupeTimerRef.current);
+        settlementDetailsCloseUiDedupeTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (detailsTargetId === null) {
+      return;
+    }
+    settlementDetailsCloseUiDedupeOpenIdRef.current = null;
+    if (settlementDetailsCloseUiDedupeTimerRef.current !== null) {
+      window.clearTimeout(settlementDetailsCloseUiDedupeTimerRef.current);
+      settlementDetailsCloseUiDedupeTimerRef.current = null;
+    }
+  }, [detailsTargetId]);
+
+  const closedPortfolios = useMemo(
+    () => portfolios.filter((p) => p.isClosed),
+    [portfolios],
+  );
+
+  const handleDeleteCurrentPortfolioTrade = useCallback(
+    (tradeId: string) => {
+      if (detailsTargetId === null) {
+        return;
+      }
+      handleDeleteTrade(detailsTargetId, tradeId);
+    },
+    [detailsTargetId, handleDeleteTrade],
+  );
+
+  const handlePortfolioDetailsModalClose = useCallback(() => {
+    const openId = detailsTargetId;
+    if (openId === null) {
+      return;
+    }
+
+    if (settlementDetailsCloseUiDedupeOpenIdRef.current === openId) {
+      return;
+    }
+    settlementDetailsCloseUiDedupeOpenIdRef.current = openId;
+    if (settlementDetailsCloseUiDedupeTimerRef.current !== null) {
+      window.clearTimeout(settlementDetailsCloseUiDedupeTimerRef.current);
+    }
+    settlementDetailsCloseUiDedupeTimerRef.current = window.setTimeout(() => {
+      settlementDetailsCloseUiDedupeTimerRef.current = null;
+      settlementDetailsCloseUiDedupeOpenIdRef.current = null;
+    }, UI_DOUBLE_CLICK_PREVENTION_MS);
+
+    const portfolio = portfoliosRef.current.find((p) => p.id === openId);
+
+    setDetailsTargetId(null);
+
+    if (!portfolio?.isClosed) {
+      return;
+    }
+
+    if (
+      Date.now() - lastSettlementExitInterstitialShownAtMsRef.current <
+      SETTLEMENT_DETAIL_EXIT_INTERSTITIAL_COOLDOWN_MS
+    ) {
+      return;
+    }
+
+    if (isSettlementExitAdPipelineActiveRef.current) {
+      return;
+    }
+
+    const tierForAd: UserTier = adsUserTier;
+
+    isSettlementExitAdPipelineActiveRef.current = true;
+
+    void (async () => {
+      try {
+        const result = await showInterstitialOnTransition(
+          AdPlacement.INTERSTITIAL_SETTLEMENT_DETAIL,
+          tierForAd,
+        );
+        if (result.shown) {
+          lastSettlementExitInterstitialShownAtMsRef.current = Date.now();
+        }
+      } catch (error: unknown) {
+        console.error('[Ad] Settlement detail exit interstitial failed:', error);
+      } finally {
+        isSettlementExitAdPipelineActiveRef.current = false;
+      }
+    })();
+  }, [detailsTargetId, adsUserTier]);
 
   const currentAlarmPortfolio = portfolios.find(p => p.id === alarmTargetId);
   const currentDetailsPortfolio = portfolios.find(p => p.id === detailsTargetId);
@@ -539,12 +654,8 @@ const App: React.FC = () => {
           <React.Suspense fallback={genericFallback}>
             <History
               lang={lang}
-              portfolios={portfolios.filter(p => p.isClosed)}
-              // 🚀 패치 2: 정산 상세보기 진입 전 (currentTier 주입)
-              onOpenDetails={async (id) => {
-                await showInterstitialOnTransition(AdPlacement.INTERSTITIAL_SETTLEMENT_DETAIL, currentTier as any);
-                setDetailsTargetId(id);
-              }}
+              portfolios={closedPortfolios}
+              onOpenDetails={setDetailsTargetId}
               onDeleteHistory={handleDeleteHistory}
               onClearHistory={handleClearHistory}
             />
@@ -581,6 +692,7 @@ const App: React.FC = () => {
     user,
     activePortfolios,
     portfolios,
+    closedPortfolios,
     userProfile,
     currentTier,
     totalValuation,
@@ -718,7 +830,7 @@ const App: React.FC = () => {
               // 🚀 패치 3: 전략 생성기 완료 후 (currentTier 주입)
               onSave={async (newP) => {
                 await handleAddPortfolio(newP, async () => {
-                  await showInterstitialOnTransition(AdPlacement.INTERSTITIAL_STRATEGY_SAVE, currentTier as any);
+                  await showInterstitialOnTransition(AdPlacement.INTERSTITIAL_STRATEGY_SAVE, adsUserTier);
                   setIsCreatorOpen(false);
                 });
               }}
@@ -739,7 +851,7 @@ const App: React.FC = () => {
                 const tz = userProfile?.timezone || getDeviceTimeZone();
                 const nextConfig = { ...config, timezone: config.timezone || tz };
                 handleUpdatePortfolio({ ...currentAlarmPortfolio, alarmconfig: nextConfig });
-                await showInterstitialOnTransition(AdPlacement.INTERSTITIAL_ALARM_SAVE, currentTier as any);
+                await showInterstitialOnTransition(AdPlacement.INTERSTITIAL_ALARM_SAVE, adsUserTier);
                 setAlarmTargetId(null);
               }}
               maxAlarms={getMaxAlarms(userProfile)}
@@ -748,11 +860,11 @@ const App: React.FC = () => {
         )}
         {currentDetailsPortfolio && (
           <React.Suspense fallback={LAZY_MODAL_FALLBACK}>
-            <PortfolioDetailsModal 
-              lang={lang} 
-              portfolio={currentDetailsPortfolio} 
-              onClose={() => setDetailsTargetId(null)} 
-              onDeleteTrade={(tid) => handleDeleteTrade(currentDetailsPortfolio.id, tid)} 
+            <PortfolioDetailsModal
+              lang={lang}
+              portfolio={currentDetailsPortfolio}
+              onClose={handlePortfolioDetailsModalClose}
+              onDeleteTrade={handleDeleteCurrentPortfolioTrade}
               isHistory={currentDetailsPortfolio.isClosed}
             />
           </React.Suspense>
@@ -778,7 +890,7 @@ const App: React.FC = () => {
                   await handleAddTrade(currentAIImagePortfolio.id, trade);
                 }
                 if (!skipAd) {
-                  await showInterstitialOnTransition(AdPlacement.INTERSTITIAL_TRADE_SAVE, currentTier as any);
+                  await showInterstitialOnTransition(AdPlacement.INTERSTITIAL_TRADE_SAVE, adsUserTier);
                 }
                 setAiImageTargetId(null);
               }}

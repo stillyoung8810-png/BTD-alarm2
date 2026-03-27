@@ -11,7 +11,6 @@ import {
 const QUANTITY_MAX = 12;
 
 const IAP_ORDER_STATUS_URL = "https://api-partner.toss.im/api-partner/v1/apps-in-toss/order/get-order-status";
-const TOSS_PARTNER_API_SECRET = process.env.TOSS_PARTNER_API_SECRET;
 
 // ⚠ PRICE SOURCE OF TRUTH
 // 프론트엔드(constants/membership.ts)와 이 서버 환경변수가 반드시 일치해야 합니다.
@@ -191,17 +190,11 @@ export async function paymentRoutes(fastify: FastifyInstance) {
                     return reply.code(400).send({ success: false, error: "toss_user_key not found. Toss login required." });
                 }
 
-                if (!TOSS_PARTNER_API_SECRET) {
-                    request.log.error("[IAP Verify] TOSS_PARTNER_API_SECRET not configured");
-                    return reply.code(500).send({ success: false, error: "Server configuration error" });
-                }
-
-                // 2. 토스 서버에 주문 상태 및 영수증 진위 여부 조회
+                // 2. 토스 서버에 주문 상태 조회
                 const orderStatusRes = await fetch(IAP_ORDER_STATUS_URL, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
-                        "Authorization": `Bearer ${TOSS_PARTNER_API_SECRET}`,
                         "x-toss-user-key": profile.toss_user_key,
                     },
                     body: JSON.stringify({ orderId }),

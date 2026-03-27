@@ -15,17 +15,16 @@ export type PayMethod =
 
 export interface PayMethodOption {
   id: PayMethod;
-  label: { ko: string; en: string };
-  icon: string; // Lucide icon name or emoji
+  icon: string;
 }
 
-/** 결제 수단 선택지 목록 */
+/** 결제 수단 선택지 목록 — 캡션은 `constants/paymentCheckoutMessages` SSOT */
 export const PAY_METHOD_OPTIONS: PayMethodOption[] = [
-  { id: 'CARD',            label: { ko: '신용카드', en: 'Credit Card' },       icon: 'CreditCard' },
-  { id: 'VIRTUAL_ACCOUNT', label: { ko: '가상계좌', en: 'Virtual Account' },   icon: 'Landmark' },
-  { id: 'TRANSFER',        label: { ko: '계좌이체', en: 'Bank Transfer' },     icon: 'ArrowLeftRight' },
-  { id: 'MOBILE',          label: { ko: '휴대폰',   en: 'Mobile' },            icon: 'Smartphone' },
-  { id: 'EASY_PAY',        label: { ko: '간편결제', en: 'Easy Pay' },          icon: 'Wallet' },
+  { id: 'CARD', icon: 'CreditCard' },
+  { id: 'VIRTUAL_ACCOUNT', icon: 'Landmark' },
+  { id: 'TRANSFER', icon: 'ArrowLeftRight' },
+  { id: 'MOBILE', icon: 'Smartphone' },
+  { id: 'EASY_PAY', icon: 'Wallet' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -43,6 +42,15 @@ export interface PlanInfo {
   price: number;          // 원화 기준 (₩)
   features: string[];     // 체크 항목 텍스트
 }
+
+// ---------------------------------------------------------------------------
+// 체크아웃 / IAP Phase 1
+// ---------------------------------------------------------------------------
+export type CheckoutPlanId = 'pro' | 'premium';
+
+/** Toss mini-app Phase 1: PRO 30일권 1건만 허용 */
+export const TOSS_IAP_FIXED_PLAN_ID: CheckoutPlanId = 'pro';
+export const TOSS_IAP_FIXED_QUANTITY = 1;
 
 // ---------------------------------------------------------------------------
 // 이용권 상수 (개수 선택·만료일 계산에 사용)
@@ -64,7 +72,7 @@ export interface PaymentRequest {
   customerId?: string;
   payMethod: PayMethod;
   easyPayProvider?: EasyPayProvider;
-  planId: string;
+  planId: CheckoutPlanId;
   /** 이용권 개수 (1 = 30일, 2 = 60일 …). 기본 1, 서버 검증 시 사용 */
   quantity?: number;
 }

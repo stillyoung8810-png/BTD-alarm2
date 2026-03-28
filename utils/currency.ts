@@ -19,6 +19,27 @@ export function formatPriceKRW(amount: number): string {
   return krwFormatter.format(amount);
 }
 
+/** 결제 SSOT는 KRW(`MembershipConfig`). 영문 멤버십 카드 USD는 UI 표시용 고정 환율만 사용(실시간 환율 아님). */
+const KRW_PER_USD_MEMBERSHIP_DISPLAY = 1000;
+
+const usdMembershipFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+export function formatPriceUSDForDisplay(amountKrw: number): string {
+  if (!Number.isFinite(amountKrw) || amountKrw < 0) {
+    if (typeof import.meta !== 'undefined' && import.meta.env?.MODE !== 'production') {
+      console.error('[formatPriceUSDForDisplay] Invalid amountKrw:', amountKrw);
+    }
+    return usdMembershipFormatter.format(0);
+  }
+  const usd = amountKrw / KRW_PER_USD_MEMBERSHIP_DISPLAY;
+  return usdMembershipFormatter.format(usd + Number.EPSILON);
+}
+
 /** KRW 총액: 제품 정책 내림, 비정상 입력 시 0 (렌더 경로 throw 금지). */
 export function calculateSafeTotalAmountKRW(
   price: number | undefined,

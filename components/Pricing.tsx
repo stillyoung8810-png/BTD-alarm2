@@ -1,9 +1,10 @@
-import React, { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import { Sparkles, Star, Crown, Check, Lock, Zap, Bell, Clock, Brain, ArrowRight } from 'lucide-react';
 import { useTossApp } from '../contexts/TossAppContext';
 import { TDSButton } from './tds';
+import { I18N } from '../constants';
 import { MembershipConfig } from '../constants/membership';
-import { formatPriceKRW } from '../utils/currency';
+import { formatPriceKRW, formatPriceUSDForDisplay } from '../utils/currency';
 
 const PREMIUM_GLOW_STYLE = `
   @keyframes breathe-gold {
@@ -77,7 +78,72 @@ const TELEGRAM_PREVIEW_CARDS = (isKo: boolean) => [
   },
 ];
 
-const Pricing: React.FC<PricingProps> = ({ lang, currentTier, onUpgrade }) => {
+type AppLang = keyof typeof I18N;
+type AppI18nStrings = (typeof I18N)[AppLang];
+
+function buildPricingTiers(
+  t: AppI18nStrings,
+  formatMoney: (rawAmount: number) => string,
+) {
+  return [
+    {
+      id: 'free' as const,
+      label: 'FREE',
+      subtitle: t.membershipPricingFreeSubtitle,
+      price: t.membershipPricingFreePriceLabel,
+      priceNote: t.membershipPricingFreePriceNote,
+      theme: 'free' as const,
+      features: [
+        { text: t.membershipPricingFreeFeature1 },
+        { text: t.membershipPricingFreeFeature2 },
+        { text: t.membershipPricingFreeFeature3 },
+        { text: t.membershipPricingFreeFeature4 },
+        { text: t.membershipPricingFreeFeature5, disabled: true },
+        { text: t.membershipFreeCoreAlerts },
+        { text: t.membershipPricingFreeFeature7 },
+      ],
+    },
+    {
+      id: 'pro' as const,
+      label: 'PRO',
+      subtitle: t.membershipPricingProSubtitle,
+      price: formatMoney(MembershipConfig.PRO.rawAmount),
+      priceNote: t.membershipPricingProPriceNote,
+      theme: 'pro' as const,
+      badge: t.membershipPricingProBadge,
+      features: [
+        { text: t.membershipPricingProFeature1 },
+        { text: t.membershipPricingProFeature2 },
+        { text: t.membershipPricingProFeature3 },
+        { text: t.membershipPricingProFeature4 },
+        { text: t.membershipPricingProFeature5, disabled: true },
+        { text: t.membershipPricingProFeature6 },
+        { text: t.membershipPricingProFeature7 },
+      ],
+    },
+    {
+      id: 'premium' as const,
+      label: 'PREMIUM',
+      subtitle: t.membershipPricingPremiumSubtitle,
+      price: formatMoney(MembershipConfig.PREMIUM.rawAmount),
+      priceNote: t.membershipPricingPremiumPriceNote,
+      theme: 'premium' as const,
+      badge: t.membershipPricingPremiumBadge,
+      features: [
+        { text: t.membershipPricingPremiumFeature1 },
+        { text: t.membershipPricingPremiumFeature2 },
+        { text: t.membershipPricingPremiumFeature3 },
+        { text: t.membershipPricingPremiumFeature4 },
+        { text: t.membershipPricingPremiumFeature5, disabled: true },
+        { text: t.membershipPricingPremiumFeature6 },
+        { text: t.membershipPricingPremiumFeature7 },
+      ],
+    },
+  ];
+}
+
+const Pricing = ({ lang, currentTier, onUpgrade }: PricingProps) => {
+  const t = I18N[lang];
   const isKo = lang === 'ko';
   const { isInTossApp } = useTossApp();
   const [telegramCardIndex, setTelegramCardIndex] = useState(0);
@@ -89,61 +155,17 @@ const Pricing: React.FC<PricingProps> = ({ lang, currentTier, onUpgrade }) => {
   
   const touchStartX = useRef<number>(0);
 
-  const tiers = [
-    {
-      id: 'free',
-      label: 'FREE',
-      subtitle: isKo ? '초보 투자자' : 'Getting Started',
-      price: isKo ? '₩0' : '$0',
-      priceNote: isKo ? '/ 평생' : '/ lifetime',
-      theme: 'free',
-      features: [
-        { text: isKo ? '포트폴리오 최대 2개' : 'Up to 2 portfolios' },
-        { text: isKo ? '알람 슬롯 2개' : '2 alert slots' },
-        { text: isKo ? '기본 13개 ETF' : '13 core ETFs' },
-        { text: isKo ? 'AI 매매 인식 (1회/일)' : 'AI Trade Recognition (1/day)' },
-        { text: isKo ? '백테스트 (2회/일)' : 'Backtesting (2/day)', disabled: true },
-        { text: isKo ? '기본 알림 (준비 중이에요)' : 'Core notifications (coming soon)' },
-        { text: isKo ? '광고 포함' : 'Includes ads' },
-      ],
+  const formatMoney = useCallback(
+    (rawAmount: number) => {
+      if (lang === 'ko') {
+        return formatPriceKRW(rawAmount);
+      }
+      return formatPriceUSDForDisplay(rawAmount);
     },
-    {
-      id: 'pro',
-      label: 'PRO',
-      subtitle: isKo ? '전문 투자자' : 'Active Investor',
-      price: isKo ? formatPriceKRW(MembershipConfig.PRO.rawAmount) : '$5.90',
-      priceNote: isKo ? '/ 월 (예정)' : '/ month (planned)',
-      theme: 'pro',
-      badge: isKo ? '가장 인기 있는 선택' : 'Most popular',
-      features: [
-        { text: isKo ? '포트폴리오 최대 5개' : 'Up to 5 portfolios' },
-        { text: isKo ? '알람 슬롯 10개' : '10 alert slots' },
-        { text: isKo ? '기본 13개 + PRO 전용 종목' : 'Core + PRO tickers (TSLA, NVDA, MSTR …)' },
-        { text: isKo ? 'AI 매매 인식 (50회/월)' : 'AI Trade Recognition (50/month)' },
-        { text: isKo ? '백테스트 (5회/일)' : 'Backtesting (5/day)', disabled: true },
-        { text: isKo ? '텔레그램 상세 알림' : 'Detailed Telegram alerts' },
-        { text: isKo ? '광고 제거' : 'No ads' },
-      ],
-    },
-    {
-      id: 'premium',
-      label: 'PREMIUM',
-      subtitle: isKo ? '슈퍼 고래' : 'Power User',
-      price: isKo ? formatPriceKRW(MembershipConfig.PREMIUM.rawAmount) : '$9.90',
-      priceNote: isKo ? '/ 월 (출시 예정)' : '/ month (coming soon)',
-      theme: 'premium',
-      badge: isKo ? 'COMING SOON' : 'COMING SOON',
-      features: [
-        { text: isKo ? '포트폴리오 최대 20개' : 'Up to 20 portfolios' },
-        { text: isKo ? '알람 슬롯 40개' : '40 alert slots' },
-        { text: isKo ? '모든 종목 + 베타 종목' : 'All tickers + beta' },
-        { text: isKo ? 'AI 매매 인식 (무제한)' : 'Unlimited AI Recognition' },
-        { text: isKo ? '백테스트 (10회/일)' : 'Backtesting (10/day)', disabled: true },
-        { text: isKo ? '신규 전략 선공개' : 'Early access to strategies' },
-        { text: isKo ? 'VIP 전용 고객 지원' : 'VIP priority support' },
-      ],
-    },
-  ];
+    [lang],
+  );
+
+  const tiers = useMemo(() => buildPricingTiers(t, formatMoney), [t, formatMoney]);
 
   const renderIcon = (theme: 'free' | 'pro' | 'premium') => {
     if (theme === 'premium') {
@@ -254,7 +276,7 @@ const Pricing: React.FC<PricingProps> = ({ lang, currentTier, onUpgrade }) => {
 
                   <ul className={`space-y-3 mb-8 text-xs ${tier.theme === 'free' ? 'text-slate-600 dark:text-slate-300' : tier.theme === 'pro' ? 'text-blue-900/80 dark:text-slate-200' : 'text-slate-200'}`}>
                     {tier.features.map((f, idx) => (
-                      <li key={idx} className={`flex items-start gap-2.5 ${f.disabled ? 'opacity-40' : ''}`}>
+                      <li key={`${tier.id}-feat-${idx}`} className={`flex items-start gap-2.5 ${f.disabled ? 'opacity-40' : ''}`}>
                         <div className="mt-0.5 shrink-0">
                           {f.disabled ? (
                             <Lock size={12} className="text-slate-500" />

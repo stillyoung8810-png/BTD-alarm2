@@ -584,7 +584,6 @@ const App: React.FC = () => {
             <Dashboard
               lang={lang}
               portfolios={activePortfolios}
-              currentTier={currentTier === 'premium' || currentTier === 'pro' ? (currentTier as 'pro' | 'premium') : 'free'}
               onClosePortfolio={(id) => setTerminateTargetId(id)}
               onDeletePortfolio={handleDeletePortfolio}
               onUpdatePortfolio={handleUpdatePortfolio}

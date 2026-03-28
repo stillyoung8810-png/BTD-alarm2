@@ -31,13 +31,11 @@ import { useVrOrders } from '../hooks/useVrOrders';
 import { useTossApp } from '../contexts/TossAppContext';
 import { TDSButton, TDSList, TDSListRow } from './tds';
 import { getConditionalTypographyStyle, getConditionalColor } from '../utils/tossStyleHelpers';
-import Toast from './Toast';
 import VrPortfolioSummary from './VrPortfolioSummary';
 
 interface DashboardProps {
   lang: 'ko' | 'en';
   portfolios: Portfolio[];
-  currentTier: 'free' | 'pro' | 'premium';
   onClosePortfolio: (id: string) => void;
   onDeletePortfolio: (id: string) => void;
   onUpdatePortfolio: (updated: Portfolio) => void;
@@ -56,7 +54,6 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ 
   lang, 
   portfolios, 
-  currentTier,
   onClosePortfolio,
   onDeletePortfolio,
   onUpdatePortfolio,
@@ -227,7 +224,6 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <TDSListRow key={p.id} border="none" verticalPadding="large">
                   <PortfolioCard
                     portfolio={p}
-                    currentTier={currentTier}
                     lang={lang}
                     onOpenAlarm={() => onOpenAlarm(p.id)}
                     onOpenDetails={() => onOpenDetails(p.id)}
@@ -250,7 +246,6 @@ const Dashboard: React.FC<DashboardProps> = ({
               <PortfolioCard
                 key={p.id}
                 portfolio={p}
-                currentTier={currentTier}
                 lang={lang}
                 onOpenAlarm={() => onOpenAlarm(p.id)}
                 onOpenDetails={() => onOpenDetails(p.id)}
@@ -275,7 +270,6 @@ const Dashboard: React.FC<DashboardProps> = ({
 
 const PortfolioCard: React.FC<{ 
   portfolio: Portfolio; 
-  currentTier: 'free' | 'pro' | 'premium';
   onClose: () => void;
   onDelete: () => void;
   onOpenAlarm: () => void;
@@ -286,7 +280,7 @@ const PortfolioCard: React.FC<{
   onUpdatePortfolio: (updated: Portfolio) => void;
   lang: 'ko' | 'en';
   onDailyExecutionBlock?: (id: string, block: string | null) => void;
-}> = ({ portfolio, currentTier, onClose, onDelete, onOpenAlarm, onOpenDetails, onOpenQuickInput, onOpenExecution, onOpenAIImage, onUpdatePortfolio, lang, onDailyExecutionBlock }) => {
+}> = ({ portfolio, onClose, onDelete, onOpenAlarm, onOpenDetails, onOpenQuickInput, onOpenExecution, onOpenAIImage, onUpdatePortfolio, lang, onDailyExecutionBlock }) => {
   const { isInTossApp } = useTossApp();
   const t = I18N[lang];
   const isMultiSplitStrategy = !!portfolio.strategy.multiSplit;
@@ -309,26 +303,12 @@ const PortfolioCard: React.FC<{
     [portfolio, lang],
   );
 
-  const [freeAlarmToastSeq, setFreeAlarmToastSeq] = useState(0);
-
-  const openFreeAlarmToast = useCallback(() => {
-    setFreeAlarmToastSeq((prev) => prev + 1);
-  }, []);
-
-  const handleAlarmButtonClick = useCallback(() => {
-    if (currentTier === 'free') {
-      openFreeAlarmToast();
-      return;
-    }
-    onOpenAlarm();
-  }, [currentTier, onOpenAlarm, openFreeAlarmToast]);
-
-  const handleAlarmButtonClickWeb = useCallback(
+  const handleOpenAlarmWeb = useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => {
       e.stopPropagation();
-      handleAlarmButtonClick();
+      onOpenAlarm();
     },
-    [handleAlarmButtonClick]
+    [onOpenAlarm],
   );
 
   // 콜백을 ref에 보관해 effect 의존성에서 제외 → 부모 리렌더 시 콜백 참조 변경으로 인한 반복 실행 방지
@@ -636,6 +616,29 @@ const PortfolioCard: React.FC<{
     };
   }, [portfolio.id, portfolio.trades.length]);
 
+  const alarmIcon = isAlarmEnabled ? (
+    <Bell size={16} fill="currentColor" />
+  ) : (
+    <BellOff size={16} />
+  );
+
+  const baseBtnClass = 'w-9 h-9 rounded-lg flex items-center justify-center';
+  const activeStateClass = 'bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-500';
+
+  const alarmTossBtnClass = [baseBtnClass, 'min-w-0 p-0', isAlarmEnabled && activeStateClass]
+    .filter(Boolean)
+    .join(' ');
+
+  const alarmWebBtnClass = [
+    baseBtnClass,
+    'transition-all duration-300',
+    isAlarmEnabled
+      ? `${activeStateClass} border border-amber-200 dark:border-amber-500/30`
+      : 'bg-transparent text-slate-500 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
     <div
       className={`glass light-card-depth p-7 rounded-[2.5rem] space-y-5 group hover:-translate-y-1 transition-all duration-500 relative overflow-hidden shadow-[0_12px_40px_rgba(0,0,0,0.06)] dark:shadow-2xl ${
@@ -654,13 +657,11 @@ const PortfolioCard: React.FC<{
             <TDSButton
               variant="tertiary"
               size="small"
-              onClick={handleAlarmButtonClick}
-              className={`w-9 h-9 min-w-0 p-0 rounded-lg flex items-center justify-center ${
-                isAlarmEnabled ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-500' : ''
-              }`}
-              aria-label={lang === 'ko' ? '알람 설정' : 'Alarm settings'}
+              onClick={onOpenAlarm}
+              className={alarmTossBtnClass}
+              aria-label={t.alarmSettingsLabel}
             >
-              {isAlarmEnabled ? <Bell size={16} fill="currentColor" /> : <BellOff size={16} />}
+              {alarmIcon}
             </TDSButton>
             <TDSButton
               variant="tertiary"
@@ -678,15 +679,11 @@ const PortfolioCard: React.FC<{
           <>
             <button
               type="button"
-              onClick={handleAlarmButtonClickWeb}
-              className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-300 ${
-                isAlarmEnabled
-                  ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-500 border border-amber-200 dark:border-amber-500/30'
-                  : 'bg-transparent text-slate-500 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
-              }`}
-              title={lang === 'ko' ? '알람 설정' : 'Alarm settings'}
+              onClick={handleOpenAlarmWeb}
+              className={alarmWebBtnClass}
+              aria-label={t.alarmSettingsLabel}
             >
-              {isAlarmEnabled ? <Bell size={16} fill="currentColor" /> : <BellOff size={16} />}
+              {alarmIcon}
             </button>
             <button
               type="button"
@@ -828,18 +825,6 @@ const PortfolioCard: React.FC<{
           )}
         </div>
       </div>
-
-      {freeAlarmToastSeq > 0 && (
-        <Toast
-          key={freeAlarmToastSeq}
-          message={
-            lang === 'ko'
-              ? '무료 회원을 위한 알림도 곧 만날 수 있어요.'
-              : 'Alerts for free members are coming soon.'
-          }
-          onDone={() => setFreeAlarmToastSeq(0)}
-        />
-      )}
 
       <div 
         onClick={onOpenExecution}

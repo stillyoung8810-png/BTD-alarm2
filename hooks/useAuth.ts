@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { supabase, clearAuthStorage } from '../services/supabase';
 import { isSessionRecoverableError } from '../utils/authHelpers';
@@ -14,22 +15,22 @@ function getSessionFingerprint(session: Session | null): string | null {
 
 export interface UseAuthOptions {
   lang: 'ko' | 'en';
-  setPortfolios: (value: React.SetStateAction<any[]>) => void;
+  setPortfolios: (value: SetStateAction<any[]>) => void;
   /** App에서 정의한 fetchPortfolios. ref로 전달해 순환 의존성 회피. */
-  fetchPortfoliosRef: React.MutableRefObject<(userId: string) => void>;
+  fetchPortfoliosRef: MutableRefObject<(userId: string) => void>;
   saveFCMToken: (userId: string) => Promise<void>;
 }
 
 export interface UseAuthReturn {
   user: { id: string; email: string } | null;
-  setUser: React.Dispatch<React.SetStateAction<{ id: string; email: string } | null>>;
+  setUser: Dispatch<SetStateAction<{ id: string; email: string } | null>>;
   userProfile: AppUserProfile | null;
-  setUserProfile: React.Dispatch<React.SetStateAction<AppUserProfile | null>>;
+  setUserProfile: Dispatch<SetStateAction<AppUserProfile | null>>;
   authModal: 'login' | 'signup' | 'profile' | 'reset-password' | 'change-password' | null;
-  setAuthModal: React.Dispatch<React.SetStateAction<'login' | 'signup' | 'profile' | 'reset-password' | 'change-password' | null>>;
+  setAuthModal: Dispatch<SetStateAction<'login' | 'signup' | 'profile' | 'reset-password' | 'change-password' | null>>;
   isLoading: boolean;
   fetchUserProfile: (userId: string) => Promise<void>;
-  justLoggedInRef: React.MutableRefObject<boolean>;
+  justLoggedInRef: MutableRefObject<boolean>;
 }
 
 export function useAuth({

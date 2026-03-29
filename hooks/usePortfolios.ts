@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 import { supabase } from '../services/supabase';
 import { normalizePortfolioData } from '../utils/portfolioNormalize';
 import { calculateHoldings, calculateTotalInvested, getTotalSellProceeds } from '../utils/portfolioCalculations';
@@ -24,12 +25,12 @@ export interface UsePortfoliosOptions {
   userId: string | null;
   userProfile: AppUserProfile | null;
   portfolios: Portfolio[];
-  setPortfolios: React.Dispatch<React.SetStateAction<Portfolio[]>>;
+  setPortfolios: Dispatch<SetStateAction<Portfolio[]>>;
 }
 
 export interface UsePortfoliosReturn {
   portfolios: Portfolio[];
-  setPortfolios: React.Dispatch<React.SetStateAction<Portfolio[]>>;
+  setPortfolios: Dispatch<SetStateAction<Portfolio[]>>;
   fetchPortfolios: (userId: string) => void;
   loadPortfoliosFromCache: (userId: string) => boolean;
   handleAddPortfolio: (newP: Omit<Portfolio, 'id'>, onSuccess?: () => void | Promise<void>) => Promise<void>;

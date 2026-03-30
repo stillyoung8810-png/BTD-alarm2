@@ -21,6 +21,7 @@
     "@apps-in-toss/web-framework": "2.0.2",
     "@emotion/react": "^11.14.0",
     "@google/genai": "^1.35.0",
+    "@radix-ui/react-focus-scope": "^1.1.8",
     "@supabase/supabase-js": "^2.90.1",
     "@toss/tds-colors": "^0.1.0",
     "@toss/tds-mobile": "^2.2.1",

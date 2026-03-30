@@ -71,6 +71,10 @@ const UI_DOUBLE_CLICK_PREVENTION_MS = 300;
 
 type ActiveTab = 'dashboard' | 'markets' | 'history' | 'backtest' | 'pricing' | 'privacy' | 'terms';
 
+interface FinishSignedInFlowOptions {
+  shouldShowWelcome: boolean;
+}
+
 const App: React.FC = () => {
   const [lang, setLang] = useState<'ko' | 'en'>('ko');
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
@@ -158,6 +162,7 @@ const App: React.FC = () => {
     saveFCMToken,
     fetchPortfoliosRef,
   });
+  const [shouldShowSignedInWelcome, setShouldShowSignedInWelcome] = useState(false);
 
   const {
     fetchPortfolios,
@@ -609,6 +614,7 @@ const App: React.FC = () => {
   }, [detailsTargetId, adsUserTier]);
 
   const handleCloseAuthModal = useCallback(() => {
+    setShouldShowSignedInWelcome(false);
     setAuthModal(null);
   }, []);
 
@@ -627,23 +633,48 @@ const App: React.FC = () => {
   }, []);
 
   const handleCommitSignedIn = useCallback(
-    async (signedInUser: { id: string; email: string }) => {
+    (signedInUser: { id: string; email: string }) => {
       setUser(signedInUser);
       justLoggedInRef.current = true;
-      await Promise.all([
-        fetchUserProfile(signedInUser.id),
-        Promise.resolve(fetchPortfolios(signedInUser.id)),
-      ]);
+
+      // 로그인 성공 직후 모달 전환이 fetch 완료에 막히지 않도록 백그라운드 프리로드로 분리합니다.
+      fetchUserProfile(signedInUser.id).catch((error: unknown) => {
+        console.warn('[Auth] signed-in profile preload failed:', error);
+      });
+      fetchPortfolios(signedInUser.id);
     },
     [fetchPortfolios, fetchUserProfile, justLoggedInRef, setUser],
   );
 
   const handleFinishSignedInFlow = useCallback(
-    async (_signedInUser: { id: string; email: string }) => {
+    async (
+      _signedInUser: { id: string; email: string },
+      options: FinishSignedInFlowOptions,
+    ) => {
+      setShouldShowSignedInWelcome(options.shouldShowWelcome);
       setAuthModal('profile');
     },
     [setAuthModal],
   );
+
+  const handleSwitchAuthModalType = useCallback(
+    (
+      nextType:
+        | 'login'
+        | 'signup'
+        | 'profile'
+        | 'reset-password'
+        | 'change-password',
+    ) => {
+      setShouldShowSignedInWelcome(false);
+      setAuthModal(nextType);
+    },
+    [],
+  );
+
+  const handleSignedInWelcomeComplete = useCallback(() => {
+    setShouldShowSignedInWelcome(false);
+  }, []);
 
   const handleRequestBackNavigation = useCallback(
     (onLeave: () => void) => {
@@ -1109,7 +1140,9 @@ const App: React.FC = () => {
             onRequestMiniAppExit={handleRequestMiniAppExit}
             onCommitSignedIn={handleCommitSignedIn}
             onFinishSignedInFlow={handleFinishSignedInFlow}
-            onSwitchType={(type) => setAuthModal(type)} 
+            onSwitchType={handleSwitchAuthModalType}
+            shouldShowSignedInWelcome={shouldShowSignedInWelcome}
+            onCompleteSignedInWelcome={handleSignedInWelcomeComplete}
             onLogout={async () => { 
               try {
                 const { error } = await supabase.auth.signOut();
@@ -1120,6 +1153,7 @@ const App: React.FC = () => {
                 setUser(null); 
                 setUserProfile(null);
                 setPortfolios([]); 
+                setShouldShowSignedInWelcome(false);
                 setAuthModal(null);
                 if (typeof window !== 'undefined') {
                   window.location.reload();
@@ -1130,6 +1164,7 @@ const App: React.FC = () => {
                 setUser(null); 
                 setUserProfile(null);
                 setPortfolios([]); 
+                setShouldShowSignedInWelcome(false);
                 setAuthModal(null);
                 if (typeof window !== 'undefined') {
                   window.location.reload();

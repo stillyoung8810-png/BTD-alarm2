@@ -4,13 +4,19 @@ import { X, UserCheck, ShieldCheck } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { cancelSubscription } from '../services/payment/paymentService';
 import { buildRedirectUrl } from '../utils/authHelpers';
-import { TDSModal, TDSModalHeader } from './tds';
+import { TDSButton, TDSModal, TDSModalHeader } from './tds';
 import { useTossApp } from '../contexts/TossAppContext';
 import { AUTH_VIEW_MAP, type AuthModalType } from './auth';
 import { TDS_DIALOG_MESSAGES } from '../constants/tdsDialogMessages';
 import { TdsAlertDialog } from './tds-adapter/TdsAlertDialog';
 
 type AuthCompletionKind = 'password_ok' | 'password_ok_relogin' | 'account_deleted';
+
+interface SignedInWelcomeCopy {
+  title: string;
+  body: string;
+  confirmLabel: string;
+}
 
 function getAuthCompletionDialogCopy(
   lang: 'ko' | 'en',
@@ -39,6 +45,51 @@ function getAuthCompletionDialogCopy(
   }
 }
 
+function getSignedInWelcomeCopy(lang: 'ko' | 'en'): SignedInWelcomeCopy | null {
+  const dialogMessages = TDS_DIALOG_MESSAGES[lang];
+  const acknowledge = dialogMessages?.common?.acknowledge;
+  if (dialogMessages?.auth == null || acknowledge == null) {
+    return null;
+  }
+
+  return {
+    title: dialogMessages.auth.signedInSuccessTitle,
+    body: dialogMessages.auth.signedInSuccessBody,
+    confirmLabel: acknowledge,
+  };
+}
+
+function getModalTitle(
+  lang: 'ko' | 'en',
+  type: AuthModalType,
+  loginLabel: string,
+  signupLabel: string,
+  isSignedInWelcomeVisible: boolean,
+  signedInWelcomeCopy: SignedInWelcomeCopy | null,
+): string {
+  if (isSignedInWelcomeVisible && signedInWelcomeCopy != null) {
+    return signedInWelcomeCopy.title;
+  }
+
+  switch (type) {
+    case 'login':
+      return loginLabel;
+    case 'signup':
+      return signupLabel;
+    case 'reset-password':
+      return lang === 'ko' ? '비밀번호 재설정' : 'Reset Password';
+    case 'change-password':
+      return lang === 'ko' ? '비밀번호 변경' : 'Change Password';
+    case 'profile':
+      return 'User Profile';
+    default: {
+      const neverType: never = type;
+      void neverType;
+      return 'User Profile';
+    }
+  }
+}
+
 interface AuthModalsProps {
   lang: 'ko' | 'en';
   type: 'login' | 'signup' | 'profile' | 'reset-password' | 'change-password';
@@ -59,6 +110,8 @@ interface AuthModalsProps {
   telegramAlertsEnabled?: boolean;
   /** 텔레그램 알림 사용 여부 변경 시 호출 (DB 업데이트용) */
   onTelegramAlertsEnabledChange?: (enabled: boolean) => void;
+  shouldShowSignedInWelcome?: boolean;
+  onCompleteSignedInWelcome?: () => void;
 }
 
 const AuthModals: React.FC<AuthModalsProps> = ({
@@ -76,6 +129,8 @@ const AuthModals: React.FC<AuthModalsProps> = ({
   telegramConnectedAt = null,
   telegramAlertsEnabled = false,
   onTelegramAlertsEnabledChange,
+  shouldShowSignedInWelcome = false,
+  onCompleteSignedInWelcome,
 }) => {
   const t = I18N[lang];
   const { isInTossApp } = useTossApp();
@@ -133,6 +188,11 @@ const AuthModals: React.FC<AuthModalsProps> = ({
       : currentTier === 'pro'
       ? 'PRO'
       : 'FREE';
+  const signedInWelcomeCopy = getSignedInWelcomeCopy(lang);
+  const isSignedInWelcomeVisible =
+    type === 'profile' &&
+    shouldShowSignedInWelcome &&
+    signedInWelcomeCopy != null;
 
   // 비밀번호 강도 검증 (최소 8자, 대문자, 소문자, 숫자, 특수문자 포함)
   const validatePassword = (pw: string): string | null => {
@@ -477,16 +537,20 @@ const AuthModals: React.FC<AuthModalsProps> = ({
     openAuthCompletion('account_deleted');
   };
 
-  const modalTitle =
-    type === 'login'
-      ? t.login
-      : type === 'signup'
-      ? t.signup
-      : type === 'reset-password'
-      ? (lang === 'ko' ? '비밀번호 재설정' : 'Reset Password')
-      : type === 'change-password'
-      ? (lang === 'ko' ? '비밀번호 변경' : 'Change Password')
-      : 'User Profile';
+  const handleSignedInWelcomeComplete = useCallback(() => {
+    onCompleteSignedInWelcome?.();
+  }, [onCompleteSignedInWelcome]);
+
+  const modalTitle = getModalTitle(
+    lang,
+    type,
+    t.login,
+    t.signup,
+    isSignedInWelcomeVisible,
+    signedInWelcomeCopy,
+  );
+  const shouldShowProfileBadge =
+    type === 'profile' || isSignedInWelcomeVisible;
 
   const modalContent = (
     <>
@@ -496,7 +560,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({
           onClose={handleRequestClose}
           leftAccessory={
             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
-              {type === 'profile' ? <UserCheck className="text-white" size={20} /> : <ShieldCheck className="text-white" size={20} />}
+              {shouldShowProfileBadge ? <UserCheck className="text-white" size={20} /> : <ShieldCheck className="text-white" size={20} />}
             </div>
           }
         />
@@ -504,7 +568,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({
         <div className="p-6 md:p-8 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-slate-900/40 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
-              {type === 'profile' ? <UserCheck className="text-white" size={20} /> : <ShieldCheck className="text-white" size={20} />}
+              {shouldShowProfileBadge ? <UserCheck className="text-white" size={20} /> : <ShieldCheck className="text-white" size={20} />}
             </div>
             <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">{modalTitle}</h2>
           </div>
@@ -514,7 +578,26 @@ const AuthModals: React.FC<AuthModalsProps> = ({
 
       {/* Content — AUTH_VIEW_MAP 기반 단일 렌더 (Phase 0.3) */}
       <div className="p-6 md:p-10 space-y-6 md:space-y-8 flex-1 overflow-y-auto overscroll-contain">
-        {(() => {
+        {isSignedInWelcomeVisible && signedInWelcomeCopy != null ? (
+          <div className="space-y-6">
+            <div className="rounded-[2rem] border border-blue-200 bg-blue-50 px-5 py-6 text-center dark:border-blue-500/30 dark:bg-blue-500/10">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-blue-600 shadow-lg shadow-blue-500/20">
+                <UserCheck className="text-white" size={28} />
+              </div>
+              <p className="text-base font-bold leading-7 text-slate-900 dark:text-white">
+                {signedInWelcomeCopy.body}
+              </p>
+            </div>
+            <TDSButton
+              type="button"
+              variant="primary"
+              fullWidth
+              onClick={handleSignedInWelcomeComplete}
+            >
+              {signedInWelcomeCopy.confirmLabel}
+            </TDSButton>
+          </div>
+        ) : (() => {
           const ViewComponent = AUTH_VIEW_MAP[type];
           const viewProps =
             type === 'login' || type === 'signup'

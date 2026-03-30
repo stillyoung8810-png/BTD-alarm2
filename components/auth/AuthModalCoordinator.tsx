@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback } from 'react';
 import type { AppLang } from '../../types';
 import { useTossApp } from '../../contexts/TossAppContext';
 import AuthModals from '../AuthModals';
@@ -25,7 +25,12 @@ interface AuthModalCoordinatorProps extends BaseAuthModalsProps {
   onCloseAuthModal: () => void;
   onRequestMiniAppExit: () => Promise<void> | void;
   onCommitSignedIn: (user: SignedInUser) => Promise<void> | void;
-  onFinishSignedInFlow: (user: SignedInUser) => Promise<void> | void;
+  onFinishSignedInFlow: (
+    user: SignedInUser,
+    options: { shouldShowWelcome: boolean },
+  ) => Promise<void> | void;
+  shouldShowSignedInWelcome: boolean;
+  onCompleteSignedInWelcome: () => void;
 }
 
 export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
@@ -35,19 +40,14 @@ export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
   onRequestMiniAppExit,
   onCommitSignedIn,
   onFinishSignedInFlow,
+  shouldShowSignedInWelcome,
+  onCompleteSignedInWelcome,
   type,
   ...authModalProps
 }) => {
   const { isInTossApp } = useTossApp();
   const labels = TDS_DIALOG_MESSAGES[lang]?.actions;
   const exitDialog = useAsyncTdsConfirm(lang);
-  const welcomeDialog = useAsyncTdsConfirm(lang);
-  const [isAuthModalSuspended, setIsAuthModalSuspended] = useState(false);
-
-  const handleWelcomeDialogClose = useCallback(() => {
-    setIsAuthModalSuspended(false);
-    welcomeDialog.close();
-  }, [welcomeDialog.close]);
 
   const handleSignedIn = useCallback(
     async (user: SignedInUser) => {
@@ -59,38 +59,24 @@ export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
       const canShowSignedInWelcome =
         isInTossApp && (type === 'login' || type === 'signup');
 
-      if (
-        !canShowSignedInWelcome ||
-        authMessages == null ||
-        acknowledge == null ||
-        actionLabels == null
-      ) {
-        setIsAuthModalSuspended(false);
-        await Promise.resolve(onFinishSignedInFlow(user));
-        return;
-      }
+      const shouldShowWelcome =
+        canShowSignedInWelcome &&
+        authMessages != null &&
+        acknowledge != null &&
+        actionLabels != null;
 
-      // 성공 직후 원본 인증 모달을 잠시 숨겨야 환영 다이얼로그가 가려지지 않습니다.
-      setIsAuthModalSuspended(true);
-      welcomeDialog.open({
-        title: authMessages.signedInSuccessTitle ?? '',
-        body: authMessages.signedInSuccessBody ?? '',
-        confirmLabel: acknowledge,
-        tone: 'primary',
-        action: async () => {
-          await Promise.resolve(onFinishSignedInFlow(user));
-          setIsAuthModalSuspended(false);
-        },
-      });
+      await Promise.resolve(
+        onFinishSignedInFlow(user, {
+          shouldShowWelcome,
+        }),
+      );
     },
     [
       isInTossApp,
       lang,
       onCommitSignedIn,
       onFinishSignedInFlow,
-      setIsAuthModalSuspended,
       type,
-      welcomeDialog.open,
     ],
   );
 
@@ -139,27 +125,19 @@ export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
 
   return (
     <>
-      {!isAuthModalSuspended ? (
-        <AuthModals
-          {...authModalProps}
-          lang={lang}
-          type={type}
-          onClose={onCloseAuthModal}
-          onRequestClose={handleAuthClose}
-          onSignedIn={handleSignedIn}
-        />
-      ) : null}
+      <AuthModals
+        {...authModalProps}
+        lang={lang}
+        type={type}
+        onClose={onCloseAuthModal}
+        onRequestClose={handleAuthClose}
+        onSignedIn={handleSignedIn}
+        shouldShowSignedInWelcome={shouldShowSignedInWelcome}
+        onCompleteSignedInWelcome={onCompleteSignedInWelcome}
+      />
 
       {labels != null ? (
-        <>
-          <TdsConfirmDialog {...exitDialog.dialogProps} labels={labels} />
-          <TdsConfirmDialog
-            {...welcomeDialog.dialogProps}
-            labels={labels}
-            onClose={handleWelcomeDialogClose}
-            shouldHideCancel={true}
-          />
-        </>
+        <TdsConfirmDialog {...exitDialog.dialogProps} labels={labels} />
       ) : null}
     </>
   );

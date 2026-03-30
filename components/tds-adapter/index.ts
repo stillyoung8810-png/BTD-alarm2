@@ -19,5 +19,6 @@ export {
   useAsyncTdsConfirm,
   type AsyncTdsConfirmDialogProps,
   type AsyncTdsConfirmOpenParams,
+  type ConfirmDialogSnapshot,
   type UseAsyncTdsConfirmResult,
 } from './useAsyncTdsConfirm';

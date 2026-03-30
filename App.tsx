@@ -23,6 +23,7 @@ import { TossAppProvider } from './contexts/TossAppContext';
 import { buildDailyExecutionSummary } from './utils/dailyExecutionSummary';
 import { MembershipConfig } from './constants/membership';
 import { formatPriceKRW } from './utils/currency';
+import { TdsAlertDialog } from './components/tds-adapter/TdsAlertDialog';
 import { TdsConfirmDialog } from './components/tds-adapter/TdsConfirmDialog';
 import { useAsyncTdsConfirm } from './components/tds-adapter/useAsyncTdsConfirm';
 import { TDS_DIALOG_MESSAGES } from './constants/tdsDialogMessages';
@@ -609,6 +610,21 @@ const App: React.FC = () => {
   const currentAIImagePortfolio = portfolios.find(p => p.id === aiImageTargetId);
   const currentTerminatePortfolio = portfolios.find(p => p.id === terminateTargetId);
 
+  const [portfolioLimitNoticeMax, setPortfolioLimitNoticeMax] = useState<number | null>(null);
+
+  const handleRequestOpenCreator = useCallback(() => {
+    const maxAllowed = getMaxPortfolios(userProfile);
+    if (activePortfolios.length >= maxAllowed) {
+      setPortfolioLimitNoticeMax(maxAllowed);
+      return;
+    }
+    setIsCreatorOpen(true);
+  }, [activePortfolios.length, userProfile]);
+
+  const handlePortfolioLimitNoticeClose = useCallback(() => {
+    setPortfolioLimitNoticeMax(null);
+  }, []);
+
   const tabContentNode = useMemo((): React.ReactNode => {
     const dashboardFallback = <div className="flex items-center justify-center min-h-[50vh] text-slate-500 dark:text-slate-400 font-bold">{lang === 'ko' ? '대시보드 로딩 중…' : 'Loading dashboard…'}</div>;
     const genericFallback = <div className="flex items-center justify-center min-h-[50vh] text-slate-500 dark:text-slate-400 font-bold">{lang === 'ko' ? '로딩 중…' : 'Loading…'}</div>;
@@ -622,15 +638,7 @@ const App: React.FC = () => {
               onClosePortfolio={(id) => setTerminateTargetId(id)}
               onDeletePortfolio={handleDeletePortfolio}
               onUpdatePortfolio={handleUpdatePortfolio}
-              onOpenCreator={() => {
-                if (activePortfolios.length >= getMaxPortfolios(userProfile)) {
-                  alert(lang === 'ko'
-                    ? `포트폴리오 생성 한도(${getMaxPortfolios(userProfile)}개)에 도달했습니다. 더 많은 포트폴리오를 만들려면 업그레이드를 고려해 보세요.`
-                    : `Portfolio limit (${getMaxPortfolios(userProfile)}) reached. Please upgrade for more.`);
-                  return;
-                }
-                setIsCreatorOpen(true);
-              }}
+              onOpenCreator={handleRequestOpenCreator}
               onOpenAlarm={(id) => setAlarmTargetId(id)}
               onOpenDetails={(id) => setDetailsTargetId(id)}
               onOpenQuickInput={(id, activeSection) => {
@@ -739,6 +747,7 @@ const App: React.FC = () => {
     onDailyExecutionSummaryChange,
     canAccessPaidStocks,
     handleRequestBackNavigation,
+    handleRequestOpenCreator,
   ]);
 
   const MainContent = () => (
@@ -1044,6 +1053,25 @@ const App: React.FC = () => {
             />
           );
         })()}
+
+        {portfolioLimitNoticeMax != null ? (() => {
+          const limitLabels = TDS_DIALOG_MESSAGES[lang]?.actions;
+          const appMessages = TDS_DIALOG_MESSAGES[lang]?.app;
+          const acknowledge = TDS_DIALOG_MESSAGES[lang]?.common?.acknowledge;
+          if (limitLabels == null || appMessages == null || acknowledge == null) {
+            return null;
+          }
+          return (
+            <TdsAlertDialog
+              isOpen
+              title={appMessages.portfolioLimitTitle}
+              body={appMessages.portfolioLimitBody(portfolioLimitNoticeMax)}
+              confirmLabel={acknowledge}
+              labels={limitLabels}
+              onClose={handlePortfolioLimitNoticeClose}
+            />
+          );
+        })() : null}
       </div>
 
       {checkoutPlan && (

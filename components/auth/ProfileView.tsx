@@ -4,13 +4,17 @@
  * Phase 3 — 토스에서 TDSButton 사용
  */
 
-import React from 'react';
+import React, { useCallback, useRef } from 'react';
 import { UserCheck, Key, LogOut, Send, Sparkles } from 'lucide-react';
 import { I18N } from '../../constants';
 import Toggle from '../Toggle';
 import HoverTip from '../HoverTip';
 import { TDSButton } from '../tds';
 import type { ProfileViewProps } from './authViewTypes';
+import { TDS_DIALOG_MESSAGES } from '../../constants/tdsDialogMessages';
+import { TdsConfirmDialog } from '../tds-adapter/TdsConfirmDialog';
+import { useAsyncTdsConfirm } from '../tds-adapter/useAsyncTdsConfirm';
+import { showErrorToast } from '../tds-adapter/showErrorToast';
 
 const ProfileView: React.FC<ProfileViewProps> = ({
   lang,
@@ -49,6 +53,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   isInTossApp,
 }) => {
   const t = I18N[lang];
+  const refundGuideDialog = useAsyncTdsConfirm(lang);
+  const refundGuideLabels = TDS_DIALOG_MESSAGES[lang]?.actions;
+  const isWebRefundProcessingRef = useRef(false);
 
   const handleConnectTelegramClick = async () => {
     if (!currentUserId) return;
@@ -67,20 +74,32 @@ const ProfileView: React.FC<ProfileViewProps> = ({
     }
   };
 
-  const handleRefundConfirm = async () => {
+  const handleRefundConfirm = useCallback(async () => {
     if (isInTossApp) {
-      const tossRefundGuide = lang === 'ko'
-        ? '토스 앱 > 결제내역에서 "환불받기"를 이용하시거나(안드로이드), 애플 고객센터를 통해 환불을 진행해 주세요(iOS).'
-        : 'Please use "Get Refund" in Toss > Payment History on Android, or request a refund through Apple Support on iOS.';
-      alert(tossRefundGuide);
-      setShowCancelSub(false);
+      const dm = TDS_DIALOG_MESSAGES[lang];
+      if (dm == null) {
+        return;
+      }
+      refundGuideDialog.open({
+        title: dm.refund.guideTitle ?? '',
+        body: dm.refund.guideBody ?? '',
+        confirmLabel: dm.common.acknowledge ?? '',
+        tone: 'primary',
+        action: async () => {
+          setShowCancelSub(false);
+        },
+      });
       return;
     }
+    if (isWebRefundProcessingRef.current) {
+      return;
+    }
+    isWebRefundProcessingRef.current = true;
     setCancelSubLoading(true);
     setError(null);
     setInfo(null);
     try {
-      const result = await cancelSubscription();
+      const result = await Promise.resolve(cancelSubscription());
       if (result.success) {
         setInfo(result.message ?? (lang === 'ko' ? '환불 처리가 완료되었습니다.' : 'Refund has been processed.'));
         setShowCancelSub(false);
@@ -89,12 +108,25 @@ const ProfileView: React.FC<ProfileViewProps> = ({
         if (result.error) setError(result.error);
         setShowCancelSub(false);
       }
-    } catch {
-      setError(lang === 'ko' ? '환불 처리 중 오류가 발생했습니다.' : 'Error processing refund.');
+    } catch (_error: unknown) {
+      const errorMsg = TDS_DIALOG_MESSAGES[lang]?.common?.refundActionFailed;
+      if (errorMsg != null && errorMsg !== '') {
+        showErrorToast(errorMsg);
+      }
     } finally {
+      isWebRefundProcessingRef.current = false;
       setCancelSubLoading(false);
     }
-  };
+  }, [
+    cancelSubscription,
+    isInTossApp,
+    lang,
+    refundGuideDialog.open,
+    setCancelSubLoading,
+    setError,
+    setInfo,
+    setShowCancelSub,
+  ]);
 
   const handleDeleteAccountClick = async () => {
     setLoading(true);
@@ -354,6 +386,14 @@ const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
         )}
       </div>
+
+      {refundGuideLabels != null ? (
+        <TdsConfirmDialog
+          {...refundGuideDialog.dialogProps}
+          labels={refundGuideLabels}
+          hideCancel
+        />
+      ) : null}
     </div>
   );
 };

@@ -1,9 +1,12 @@
-import React, { useMemo } from 'react';
-import { Portfolio } from '../types';
+import React, { useCallback, useMemo } from 'react';
+import type { AppLang, Portfolio } from '../types';
 import { I18N } from '../constants';
 import { Calendar, CheckCircle2, ChevronRight, Trash2 } from 'lucide-react';
 import { calculateTotalInvested } from '../utils/portfolioCalculations';
 import { useTossApp } from '../contexts/TossAppContext';
+import { TDS_DIALOG_MESSAGES } from '../constants/tdsDialogMessages';
+import { TdsConfirmDialog } from './tds-adapter/TdsConfirmDialog';
+import { useAsyncTdsConfirm } from './tds-adapter/useAsyncTdsConfirm';
 
 /** 포트폴리오 1건의 invested / profit / yieldRate 계산 */
 const calcPortfolioStats = (p: Portfolio) => {
@@ -13,13 +16,8 @@ const calcPortfolioStats = (p: Portfolio) => {
   return { invested, profit, yieldRate };
 };
 
-/** 삭제 확인 다이얼로그 후 콜백 실행 */
-const confirmAndRun = (msg: string, fn: () => void) => {
-  if (window.confirm(msg)) fn();
-};
-
 interface HistoryProps {
-  lang: 'ko' | 'en';
+  lang: AppLang;
   portfolios: Portfolio[];
   onOpenDetails: (id: string) => void;
   onDeleteHistory?: (portfolioId: string) => void;
@@ -29,6 +27,39 @@ interface HistoryProps {
 const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails, onDeleteHistory, onClearHistory }) => {
   const t = I18N[lang];
   const { isInTossApp } = useTossApp();
+  const historyDialog = useAsyncTdsConfirm(lang);
+  const labels = TDS_DIALOG_MESSAGES[lang]?.actions;
+
+  const handleRequestClearHistory = useCallback(() => {
+    const messages = TDS_DIALOG_MESSAGES[lang]?.history;
+    if (messages == null || onClearHistory == null) {
+      return;
+    }
+    historyDialog.open({
+      title: messages.clearTitle ?? '',
+      body: messages.clearBody ?? '',
+      confirmLabel: messages.clearConfirm ?? '',
+      tone: 'danger',
+      action: () => Promise.resolve(onClearHistory()),
+    });
+  }, [historyDialog.open, lang, onClearHistory]);
+
+  const handleRequestDeleteRecord = useCallback(
+    (portfolioId: string) => {
+      const messages = TDS_DIALOG_MESSAGES[lang]?.history;
+      if (messages == null || onDeleteHistory == null) {
+        return;
+      }
+      historyDialog.open({
+        title: messages.deleteRecordTitle ?? '',
+        body: messages.deleteRecordBody ?? '',
+        confirmLabel: messages.deleteRecordConfirm ?? '',
+        tone: 'danger',
+        action: () => Promise.resolve(onDeleteHistory(portfolioId)),
+      });
+    },
+    [historyDialog.open, lang, onDeleteHistory],
+  );
 
   // 종료일 기준 내림차순 정렬
   const sortedPortfolios = useMemo(() =>
@@ -65,14 +96,14 @@ const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails, onDe
         <div className="flex gap-3 flex-wrap justify-end">
           {onClearHistory && (
             <button
-              onClick={() => confirmAndRun(
-                lang === 'ko' ? '삭제되면 되돌릴 수 없습니다. 삭제하시겠습니까?' : 'Clear all history records? This will not delete the original portfolios.',
-                onClearHistory,
-              )}
+              type="button"
+              onClick={handleRequestClearHistory}
               className="glass px-6 py-3 rounded-full text-[11px] font-black uppercase tracking-widest text-rose-500 border border-rose-500/40 hover:bg-rose-500/10 flex flex-row items-center justify-center gap-2"
             >
               <Trash2 size={14} className="shrink-0" />
-              <span className="leading-none">{lang === 'ko' ? '내역 초기화' : 'Clear History'}</span>
+              <span className="leading-none">
+                {TDS_DIALOG_MESSAGES[lang]?.history?.clearHistoryButton ?? ''}
+              </span>
             </button>
           )}
         </div>
@@ -166,17 +197,15 @@ const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails, onDe
                     {onDeleteHistory && (
                       <button
                         type="button"
-                        onClick={() => confirmAndRun(
-                          lang === 'ko' ? '삭제되면 되돌릴 수 없습니다. 삭제하시겠습니까?' : 'Delete this history record? (This will also delete it from Supabase and cannot be undone.)',
-                          () => onDeleteHistory(p.id),
-                        )}
+                        onClick={() => handleRequestDeleteRecord(p.id)}
                         className={[
                           'flex items-center gap-1.5 text-sm font-semibold rounded-xl px-3 py-1.5',
                           'bg-red-100 dark:bg-red-500/15 text-red-600 dark:text-red-400',
                           'hover:bg-red-200 dark:hover:bg-red-500/25 transition-colors',
                         ].join(' ')}
                       >
-                        <Trash2 size={14} /> {lang === 'ko' ? '기록 삭제' : 'Delete'}
+                        <Trash2 size={14} />{' '}
+                        {TDS_DIALOG_MESSAGES[lang]?.history?.deleteRecordButton ?? ''}
                       </button>
                     )}
                   </div>
@@ -232,13 +261,12 @@ const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails, onDe
                   <div className="flex items-center justify-end gap-2">
                     {onDeleteHistory && (
                       <button
-                        onClick={() => confirmAndRun(
-                          lang === 'ko' ? '삭제되면 되돌릴 수 없습니다. 삭제하시겠습니까?' : 'Delete this history record? (This will also delete it from Supabase and cannot be undone.)',
-                          () => onDeleteHistory(p.id),
-                        )}
+                        type="button"
+                        onClick={() => handleRequestDeleteRecord(p.id)}
                         className="flex items-center gap-1 text-[9px] font-bold text-rose-500 uppercase tracking-widest hover:text-rose-400"
                       >
-                        <Trash2 size={10} /> {lang === 'ko' ? '기록 삭제' : 'Delete'}
+                        <Trash2 size={10} />{' '}
+                        {TDS_DIALOG_MESSAGES[lang]?.history?.deleteRecordButton ?? ''}
                       </button>
                     )}
                     <button 
@@ -254,6 +282,10 @@ const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails, onDe
           })
         )}
       </div>
+
+      {labels != null ? (
+        <TdsConfirmDialog {...historyDialog.dialogProps} labels={labels} />
+      ) : null}
     </div>
   );
 };

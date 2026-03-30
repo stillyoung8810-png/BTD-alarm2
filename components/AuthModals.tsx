@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { I18N } from '../constants';
 import { X, UserCheck, ShieldCheck } from 'lucide-react';
 import { supabase } from '../services/supabase';
@@ -7,6 +7,36 @@ import { buildRedirectUrl } from '../utils/authHelpers';
 import { TDSModal, TDSModalHeader } from './tds';
 import { useTossApp } from '../contexts/TossAppContext';
 import { AUTH_VIEW_MAP, type AuthModalType } from './auth';
+import { TDS_DIALOG_MESSAGES } from '../constants/tdsDialogMessages';
+import { TdsAlertDialog } from './tds-adapter/TdsAlertDialog';
+
+type AuthCompletionKind = 'password_ok' | 'password_ok_relogin' | 'account_deleted';
+
+function getAuthCompletionDialogCopy(
+  lang: 'ko' | 'en',
+  kind: AuthCompletionKind,
+): { title: string; body: string } | null {
+  const dm = TDS_DIALOG_MESSAGES[lang];
+  if (dm?.auth == null) {
+    return null;
+  }
+  const { auth } = dm;
+  switch (kind) {
+    case 'password_ok':
+      return { title: auth.passwordChangedTitle, body: auth.passwordChangedBody };
+    case 'password_ok_relogin':
+      return {
+        title: auth.passwordChangedReloginTitle,
+        body: auth.passwordChangedReloginBody,
+      };
+    case 'account_deleted':
+      return { title: auth.accountDeletedTitle, body: auth.accountDeletedBody };
+    default: {
+      const neverKind: never = kind;
+      return neverKind;
+    }
+  }
+}
 
 interface AuthModalsProps {
   lang: 'ko' | 'en';
@@ -67,6 +97,32 @@ const AuthModals: React.FC<AuthModalsProps> = ({
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [termsConsent, setTermsConsent] = useState(false);
   const [privacyConsent, setPrivacyConsent] = useState(false);
+
+  const [authCompletionKind, setAuthCompletionKind] = useState<AuthCompletionKind | null>(null);
+  const authCompletionKindRef = useRef<AuthCompletionKind | null>(null);
+
+  const openAuthCompletion = useCallback((kind: AuthCompletionKind) => {
+    authCompletionKindRef.current = kind;
+    setAuthCompletionKind(kind);
+  }, []);
+
+  const handleAuthCompletionClose = useCallback(() => {
+    const kind = authCompletionKindRef.current;
+    authCompletionKindRef.current = null;
+    setAuthCompletionKind(null);
+    if (kind === 'password_ok') {
+      onSwitchType('profile');
+      return;
+    }
+    if (kind === 'password_ok_relogin') {
+      onSwitchType('login');
+      onClose();
+      return;
+    }
+    if (kind === 'account_deleted') {
+      void onLogout();
+    }
+  }, [onSwitchType, onClose, onLogout]);
 
   useEffect(() => {
     if (type !== 'profile') setTelegramLinkToken(null);
@@ -140,14 +196,13 @@ const AuthModals: React.FC<AuthModalsProps> = ({
           setNewPassword('');
           setConfirmPassword('');
           setInfo(null);
-
-          if (typeof window !== 'undefined') {
-            alert(lang === 'ko' ? '비밀번호가 성공적으로 변경되었습니다.' : 'Password updated successfully.');
-          }
-          onSwitchType('profile');
+          openAuthCompletion('password_ok');
         }
-      } catch (err: any) {
-        console.error('[Auth] Password change error:', err?.message);
+      } catch (err: unknown) {
+        console.error(
+          '[Auth] Password change error:',
+          err && typeof err === 'object' && 'message' in err ? String((err as { message: unknown }).message) : err,
+        );
         setError(lang === 'ko' ? '비밀번호 변경에 실패했습니다.' : 'Failed to update password.');
       } finally {
         setLoading(false);
@@ -185,16 +240,13 @@ const AuthModals: React.FC<AuthModalsProps> = ({
           setNewPassword('');
           setConfirmPassword('');
           setInfo(null);
-
-          if (typeof window !== 'undefined') {
-            alert(lang === 'ko' ? '비밀번호가 성공적으로 변경되었습니다. 다시 로그인해주세요.' : 'Password updated successfully. Please log in again.');
-          }
-
-          onSwitchType('login');
-          onClose();
+          openAuthCompletion('password_ok_relogin');
         }
-      } catch (err: any) {
-        console.error('[Auth] Password reset error:', err?.message);
+      } catch (err: unknown) {
+        console.error(
+          '[Auth] Password reset error:',
+          err && typeof err === 'object' && 'message' in err ? String((err as { message: unknown }).message) : err,
+        );
         setError(lang === 'ko' ? '비밀번호 변경에 실패했습니다.' : 'Failed to update password.');
       } finally {
         setLoading(false);
@@ -423,8 +475,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({
     if (!session?.access_token) throw new Error(lang === 'ko' ? '인증 세션이 만료되었습니다. 다시 로그인해주세요.' : 'Session expired. Please log in again.');
     const res = await supabase.functions.invoke('delete-account', { headers: { Authorization: `Bearer ${session.access_token}` } });
     if (res.error) throw new Error(res.error.message || 'Account deletion failed');
-    alert(lang === 'ko' ? '회원 탈퇴가 완료되었습니다.' : 'Your account has been deleted.');
-    await onLogout();
+    openAuthCompletion('account_deleted');
   };
 
   const modalTitle =
@@ -565,15 +616,43 @@ const AuthModals: React.FC<AuthModalsProps> = ({
     </>
   );
 
-  return isInTossApp ? (
-    <TDSModal open onClose={handleRequestClose}>{modalContent}</TDSModal>
-  ) : (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/50 dark:bg-[#0B0F19]/90 backdrop-blur-xl" onClick={handleRequestClose} aria-hidden />
-      <div className="relative w-full max-w-md bg-white dark:bg-[#161d2a] rounded-[2.5rem] md:rounded-[3rem] border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)]" style={{ touchAction: 'pan-y' }}>
-        {modalContent}
-      </div>
-    </div>
+  const tdsActionLabels = TDS_DIALOG_MESSAGES[lang]?.actions;
+  const authCompletionCopy =
+    authCompletionKind != null ? getAuthCompletionDialogCopy(lang, authCompletionKind) : null;
+  const authAcknowledge = TDS_DIALOG_MESSAGES[lang]?.common?.acknowledge ?? '';
+
+  return (
+    <>
+      {isInTossApp ? (
+        <TDSModal open onClose={handleRequestClose}>
+          {modalContent}
+        </TDSModal>
+      ) : (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-slate-900/50 dark:bg-[#0B0F19]/90 backdrop-blur-xl"
+            onClick={handleRequestClose}
+            aria-hidden
+          />
+          <div
+            className="relative w-full max-w-md bg-white dark:bg-[#161d2a] rounded-[2.5rem] md:rounded-[3rem] border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)]"
+            style={{ touchAction: 'pan-y' }}
+          >
+            {modalContent}
+          </div>
+        </div>
+      )}
+      {authCompletionCopy != null && tdsActionLabels != null ? (
+        <TdsAlertDialog
+          isOpen
+          title={authCompletionCopy.title}
+          body={authCompletionCopy.body}
+          confirmLabel={authAcknowledge}
+          labels={tdsActionLabels}
+          onClose={handleAuthCompletionClose}
+        />
+      ) : null}
+    </>
   );
 };
 

@@ -344,15 +344,14 @@ export type AsyncTdsConfirmOpenParams = {
   action: () => Promise<void> | void;
 };
 
-type ConfirmDialogSnapshot =
-  | { isOpen: false }
-  | {
-      isOpen: true;
-      title: string;
-      body: string;
-      confirmLabel: string;
-      tone: DialogTone;
-    };
+/** 닫힘 시에도 마지막으로 연 문구를 유지한다 — `isOpen`만 끄고 title/body를 비우지 않는다(Rule 2·퇴장 애니메이션). */
+export interface ConfirmDialogSnapshot {
+  isOpen: boolean;
+  title: string;
+  body: string;
+  confirmLabel: string;
+  tone: DialogTone;
+}
 
 export type AsyncTdsConfirmDialogProps = {
   isOpen: boolean;
@@ -384,12 +383,16 @@ export function useAsyncTdsConfirm(
   const isExecutingRef = useRef(false);
   const [snapshot, setSnapshot] = useState<ConfirmDialogSnapshot>({
     isOpen: false,
+    title: '',
+    body: '',
+    confirmLabel: '',
+    tone: 'primary',
   });
   const [isConfirmLoading, setIsConfirmLoading] = useState(false);
 
   const close = useCallback(() => {
     actionRef.current = null;
-    setSnapshot({ isOpen: false });
+    setSnapshot((prev) => ({ ...prev, isOpen: false }));
   }, []);
 
   const open = useCallback((params: AsyncTdsConfirmOpenParams) => {
@@ -427,20 +430,8 @@ export function useAsyncTdsConfirm(
   }, [close, lang]);
 
   const dialogProps = useMemo((): AsyncTdsConfirmDialogProps => {
-    if (!snapshot.isOpen) {
-      return {
-        isOpen: false,
-        title: '',
-        body: '',
-        confirmLabel: '',
-        tone: 'primary',
-        isConfirmLoading,
-        onClose: close,
-        onConfirm: runConfirm,
-      };
-    }
     return {
-      isOpen: true,
+      isOpen: snapshot.isOpen,
       title: snapshot.title,
       body: snapshot.body,
       confirmLabel: snapshot.confirmLabel,
@@ -473,7 +464,8 @@ export function useAsyncTdsConfirm(
 - **환불 안내 등「확인 시 비동기 작업」이 필요하면 `TdsConfirmDialog` + 본 훅**을 쓴다. **단일 확인 버튼만 기획되면 `hideCancel={true}`** 를 쓴다. `TdsAlertDialog`는 **문구 확인 후 즉시 `onClose`만** 호출하는 정적 안내에 한정한다(SRP·오용 방지).
 - **`open` / `close` / `runConfirm`은 `useCallback`으로 안정화**한다. 소비 컴포넌트의 `useCallback` 의존성에는 **`exitDialog` 전체가 아니라 `exitDialog.open` 등 개별 함수**를 넣어 불필요한 재생성을 피한다. `runConfirm`을 deps에 넣을 때는 **`lang`이 바뀌면 갱신되는 것이 정상**이다.
 - **`dialog.open({ title, body, … })`를 호출하는 `useCallback`:** `TDS_DIALOG_MESSAGES[lang]`의 **하위 필드를 의존성 배열에 늘어놓지 않는다**. 콜백 **내부**에서 `const messages = TDS_DIALOG_MESSAGES[lang].…`로 조회하고, 의존성은 **`lang`·`…Dialog.open`·`action`에 쓰는 props 콜백** 위주로 압축한다.
-- **`dialogProps`:** Consumer가 `isOpen ? snap.title : ''` 패턴을 반복하지 않도록, **`useMemo`로 `TdsConfirmDialog`에 넘길 필드를 훅이 파생**한다. Consumer는 **`<TdsConfirmDialog {...dialog.dialogProps} labels={…} />`** 에 **`hideCancel` 등만 추가**한다(DRY).
+- **`dialogProps`·퇴장 애니메이션 (Rule 2):** `close()`(및 성공 시 `runConfirm` → `close`) 호출 직후 **`isOpen: false`만 반영**하고, **`title`·`body`·`confirmLabel`·`tone`은 직전 스냅샷을 유지**한다. 그렇지 않고 닫힘 분기에서 문자열을 즉시 `''`로 덮으면, `TDSModal` 등이 퇴장 트랜지션(~수백 ms)을 재생하는 동안 **본문·버튼 라벨이 먼저 증발**하는 UX가 난다. 스냅샷 타입은 **유니온 `{ isOpen: false } | { isOpen: true, … }` 대신 단일 객체**로 평탄화해, 닫힘 중에도 마지막 문구가 그대로 투영되게 한다.
+- **`dialogProps`:** Consumer가 조건부로 필드를 비우는 패턴을 반복하지 않도록, **`useMemo`로 `TdsConfirmDialog`에 넘길 필드를 훅이 파생**한다. Consumer는 **`<TdsConfirmDialog {...dialog.dialogProps} labels={…} />`** 에 **`hideCancel` 등만 추가**한다(DRY).
 
 ## Phase 0-3. `TdsDialogShell.tsx`
 
@@ -941,23 +933,28 @@ const AuthModalContainer: React.FC<AuthModalContainerProps> = ({
 
 ## After
 
-### 샘플: `AuthModalCoordinator.tsx`
+### 샘플: `AuthModalCoordinator.tsx` (현행 구현과 동일한 계약)
+
+파일 위치: `components/auth/AuthModalCoordinator.tsx`. `AuthModals`의 나머지 필수 props(`onSwitchType`, `onLogin`, …)는 **`BaseAuthModalsProps`로 상위에서 전달**한다.
 
 ```tsx
 import React, { useCallback } from 'react';
-import type { AppLang } from '../types';
-import { useTossApp } from '../contexts/TossAppContext';
-import AuthModals from '../components/AuthModals';
-import { TdsConfirmDialog } from '../components/tds-adapter/TdsConfirmDialog';
-import { useAsyncTdsConfirm } from '../components/tds-adapter/useAsyncTdsConfirm';
+import type { AppLang } from '../../types';
+import { useTossApp } from '../../contexts/TossAppContext';
+import AuthModals from '../AuthModals';
+import { TdsConfirmDialog } from '../tds-adapter/TdsConfirmDialog';
+import { useAsyncTdsConfirm } from '../tds-adapter/useAsyncTdsConfirm';
 import {
   TDS_DIALOG_MESSAGES,
   type ExitDialogReason,
-} from '../constants/tdsDialogMessages';
+} from '../../constants/tdsDialogMessages';
 
-const NOOP = (): void => {};
+type BaseAuthModalsProps = Omit<
+  React.ComponentProps<typeof AuthModals>,
+  'lang' | 'onClose' | 'onRequestClose'
+>;
 
-interface AuthModalCoordinatorProps {
+interface AuthModalCoordinatorProps extends BaseAuthModalsProps {
   lang: AppLang;
   isOpen: boolean;
   onCloseAuthModal: () => void;
@@ -969,6 +966,8 @@ export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
   isOpen,
   onCloseAuthModal,
   onRequestMiniAppExit,
+  type,
+  ...authModalProps
 }) => {
   const { isInTossApp } = useTossApp();
   const labels = TDS_DIALOG_MESSAGES[lang]?.actions;
@@ -976,14 +975,16 @@ export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
 
   const handleRequestExit = useCallback(
     (reason: ExitDialogReason) => {
-      if (!isInTossApp) {
+      if (!isInTossApp || type !== 'login') {
         onCloseAuthModal();
         return;
       }
+
       const exitMessage = TDS_DIALOG_MESSAGES[lang]?.exit?.[reason];
       if (exitMessage == null) {
         return;
       }
+
       exitDialog.open({
         title: exitMessage.title ?? '',
         body: exitMessage.body ?? '',
@@ -1001,6 +1002,7 @@ export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
       lang,
       onCloseAuthModal,
       onRequestMiniAppExit,
+      type,
     ],
   );
 
@@ -1015,12 +1017,11 @@ export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
   return (
     <>
       <AuthModals
+        {...authModalProps}
         lang={lang}
-        type="login"
-        onClose={handleAuthClose}
-        onSwitchType={NOOP}
-        onLogin={NOOP}
-        onLogout={NOOP}
+        type={type}
+        onClose={onCloseAuthModal}
+        onRequestClose={handleAuthClose}
       />
 
       {labels != null ? (
@@ -1029,17 +1030,19 @@ export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
     </>
   );
 };
+
+export default AuthModalCoordinator;
 ```
 
 ### 설계 포인트
 
 - **`labels`:** `TDS_DIALOG_MESSAGES[lang]?.actions` 로 조회하고, **`labels == null`이면 `TdsConfirmDialog`를 렌더하지 않는다**(런타임·i18n 맵 불일치 시 WSOD 방지). `AuthModals`는 유지한다.
 - 종료 동작은 `onRequestMiniAppExit`로 위임하므로, 토스 공식 API 선택은 앱 경계에서만 결정됩니다.
-- 토스 앱이 아닐 때는 기존 웹 UX를 유지합니다.
-- `AuthModals`는 여전히 기존 비즈니스 로직을 유지하고, **닫기 이벤트만 외부 코디네이터가 가로채는 방식**입니다.
-- **`useAsyncTdsConfirm(lang)`:** `open`의 `action`만 ref에 보관하고, **`await onRequestMiniAppExit()` 이후에만 `onCloseAuthModal()`** 을 호출해 **언마운트 경합**과 Silent Failure를 동시에 피합니다. 실패 시 토스트는 훅이 **`showErrorToast(TDS_DIALOG_MESSAGES[lang].common.refundActionFailed)`** 로만 처리합니다.
-- **`handleRequestExit`의 `useCallback`:** `dialogMessages.exit` 전체를 deps에 넣지 않고, **`TDS_DIALOG_MESSAGES[lang]?.exit?.[reason]`** 로 조회한 뒤 **`exitMessage == null`이면 조기 return** 한다. 필드는 **`?? ''`** 로 방어한다. **`labels`** 는 **`?.actions`** 및 **`labels != null` 조건부 렌더**로 동일 원칙을 적용한다.
-- **자식 props 안정화:** `onClose={handleAuthClose}`, `NOOP` 고정 참조 유지.
+- **`!isInTossApp || type !== 'login'`:** 토스 앱이 아니거나 **로그인 모달이 아닐 때**는 이탈 확인 다이얼로그 없이 **`onCloseAuthModal()`만** 호출한다(Phase 4 계약과 동일).
+- `AuthModals`는 상위에서 내려준 비즈니스 props를 그대로 받고, **닫기 UX만 분리**한다: **`onClose={onCloseAuthModal}`**(예: 성공 후 모달 제거), **`onRequestClose={handleAuthClose}`**(사용자가 닫기 제스처 시 → 이탈 확인 플로우).
+- **`useAsyncTdsConfirm(lang)`:** `open`의 `action`만 ref에 보관하고, **`await onRequestMiniAppExit()` 이후에만 `onCloseAuthModal()`** 을 호출해 **언마운트 경합**과 Silent Failure를 동시에 피합니다. 실패 시 토스트는 훅이 **`TDS_DIALOG_MESSAGES[lang]?.common?.refundActionFailed` 가드 후 `showErrorToast`** 로만 처리합니다.
+- **`handleRequestExit`의 `useCallback`:** `dialogMessages.exit` 전체를 deps에 넣지 않고, **`TDS_DIALOG_MESSAGES[lang]?.exit?.[reason]`** 로 조회한 뒤 **`exitMessage == null`이면 조기 return** 한다. 필드는 **`?? ''`** 로 방어한다. **`labels`** 는 **`?.actions`** 및 **`labels != null` 조건부 렌더**로 동일 원칙을 적용한다. **`type`** 은 deps에 포함한다.
+- **default export:** `export default AuthModalCoordinator` 를 함께 두어도 되며, Phase 4 스니펫과의 정합을 위해 **named `AuthModalCoordinator` import를 표준**으로 쓰는 것을 권장한다.
 
 ---
 
@@ -1356,7 +1359,7 @@ export const RefundGuideController: React.FC<RefundGuideControllerProps> = ({
 - i18n 문구가 단일 사전에 존재
 - 토스/웹 분기가 `TdsDialogShell` 내부로 캡슐화
 - 비동기 확인이 있는 화면은 **`useAsyncTdsConfirm(lang)` + `TdsDialogShell`의 `guardedClose`** 로 §5를 만족한다(부모에 `try/catch`·토스트 호출 복붙 금지).
-- **`TdsConfirmDialog`** 는 **`{...dialog.dialogProps}`** 로 훅 파생 props를 받고, Consumer는 **`isOpen ? snap…` 삼항 연산자 보일러플레이트를 쓰지 않는다**.
+- **`TdsConfirmDialog`** 는 **`{...dialog.dialogProps}`** 로 훅 파생 props를 받고, Consumer는 **`isOpen ? snap…` 삼항 연산자 보일러플레이트를 쓰지 않는다**. **`useAsyncTdsConfirm`의 `close`는 `isOpen`만 끄고 문구 필드는 유지**하여 퇴장 애니메이션 중 텍스트 증발을 막는다(Phase 0-2b 스니펫·설계 포인트).
 - **`showErrorToast` + `refundActionFailed` 키(SSOT)** 조합이 실패 알림의 유일한 사용자 대면 경로다(조회는 **`TDS_DIALOG_MESSAGES[lang]?.common?.refundActionFailed`** 가드 패턴; 웹 단발 분기 예외는 §5-3).
 
 ## Phase 1a. `Tier 1-P0` 적용
@@ -1708,3 +1711,67 @@ export const SessionExpiredAlertGate: React.FC<SessionExpiredAlertGateProps> = (
 3. 브라우저 기본 `alert`/`confirm` 제거
 
 이렇게 하면 심사 대응과 리스크 관리 사이의 균형이 가장 좋습니다.
+
+---
+
+## Phase 4. Final Assembly (API Integration)
+
+### 대상 및 목적
+
+- **대상 파일:** `App.tsx` (앱 최상위 진입점).
+- **연동 API:** `@apps-in-toss/web-bridge` 모듈의 `closeView()`를 기준안으로 사용한다. **투 트랙(웹+토스)에서는 `App.tsx` 최상단에 해당 패키지를 정적 `import` 하지 않는다(Rule 6·에지 복원력).** 종료 확정 시점에만 **`import()` 동적 로드**로 청크를 불러온 뒤 `closeView()`를 호출한다. **실구현 전에는 토스 공식 문서로 최종 모듈 경로·시그니처를 확인**하고, 필요하면 `@apps-in-toss/web-framework` 재수출과 **하나의 경로만** 팀 표준으로 확정한다.
+- **목적:** Phase 0 ~ Phase 3까지 분리해 둔 **미니앱 종료 시그널**을, 실제 토스 런타임에서 동작하는 공식 종료 API와 연결하는 **최종 조립(Final Assembly)** 단계이다. 하위 **`AuthModalCoordinator`**(및 동일 계약의 코디네이터)가 노출하는 **`onRequestMiniAppExit`** prop에, 앱 경계에서만 `closeView`를 호출하는 핸들러를 **의존성 주입(DI)** 한다. 하위는 “종료를 요청한다”는 의미만 유지하고, **토스 WebView 브리지 호출은 `App.tsx` 한곳**에서만 수행한다.
+- **현재 계약 범위:** 현행 `AuthModalCoordinator` 기준으로 `onRequestMiniAppExit`는 **토스 앱 환경(`isInTossApp === true`) + 로그인 모달(`type === 'login'`) + 사용자가 종료 확인 다이얼로그에서 승인한 경우**에만 호출된다. 즉, 이번 Phase 4는 **현재 로그인 종료 경로를 실제 API에 연결하는 최종 조립**이며, 다른 모달 타입이나 다른 종료 사유까지 자동으로 `closeView()`에 연결되는 것은 아니다.
+
+### 구현 스니펫 (`useCallback` + 코디네이터 주입)
+
+인라인 화살표 함수를 `AuthModalCoordinator`에 직접 넘기지 않고, **Rule 10** 에 맞춰 **`useCallback`으로 안정 참조**를 만든 뒤 주입한다. **`@apps-in-toss/web-bridge`는 Rule 6에 따라 최상단 정적 import를 쓰지 않고**, `handleRequestMiniAppExit` 내부에서만 **동적 `import()`** 로 로드한다. 아래 스니펫은 **Phase 4 변경분만 보여 주는 발췌**이며, `onSwitchType`·`onLogin`·`onLogout` 등 **나머지 필수 props는 기존 `App.tsx`와 동일하게** 태그 **닫는 괄호 위 한 줄 주석**으로만 상기한다(열려 있는 JSX 태그 **속성 목록 안**에 `{/* */}`를 넣지 않는다 — 파서가 허용하지 않아 **Syntax Error**가 난다).
+
+```tsx
+import React, { useCallback } from 'react';
+import { AuthModalCoordinator } from './components/auth/AuthModalCoordinator';
+
+const App: React.FC = () => {
+  const handleRequestMiniAppExit = useCallback(async (): Promise<void> => {
+    try {
+      const bridge = await import('@apps-in-toss/web-bridge');
+      if (typeof bridge.closeView !== 'function') {
+        throw new Error('closeView is not available on the loaded bridge module');
+      }
+      bridge.closeView();
+    } catch (error) {
+      console.error('Failed to execute Toss closeView:', error);
+      throw error;
+    }
+  }, []);
+
+  return (
+    <>
+      {/* …기존 앱 본문… */}
+      {/* 기존 App과 동일: onSwitchType, onLogin, onLogout, currentUserEmail 등 필수 props 전부 유지 */}
+      {/* 닫힘(authModal === null)일 때 type은 TS·런타임 계약용 placeholder. isOpen이 false면 코디네이터가 조기 return 하여 AuthModals에는 전달되지 않음 */}
+      <AuthModalCoordinator
+        isOpen={authModal != null}
+        lang={lang}
+        type={authModal ?? 'login'}
+        onCloseAuthModal={handleCloseAuthModal}
+        onRequestMiniAppExit={handleRequestMiniAppExit}
+      />
+    </>
+  );
+};
+```
+
+- **import 형태 (Phase 1-P0와 AST 계약 일치):** `AuthModalCoordinator.tsx`는 **`export const AuthModalCoordinator`**(Phase 1-P0 스니펫)와 **`export default`**를 **함께** 제공한다. 현행 `App.tsx`가 default를 쓰고 있어도 런타임은 정상이나, **계획서상 Phase 4 스니펫은 Phase 1-P0과 동일하게 `import { AuthModalCoordinator } from '…'` named import를 표준**으로 한다(복붙 시 문서 간 모순·`undefined` 컴포넌트 혼동 방지). 실제 코드 정리 시 **한 스타일로 통일**하면 된다.
+- **`type`과 `authModal === null` (Rule 7·계약 명시성):** `authModal`이 `null`이면 `type={authModal}`만으로는 **TypeScript에서 `type`이 `AuthModalType`을 요구할 때 컴파일 에러**가 난다. **`AuthModalCoordinator`의 `type`을 `| null`로 늘리는 방식**도 가능하나, 본 계획서는 **호출부(`App.tsx`)만 수정**하는 경로를 기본으로 한다: **`type={authModal ?? 'login'}`**. `isOpen={authModal != null}`와 함께 쓰면 닫힘 시 **`!isOpen` 조기 반환** 때문에 placeholder `'login'`은 **`AuthModals` 렌더 경로에 실제로 쓰이지 않는다**(컴파일·참조 안정용 sentinel). 다만 코디네이터 훅의 의존성 배열에는 닫힘 중에도 `'login'`이 잡힐 수 있으므로, **sentinel 문자열은 팀 내에서 한 가지로 고정**하고(본 스니펫은 `'login'`), Phase 1a와의 정합(로그인 종료 플로우)과 어긋나지 않게 둔다. 대안으로 `AuthModalType | null`을 코디네이터에 도입하는 모델링도 타당하나, **이 문서의 Phase 4 스니펫은 상위 `??` 패턴을 채택**한다.
+- **상위 `{authModal && …}` 제거(이중 가딩 정리):** 가시성은 **`isOpen` 한 축**에 두는 편이 읽기 쉽고, 코디네이터 인스턴스·내부 훅 상태가 **모달을 닫았다가 다시 열 때** 상위 언마운트 없이 유지될 수 있다. 다만 **현행 `AuthModalCoordinator`는 `!isOpen`이면 즉시 `return null`** 이라, 자식(`AuthModals` 등) 트리는 닫힘과 함께 언마운트된다. 즉 **이 변경만으로 TDS 퇴장 애니메이션(onExited 등) 문제가 자동 해결된다고 단정할 수 없고**, 진짜 “닫히는 동안 셸 유지”는 **`TDSModal`·쉘 계약을 별도로 다루는 작업**과 연결된다.
+- **`handleRequestMiniAppExit`·동적 import (Rule 6):** `useCallback`으로 메모이제이션한다. **`await import('…')`** 는 **네트워크·청크 로드**이므로 실패할 수 있다고 가정하고, 위 스니펫처럼 **`try/catch` + `closeView` 존재 검사(`typeof … === 'function'`)** 를 둔다. **`catch`에서 로깅 후 반드시 `throw error`로 재전파**하여 Promise가 resolve되지 않게 하고, `AuthModalCoordinator`의 `await Promise.resolve(onRequestMiniAppExit())` → **`useAsyncTdsConfirm`의 `catch`/토스트 계약**으로 이어지게 한다(삼키면 모달만 닫히는 등 UX 불일치). 사용자 대면 문구가 아닌 **콘솔/로그 메시지**는 프로젝트 표준 로거(Sentry 등)로 치환 가능하다. **`await import()`** 는 종료 확정 시점에만 실행되어 브리지 모듈 top-level이 **첫 페인트 전**에 평가될 위험을 줄인다(완전한 브리지 예외 모델은 토스 SDK 문서로 재확인).
+- **Phase 1a와의 정합:** `AuthModalCoordinator` 내부의 조건은 **`!isInTossApp || type !== 'login'` 이면 `onCloseAuthModal()`만 호출하고 즉시 반환**하는 구조다. 따라서 현행 설계에서 `onRequestMiniAppExit`는 **웹 브라우저 경로뿐 아니라, 토스 앱의 비로그인 모달 경로에서도 호출되지 않는다.**
+- **비동기/오류 계약:** `onRequestMiniAppExit` 타입은 `() => Promise<void> | void`를 유지한다. `async` 핸들러는 `Promise<void>`에 해당한다. `closeView()`가 자체적으로 Promise를 반환하는 API로 바뀌면 핸들러 내부에서 **`await closeView()`** 로 전파 여부를 한 번 더 맞춘다. 호출이 reject되면 **기존 `useAsyncTdsConfirm`의 `catch` 계약**에 따라 다이얼로그는 즉시 닫히지 않고, 실패 알림 경로로 위임된다.
+- **빌드·의존성:** Vite 등은 **빌드 타임**에 `@apps-in-toss/web-bridge` 청크를 묶을 수 있어야 하므로, 패키지가 **의존성 그래프에 존재**하는지(직접 또는 전이)는 여전히 필요하다. Phase 4의 **런타임 정책**은 “**최상단 정적 import 금지 + 종료 핸들러 내 동적 import**”로 확정한다.
+
+### 설계 철학 — 의존성 주입(DI)으로 결합도 낮추기
+
+- **팝업·모달 UI는 플랫폼에 묶이지 않는다:** 로그인 닫기, 종료 확인 등 **화면 책임**만 갖고, `@apps-in-toss/web-bridge` 같은 **호스트 앱 전용 API**는 알지 않는다. 종료 “의도”만 `onRequestMiniAppExit`로 위로 올리고, **실제 종료 구현**은 `App.tsx`에서 주입한다.
+- **테스트·웹·토스 투 트랙:** 동일 UI를 브라우저에서 개발할 때 하위 컴포넌트가 `closeView`를 직접 import하면 환경별 분기·목(mock)이 UI 곳곳에 퍼진다. DI하면 **앱 셸만 교체·스텁**하면 되어 변경 범위가 한정된다.
+- **SRP·OCP:** 종료 정책이나 브리지 시그니처가 바뀌어도 **코디네이터 이하 수정을 최소화**하고, 경계(`App.tsx`)만 조정하면 된다.

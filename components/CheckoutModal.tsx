@@ -4,7 +4,7 @@
  * 이용권 개수 선택, 유료 서비스 이용 기간 표시, 결제 요청(포트원/IAP) 지원.
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { calculateSafeTotalAmountKRW, formatPriceKRW } from '../utils/currency';
 import {
   X,
@@ -45,6 +45,8 @@ import {
   type PaymentCheckoutMessageSet,
   type TossIapErrorCode,
 } from '../constants/paymentCheckoutMessages';
+import { TDS_DIALOG_MESSAGES } from '../constants/tdsDialogMessages';
+import { TdsAlertDialog } from './tds-adapter/TdsAlertDialog';
 
 // ---------------------------------------------------------------------------
 // 플랜 카드 스타일 (시각만; 카피는 paymentCheckoutMessages)
@@ -97,10 +99,6 @@ const METHOD_ICON_MAP: Record<string, React.ReactNode> = {
   Smartphone: <Smartphone size={20} />,
   Wallet: <Wallet size={20} />,
 };
-
-function notifyCheckoutError(message: string): void {
-  alert(message);
-}
 
 function getTossIapAlertMessage(
   messages: PaymentCheckoutMessageSet,
@@ -194,6 +192,37 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
 }) => {
   const { isInTossApp } = useTossApp();
   const messages = PAYMENT_CHECKOUT_MESSAGES[lang];
+  const tdsActions = TDS_DIALOG_MESSAGES[lang]?.actions;
+  const checkoutNoticeTitle =
+    TDS_DIALOG_MESSAGES[lang]?.checkout?.resultNoticeTitle ?? '';
+  const acknowledgeLabel = TDS_DIALOG_MESSAGES[lang]?.common?.acknowledge ?? '';
+
+  const [checkoutNoticeBody, setCheckoutNoticeBody] = useState<string | null>(null);
+  /** 결제 알림 확인 후 `onPaymentSuccess`·`onClose`를 호출할지 여부(알림은 비동기이므로 ref로 유지) */
+  const checkoutAfterAckRef = useRef<'success_dismiss' | 'error_refresh_dismiss' | 'none'>(
+    'none',
+  );
+
+  const openCheckoutNotice = useCallback(
+    (
+      body: string,
+      afterAck: 'success_dismiss' | 'error_refresh_dismiss' | 'none',
+    ) => {
+      checkoutAfterAckRef.current = afterAck;
+      setCheckoutNoticeBody(body);
+    },
+    [],
+  );
+
+  const handleCheckoutNoticeClose = useCallback(() => {
+    const afterAck = checkoutAfterAckRef.current;
+    checkoutAfterAckRef.current = 'none';
+    setCheckoutNoticeBody(null);
+    if (afterAck === 'success_dismiss' || afterAck === 'error_refresh_dismiss') {
+      onPaymentSuccess?.();
+      onClose();
+    }
+  }, [onPaymentSuccess, onClose]);
   const lk: 'ko' | 'en' = lang;
   const [selectedPlanId, setSelectedPlanId] = useState<CheckoutPlanId>(plan.id);
   const [payMethod, setPayMethod] = useState<PayMethod>('CARD');
@@ -318,7 +347,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
       return;
     }
     if (isInvalidPrice) {
-      alert(PAYMENT_CHECKOUT_MESSAGES[lang].ERR_INVALID_PRICE);
+      openCheckoutNotice(PAYMENT_CHECKOUT_MESSAGES[lang].ERR_INVALID_PRICE, 'none');
       return;
     }
 
@@ -335,9 +364,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
       }
 
       if (outcome.ok) {
-        alert(msgs.SUCCESS);
-        onPaymentSuccess?.();
-        onClose();
+        openCheckoutNotice(msgs.SUCCESS, 'success_dismiss');
         return;
       }
 
@@ -363,15 +390,11 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
         alertMessage = msgs.FAILED(extractedMessage ?? msgs.UNKNOWN);
       }
 
-      notifyCheckoutError(alertMessage);
-
-      if (outcome.needRefresh) {
-        onPaymentSuccess?.();
-        onClose();
-      }
+      const afterAck = outcome.needRefresh ? 'error_refresh_dismiss' : 'none';
+      openCheckoutNotice(alertMessage, afterAck);
     } catch (error) {
       console.error('[Payment Error]', error);
-      alert(msgs.PROCESSING_ERROR);
+      openCheckoutNotice(msgs.PROCESSING_ERROR, 'none');
     } finally {
       setIsProcessing(false);
     }
@@ -386,6 +409,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
     buildPayReq,
     onPaymentSuccess,
     onClose,
+    openCheckoutNotice,
   ]);
 
   if (!isOpen) {
@@ -669,14 +693,26 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
   );
 
   return (
-    <ModalWrapper
-      open={isOpen}
-      onClose={onClose}
-      useToss={isInTossApp}
-      closeLabel={messages.CLOSE_MODAL}
-    >
-      {modalBody}
-    </ModalWrapper>
+    <>
+      <ModalWrapper
+        open={isOpen}
+        onClose={onClose}
+        useToss={isInTossApp}
+        closeLabel={messages.CLOSE_MODAL}
+      >
+        {modalBody}
+      </ModalWrapper>
+      {checkoutNoticeBody != null && tdsActions != null ? (
+        <TdsAlertDialog
+          isOpen
+          title={checkoutNoticeTitle}
+          body={checkoutNoticeBody}
+          confirmLabel={acknowledgeLabel}
+          labels={tdsActions}
+          onClose={handleCheckoutNoticeClose}
+        />
+      ) : null}
+    </>
   );
 };
 

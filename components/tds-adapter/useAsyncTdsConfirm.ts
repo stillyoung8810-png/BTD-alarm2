@@ -14,15 +14,14 @@ export type AsyncTdsConfirmOpenParams = {
   action: () => Promise<void> | void;
 };
 
-type ConfirmDialogSnapshot =
-  | { isOpen: false }
-  | {
-      isOpen: true;
-      title: string;
-      body: string;
-      confirmLabel: string;
-      tone: DialogTone;
-    };
+/** 닫힘 시에도 마지막 문구를 유지 — `isOpen`만 끄고 title/body를 비우지 않는다(퇴장 애니메이션). */
+export interface ConfirmDialogSnapshot {
+  isOpen: boolean;
+  title: string;
+  body: string;
+  confirmLabel: string;
+  tone: DialogTone;
+}
 
 export type AsyncTdsConfirmDialogProps = {
   isOpen: boolean;
@@ -49,12 +48,16 @@ export function useAsyncTdsConfirm(lang: AppLang): UseAsyncTdsConfirmResult {
   const isExecutingRef = useRef(false);
   const [snapshot, setSnapshot] = useState<ConfirmDialogSnapshot>({
     isOpen: false,
+    title: '',
+    body: '',
+    confirmLabel: '',
+    tone: 'primary',
   });
   const [isConfirmLoading, setIsConfirmLoading] = useState(false);
 
   const close = useCallback(() => {
     actionRef.current = null;
-    setSnapshot({ isOpen: false });
+    setSnapshot((prev) => ({ ...prev, isOpen: false }));
   }, []);
 
   const open = useCallback((params: AsyncTdsConfirmOpenParams) => {
@@ -91,20 +94,8 @@ export function useAsyncTdsConfirm(lang: AppLang): UseAsyncTdsConfirmResult {
   }, [close, lang]);
 
   const dialogProps = useMemo((): AsyncTdsConfirmDialogProps => {
-    if (!snapshot.isOpen) {
-      return {
-        isOpen: false,
-        title: '',
-        body: '',
-        confirmLabel: '',
-        tone: 'primary',
-        isConfirmLoading,
-        onClose: close,
-        onConfirm: runConfirm,
-      };
-    }
     return {
-      isOpen: true,
+      isOpen: snapshot.isOpen,
       title: snapshot.title,
       body: snapshot.body,
       confirmLabel: snapshot.confirmLabel,

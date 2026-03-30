@@ -24,6 +24,29 @@ export interface TdsDialogMessageSet {
     clearBody: string;
     clearConfirm: string;
     openClearDialog: string;
+    /** 헤더의 전체 내역 초기화 버튼 라벨 */
+    clearHistoryButton: string;
+    /** 단일 종료 전략 기록 삭제 확인 */
+    deleteRecordTitle: string;
+    deleteRecordBody: string;
+    deleteRecordConfirm: string;
+    deleteRecordButton: string;
+  };
+  auth: {
+    passwordChangedTitle: string;
+    passwordChangedBody: string;
+    passwordChangedReloginTitle: string;
+    passwordChangedReloginBody: string;
+    accountDeletedTitle: string;
+    accountDeletedBody: string;
+  };
+  checkout: {
+    /** 결제 성공·실패·검증 안내 등 공통 알림 제목 */
+    resultNoticeTitle: string;
+  };
+  app: {
+    portfolioLimitTitle: string;
+    portfolioLimitBody: (maxCount: number) => string;
   };
   refund: {
     guideTitle: string;
@@ -70,6 +93,29 @@ export const TDS_DIALOG_MESSAGES: Record<AppLang, TdsDialogMessageSet> = {
       clearBody: '삭제된 내역은 복구할 수 없습니다.',
       clearConfirm: '초기화',
       openClearDialog: '내역 초기화 확인',
+      clearHistoryButton: '내역 초기화',
+      deleteRecordTitle: '기록 삭제',
+      deleteRecordBody:
+        '이 종료 전략 기록을 삭제합니다. Supabase에서도 제거되며 되돌릴 수 없습니다.',
+      deleteRecordConfirm: '삭제',
+      deleteRecordButton: '기록 삭제',
+    },
+    auth: {
+      passwordChangedTitle: '비밀번호 변경',
+      passwordChangedBody: '비밀번호가 성공적으로 변경되었습니다.',
+      passwordChangedReloginTitle: '비밀번호 변경',
+      passwordChangedReloginBody:
+        '비밀번호가 변경되었습니다. 다시 로그인해 주세요.',
+      accountDeletedTitle: '회원 탈퇴',
+      accountDeletedBody: '회원 탈퇴가 완료되었습니다.',
+    },
+    checkout: {
+      resultNoticeTitle: '결제 안내',
+    },
+    app: {
+      portfolioLimitTitle: '포트폴리오 한도',
+      portfolioLimitBody: (maxCount: number) =>
+        `포트폴리오 생성 한도(${maxCount}개)에 도달했습니다. 더 많은 포트폴리오를 만들려면 업그레이드를 고려해 보세요.`,
     },
     refund: {
       guideTitle: '환불 안내',
@@ -116,6 +162,29 @@ export const TDS_DIALOG_MESSAGES: Record<AppLang, TdsDialogMessageSet> = {
       clearBody: 'Deleted history cannot be restored.',
       clearConfirm: 'Clear',
       openClearDialog: 'Open clear history confirmation',
+      clearHistoryButton: 'Clear History',
+      deleteRecordTitle: 'Delete record',
+      deleteRecordBody:
+        'This removes the closed strategy record from Supabase. This cannot be undone.',
+      deleteRecordConfirm: 'Delete',
+      deleteRecordButton: 'Delete',
+    },
+    auth: {
+      passwordChangedTitle: 'Password updated',
+      passwordChangedBody: 'Your password was updated successfully.',
+      passwordChangedReloginTitle: 'Password updated',
+      passwordChangedReloginBody:
+        'Your password was updated. Please log in again.',
+      accountDeletedTitle: 'Account deleted',
+      accountDeletedBody: 'Your account has been deleted.',
+    },
+    checkout: {
+      resultNoticeTitle: 'Payment notice',
+    },
+    app: {
+      portfolioLimitTitle: 'Portfolio limit',
+      portfolioLimitBody: (maxCount: number) =>
+        `Portfolio limit (${maxCount}) reached. Please upgrade for more.`,
     },
     refund: {
       guideTitle: 'Refund guide',

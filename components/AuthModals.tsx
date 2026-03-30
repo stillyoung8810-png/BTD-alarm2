@@ -12,6 +12,8 @@ interface AuthModalsProps {
   lang: 'ko' | 'en';
   type: 'login' | 'signup' | 'profile' | 'reset-password' | 'change-password';
   onClose: () => void;
+  /** 헤더 X / 배경 / 모달 자체 닫기 요청을 외부에서 가로챌 때만 사용 */
+  onRequestClose?: () => void;
   onSwitchType: (type: 'login' | 'signup' | 'profile' | 'reset-password' | 'change-password') => void;
   onLogin: (user: { id: string; email: string }) => void;
   onLogout: () => void;
@@ -32,6 +34,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({
   lang,
   type,
   onClose,
+  onRequestClose,
   onSwitchType,
   onLogin,
   onLogout,
@@ -45,6 +48,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({
 }) => {
   const t = I18N[lang];
   const { isInTossApp } = useTossApp();
+  const handleRequestClose = onRequestClose ?? onClose;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -439,7 +443,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({
       {isInTossApp ? (
         <TDSModalHeader
           title={modalTitle}
-          onClose={onClose}
+          onClose={handleRequestClose}
           leftAccessory={
             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
               {type === 'profile' ? <UserCheck className="text-white" size={20} /> : <ShieldCheck className="text-white" size={20} />}
@@ -454,7 +458,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({
             </div>
             <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">{modalTitle}</h2>
           </div>
-          <button type="button" onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-white/5 rounded-full text-slate-500 dark:text-slate-400" aria-label="닫기"><X size={24} /></button>
+          <button type="button" onClick={handleRequestClose} className="p-2 hover:bg-slate-100 dark:hover:bg-white/5 rounded-full text-slate-500 dark:text-slate-400" aria-label="닫기"><X size={24} /></button>
         </div>
       )}
 
@@ -562,10 +566,10 @@ const AuthModals: React.FC<AuthModalsProps> = ({
   );
 
   return isInTossApp ? (
-    <TDSModal open onClose={onClose}>{modalContent}</TDSModal>
+    <TDSModal open onClose={handleRequestClose}>{modalContent}</TDSModal>
   ) : (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/50 dark:bg-[#0B0F19]/90 backdrop-blur-xl" onClick={onClose} aria-hidden />
+      <div className="absolute inset-0 bg-slate-900/50 dark:bg-[#0B0F19]/90 backdrop-blur-xl" onClick={handleRequestClose} aria-hidden />
       <div className="relative w-full max-w-md bg-white dark:bg-[#161d2a] rounded-[2.5rem] md:rounded-[3rem] border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)]" style={{ touchAction: 'pan-y' }}>
         {modalContent}
       </div>

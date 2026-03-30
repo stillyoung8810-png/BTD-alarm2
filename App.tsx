@@ -6,7 +6,6 @@ import Privacy from './components/Privacy';
 import Terms from './components/Terms';
 import TradeExecutionModal from './components/TradeExecutionModal';
 import { TerminationInput, Result as SettlementResult } from './components/SettlementModals';
-import AuthModals from './components/AuthModals';
 import Landing from './components/Landing';
 import Pricing from './components/Pricing';
 import { supabase, clearAuthStorage } from './services/supabase';
@@ -24,6 +23,9 @@ import { TossAppProvider } from './contexts/TossAppContext';
 import { buildDailyExecutionSummary } from './utils/dailyExecutionSummary';
 import { MembershipConfig } from './constants/membership';
 import { formatPriceKRW } from './utils/currency';
+import { TdsConfirmDialog } from './components/tds-adapter/TdsConfirmDialog';
+import { useAsyncTdsConfirm } from './components/tds-adapter/useAsyncTdsConfirm';
+import { TDS_DIALOG_MESSAGES } from './constants/tdsDialogMessages';
 import { 
   LayoutDashboard, 
   BarChart3, 
@@ -41,6 +43,7 @@ import {
   getEffectiveSubscription,
 } from './utils/subscriptionUtils';
 import { useTierDisplay } from './hooks/useTierDisplay';
+import AuthModalCoordinator from './components/auth/AuthModalCoordinator';
 
 const Backtest = React.lazy(() => import('./components/Backtest'));
 const Dashboard = React.lazy(() => import('./components/Dashboard'));
@@ -473,6 +476,7 @@ const App: React.FC = () => {
   const lastSettlementExitInterstitialShownAtMsRef = useRef(0);
   const settlementDetailsCloseUiDedupeOpenIdRef = useRef<string | null>(null);
   const settlementDetailsCloseUiDedupeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const navigationExitDialog = useAsyncTdsConfirm(lang);
 
   useEffect(() => {
     return () => {
@@ -566,6 +570,37 @@ const App: React.FC = () => {
       }
     })();
   }, [detailsTargetId, adsUserTier]);
+
+  const handleCloseAuthModal = useCallback(() => {
+    setAuthModal(null);
+  }, []);
+
+  const handleRequestMiniAppExit = useCallback((): void => {
+    // 공식 미니앱 종료 API는 아직 앱 경계에 연결하지 않았다.
+  }, []);
+
+  const handleRequestBackNavigation = useCallback(
+    (onLeave: () => void) => {
+      if (!isInTossApp) {
+        onLeave();
+        return;
+      }
+
+      const exitMessage = TDS_DIALOG_MESSAGES[lang]?.exit?.back_navigation;
+      if (exitMessage == null) {
+        return;
+      }
+
+      navigationExitDialog.open({
+        title: exitMessage.title ?? '',
+        body: exitMessage.body ?? '',
+        confirmLabel: exitMessage.confirm ?? '',
+        tone: 'primary',
+        action: onLeave,
+      });
+    },
+    [isInTossApp, lang, navigationExitDialog.open],
+  );
 
   const currentAlarmPortfolio = portfolios.find(p => p.id === alarmTargetId);
   const currentDetailsPortfolio = portfolios.find(p => p.id === detailsTargetId);
@@ -665,9 +700,11 @@ const App: React.FC = () => {
           <Privacy
             lang={lang}
             onBack={() => {
-              setActiveTab('dashboard');
-              const u = window.location;
-              if (u.hash === '#privacy') window.history.replaceState(null, '', u.pathname + u.search);
+              handleRequestBackNavigation(() => {
+                setActiveTab('dashboard');
+                const u = window.location;
+                if (u.hash === '#privacy') window.history.replaceState(null, '', u.pathname + u.search);
+              });
             }}
           />
         );
@@ -676,9 +713,11 @@ const App: React.FC = () => {
           <Terms
             lang={lang}
             onBack={() => {
-              setActiveTab('dashboard');
-              const u = window.location;
-              if (u.hash === '#terms') window.history.replaceState(null, '', u.pathname + u.search);
+              handleRequestBackNavigation(() => {
+                setActiveTab('dashboard');
+                const u = window.location;
+                if (u.hash === '#terms') window.history.replaceState(null, '', u.pathname + u.search);
+              });
             }}
           />
         );
@@ -699,6 +738,7 @@ const App: React.FC = () => {
     totalValuationChangePct,
     onDailyExecutionSummaryChange,
     canAccessPaidStocks,
+    handleRequestBackNavigation,
   ]);
 
   const MainContent = () => (
@@ -924,10 +964,12 @@ const App: React.FC = () => {
         )}
         
         {authModal && (
-          <AuthModals 
+          <AuthModalCoordinator
+            isOpen={authModal != null}
             lang={lang} 
             type={authModal} 
-            onClose={() => setAuthModal(null)} 
+            onCloseAuthModal={handleCloseAuthModal}
+            onRequestMiniAppExit={handleRequestMiniAppExit}
             onSwitchType={(type) => setAuthModal(type)} 
             onLogin={async (u) => { 
               setUser(u); 
@@ -989,6 +1031,19 @@ const App: React.FC = () => {
             }}
           />
         )}
+
+        {(() => {
+          const labels = TDS_DIALOG_MESSAGES[lang]?.actions;
+          if (labels == null) {
+            return null;
+          }
+          return (
+            <TdsConfirmDialog
+              {...navigationExitDialog.dialogProps}
+              labels={labels}
+            />
+          );
+        })()}
       </div>
 
       {checkoutPlan && (

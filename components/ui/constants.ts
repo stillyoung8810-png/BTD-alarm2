@@ -31,10 +31,11 @@ export const INPUT = {
 } as const;
 
 export const MODAL = {
-  overlay: 'fixed inset-0 z-[200] flex items-center justify-center p-4',
+  overlay:
+    'fixed inset-0 z-[200] flex min-h-[100dvh] items-center justify-center px-4 pt-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)]',
   backdrop: 'absolute inset-0 bg-slate-900/50 dark:bg-[#0B0F19]/90 backdrop-blur-xl',
   panel:
-    'relative w-full max-w-md bg-white dark:bg-[#161d2a] rounded-[2.5rem] md:rounded-[3rem] border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)]',
+    'relative w-full max-w-md min-h-0 max-h-full overflow-hidden rounded-[2.5rem] md:rounded-[3rem] border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#161d2a] flex flex-col',
   header:
     'p-6 md:p-8 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-slate-900/40 shrink-0',
   body: 'p-6 md:p-10 flex-1 overflow-y-auto overscroll-contain',

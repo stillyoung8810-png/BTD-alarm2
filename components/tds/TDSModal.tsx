@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { useTossApp } from '../../contexts/TossAppContext';
+import { createPortal } from 'react-dom';
 import { MODAL } from '../ui/constants';
 import { TDSButton } from './TDSButton';
 
@@ -93,13 +93,11 @@ export const TDSModal: React.FC<TDSModalProps> = ({
   onExited,
   children,
 }) => {
-  const { isInTossApp } = useTossApp();
-
   if (!open) return null;
 
   /* R2 롤백: TDS 분기 제거. require('@toss/tds-mobile') 제거로 번들 에러 방지. 항상 웹 브랜치. */
 
-  return (
+  const modalContent = (
     <div className={MODAL.overlay} role="dialog" aria-modal="true">
       <div className={MODAL.backdrop} onClick={onClose} aria-hidden />
       <div
@@ -111,6 +109,12 @@ export const TDSModal: React.FC<TDSModalProps> = ({
       </div>
     </div>
   );
+
+  if (typeof document === 'undefined') {
+    return modalContent;
+  }
+
+  return createPortal(modalContent, document.body);
 };
 
 export default TDSModal;

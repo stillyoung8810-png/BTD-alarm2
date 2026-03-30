@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import type { AppLang } from '../../types';
 import { useTossApp } from '../../contexts/TossAppContext';
 import AuthModals from '../AuthModals';
@@ -42,6 +42,12 @@ export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
   const labels = TDS_DIALOG_MESSAGES[lang]?.actions;
   const exitDialog = useAsyncTdsConfirm(lang);
   const welcomeDialog = useAsyncTdsConfirm(lang);
+  const [isAuthModalSuspended, setIsAuthModalSuspended] = useState(false);
+
+  const handleWelcomeDialogClose = useCallback(() => {
+    setIsAuthModalSuspended(false);
+    welcomeDialog.close();
+  }, [welcomeDialog.close]);
 
   const handleSignedIn = useCallback(
     async (user: SignedInUser) => {
@@ -59,10 +65,13 @@ export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
         acknowledge == null ||
         actionLabels == null
       ) {
+        setIsAuthModalSuspended(false);
         await Promise.resolve(onFinishSignedInFlow(user));
         return;
       }
 
+      // 성공 직후 원본 인증 모달을 잠시 숨겨야 환영 다이얼로그가 가려지지 않습니다.
+      setIsAuthModalSuspended(true);
       welcomeDialog.open({
         title: authMessages.signedInSuccessTitle ?? '',
         body: authMessages.signedInSuccessBody ?? '',
@@ -70,6 +79,7 @@ export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
         tone: 'primary',
         action: async () => {
           await Promise.resolve(onFinishSignedInFlow(user));
+          setIsAuthModalSuspended(false);
         },
       });
     },
@@ -78,6 +88,7 @@ export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
       lang,
       onCommitSignedIn,
       onFinishSignedInFlow,
+      setIsAuthModalSuspended,
       type,
       welcomeDialog.open,
     ],
@@ -128,14 +139,16 @@ export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
 
   return (
     <>
-      <AuthModals
-        {...authModalProps}
-        lang={lang}
-        type={type}
-        onClose={onCloseAuthModal}
-        onRequestClose={handleAuthClose}
-        onSignedIn={handleSignedIn}
-      />
+      {!isAuthModalSuspended ? (
+        <AuthModals
+          {...authModalProps}
+          lang={lang}
+          type={type}
+          onClose={onCloseAuthModal}
+          onRequestClose={handleAuthClose}
+          onSignedIn={handleSignedIn}
+        />
+      ) : null}
 
       {labels != null ? (
         <>
@@ -143,6 +156,7 @@ export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
           <TdsConfirmDialog
             {...welcomeDialog.dialogProps}
             labels={labels}
+            onClose={handleWelcomeDialogClose}
             shouldHideCancel={true}
           />
         </>

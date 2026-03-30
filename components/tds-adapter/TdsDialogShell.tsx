@@ -4,6 +4,7 @@ import React, {
   useId,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { FocusScope } from '@radix-ui/react-focus-scope';
 import { useTossApp } from '../../contexts/TossAppContext';
@@ -88,9 +89,9 @@ export const TdsDialogShell: React.FC<TdsDialogShellProps> = ({
       aria-modal="true"
       aria-labelledby={titleId}
       aria-describedby={bodyId}
-      className={`relative ${WEB_DIALOG_PANEL_Z_CLASS} w-full ${maxWidthClassName} overflow-hidden rounded-[2rem] bg-white shadow-xl dark:bg-slate-900`}
+      className={`relative ${WEB_DIALOG_PANEL_Z_CLASS} flex min-h-0 max-h-full w-full ${maxWidthClassName} flex-col overflow-hidden rounded-[2rem] bg-white shadow-xl dark:bg-slate-900`}
     >
-      <header className="flex items-center justify-between border-b border-slate-200 px-6 py-5 dark:border-slate-700">
+      <header className="flex shrink-0 items-center justify-between border-b border-slate-200 px-6 py-5 dark:border-slate-700">
         <h2 id={titleId} className="text-lg font-bold text-slate-900 dark:text-white">
           {title}
         </h2>
@@ -106,12 +107,15 @@ export const TdsDialogShell: React.FC<TdsDialogShellProps> = ({
         </button>
       </header>
 
-      <div id={bodyId} className="px-6 py-5">
+      <div
+        id={bodyId}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5"
+      >
         {children}
       </div>
 
       {footer != null ? (
-        <footer className="border-t border-slate-200 px-6 py-5 dark:border-slate-700">
+        <footer className="shrink-0 border-t border-slate-200 px-6 pt-5 pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)] dark:border-slate-700">
           {footer}
         </footer>
       ) : null}
@@ -126,10 +130,10 @@ export const TdsDialogShell: React.FC<TdsDialogShellProps> = ({
     );
   }
 
-  return (
+  const webDialog = (
     <FocusScope trapped loop>
       <div
-        className={`fixed inset-0 ${WEB_MODAL_OVERLAY_Z_CLASS} flex items-center justify-center p-4`}
+        className={`fixed inset-0 ${WEB_MODAL_OVERLAY_Z_CLASS} flex min-h-[100dvh] items-center justify-center px-4 pt-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)]`}
       >
         <div
           role="button"
@@ -146,6 +150,12 @@ export const TdsDialogShell: React.FC<TdsDialogShellProps> = ({
       </div>
     </FocusScope>
   );
+
+  if (typeof document === 'undefined') {
+    return webDialog;
+  }
+
+  return createPortal(webDialog, document.body);
 };
 
 export default TdsDialogShell;

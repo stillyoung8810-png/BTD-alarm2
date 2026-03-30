@@ -6,6 +6,20 @@ import {
 } from '../../constants/tdsDialogMessages';
 import { showErrorToast } from './showErrorToast';
 
+const FALLBACK_CONFIRM_ERROR_TOAST_MESSAGE: Record<AppLang, string> = {
+  ko: '처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.',
+  en: 'Something went wrong. Please try again in a moment.',
+};
+
+function getConfirmErrorToastMessage(lang: AppLang): string {
+  const localizedMessage = TDS_DIALOG_MESSAGES[lang]?.common?.refundActionFailed?.trim();
+  if (localizedMessage != null && localizedMessage !== '') {
+    return localizedMessage;
+  }
+
+  return FALLBACK_CONFIRM_ERROR_TOAST_MESSAGE[lang] ?? FALLBACK_CONFIRM_ERROR_TOAST_MESSAGE.ko;
+}
+
 export type AsyncTdsConfirmOpenParams = {
   title: string;
   body: string;
@@ -83,10 +97,7 @@ export function useAsyncTdsConfirm(lang: AppLang): UseAsyncTdsConfirmResult {
       await Promise.resolve(fn());
       close();
     } catch (_error: unknown) {
-      const errorMsg = TDS_DIALOG_MESSAGES[lang]?.common?.refundActionFailed;
-      if (errorMsg != null && errorMsg !== '') {
-        showErrorToast(errorMsg);
-      }
+      showErrorToast(getConfirmErrorToastMessage(lang));
     } finally {
       isExecutingRef.current = false;
       setIsConfirmLoading(false);

@@ -9,12 +9,11 @@ import { TDSButton } from './tds';
 
 export interface TossLoginViewProps {
   lang: 'ko' | 'en';
-  onSuccess: (user: { id: string; email: string }) => void;
+  onSignedIn: (user: { id: string; email: string }) => Promise<void> | void;
   onError: (message: string) => void;
-  onClose: () => void;
 }
 
-const TossLoginView: React.FC<TossLoginViewProps> = ({ lang, onSuccess, onError, onClose }) => {
+const TossLoginView: React.FC<TossLoginViewProps> = ({ lang, onSignedIn, onError }) => {
   const [loading, setLoading] = useState(false);
 
   const handleTossLogin = useCallback(async () => {
@@ -23,8 +22,7 @@ const TossLoginView: React.FC<TossLoginViewProps> = ({ lang, onSuccess, onError,
     try {
       const result = await loginWithToss();
       if (result.success && result.user) {
-        onSuccess(result.user);
-        onClose();
+        await Promise.resolve(onSignedIn(result.user));
         return;
       }
       onError(result.error ?? (lang === 'ko' ? '토스 로그인에 실패했습니다.' : 'Toss login failed.'));
@@ -34,7 +32,7 @@ const TossLoginView: React.FC<TossLoginViewProps> = ({ lang, onSuccess, onError,
     } finally {
       setLoading(false);
     }
-  }, [lang, onSuccess, onError, onClose]);
+  }, [lang, onSignedIn, onError]);
 
   const label = lang === 'ko' ? 'Toss로 계속하기' : 'Continue with Toss';
   const loadingLabel = lang === 'ko' ? '처리 중...' : 'Loading...';

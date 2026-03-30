@@ -15,9 +15,8 @@ interface LoginViewProps extends Omit<AuthEmailFormProps, 'type'> {
 
 const LoginView: React.FC<LoginViewProps> = ({
   lang,
-  onClose,
   onSwitchType,
-  onLogin,
+  onSignedIn,
   email,
   setEmail,
   password,
@@ -45,7 +44,7 @@ const LoginView: React.FC<LoginViewProps> = ({
             {error}
           </p>
         )}
-        <TossLoginView lang={lang} onSuccess={onLogin} onError={setError} onClose={onClose} />
+        <TossLoginView lang={lang} onSignedIn={onSignedIn} onError={setError} />
       </>
     );
   }

@@ -7,6 +7,8 @@ import { useTossApp } from '../contexts/TossAppContext';
 import { TDS_DIALOG_MESSAGES } from '../constants/tdsDialogMessages';
 import { TdsConfirmDialog } from './tds-adapter/TdsConfirmDialog';
 import { useAsyncTdsConfirm } from './tds-adapter/useAsyncTdsConfirm';
+import { showErrorToast } from './tds-adapter/showErrorToast';
+import HistoryHeaderActions from './HistoryHeaderActions';
 
 /** 포트폴리오 1건의 invested / profit / yieldRate 계산 */
 const calcPortfolioStats = (p: Portfolio) => {
@@ -20,8 +22,8 @@ interface HistoryProps {
   lang: AppLang;
   portfolios: Portfolio[];
   onOpenDetails: (id: string) => void;
-  onDeleteHistory?: (portfolioId: string) => void;
-  onClearHistory?: () => void;
+  onDeleteHistory?: (portfolioId: string) => Promise<void> | void;
+  onClearHistory?: () => Promise<void> | void;
 }
 
 const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails, onDeleteHistory, onClearHistory }) => {
@@ -30,24 +32,17 @@ const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails, onDe
   const historyDialog = useAsyncTdsConfirm(lang);
   const labels = TDS_DIALOG_MESSAGES[lang]?.actions;
 
-  const handleRequestClearHistory = useCallback(() => {
-    const messages = TDS_DIALOG_MESSAGES[lang]?.history;
-    if (messages == null || onClearHistory == null) {
-      return;
-    }
-    historyDialog.open({
-      title: messages.clearTitle ?? '',
-      body: messages.clearBody ?? '',
-      confirmLabel: messages.clearConfirm ?? '',
-      tone: 'danger',
-      action: () => Promise.resolve(onClearHistory()),
-    });
-  }, [historyDialog.open, lang, onClearHistory]);
-
   const handleRequestDeleteRecord = useCallback(
     (portfolioId: string) => {
       const messages = TDS_DIALOG_MESSAGES[lang]?.history;
-      if (messages == null || onDeleteHistory == null) {
+      const actionLabels = TDS_DIALOG_MESSAGES[lang]?.actions;
+
+      if (messages == null || actionLabels == null || onDeleteHistory == null) {
+        const errorMessage =
+          TDS_DIALOG_MESSAGES[lang]?.common?.refundActionFailed;
+        if (errorMessage != null && errorMessage !== '') {
+          showErrorToast(errorMessage);
+        }
         return;
       }
       historyDialog.open({
@@ -94,18 +89,13 @@ const History: React.FC<HistoryProps> = ({ lang, portfolios, onOpenDetails, onDe
            <p className="text-sm font-bold text-slate-500 mt-1 uppercase tracking-widest">{lang === 'ko' ? '완료된 투자 전략 성과' : 'Performance of completed strategies'}</p>
         </div>
         <div className="flex gap-3 flex-wrap justify-end">
-          {onClearHistory && (
-            <button
-              type="button"
-              onClick={handleRequestClearHistory}
-              className="glass px-6 py-3 rounded-full text-[11px] font-black uppercase tracking-widest text-rose-500 border border-rose-500/40 hover:bg-rose-500/10 flex flex-row items-center justify-center gap-2"
-            >
-              <Trash2 size={14} className="shrink-0" />
-              <span className="leading-none">
-                {TDS_DIALOG_MESSAGES[lang]?.history?.clearHistoryButton ?? ''}
-              </span>
-            </button>
-          )}
+          {onClearHistory ? (
+            <HistoryHeaderActions
+              lang={lang}
+              canClearHistory={true}
+              onClearHistory={onClearHistory}
+            />
+          ) : null}
         </div>
       </header>
 

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useRef, useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { supabase } from '../services/supabase';
 import { normalizePortfolioData } from '../utils/portfolioNormalize';
@@ -7,6 +7,10 @@ import { calculatePoolDelta, computeVrSnapshotAfterTrade } from '../utils/vrBand
 import { getEffectiveSubscription } from '../utils/subscriptionUtils';
 import type { Portfolio, Trade } from '../types';
 import type { AppUserProfile } from '../types/appUserProfile';
+import {
+  createPortfolioMutationError,
+  PORTFOLIO_MUTATION_ERROR_CODES,
+} from '../constants/portfolioMutationErrors';
 
 const PORTFOLIOS_CACHE_KEY = 'my_portfolios';
 
@@ -21,7 +25,6 @@ export interface SettlementResult {
 }
 
 export interface UsePortfoliosOptions {
-  lang: 'ko' | 'en';
   userId: string | null;
   userProfile: AppUserProfile | null;
   portfolios: Portfolio[];
@@ -42,13 +45,12 @@ export interface UsePortfoliosReturn {
   handleUpdatePortfolio: (updated: Portfolio) => Promise<void>;
   handleAddTrade: (portfolioId: string, trade: Trade) => Promise<void>;
   handleDeleteTrade: (portfolioId: string, tradeId: string) => Promise<void>;
-  handleDeletePortfolio: (id: string) => Promise<void>;
+  deletePortfolioById: (id: string) => Promise<void>;
   handleDeleteHistory: (portfolioId: string) => Promise<void>;
   handleClearHistory: () => Promise<void>;
 }
 
 export function usePortfolios({
-  lang,
   userId: userIdOption,
   userProfile,
   portfolios,
@@ -75,7 +77,7 @@ export function usePortfolios({
       // ignore cache error
     }
     return false;
-  }, []);
+  }, [setPortfolios]);
 
   const fetchPortfoliosFromSupabase = useCallback(async (userId: string): Promise<void> => {
     const cacheKey = `${PORTFOLIOS_CACHE_KEY}_${userId}`;
@@ -119,7 +121,7 @@ export function usePortfolios({
       fetchingPortfoliosRef.current.delete(userId);
       fetchPortfoliosAbortControllersRef.current.delete(userId);
     }
-  }, []);
+  }, [setPortfolios]);
 
   const fetchPortfolios = useCallback((userId: string): void => {
     loadPortfoliosFromCache(userId);
@@ -129,22 +131,26 @@ export function usePortfolios({
   }, [loadPortfoliosFromCache, fetchPortfoliosFromSupabase]);
 
   const handleAddPortfolio = useCallback(
-    async (newP: Omit<Portfolio, 'id'>, onSuccess?: () => void) => {
+    async (
+      newP: Omit<Portfolio, 'id'>,
+      onSuccess?: () => void | Promise<void>,
+    ) => {
       if (!userIdOption) {
-        alert(lang === 'ko' ? '로그인 세션이 만료되었습니다. 다시 로그인해주세요.' : 'Session expired. Please log in again.');
-        return;
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.sessionExpired,
+        );
       }
       const activePortfolios = portfolios.filter((p) => !p.isClosed);
       const maxPortfolios = userProfile?.max_portfolios ?? 3;
       if (maxPortfolios !== -1 && activePortfolios.length >= maxPortfolios) {
         const effectiveTier = getEffectiveSubscription(userProfile).tier;
-        const tierName = effectiveTier === 'free' ? '무료' : effectiveTier;
-        alert(
-          lang === 'ko'
-            ? `${tierName} 플랜에서는 최대 ${maxPortfolios}개의 포트폴리오만 생성할 수 있습니다.`
-            : `You can only create up to ${maxPortfolios} portfolios on the ${tierName} plan.`
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.portfolioLimitReached,
+          {
+            maxPortfolios,
+            effectiveTier,
+          },
         );
-        return;
       }
       const {
         dailyBuyAmount,
@@ -159,28 +165,34 @@ export function usePortfolios({
         ...rest
       } = newP;
       if (!rest.name?.trim()) {
-        alert(lang === 'ko' ? '포트폴리오 이름을 입력해주세요.' : 'Please enter a portfolio name.');
-        return;
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.nameRequired,
+        );
       }
       if (rest.name.length > 100) {
-        alert(lang === 'ko' ? '포트폴리오 이름은 100자 이내여야 합니다.' : 'Portfolio name must be 100 characters or less.');
-        return;
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.nameTooLong,
+        );
       }
       if (typeof dailyBuyAmount !== 'number' || !isFinite(dailyBuyAmount) || dailyBuyAmount <= 0) {
-        alert(lang === 'ko' ? '매일 매수 금액은 0보다 큰 값이어야 합니다.' : 'Daily buy amount must be greater than 0.');
-        return;
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.dailyBuyAmountInvalid,
+        );
       }
       if (dailyBuyAmount > 1_000_000) {
-        alert(lang === 'ko' ? '매일 매수 금액은 $1,000,000 이하여야 합니다.' : 'Daily buy amount must be $1,000,000 or less.');
-        return;
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.dailyBuyAmountTooLarge,
+        );
       }
       if (typeof feeRate !== 'number' || !isFinite(feeRate) || feeRate < 0 || feeRate > 10) {
-        alert(lang === 'ko' ? '수수료율은 0% ~ 10% 사이여야 합니다.' : 'Fee rate must be between 0% and 10%.');
-        return;
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.feeRateInvalid,
+        );
       }
       if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
-        alert(lang === 'ko' ? '시작일을 올바른 형식(YYYY-MM-DD)으로 입력해주세요.' : 'Please enter a valid start date (YYYY-MM-DD).');
-        return;
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.startDateInvalid,
+        );
       }
       const payload = {
         ...rest,
@@ -198,17 +210,18 @@ export function usePortfolios({
       };
       const { data, error } = await supabase.from('portfolios').insert([payload]).select();
       if (error) {
-        alert(`저장 실패: ${error.message}`);
-        return;
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.saveFailed,
+          error,
+        );
       }
       if (data?.length) {
         const normalized = normalizePortfolioData(data);
         setPortfolios((prev) => [...prev, ...normalized]);
         await Promise.resolve(onSuccess?.());
-        alert(lang === 'ko' ? '저장 성공!' : 'Saved!');
       }
     },
-    [lang, userIdOption, userProfile, portfolios]
+    [portfolios, setPortfolios, userIdOption, userProfile]
   );
 
   const handleClosePortfolio = useCallback(
@@ -218,7 +231,16 @@ export function usePortfolios({
       additionalFee: number
     ): Promise<SettlementResult | null> => {
       const portfolio = portfolios.find((p) => p.id === portfolioId);
-      if (!portfolio || !userIdOption) return null;
+      if (!portfolio) {
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.targetNotFound,
+        );
+      }
+      if (!userIdOption) {
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.sessionExpired,
+        );
+      }
 
       const totalInvested = calculateTotalInvested(portfolio);
       const alreadyRealizedCash = getTotalSellProceeds(portfolio);
@@ -270,12 +292,10 @@ export function usePortfolios({
       ]);
 
       if (historyError) {
-        alert(
-          lang === 'ko'
-            ? '이력 저장에 실패하여 포트폴리오를 종료하지 않았습니다. 다시 시도해주세요.'
-            : 'Failed to save portfolio history. Please try again.'
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.closeHistoryFailed,
+          historyError,
         );
-        return null;
       }
 
       const { error: updateError } = await supabase
@@ -294,8 +314,10 @@ export function usePortfolios({
           .delete()
           .eq('user_id', userIdOption)
           .eq('portfolio_id', portfolioId);
-        alert(lang === 'ko' ? '전략 종료 저장에 실패했습니다.' : 'Failed to save termination.');
-        return null;
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.closeUpdateFailed,
+          updateError,
+        );
       }
 
       setPortfolios((prev) => prev.map((p) => (p.id === portfolioId ? updated : p)));
@@ -309,14 +331,15 @@ export function usePortfolios({
         yieldRate,
       };
     },
-    [lang, userIdOption, portfolios]
+    [portfolios, setPortfolios, userIdOption]
   );
 
   const handleUpdatePortfolio = useCallback(
     async (updated: Portfolio) => {
       if (!updated.name?.trim() || updated.name.length > 100) {
-        alert(lang === 'ko' ? '포트폴리오 이름은 1~100자여야 합니다.' : 'Portfolio name must be 1-100 characters.');
-        return;
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.updateNameInvalid,
+        );
       }
       if (
         typeof updated.dailyBuyAmount !== 'number' ||
@@ -324,8 +347,9 @@ export function usePortfolios({
         updated.dailyBuyAmount <= 0 ||
         updated.dailyBuyAmount > 1_000_000
       ) {
-        alert(lang === 'ko' ? '매일 매수 금액은 $0 초과 ~ $1,000,000 이하여야 합니다.' : 'Daily buy amount must be between $0 and $1,000,000.');
-        return;
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.updateDailyBuyAmountInvalid,
+        );
       }
       if (
         typeof updated.feeRate !== 'number' ||
@@ -333,8 +357,9 @@ export function usePortfolios({
         updated.feeRate < 0 ||
         updated.feeRate > 10
       ) {
-        alert(lang === 'ko' ? '수수료율은 0% ~ 10% 사이여야 합니다.' : 'Fee rate must be between 0% and 10%.');
-        return;
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.updateFeeRateInvalid,
+        );
       }
       const { error } = await supabase
         .from('portfolios')
@@ -355,18 +380,24 @@ export function usePortfolios({
         .eq('id', updated.id);
 
       if (error) {
-        alert(lang === 'ko' ? '포트폴리오 업데이트에 실패했습니다.' : 'Failed to update portfolio.');
-        return;
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.updateFailed,
+          error,
+        );
       }
       setPortfolios((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
     },
-    [lang]
+    [setPortfolios]
   );
 
   const handleAddTrade = useCallback(
     async (portfolioId: string, trade: Trade) => {
       const target = portfolios.find((p) => p.id === portfolioId);
-      if (!target) return;
+      if (!target) {
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.targetNotFound,
+        );
+      }
 
       const normalizedTrade: Trade = {
         ...trade,
@@ -434,8 +465,10 @@ export function usePortfolios({
         .eq('id', portfolioId);
 
       if (error) {
-        alert(lang === 'ko' ? '거래 추가에 실패했습니다.' : 'Failed to add trade.');
-        return;
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.addTradeFailed,
+          error,
+        );
       }
 
       let nextIsQuarterMode = target.isQuarterMode ?? false;
@@ -461,49 +494,65 @@ export function usePortfolios({
         )
       );
     },
-    [lang, portfolios]
+    [portfolios, setPortfolios]
   );
 
   const handleDeleteTrade = useCallback(
     async (portfolioId: string, tradeId: string) => {
       const target = portfolios.find((p) => p.id === portfolioId);
-      if (!target) return;
+      if (!target) {
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.targetNotFound,
+        );
+      }
       const updatedTrades = target.trades.filter((t) => t.id !== tradeId);
       const { error } = await supabase
         .from('portfolios')
         .update({ trades: updatedTrades })
         .eq('id', portfolioId);
       if (error) {
-        alert(lang === 'ko' ? '거래 삭제에 실패했습니다.' : 'Failed to delete trade.');
-        return;
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.deleteTradeFailed,
+          error,
+        );
       }
       setPortfolios((prev) =>
         prev.map((p) => (p.id === portfolioId ? { ...p, trades: updatedTrades } : p))
       );
     },
-    [lang, portfolios]
+    [portfolios, setPortfolios]
   );
 
-  const handleDeletePortfolio = useCallback(
+  const deletePortfolioById = useCallback(
     async (id: string) => {
-      const msg =
-        lang === 'ko'
-          ? '정말로 이 포트폴리오를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.'
-          : 'Are you sure you want to delete this portfolio? This action cannot be undone.';
-      if (!window.confirm(msg)) return;
-      const { error } = await supabase.from('portfolios').delete().eq('id', id);
+      if (!userIdOption) {
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.sessionExpired,
+        );
+      }
+      const { error } = await supabase
+        .from('portfolios')
+        .delete()
+        .eq('user_id', userIdOption)
+        .eq('id', id);
       if (error) {
-        alert(lang === 'ko' ? `포트폴리오 삭제에 실패했습니다: ${error.message}` : `Failed to delete portfolio: ${error.message}`);
-        return;
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.deleteFailed,
+          error,
+        );
       }
       setPortfolios((prev) => prev.filter((p) => p.id !== id));
     },
-    [lang]
+    [setPortfolios, userIdOption]
   );
 
   const handleDeleteHistory = useCallback(
     async (portfolioId: string) => {
-      if (!userIdOption) return;
+      if (!userIdOption) {
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.sessionExpired,
+        );
+      }
       const { error: histErr } = await supabase
         .from('portfolio_history')
         .delete()
@@ -515,21 +564,22 @@ export function usePortfolios({
         .eq('user_id', userIdOption)
         .eq('id', portfolioId);
       if (histErr || portErr) {
-        alert(lang === 'ko' ? '종료 내역 삭제에 실패했습니다.' : 'Failed to delete history.');
-        return;
+        throw createPortfolioMutationError(
+          PORTFOLIO_MUTATION_ERROR_CODES.deleteHistoryFailed,
+          histErr ?? portErr,
+        );
       }
       setPortfolios((prev) => prev.filter((p) => p.id !== portfolioId));
     },
-    [lang, userIdOption]
+    [setPortfolios, userIdOption]
   );
 
   const handleClearHistory = useCallback(async () => {
-    if (!userIdOption) return;
-    const msg =
-      lang === 'ko'
-        ? '모든 종료 내역을 삭제하시겠습니까? (되돌릴 수 없습니다)'
-        : 'Delete all history records? This cannot be undone.';
-    if (!window.confirm(msg)) return;
+    if (!userIdOption) {
+      throw createPortfolioMutationError(
+        PORTFOLIO_MUTATION_ERROR_CODES.sessionExpired,
+      );
+    }
     const { error: histErr } = await supabase.from('portfolio_history').delete().eq('user_id', userIdOption);
     const { error: portErr } = await supabase
       .from('portfolios')
@@ -537,11 +587,13 @@ export function usePortfolios({
       .eq('user_id', userIdOption)
       .eq('is_closed', true);
     if (histErr || portErr) {
-      alert(lang === 'ko' ? '종료 내역 전체 삭제에 실패했습니다.' : 'Failed to clear history.');
-      return;
+      throw createPortfolioMutationError(
+        PORTFOLIO_MUTATION_ERROR_CODES.clearHistoryFailed,
+        histErr ?? portErr,
+      );
     }
     setPortfolios((prev) => prev.filter((p) => !p.isClosed));
-  }, [lang, userIdOption]);
+  }, [setPortfolios, userIdOption]);
 
   return {
     portfolios,
@@ -553,7 +605,7 @@ export function usePortfolios({
     handleUpdatePortfolio,
     handleAddTrade,
     handleDeleteTrade,
-    handleDeletePortfolio,
+    deletePortfolioById,
     handleDeleteHistory,
     handleClearHistory,
   };

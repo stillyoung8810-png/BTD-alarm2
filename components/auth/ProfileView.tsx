@@ -4,21 +4,17 @@
  * Phase 3 — 토스에서 TDSButton 사용
  */
 
-import React, { useCallback, useRef } from 'react';
+import React from 'react';
 import { UserCheck, Key, LogOut, Send, Sparkles } from 'lucide-react';
 import { I18N } from '../../constants';
 import Toggle from '../Toggle';
 import HoverTip from '../HoverTip';
 import { TDSButton } from '../tds';
 import type { ProfileViewProps } from './authViewTypes';
-import { TDS_DIALOG_MESSAGES } from '../../constants/tdsDialogMessages';
-import { TdsConfirmDialog } from '../tds-adapter/TdsConfirmDialog';
-import { useAsyncTdsConfirm } from '../tds-adapter/useAsyncTdsConfirm';
-import { showErrorToast } from '../tds-adapter/showErrorToast';
+import RefundGuideController from './RefundGuideController';
 
 const ProfileView: React.FC<ProfileViewProps> = ({
   lang,
-  onClose,
   onSwitchType,
   onLogout,
   onUpgradePlan,
@@ -41,10 +37,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   setTelegramLinkLoading,
   showDeleteConfirm,
   setShowDeleteConfirm,
-  showCancelSub,
-  setShowCancelSub,
-  cancelSubLoading,
-  setCancelSubLoading,
   deleteConfirmText,
   setDeleteConfirmText,
   cancelSubscription,
@@ -53,9 +45,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   isInTossApp,
 }) => {
   const t = I18N[lang];
-  const refundGuideDialog = useAsyncTdsConfirm(lang);
-  const refundGuideLabels = TDS_DIALOG_MESSAGES[lang]?.actions;
-  const isWebRefundProcessingRef = useRef(false);
 
   const handleConnectTelegramClick = async () => {
     if (!currentUserId) return;
@@ -74,59 +63,21 @@ const ProfileView: React.FC<ProfileViewProps> = ({
     }
   };
 
-  const handleRefundConfirm = useCallback(async () => {
-    if (isInTossApp) {
-      const dm = TDS_DIALOG_MESSAGES[lang];
-      if (dm == null) {
-        return;
-      }
-      refundGuideDialog.open({
-        title: dm.refund.guideTitle ?? '',
-        body: dm.refund.guideBody ?? '',
-        confirmLabel: dm.common.acknowledge ?? '',
-        tone: 'primary',
-        action: async () => {
-          setShowCancelSub(false);
-        },
-      });
-      return;
-    }
-    if (isWebRefundProcessingRef.current) {
-      return;
-    }
-    isWebRefundProcessingRef.current = true;
-    setCancelSubLoading(true);
+  const handleProcessWebRefund = async () => {
     setError(null);
     setInfo(null);
-    try {
-      const result = await Promise.resolve(cancelSubscription());
-      if (result.success) {
-        setInfo(result.message ?? (lang === 'ko' ? '환불 처리가 완료되었습니다.' : 'Refund has been processed.'));
-        setShowCancelSub(false);
-      } else {
-        setInfo(result.message ?? '');
-        if (result.error) setError(result.error);
-        setShowCancelSub(false);
-      }
-    } catch (_error: unknown) {
-      const errorMsg = TDS_DIALOG_MESSAGES[lang]?.common?.refundActionFailed;
-      if (errorMsg != null && errorMsg !== '') {
-        showErrorToast(errorMsg);
-      }
-    } finally {
-      isWebRefundProcessingRef.current = false;
-      setCancelSubLoading(false);
+
+    const result = await Promise.resolve(cancelSubscription());
+    if (result.success) {
+      setInfo(result.message ?? '');
+      return;
     }
-  }, [
-    cancelSubscription,
-    isInTossApp,
-    lang,
-    refundGuideDialog.open,
-    setCancelSubLoading,
-    setError,
-    setInfo,
-    setShowCancelSub,
-  ]);
+
+    setInfo(result.message ?? '');
+    if (result.error) {
+      setError(result.error);
+    }
+  };
 
   const handleDeleteAccountClick = async () => {
     setLoading(true);
@@ -297,38 +248,14 @@ const ProfileView: React.FC<ProfileViewProps> = ({
           </button>
         )}
 
-        {currentTier !== 'free' && !isInTossApp && (
+        {currentTier !== 'free' && (
           <div className="pt-4 border-t border-slate-200 dark:border-white/5">
-            {!showCancelSub ? (
-              <button type="button" onClick={() => setShowCancelSub(true)} disabled={loading || cancelSubLoading} className="w-full py-3 text-[11px] font-bold text-slate-400 hover:text-amber-500 transition-colors uppercase tracking-widest disabled:opacity-60">
-                {lang === 'ko' ? '환불 요청' : 'Request Refund'}
-              </button>
-            ) : (
-              <div className="space-y-3 p-4 bg-amber-50 dark:bg-amber-950/20 rounded-2xl border border-amber-200 dark:border-amber-800/40">
-                <p className="text-xs font-bold text-amber-600 dark:text-amber-400">{lang === 'ko' ? '⚠️ 환불을 요청하시겠습니까?' : '⚠️ Are you sure you want to request a refund?'}</p>
-                <ul className="text-[10px] text-slate-500 dark:text-slate-400 space-y-1 list-disc pl-4">
-                  <li>{lang === 'ko' ? '결제 후 7일 이내 & 이용 기록 없음 → 전액 환불 + 서비스 즉시 해제' : 'Within 7 days & no usage → full refund + immediate access revocation'}</li>
-                  <li>{lang === 'ko' ? '그 외 → 환불 불가 (이용 기간 만료 시 자동 종료)' : 'Otherwise → not eligible for refund (expires automatically)'}</li>
-                </ul>
-                <div className="flex gap-2">
-                  {isInTossApp ? (
-                    <>
-                      <TDSButton variant="tertiary" className="flex-1" onClick={() => setShowCancelSub(false)}>{lang === 'ko' ? '취소' : 'Cancel'}</TDSButton>
-                      <TDSButton variant="primary" className="flex-1" loading={cancelSubLoading} disabled={cancelSubLoading} onClick={handleRefundConfirm}>{cancelSubLoading ? (lang === 'ko' ? '처리 중…' : 'Processing…') : (lang === 'ko' ? '환불 확인' : 'Confirm Refund')}</TDSButton>
-                    </>
-                  ) : (
-                    <>
-                      <button type="button" onClick={() => setShowCancelSub(false)} className="flex-1 py-3 text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
-                        {lang === 'ko' ? '취소' : 'Cancel'}
-                      </button>
-                      <button type="button" disabled={cancelSubLoading} onClick={handleRefundConfirm} className="flex-1 py-3 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-xl transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
-                        {cancelSubLoading ? (lang === 'ko' ? '처리 중…' : 'Processing…') : (lang === 'ko' ? '환불 확인' : 'Confirm Refund')}
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
+            <RefundGuideController
+              lang={lang}
+              isInTossApp={Boolean(isInTossApp)}
+              isDisabled={loading}
+              onProcessWebRefund={handleProcessWebRefund}
+            />
           </div>
         )}
 
@@ -386,14 +313,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
         )}
       </div>
-
-      {refundGuideLabels != null ? (
-        <TdsConfirmDialog
-          {...refundGuideDialog.dialogProps}
-          labels={refundGuideLabels}
-          hideCancel
-        />
-      ) : null}
     </div>
   );
 };

@@ -6,9 +6,6 @@ import {
   Plus,
   Zap,
   Info,
-  Bell,
-  BellOff,
-  Trash2,
   TrendingUp,
   Layers,
   Camera,
@@ -32,13 +29,14 @@ import { useTossApp } from '../contexts/TossAppContext';
 import { TDSButton, TDSList, TDSListRow } from './tds';
 import { getConditionalTypographyStyle, getConditionalColor } from '../utils/tossStyleHelpers';
 import VrPortfolioSummary from './VrPortfolioSummary';
+import PortfolioCardActions from './portfolio/PortfolioCardActions';
 
 interface DashboardProps {
   lang: 'ko' | 'en';
   portfolios: Portfolio[];
   onClosePortfolio: (id: string) => void;
-  onDeletePortfolio: (id: string) => void;
-  onUpdatePortfolio: (updated: Portfolio) => void;
+  onDeletePortfolio: (id: string) => Promise<void> | void;
+  onUpdatePortfolio: (updated: Portfolio) => Promise<void> | void;
   onOpenCreator: () => void;
   onOpenAlarm: (id: string) => void;
   onOpenDetails: (id: string) => void;
@@ -271,13 +269,13 @@ const Dashboard: React.FC<DashboardProps> = ({
 const PortfolioCard: React.FC<{ 
   portfolio: Portfolio; 
   onClose: () => void;
-  onDelete: () => void;
+  onDelete: () => Promise<void> | void;
   onOpenAlarm: () => void;
   onOpenDetails: () => void;
   onOpenQuickInput: () => void;
   onOpenExecution: () => void;
   onOpenAIImage: () => void;
-  onUpdatePortfolio: (updated: Portfolio) => void;
+  onUpdatePortfolio: (updated: Portfolio) => Promise<void> | void;
   lang: 'ko' | 'en';
   onDailyExecutionBlock?: (id: string, block: string | null) => void;
 }> = ({ portfolio, onClose, onDelete, onOpenAlarm, onOpenDetails, onOpenQuickInput, onOpenExecution, onOpenAIImage, onUpdatePortfolio, lang, onDailyExecutionBlock }) => {
@@ -301,14 +299,6 @@ const PortfolioCard: React.FC<{
   const vrCycleHeaderLabel = useMemo(
     () => getVrDailyExecutionCycleHeaderLabel(portfolio, lang),
     [portfolio, lang],
-  );
-
-  const handleOpenAlarmWeb = useCallback(
-    (e: React.MouseEvent<HTMLButtonElement>) => {
-      e.stopPropagation();
-      onOpenAlarm();
-    },
-    [onOpenAlarm],
   );
 
   // 콜백을 ref에 보관해 effect 의존성에서 제외 → 부모 리렌더 시 콜백 참조 변경으로 인한 반복 실행 방지
@@ -616,29 +606,6 @@ const PortfolioCard: React.FC<{
     };
   }, [portfolio.id, portfolio.trades.length]);
 
-  const alarmIcon = isAlarmEnabled ? (
-    <Bell size={16} fill="currentColor" />
-  ) : (
-    <BellOff size={16} />
-  );
-
-  const baseBtnClass = 'w-9 h-9 rounded-lg flex items-center justify-center';
-  const activeStateClass = 'bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-500';
-
-  const alarmTossBtnClass = [baseBtnClass, 'min-w-0 p-0', isAlarmEnabled && activeStateClass]
-    .filter(Boolean)
-    .join(' ');
-
-  const alarmWebBtnClass = [
-    baseBtnClass,
-    'transition-all duration-300',
-    isAlarmEnabled
-      ? `${activeStateClass} border border-amber-200 dark:border-amber-500/30`
-      : 'bg-transparent text-slate-500 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800',
-  ]
-    .filter(Boolean)
-    .join(' ');
-
   return (
     <div
       className={`glass light-card-depth p-7 rounded-[2.5rem] space-y-5 group hover:-translate-y-1 transition-all duration-500 relative overflow-hidden shadow-[0_12px_40px_rgba(0,0,0,0.06)] dark:shadow-2xl ${
@@ -652,52 +619,12 @@ const PortfolioCard: React.FC<{
 
       {/* 우측 상단 버튼 그룹 — Phase 2: 토스에서만 TDSButton */}
       <div className="absolute top-4 right-4 flex items-center gap-2 z-20">
-        {isInTossApp ? (
-          <>
-            <TDSButton
-              variant="tertiary"
-              size="small"
-              onClick={onOpenAlarm}
-              className={alarmTossBtnClass}
-              aria-label={t.alarmSettingsLabel}
-            >
-              {alarmIcon}
-            </TDSButton>
-            <TDSButton
-              variant="tertiary"
-              size="small"
-              onClick={() => {
-                onDelete();
-              }}
-              className="w-9 h-9 min-w-0 p-0 rounded-lg flex items-center justify-center text-slate-500"
-              aria-label={lang === 'ko' ? '포트폴리오 삭제' : 'Delete portfolio'}
-            >
-              <Trash2 size={16} strokeWidth={2} />
-            </TDSButton>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              onClick={handleOpenAlarmWeb}
-              className={alarmWebBtnClass}
-              aria-label={t.alarmSettingsLabel}
-            >
-              {alarmIcon}
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete();
-              }}
-              className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 border border-slate-200 dark:border-slate-700 bg-transparent hover:bg-red-600 hover:text-white hover:border-red-600 transition-all duration-200 active:scale-95"
-              title={lang === 'ko' ? '포트폴리오 삭제' : 'Delete portfolio'}
-            >
-              <Trash2 size={16} strokeWidth={2} />
-            </button>
-          </>
-        )}
+        <PortfolioCardActions
+          lang={lang}
+          isAlarmEnabled={Boolean(isAlarmEnabled)}
+          onOpenAlarm={onOpenAlarm}
+          onDeletePortfolio={onDelete}
+        />
       </div>
 
       <div className="flex justify-between items-start relative z-10">

@@ -5,6 +5,7 @@ import { supabase, clearAuthStorage } from '../services/supabase';
 import { isSessionRecoverableError } from '../utils/authHelpers';
 import { getDeviceTimeZone } from '../utils/dateUtils';
 import type { AppUserProfile } from '../types/appUserProfile';
+import type { Portfolio } from '../types';
 
 function getSessionFingerprint(session: Session | null): string | null {
   if (!session?.user) return null;
@@ -14,8 +15,7 @@ function getSessionFingerprint(session: Session | null): string | null {
 }
 
 export interface UseAuthOptions {
-  lang: 'ko' | 'en';
-  setPortfolios: (value: SetStateAction<any[]>) => void;
+  setPortfolios: (value: SetStateAction<Portfolio[]>) => void;
   /** App에서 정의한 fetchPortfolios. ref로 전달해 순환 의존성 회피. */
   fetchPortfoliosRef: MutableRefObject<(userId: string) => void>;
   saveFCMToken: (userId: string) => Promise<void>;
@@ -31,10 +31,11 @@ export interface UseAuthReturn {
   isLoading: boolean;
   fetchUserProfile: (userId: string) => Promise<void>;
   justLoggedInRef: MutableRefObject<boolean>;
+  hasSessionExpired: boolean;
+  handleDismissSessionExpired: () => void;
 }
 
 export function useAuth({
-  lang,
   setPortfolios,
   saveFCMToken,
   fetchPortfoliosRef,
@@ -43,12 +44,16 @@ export function useAuth({
   const [userProfile, setUserProfile] = useState<AppUserProfile | null>(null);
   const [authModal, setAuthModal] = useState<'login' | 'signup' | 'profile' | 'reset-password' | 'change-password' | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasSessionExpired, setHasSessionExpired] = useState(false);
 
-  const authModalRef = useRef(authModal);
   const justLoggedInRef = useRef(false);
   const userIdRef = useRef<string | null>(null);
   const lastHandledSessionFingerprintRef = useRef<string | null>(null);
   const unhandledRejectionHandlerRef = useRef<((e: PromiseRejectionEvent) => void) | null>(null);
+
+  const handleDismissSessionExpired = useCallback(() => {
+    setHasSessionExpired(false);
+  }, []);
 
   const fetchUserProfile = useCallback(async (userId: string): Promise<void> => {
     if (!userId) return;
@@ -102,10 +107,6 @@ export function useAuth({
   }, []);
 
   useEffect(() => {
-    authModalRef.current = authModal;
-  }, [authModal]);
-
-  useEffect(() => {
     userIdRef.current = user?.id ?? null;
   }, [user?.id]);
 
@@ -135,7 +136,7 @@ export function useAuth({
       }
     };
 
-    const clearAuthState = async (showAlert: boolean = true) => {
+    const clearAuthState = async (shouldShowAlert: boolean = true) => {
       if (!isMounted) return;
 
       console.log('[Auth] Clearing auth state due to session error');
@@ -152,8 +153,8 @@ export function useAuth({
       setUserProfile(null);
       setPortfolios([]);
 
-      if (showAlert) {
-        alert(lang === 'ko' ? '세션이 만료되었습니다. 다시 로그인해 주세요.' : 'Session expired. Please log in again.');
+      if (shouldShowAlert) {
+        setHasSessionExpired(true);
       }
     };
 
@@ -170,6 +171,8 @@ export function useAuth({
         setPortfolios([]);
         return;
       }
+
+      setHasSessionExpired(false);
 
       const fingerprint = getSessionFingerprint(session);
       if (fingerprint && lastHandledSessionFingerprintRef.current === fingerprint) {
@@ -199,10 +202,6 @@ export function useAuth({
         setAuthModal('reset-password');
       }
 
-      if (event === 'USER_UPDATED' && authModalRef.current === 'reset-password') {
-        setAuthModal(null);
-        alert(lang === 'ko' ? '비밀번호가 성공적으로 변경되었습니다.' : 'Password updated successfully.');
-      }
     };
 
     const checkUser = async () => {
@@ -326,7 +325,7 @@ export function useAuth({
         unhandledRejectionHandlerRef.current = null;
       }
     };
-  }, [lang, saveFCMToken, fetchUserProfile, setPortfolios]);
+  }, [saveFCMToken, fetchUserProfile, setPortfolios]);
 
   return {
     user,
@@ -338,5 +337,7 @@ export function useAuth({
     isLoading,
     fetchUserProfile,
     justLoggedInRef,
+    hasSessionExpired,
+    handleDismissSessionExpired,
   };
 }

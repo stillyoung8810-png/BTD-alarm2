@@ -11,14 +11,21 @@ import {
 
 type BaseAuthModalsProps = Omit<
   React.ComponentProps<typeof AuthModals>,
-  'lang' | 'onClose' | 'onRequestClose'
+  'lang' | 'onClose' | 'onRequestClose' | 'onSignedIn'
 >;
+
+type SignedInUser = {
+  id: string;
+  email: string;
+};
 
 interface AuthModalCoordinatorProps extends BaseAuthModalsProps {
   lang: AppLang;
   isOpen: boolean;
   onCloseAuthModal: () => void;
   onRequestMiniAppExit: () => Promise<void> | void;
+  onCommitSignedIn: (user: SignedInUser) => Promise<void> | void;
+  onFinishSignedInFlow: (user: SignedInUser) => Promise<void> | void;
 }
 
 export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
@@ -26,12 +33,55 @@ export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
   isOpen,
   onCloseAuthModal,
   onRequestMiniAppExit,
+  onCommitSignedIn,
+  onFinishSignedInFlow,
   type,
   ...authModalProps
 }) => {
   const { isInTossApp } = useTossApp();
   const labels = TDS_DIALOG_MESSAGES[lang]?.actions;
   const exitDialog = useAsyncTdsConfirm(lang);
+  const welcomeDialog = useAsyncTdsConfirm(lang);
+
+  const handleSignedIn = useCallback(
+    async (user: SignedInUser) => {
+      await Promise.resolve(onCommitSignedIn(user));
+
+      const authMessages = TDS_DIALOG_MESSAGES[lang]?.auth;
+      const acknowledge = TDS_DIALOG_MESSAGES[lang]?.common?.acknowledge;
+      const actionLabels = TDS_DIALOG_MESSAGES[lang]?.actions;
+      const canShowSignedInWelcome =
+        isInTossApp && (type === 'login' || type === 'signup');
+
+      if (
+        !canShowSignedInWelcome ||
+        authMessages == null ||
+        acknowledge == null ||
+        actionLabels == null
+      ) {
+        await Promise.resolve(onFinishSignedInFlow(user));
+        return;
+      }
+
+      welcomeDialog.open({
+        title: authMessages.signedInSuccessTitle ?? '',
+        body: authMessages.signedInSuccessBody ?? '',
+        confirmLabel: acknowledge,
+        tone: 'primary',
+        action: async () => {
+          await Promise.resolve(onFinishSignedInFlow(user));
+        },
+      });
+    },
+    [
+      isInTossApp,
+      lang,
+      onCommitSignedIn,
+      onFinishSignedInFlow,
+      type,
+      welcomeDialog.open,
+    ],
+  );
 
   const handleRequestExit = useCallback(
     (reason: ExitDialogReason) => {
@@ -41,7 +91,9 @@ export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
       }
 
       const exitMessage = TDS_DIALOG_MESSAGES[lang]?.exit?.[reason];
-      if (exitMessage == null) {
+      const actionLabels = TDS_DIALOG_MESSAGES[lang]?.actions;
+      if (exitMessage == null || actionLabels == null) {
+        onCloseAuthModal();
         return;
       }
 
@@ -82,10 +134,18 @@ export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
         type={type}
         onClose={onCloseAuthModal}
         onRequestClose={handleAuthClose}
+        onSignedIn={handleSignedIn}
       />
 
       {labels != null ? (
-        <TdsConfirmDialog {...exitDialog.dialogProps} labels={labels} />
+        <>
+          <TdsConfirmDialog {...exitDialog.dialogProps} labels={labels} />
+          <TdsConfirmDialog
+            {...welcomeDialog.dialogProps}
+            labels={labels}
+            shouldHideCancel={true}
+          />
+        </>
       ) : null}
     </>
   );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { I18N } from '../constants';
 import { X, UserCheck, ShieldCheck } from 'lucide-react';
 import { supabase } from '../services/supabase';
@@ -33,7 +33,8 @@ function getAuthCompletionDialogCopy(
       return { title: auth.accountDeletedTitle, body: auth.accountDeletedBody };
     default: {
       const neverKind: never = kind;
-      return neverKind;
+      void neverKind;
+      return null;
     }
   }
 }
@@ -45,7 +46,7 @@ interface AuthModalsProps {
   /** 헤더 X / 배경 / 모달 자체 닫기 요청을 외부에서 가로챌 때만 사용 */
   onRequestClose?: () => void;
   onSwitchType: (type: 'login' | 'signup' | 'profile' | 'reset-password' | 'change-password') => void;
-  onLogin: (user: { id: string; email: string }) => void;
+  onSignedIn: (user: { id: string; email: string }) => Promise<void> | void;
   onLogout: () => void;
   currentUserEmail?: string | null;
   currentTier?: 'free' | 'pro' | 'premium' | null;
@@ -66,7 +67,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({
   onClose,
   onRequestClose,
   onSwitchType,
-  onLogin,
+  onSignedIn,
   onLogout,
   currentUserEmail,
   currentTier = 'free',
@@ -92,8 +93,6 @@ const AuthModals: React.FC<AuthModalsProps> = ({
   const [telegramLinkToken, setTelegramLinkToken] = useState<string | null>(null);
   const [telegramLinkLoading, setTelegramLinkLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showCancelSub, setShowCancelSub] = useState(false);
-  const [cancelSubLoading, setCancelSubLoading] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [termsConsent, setTermsConsent] = useState(false);
   const [privacyConsent, setPrivacyConsent] = useState(false);
@@ -310,11 +309,11 @@ const AuthModals: React.FC<AuthModalsProps> = ({
           }, 3000);
         } else if (data.user && data.session) {
           // 이메일 인증이 필요 없는 경우 (즉시 로그인)
-          onLogin({
+          await Promise.resolve(onSignedIn({
             id: data.user.id,
             email: data.user.email || email,
-          });
-          onClose(); // 프로필 모달 대신 모달 닫기
+          }));
+          return;
         }
       } else if (type === 'login') {
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -327,11 +326,11 @@ const AuthModals: React.FC<AuthModalsProps> = ({
         }
 
         if (data.user) {
-          onLogin({
+          await Promise.resolve(onSignedIn({
             id: data.user.id,
             email: data.user.email || email,
-          });
-          onClose(); // 프로필 모달 대신 모달 닫기
+          }));
+          return;
         }
       }
     } catch (err: any) {
@@ -524,7 +523,7 @@ const AuthModals: React.FC<AuthModalsProps> = ({
                   type,
                   onClose,
                   onSwitchType,
-                  onLogin,
+                  onSignedIn,
                   email,
                   setEmail,
                   password,
@@ -600,10 +599,6 @@ const AuthModals: React.FC<AuthModalsProps> = ({
                   setTelegramLinkLoading,
                   showDeleteConfirm,
                   setShowDeleteConfirm,
-                  showCancelSub,
-                  setShowCancelSub,
-                  cancelSubLoading,
-                  setCancelSubLoading,
                   deleteConfirmText,
                   setDeleteConfirmText,
                   cancelSubscription,
@@ -620,6 +615,16 @@ const AuthModals: React.FC<AuthModalsProps> = ({
   const authCompletionCopy =
     authCompletionKind != null ? getAuthCompletionDialogCopy(lang, authCompletionKind) : null;
   const authAcknowledge = TDS_DIALOG_MESSAGES[lang]?.common?.acknowledge ?? '';
+
+  useEffect(() => {
+    if (authCompletionKind == null) {
+      return;
+    }
+    if (authCompletionCopy != null && tdsActionLabels != null) {
+      return;
+    }
+    handleAuthCompletionClose();
+  }, [authCompletionKind, authCompletionCopy, handleAuthCompletionClose, tdsActionLabels]);
 
   return (
     <>

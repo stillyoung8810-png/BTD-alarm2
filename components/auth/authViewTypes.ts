@@ -11,7 +11,7 @@ export interface AuthEmailFormProps {
   type: 'login' | 'signup';
   onClose: () => void;
   onSwitchType: (t: AuthModalType) => void;
-  onLogin: (user: { id: string; email: string }) => void;
+  onSignedIn: (user: { id: string; email: string }) => Promise<void> | void;
   email: string;
   setEmail: (s: string) => void;
   password: string;
@@ -94,10 +94,6 @@ export interface ProfileViewProps {
   setTelegramLinkLoading: (b: boolean) => void;
   showDeleteConfirm: boolean;
   setShowDeleteConfirm: (b: boolean) => void;
-  showCancelSub: boolean;
-  setShowCancelSub: (b: boolean) => void;
-  cancelSubLoading: boolean;
-  setCancelSubLoading: (b: boolean) => void;
   deleteConfirmText: string;
   setDeleteConfirmText: (s: string) => void;
   cancelSubscription: () => Promise<{ success: boolean; message?: string; error?: string }>;

@@ -2,7 +2,7 @@
 
 **상태:** 일부 시각 변경은 이미 반영됨 가능. 본 문서는 **규정 준수(I18N·DRY·다크 트랙 분리)** 및 남은 작업·원칙의 단일 기준(SSOT)으로 유지한다.  
 **배경:** 라이트 모드에서 히어로와 `Pricing` PRO 카드의 톤을 맞추고, 웹 로그인 CTA 가독성을 높인다. **다크 모드에서는 랜딩 히어로는 기존 짙은 인디고 그라디언트, `Pricing` PRO 카드는 기존 다크 PRO 톤**을 각각 유지한다(서로 다른 다크 트랙).  
-**참조:** `components/Pricing.tsx`의 `tier.theme === 'pro'`, 랜딩은 `components/Landing.tsx`(또는 분리 시 `components/LandingHero.tsx`).
+**참조:** `components/Pricing.tsx`의 `tier.theme === 'pro'`, 랜딩은 **`components/Landing.tsx`**(조합·레이아웃)와 **필수 분리된** **`components/LandingHero.tsx`**(히어로 SRP)를 쓴다.
 
 ---
 
@@ -35,13 +35,18 @@
 - 장식용 블러·스파클 레이어에 `aria-hidden="true"`(또는 동등 처리).
 - 웹 **실제 클릭 가능 요소는 `<button type="button">`**; `div` + `onClick` 금지.
 
+### [Rule 2 & 7] 망라적 검사와 React 반환값 (Critical)
+
+- **`switch`의 `default`에서 `return _exhaustiveCheck` 금지(컴포넌트):** 타입스크립트 `never` 할당은 컴파일용으로만 쓰고, **런타임에 예외적 prop이 들어오면 `_exhaustiveCheck`가 객체 등이 될 수 있어** React가 **"Objects are not valid as a React child"** 로 크래시한다. **`HeroTitle` / `FeatureIcon` 등 FC는 `default`에서 `return null`**(또는 안전한 대체 UI)만 한다. **망라적 검사용 식별자는 `title.layout`·`iconKey`처럼 원시/유니온 필드에만 할당**한다.
+- **문자열만 반환하는 순수 함수**(예: `getTierSurfaceClasses`)는 **`never` 검사 후 `void _exhaustiveCheck` + 안전한 기본 클래스 문자열**로 끝낸다(React 자식과 무관).
+
 ---
 
 ## 대상 범위
 
 | 항목 | 경로 |
 |------|------|
-| 랜딩 | `components/Landing.tsx` (선택: 히어만 `components/LandingHero.tsx`로 분리) |
+| 랜딩 | **`components/Landing.tsx`** + **`components/LandingHero.tsx`**(히어로 단일 책임·**필수 분리**) |
 | 참조·공유 | `components/Pricing.tsx`, `constants/proPlanSurface.ts`, `constants/landingMessages.ts`, `constants/landingConfig.ts` |
 
 **목표:** 라이트에서 PRO 표면·타이포·웹 보조 CTA 대비 정렬; 다크는 위 Two-Track 유지; I18N·시각 토큰은 상수·사전으로 SSOT.
@@ -58,6 +63,7 @@
 - [ ] 제목 줄바꿈: `layout` 기반 분기로 ko/en 구조 분리 (번역 문자열 비교 금지)
 - [ ] 피처 칩: `featureItems`에 **stable id** 부여, `key={index}` 제거
 - [ ] 렌더 경계: `renderHeroTitle` / `renderFeatureIcon` 일반 함수 대신 `HeroTitle` / `FeatureIcon` 컴포넌트로 분리
+- [ ] **파일 분리(필수):** `LandingHero.tsx` 신설·히어로 SRP, `Landing.tsx`는 조합만
 - [ ] 장식 글로우·라이트 카드 충돌 시 opacity 조정 및 회귀 점검
 
 ---
@@ -116,8 +122,10 @@ function getTierSurfaceClasses(theme: 'free' | 'pro' | 'premium'): string {
     case 'free':
       return 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/70 shadow-xl dark:shadow-2xl';
     default: {
+      // [Rule 7] compile-time exhaustiveness; [Rule 2] 런타임 비정상 값 시에도 문자열 반환 보장(React 자식 아님)
       const _exhaustiveCheck: never = theme;
-      return _exhaustiveCheck;
+      void _exhaustiveCheck;
+      return 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/70 shadow-xl dark:shadow-2xl';
     }
   }
 }
@@ -195,8 +203,11 @@ const HeroTitle: React.FC<HeroTitleProps> = ({ title }) => {
         </>
       );
     default: {
-      const _exhaustiveCheck: never = title;
-      return _exhaustiveCheck;
+      // [Rule 7] 식별자는 layout으로만 좁힘(객체 전체를 never에 넣지 않음)
+      const _exhaustiveCheck: never = title.layout;
+      void _exhaustiveCheck;
+      // [Rule 2 & 6] React에 객체를 반환하면 WSOD — 안전하게 null
+      return null;
     }
   }
 };
@@ -211,7 +222,7 @@ const safeHeroTitle = copy?.hero?.title ?? FALLBACK_HERO_TITLE;
 </p>
 ```
 
-`HeroTitle`은 `title.layout === 'ko_brand_lines' | 'en_brand_lines'`만 분기한다.
+`HeroTitle`은 `title.layout === 'ko_brand_lines' | 'en_brand_lines'`만 분기한다. **`default`는 위 [Rule 2 & 7]대로 `null` 반환**으로 WSOD를 막는다.
 
 **토스:** `style={tossTitleStyle}` / `tossSubtitleStyle` 유지, 웹은 `className` 색상으로 대비 처리.
 
@@ -308,7 +319,8 @@ const FeatureIcon: React.FC<FeatureIconProps> = ({ iconKey }) => {
       return <Bell size={18} aria-hidden="true" />;
     default: {
       const _exhaustiveCheck: never = iconKey;
-      return _exhaustiveCheck;
+      void _exhaustiveCheck;
+      return null;
     }
   }
 };
@@ -381,7 +393,7 @@ const FeatureIcon: React.FC<FeatureIconProps> = ({ iconKey }) => {
 1. `constants/proPlanSurface.ts`에 라이트 공통 + 랜딩 다크 + Pricing PRO 다크 상수 정의 후 `Pricing.tsx`·랜딩에 import.
 2. `constants/landingConfig.ts`에 피처 구조(`LANDING_FEATURES_CONFIG`), `constants/landingMessages.ts`에 히어로·신뢰 문구·`featureLabels`를 정의한다.
 3. 랜딩 컴포넌트에서 하드코딩 문자열 제거, `HeroTitle` / `FeatureIcon` 컴포넌트 적용, `LANDING_FEATURES_CONFIG.map(...)` + `key={feature.id}`로 렌더링한다.
-4. (선택) 히어로만 `LandingHero.tsx`로 분리해 단일 책임 유지.
+4. **(필수·SRP)** 히어로 UI·카피 바인딩은 **`components/LandingHero.tsx`** 로만 두고, `Landing.tsx`는 섹션 조합·공통 레이아웃만 담당한다. 비대한 단일 파일 방치는 허용하지 않는다.
 5. 린트 및 라이트/다크 표시 회귀 점검.
 
 ---

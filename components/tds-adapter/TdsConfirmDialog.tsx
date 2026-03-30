@@ -13,8 +13,9 @@ const getButtonVariant = (tone: DialogTone): 'primary' | 'dangerFill' => {
     case 'primary':
       return 'primary';
     default: {
-      const neverTone: never = tone;
-      return neverTone;
+      const _exhaustiveCheck: never = tone;
+      void _exhaustiveCheck;
+      return 'primary';
     }
   }
 };
@@ -26,7 +27,7 @@ export interface TdsConfirmDialogProps {
   confirmLabel: string;
   labels: DialogActionLabels;
   tone?: DialogTone;
-  hideCancel?: boolean;
+  shouldHideCancel?: boolean;
   isConfirmLoading?: boolean;
   onClose: () => void;
   onConfirm: () => Promise<void> | void;
@@ -38,15 +39,12 @@ export const TdsConfirmDialog: React.FC<TdsConfirmDialogProps> = ({
   body,
   confirmLabel,
   labels,
-  tone: toneProp = 'primary',
-  hideCancel = false,
+  tone = 'primary',
+  shouldHideCancel = false,
   isConfirmLoading = false,
   onClose,
   onConfirm,
 }) => {
-  const dialogTone: DialogTone =
-    toneProp === 'danger' ? 'danger' : 'primary';
-
   const handleConfirmClick = (): void => {
     void onConfirm();
   };
@@ -60,7 +58,7 @@ export const TdsConfirmDialog: React.FC<TdsConfirmDialogProps> = ({
       isConfirmLoading={isConfirmLoading}
       footer={
         <div className="flex w-full gap-3">
-          {!hideCancel ? (
+          {!shouldHideCancel ? (
             <TDSButton
               type="button"
               variant="tertiary"
@@ -74,7 +72,7 @@ export const TdsConfirmDialog: React.FC<TdsConfirmDialogProps> = ({
           ) : null}
           <TDSButton
             type="button"
-            variant={getButtonVariant(dialogTone)}
+            variant={getButtonVariant(tone)}
             fullWidth
             className="min-w-0 flex-1"
             loading={isConfirmLoading}

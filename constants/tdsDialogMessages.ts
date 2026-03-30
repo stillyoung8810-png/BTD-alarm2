@@ -32,7 +32,18 @@ export interface TdsDialogMessageSet {
     deleteRecordConfirm: string;
     deleteRecordButton: string;
   };
+  portfolio: {
+    deleteTitle: string;
+    deleteBody: string;
+    deleteConfirm: string;
+    openDeleteConfirm: string;
+  };
   auth: {
+    signedInSuccessTitle: string;
+    signedInSuccessBody: string;
+    sessionExpiredTitle: string;
+    sessionExpiredBody: string;
+    sessionExpiredAcknowledge: string;
     passwordChangedTitle: string;
     passwordChangedBody: string;
     passwordChangedReloginTitle: string;
@@ -52,6 +63,11 @@ export interface TdsDialogMessageSet {
     guideTitle: string;
     guideBody: string;
     openRefundGuide: string;
+    requestRefund: string;
+    confirmPrompt: string;
+    eligiblePolicy: string;
+    ineligiblePolicy: string;
+    confirmRefund: string;
   };
   samples: {
     openDangerConfirmSample: string;
@@ -100,7 +116,19 @@ export const TDS_DIALOG_MESSAGES: Record<AppLang, TdsDialogMessageSet> = {
       deleteRecordConfirm: '삭제',
       deleteRecordButton: '기록 삭제',
     },
+    portfolio: {
+      deleteTitle: '포트폴리오 삭제',
+      deleteBody:
+        '정말로 이 포트폴리오를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.',
+      deleteConfirm: '삭제',
+      openDeleteConfirm: '포트폴리오 삭제',
+    },
     auth: {
+      signedInSuccessTitle: '인증 완료',
+      signedInSuccessBody: '환영합니다. 인증이 완료되었습니다.',
+      sessionExpiredTitle: '세션 만료',
+      sessionExpiredBody: '세션이 만료되었습니다. 다시 로그인해 주세요.',
+      sessionExpiredAcknowledge: '확인',
       passwordChangedTitle: '비밀번호 변경',
       passwordChangedBody: '비밀번호가 성공적으로 변경되었습니다.',
       passwordChangedReloginTitle: '비밀번호 변경',
@@ -122,6 +150,13 @@ export const TDS_DIALOG_MESSAGES: Record<AppLang, TdsDialogMessageSet> = {
       guideBody:
         '안드로이드는 토스 앱 결제내역의 환불 경로를 이용하고, iOS는 애플 고객센터 환불 경로를 이용합니다.',
       openRefundGuide: '환불 안내 보기',
+      requestRefund: '환불 요청',
+      confirmPrompt: '환불을 요청하시겠습니까?',
+      eligiblePolicy:
+        '결제 후 7일 이내이고 이용 기록이 없으면 전액 환불 후 서비스가 즉시 해제됩니다.',
+      ineligiblePolicy:
+        '그 외에는 환불이 불가하며, 이용 기간 만료 시 자동 종료됩니다.',
+      confirmRefund: '환불 확인',
     },
     samples: {
       openDangerConfirmSample: '위험 확인 예시 열기',
@@ -169,7 +204,19 @@ export const TDS_DIALOG_MESSAGES: Record<AppLang, TdsDialogMessageSet> = {
       deleteRecordConfirm: 'Delete',
       deleteRecordButton: 'Delete',
     },
+    portfolio: {
+      deleteTitle: 'Delete portfolio',
+      deleteBody:
+        'Are you sure you want to delete this portfolio? This action cannot be undone.',
+      deleteConfirm: 'Delete',
+      openDeleteConfirm: 'Delete portfolio',
+    },
     auth: {
+      signedInSuccessTitle: 'Authentication complete',
+      signedInSuccessBody: 'Welcome. Authentication is complete.',
+      sessionExpiredTitle: 'Session expired',
+      sessionExpiredBody: 'Your session expired. Please sign in again.',
+      sessionExpiredAcknowledge: 'OK',
       passwordChangedTitle: 'Password updated',
       passwordChangedBody: 'Your password was updated successfully.',
       passwordChangedReloginTitle: 'Password updated',
@@ -191,6 +238,13 @@ export const TDS_DIALOG_MESSAGES: Record<AppLang, TdsDialogMessageSet> = {
       guideBody:
         'Use Toss payment history on Android, or Apple Support on iOS, to request a refund.',
       openRefundGuide: 'Open refund guide',
+      requestRefund: 'Request refund',
+      confirmPrompt: 'Do you want to request a refund?',
+      eligiblePolicy:
+        'Within 7 days and with no usage history, you receive a full refund and access is revoked immediately.',
+      ineligiblePolicy:
+        'Otherwise, a refund is not available and access ends automatically at expiration.',
+      confirmRefund: 'Confirm refund',
     },
     samples: {
       openDangerConfirmSample: 'Open sample danger confirm',

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { AppLang } from '../../types';
 import {
   TDS_DIALOG_MESSAGES,
@@ -93,18 +93,17 @@ export function useAsyncTdsConfirm(lang: AppLang): UseAsyncTdsConfirmResult {
     }
   }, [close, lang]);
 
-  const dialogProps = useMemo((): AsyncTdsConfirmDialogProps => {
-    return {
-      isOpen: snapshot.isOpen,
-      title: snapshot.title,
-      body: snapshot.body,
-      confirmLabel: snapshot.confirmLabel,
-      tone: snapshot.tone,
-      isConfirmLoading,
-      onClose: close,
-      onConfirm: runConfirm,
-    };
-  }, [snapshot, isConfirmLoading, close, runConfirm]);
+  // Consumer가 `{...dialogProps}`로 전개하므로 래퍼 객체 참조 동일성은 의미가 적다.
+  const dialogProps: AsyncTdsConfirmDialogProps = {
+    isOpen: snapshot.isOpen,
+    title: snapshot.title,
+    body: snapshot.body,
+    confirmLabel: snapshot.confirmLabel,
+    tone: snapshot.tone,
+    isConfirmLoading,
+    onClose: close,
+    onConfirm: runConfirm,
+  };
 
   return {
     snapshot,

@@ -41,7 +41,7 @@
 - **공식 API 경계 유지**: 실제 토스 종료 동작은 이 문서에서 추측하지 않고, `onRequestMiniAppExit` 같은 앱 경계 콜백으로 위임합니다.
 - **Strict I18N**: 버튼/제목/본문은 JSX에 하드코딩하지 않고, 별도 다국어 사전에서 주입합니다.
 - **Tier 3 보호**: 복잡한 비즈니스 폼은 이번 마이그레이션에서 건드리지 않습니다.
-- **확인 다이얼로그 코디네이터**: **`TdsConfirmDialog`만** **`useAsyncTdsConfirm(lang)`** 과 짝을 이룬다(`onConfirm` → `runConfirm`). **기획상 단일 버튼만 노출하는 비동기 안내**는 **`hideCancel={true}`** 로 처리하고 `TdsAlertDialog`로 우회하지 않는다. **`TdsAlertDialog`는 순수 안내(확인 한 번으로 닫힘)** 만 담당하며 `onClose`만 받고, 비동기·로딩·`catch`·에러 토스트는 넣지 않는다(SRP). `useState`에 **콜백 함수를 저장하지 않는다**(Stale Closure·직렬화·디버깅 리스크). 비동기 확인의 **훅 단일 구현** 규칙은 **`TdsConfirmDialog` 경로**에만 적용한다.
+- **확인 다이얼로그 코디네이터**: **`TdsConfirmDialog`만** **`useAsyncTdsConfirm(lang)`** 과 짝을 이룬다(`onConfirm` → `runConfirm`). **기획상 단일 버튼만 노출하는 비동기 안내**는 **`shouldHideCancel={true}`** 로 처리하고 `TdsAlertDialog`로 우회하지 않는다. **`TdsAlertDialog`는 순수 안내(확인 한 번으로 닫힘)** 만 담당하며 `onClose`만 받고, 비동기·로딩·`catch`·에러 토스트는 넣지 않는다(SRP). `useState`에 **콜백 함수를 저장하지 않는다**(Stale Closure·직렬화·디버깅 리스크). 비동기 확인의 **훅 단일 구현** 규칙은 **`TdsConfirmDialog` 경로**에만 적용한다.
 
 ## 현재 상태 요약
 
@@ -158,6 +158,20 @@ export interface TdsDialogMessageSet {
     /** 내역 초기화 확인 모달을 여는 트리거(버튼 라벨·접근성용) */
     openClearDialog: string;
   };
+  auth: {
+    /** 로그인/즉시 세션 생성 회원가입 성공 후 노출할 환영 안내 */
+    signedInSuccessTitle: string;
+    signedInSuccessBody: string;
+    /** 비밀번호 변경 완료 안내 */
+    passwordChangedTitle: string;
+    passwordChangedBody: string;
+    /** 비밀번호 변경 후 재로그인 안내 */
+    passwordChangedReloginTitle: string;
+    passwordChangedReloginBody: string;
+    /** 회원 탈퇴 완료 안내 */
+    accountDeletedTitle: string;
+    accountDeletedBody: string;
+  };
   refund: {
     guideTitle: string;
     guideBody: string;
@@ -208,6 +222,16 @@ export const TDS_DIALOG_MESSAGES: Record<AppLang, TdsDialogMessageSet> = {
       clearConfirm: '초기화',
       openClearDialog: '내역 초기화 확인',
     },
+    auth: {
+      signedInSuccessTitle: '인증 완료',
+      signedInSuccessBody: '환영합니다. 인증이 완료되었습니다.',
+      passwordChangedTitle: '비밀번호 변경',
+      passwordChangedBody: '비밀번호가 성공적으로 변경되었습니다.',
+      passwordChangedReloginTitle: '비밀번호 변경',
+      passwordChangedReloginBody: '비밀번호가 변경되었습니다. 다시 로그인해 주세요.',
+      accountDeletedTitle: '회원 탈퇴',
+      accountDeletedBody: '회원 탈퇴가 완료되었습니다.',
+    },
     refund: {
       guideTitle: '환불 안내',
       guideBody:
@@ -254,6 +278,16 @@ export const TDS_DIALOG_MESSAGES: Record<AppLang, TdsDialogMessageSet> = {
       clearConfirm: 'Clear',
       openClearDialog: 'Open clear history confirmation',
     },
+    auth: {
+      signedInSuccessTitle: 'Authentication complete',
+      signedInSuccessBody: 'Welcome. Authentication is complete.',
+      passwordChangedTitle: 'Password updated',
+      passwordChangedBody: 'Your password was updated successfully.',
+      passwordChangedReloginTitle: 'Password updated',
+      passwordChangedReloginBody: 'Your password was updated. Please log in again.',
+      accountDeletedTitle: 'Account deleted',
+      accountDeletedBody: 'Your account has been deleted.',
+    },
     refund: {
       guideTitle: 'Refund guide',
       guideBody:
@@ -275,6 +309,7 @@ export const TDS_DIALOG_MESSAGES: Record<AppLang, TdsDialogMessageSet> = {
 
 ### 설계 포인트
 
+- **CI·타입 검증(필수):** 각 `AppLang`에 대해 **`actions`** 및 **`common`(예: `acknowledge`·`refundActionFailed`·`webAsyncProcessing`) 등 TDS 다이얼로그·코디네이터가 전제하는 **핵심 키**가 하나라도 빠지면 **`pnpm build` 또는 CI 단계에서 실패**하도록 강제한다(`satisfies`·스키마/키 존재 테스트·커스텀 검증 스크립트 등). 이렇게 해서 **`labels == null`인 채 `open`만 호출되는 "투명 인간 팝업"** 을 원천 차단한다.
 - JSX에는 한국어/영어를 직접 넣지 않습니다.
 - 종료 유형은 `ExitDialogReason`으로 분기하고, 번역 문자열로 로직을 분기하지 않습니다.
 - 추후 심사 카피가 바뀌더라도 **사전 파일만 수정**하면 됩니다.
@@ -324,7 +359,7 @@ export function showErrorToast(message: string): void {
 로딩·`try` / `catch` / `finally`·성공 시 닫기·`actionRef` 보관을 **한 곳**에 둔다. **`lang`은 필수 인자** — `catch`에서 토스트 문구를 **오직 `TDS_DIALOG_MESSAGES[lang].common.refundActionFailed`** 로만 조회한다(주석·재량 금지).
 
 ```ts
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { AppLang } from '../../types';
 import {
   TDS_DIALOG_MESSAGES,
@@ -371,7 +406,7 @@ export interface UseAsyncTdsConfirmResult {
   close: () => void;
   /** `TdsConfirmDialog`의 `onConfirm`에 그대로 연결 (`TdsAlertDialog`에는 사용하지 않음) */
   runConfirm: () => Promise<void>;
-  /** `TdsConfirmDialog`에 `labels`·`hideCancel` 등만 합쳐서 전개 */
+  /** `TdsConfirmDialog`에 `labels`·`shouldHideCancel` 등만 합쳐서 전개 */
   dialogProps: AsyncTdsConfirmDialogProps;
 }
 
@@ -429,18 +464,18 @@ export function useAsyncTdsConfirm(
     }
   }, [close, lang]);
 
-  const dialogProps = useMemo((): AsyncTdsConfirmDialogProps => {
-    return {
-      isOpen: snapshot.isOpen,
-      title: snapshot.title,
-      body: snapshot.body,
-      confirmLabel: snapshot.confirmLabel,
-      tone: snapshot.tone,
-      isConfirmLoading,
-      onClose: close,
-      onConfirm: runConfirm,
-    };
-  }, [snapshot, isConfirmLoading, close, runConfirm]);
+  // [Rule 2 준수] Blind useMemo 제거: Consumer가 `{...dialogProps}`로 전개하므로
+  // 래퍼 객체의 참조 동일성은 하위 리렌더 방지에 거의 기여하지 않고, deps 추적·오버헤드만 남는다.
+  const dialogProps: AsyncTdsConfirmDialogProps = {
+    isOpen: snapshot.isOpen,
+    title: snapshot.title,
+    body: snapshot.body,
+    confirmLabel: snapshot.confirmLabel,
+    tone: snapshot.tone,
+    isConfirmLoading,
+    onClose: close,
+    onConfirm: runConfirm,
+  };
 
   return {
     snapshot,
@@ -461,11 +496,11 @@ export function useAsyncTdsConfirm(
 - **단방향 데이터 흐름:** state는 **문자열·불리언 등 순수 스냅샷**만; 실행 권한은 **ref + `open` 시 주입된 `action`**.
 - **`runConfirm` 단일 진입점**으로 §5(One-click Lock, Safe try/catch) 보일러플레이트를 제거한다.
 - **동기 락(`isExecutingRef`):** `isConfirmLoading`만으로는 리페인트 전 **한 틱** 동안 중복 `runConfirm` 호출이 들어올 수 있다. **`isExecutingRef`** 로 진입 즉시 막아 금융·결제 계열 **더블 서밋**을 원천 차단한다(`finally`에서 해제).
-- **환불 안내 등「확인 시 비동기 작업」이 필요하면 `TdsConfirmDialog` + 본 훅**을 쓴다. **단일 확인 버튼만 기획되면 `hideCancel={true}`** 를 쓴다. `TdsAlertDialog`는 **문구 확인 후 즉시 `onClose`만** 호출하는 정적 안내에 한정한다(SRP·오용 방지).
+- **환불 안내 등「확인 시 비동기 작업」이 필요하면 `TdsConfirmDialog` + 본 훅**을 쓴다. **단일 확인 버튼만 기획되면 `shouldHideCancel={true}`** 를 쓴다. `TdsAlertDialog`는 **문구 확인 후 즉시 `onClose`만** 호출하는 정적 안내에 한정한다(SRP·오용 방지).
 - **`open` / `close` / `runConfirm`은 `useCallback`으로 안정화**한다. 소비 컴포넌트의 `useCallback` 의존성에는 **`exitDialog` 전체가 아니라 `exitDialog.open` 등 개별 함수**를 넣어 불필요한 재생성을 피한다. `runConfirm`을 deps에 넣을 때는 **`lang`이 바뀌면 갱신되는 것이 정상**이다.
 - **`dialog.open({ title, body, … })`를 호출하는 `useCallback`:** `TDS_DIALOG_MESSAGES[lang]`의 **하위 필드를 의존성 배열에 늘어놓지 않는다**. 콜백 **내부**에서 `const messages = TDS_DIALOG_MESSAGES[lang].…`로 조회하고, 의존성은 **`lang`·`…Dialog.open`·`action`에 쓰는 props 콜백** 위주로 압축한다.
 - **`dialogProps`·퇴장 애니메이션 (Rule 2):** `close()`(및 성공 시 `runConfirm` → `close`) 호출 직후 **`isOpen: false`만 반영**하고, **`title`·`body`·`confirmLabel`·`tone`은 직전 스냅샷을 유지**한다. 그렇지 않고 닫힘 분기에서 문자열을 즉시 `''`로 덮으면, `TDSModal` 등이 퇴장 트랜지션(~수백 ms)을 재생하는 동안 **본문·버튼 라벨이 먼저 증발**하는 UX가 난다. 스냅샷 타입은 **유니온 `{ isOpen: false } | { isOpen: true, … }` 대신 단일 객체**로 평탄화해, 닫힘 중에도 마지막 문구가 그대로 투영되게 한다.
-- **`dialogProps`:** Consumer가 조건부로 필드를 비우는 패턴을 반복하지 않도록, **`useMemo`로 `TdsConfirmDialog`에 넘길 필드를 훅이 파생**한다. Consumer는 **`<TdsConfirmDialog {...dialog.dialogProps} labels={…} />`** 에 **`hideCancel` 등만 추가**한다(DRY).
+- **`dialogProps` (Rule 2 — Blind `useMemo` 금지):** 필드 매핑은 훅이 **한 곳에서 평탄한 객체**로 조립해 Consumer가 **`<TdsConfirmDialog {...dialog.dialogProps} labels={…} />`** 만 쓰면 되게 한다(DRY). 다만 **`useMemo`로 `dialogProps` 래퍼 참조를 고정하지 않는다** — Spread 전개 시 **자식이 받는 props 묶음은 매 렌더 새로 구성**되므로, 래퍼 참조 안정성은 **메모된 자식의 리렌더 억제에 실질적 도움이 되지 않고**, deps·실행 비용만 남는다.
 
 ## Phase 0-3. `TdsDialogShell.tsx`
 
@@ -705,7 +740,7 @@ export default TdsAlertDialog;
 ### 컴포넌트 역할(Contract) 경계
 
 - **`TdsAlertDialog`**: 로딩이나 비동기 통신이 **전혀 없는** 순수 동기식 단순 안내판 역할만 수행한다. 확인 클릭은 **즉시 `onClose` 한 번**으로 끝난다.
-- **`TdsConfirmDialog` (`hideCancel={true}`)**: 사용자 눈에는 Alert처럼 **단일 버튼(확인)** 만 노출되지만, 이면에서는 `useAsyncTdsConfirm`·API·로딩·에러 토스트 등 **비동기 로직과 에러 핸들링**이 필요한 경우에 사용한다. `TdsAlertDialog`에 비동기를 억지로 얹지 않고, **비동기 확인 경로는 `TdsConfirmDialog`로만 통일**한다.
+- **`TdsConfirmDialog` (`shouldHideCancel={true}`)**: 사용자 눈에는 Alert처럼 **단일 버튼(확인)** 만 노출되지만, 이면에서는 `useAsyncTdsConfirm`·API·로딩·에러 토스트 등 **비동기 로직과 에러 핸들링**이 필요한 경우에 사용한다. `TdsAlertDialog`에 비동기를 억지로 얹지 않고, **비동기 확인 경로는 `TdsConfirmDialog`로만 통일**한다.
 
 ## Phase 0-5. `TdsConfirmDialog.tsx`
 
@@ -727,8 +762,11 @@ const getButtonVariant = (tone: DialogTone): 'primary' | 'dangerFill' => {
     case 'primary':
       return 'primary';
     default: {
-      const neverTone: never = tone;
-      return neverTone;
+      // [Rule 7] 컴파일 타임 망라적 검사
+      const _exhaustiveCheck: never = tone;
+      void _exhaustiveCheck;
+      // [Rule 6] 런타임 오염(브리지·직렬화 등) 시에도 TDSButton에 잘못된 variant가 흐르지 않게 안전 기본값
+      return 'primary';
     }
   }
 };
@@ -740,8 +778,8 @@ export interface TdsConfirmDialogProps {
   confirmLabel: string;
   labels: DialogActionLabels;
   tone?: DialogTone;
-  /** `true`이면 취소 버튼을 렌더하지 않는다. 확인 버튼만 `flex` 행을 채운다(기획상 단일 액션). 기본 `false`. */
-  hideCancel?: boolean;
+  /** [Rule 8] `true`이면 취소 버튼을 렌더하지 않는다. 확인 버튼만 `flex` 행을 채운다(기획상 단일 액션). 기본 `false`. */
+  shouldHideCancel?: boolean;
   isConfirmLoading?: boolean;
   onClose: () => void;
   onConfirm: () => Promise<void> | void;
@@ -754,7 +792,7 @@ export const TdsConfirmDialog: React.FC<TdsConfirmDialogProps> = ({
   confirmLabel,
   labels,
   tone = 'primary',
-  hideCancel = false,
+  shouldHideCancel = false,
   isConfirmLoading = false,
   onClose,
   onConfirm,
@@ -768,7 +806,7 @@ export const TdsConfirmDialog: React.FC<TdsConfirmDialogProps> = ({
       isConfirmLoading={isConfirmLoading}
       footer={
         <div className="flex w-full gap-3">
-          {!hideCancel ? (
+          {!shouldHideCancel ? (
             <TDSButton
               type="button"
               variant="tertiary"
@@ -804,13 +842,14 @@ export default TdsConfirmDialog;
 
 ### 설계 포인트
 
+- **Rule 8:** 불리언 prop·로컬 불리언은 **`is` / `has` / `should` / `can`** 접두사를 쓴다. 취소 버튼 숨김은 **`shouldHideCancel`** (`hideCancel` 등 동사-원형 접두사 금지).
 - `tone`은 문자열 비교용 번역 텍스트가 아니라 union type으로 관리합니다.
-- `switch` + `never` 체크로 exhaustive typing을 보장합니다.
+- **`getButtonVariant`:** `switch` + `never` 로 **컴파일 타임** 망라적 검사를 보장하되, **`default`에서는 `return neverTone` 금지** — 런타임에 union 밖 문자열이 들어오면 그대로 `TDSButton` `variant`로 흘러 **크래시·스타일 붕괴**가 난다. **`void _exhaustiveCheck` 후 `'primary'` 폴백**으로 방어한다(Rule 6·7).
 - `confirmLabel`은 위험 액션별로 다르게 주입 가능합니다.
-- 비동기 통신 및 로딩 제어가 필요하지만 단일 버튼만 노출해야 하는 Alert 성격의 화면(예: 환불 안내)을 위해 `hideCancel`을 지원하여 SRP를 유지한다. (`TdsAlertDialog`에 비동기를 얹지 않고 **`TdsConfirmDialog` + `useAsyncTdsConfirm` 경로만** 쓴다.)
-- **`isConfirmLoading`을 `TdsDialogShell`에 전달**해 로딩 중 헤더 X·배경·ESC가 막힌다. **`hideCancel`이 `false`일 때만** 취소 버튼을 렌더하며, 해당 버튼은 로딩 중 `disabled`로 **이중 액션(취소로 닫힘 vs 확인 진행)** 을 막는다(결제·삭제 등).
+- 비동기 통신 및 로딩 제어가 필요하지만 단일 버튼만 노출해야 하는 Alert 성격의 화면(예: 환불 안내)을 위해 `shouldHideCancel`을 지원하여 SRP를 유지한다. (`TdsAlertDialog`에 비동기를 얹지 않고 **`TdsConfirmDialog` + `useAsyncTdsConfirm` 경로만** 쓴다.)
+- **`isConfirmLoading`을 `TdsDialogShell`에 전달**해 로딩 중 헤더 X·배경·ESC가 막힌다. **`shouldHideCancel`이 `false`일 때만** 취소 버튼을 렌더하며, 해당 버튼은 로딩 중 `disabled`로 **이중 액션(취소로 닫힘 vs 확인 진행)** 을 막는다(결제·삭제 등).
 - 확인 버튼은 **`onClick={onConfirm}`** 으로 직접 연결한다. 부모가 내려주는 `onConfirm`(일반적으로 `runConfirm`)이 이미 `try` / `catch` / 락을 포함하므로 **`async` 래퍼·`Promise.resolve` 중첩**을 두지 않는다.
-- 확인 버튼은 `loading` + `disabled`로 One-click Lock을 강화한다. 푸터는 항상 **`flex w-full gap-3`** 를 유지하고, `hideCancel`일 때는 확인 버튼만 **`flex-1`·`min-w-0`** 로 행을 채운다.
+- 확인 버튼은 `loading` + `disabled`로 One-click Lock을 강화한다. 푸터는 항상 **`flex w-full gap-3`** 를 유지하고, `shouldHideCancel`일 때는 확인 버튼만 **`flex-1`·`min-w-0`** 로 행을 채운다.
 - **Safe Try-Catch-Finally**는 **`useAsyncTdsConfirm.runConfirm`** 에 두고, 본 어댑터는 닫기 차단·버튼 `loading`·이벤트 위임만 담당한다.
 
 ## Phase 0-6. `useAsyncTdsConfirm` 적용 샘플 (`ConfirmDialogSample`)
@@ -823,6 +862,7 @@ import type { AppLang } from '../../types';
 import { TDS_DIALOG_MESSAGES } from '../../constants/tdsDialogMessages';
 import { TdsConfirmDialog } from './TdsConfirmDialog';
 import { useAsyncTdsConfirm } from './useAsyncTdsConfirm';
+import { showErrorToast } from './showErrorToast';
 
 interface ConfirmDialogSampleProps {
   lang: AppLang;
@@ -839,6 +879,11 @@ export const ConfirmDialogSample: React.FC<ConfirmDialogSampleProps> = ({
   const handleOpenDangerDialog = useCallback(() => {
     const messages = TDS_DIALOG_MESSAGES[lang]?.history;
     if (messages == null) {
+      const errorMsg =
+        TDS_DIALOG_MESSAGES[lang]?.common?.refundActionFailed;
+      if (errorMsg != null && errorMsg !== '') {
+        showErrorToast(errorMsg);
+      }
       return;
     }
     dialog.open({
@@ -867,17 +912,21 @@ export const ConfirmDialogSample: React.FC<ConfirmDialogSampleProps> = ({
 
 ### 설계 포인트
 
-- **트리거·`labels`:** `samples?.openDangerConfirmSample ?? ''`, **`labels`는 `?.actions` + `labels != null`일 때만 `TdsConfirmDialog`**. `open` 전 **`history` 가드**.
+- **트리거·`labels`:** `samples?.openDangerConfirmSample ?? ''`, **`labels`는 `?.actions` + `labels != null`일 때만 `TdsConfirmDialog`**. `history` 누락 시 **빈 `return` 금지** → **`common.refundActionFailed` 가드 후 `showErrorToast`**(Phase 0-2b 키 SSOT; 확인 다이얼로그는 열지 않음).
 - **`useAsyncTdsConfirm(lang)`이 §5·에러 토스트 i18n 전부 소유**; 샘플·Phase 1 코디네이터는 **`lang`을 넘겨** `open` / `close` / `runConfirm`만 연결한다.
 - **`handleOpenDangerDialog`의 `useCallback` 의존성**은 **`[dialog.open, lang]`** 처럼 압축한다. 문구는 콜백 내부의 `TDS_DIALOG_MESSAGES[lang]` 조회로 얻는다.
 - **`TdsConfirmDialog`:** **`{...dialog.dialogProps}`** 로 스냅샷 매핑을 훅에 위임한다.
 
 ## Phase 0-6a. 확인 플로우 SSOT (복붙 금지)
 
+- **Rule 6 — i18n 사전 누락 시 Silent Failure 금지:** `TDS_DIALOG_MESSAGES[lang]?.…` 조회가 **`null`/`undefined`일 때** 핸들러를 **빈 `return`만으로 끝내지 않는다.** 분기별 폴백은 아래를 따른다.
+  - **이탈·닫기·모달 취소 계열(위험한 2차 액션 없음):** 확인 TDS를 열 수 없으면 **즉시 안전한 1차 동작**(예: **`onCloseAuthModal()`**, 로그인 패널 닫기)으로 **플로우를 진행**한다(사용자가 버튼에 갇히지 않게).
+  - **삭제·결제·환불 등 확인 없이 실행하면 위험한 액션:** 문구 세트가 없으면 **실행하지 않고**, **`common.refundActionFailed`(Phase 0-2b SSOT)를 `?.`로 조회해 문자열이 있을 때만 `showErrorToast`** 한다(하드코딩 문구 금지).
+  - **예외 — `SessionExpiredAlertGate`:** `authMessages == null || labels == null`이면 **`return null`로 조용히 실패**하는 패턴을 **유지**한다. **`refundActionFailed` 등 공통 토스트를 억지로 띄우지 않는다** — 만료 상태와 무관한 일반 오류 토스트가 겹치면 **UX가 혼란**스럽다. 키 누락은 **Phase 0-1의 CI·타입 검증**으로 막는다.
 - **단일 진입점:** 비동기 확인·로딩·닫기·`catch`·**다국어 토스트**는 **`useAsyncTdsConfirm(lang).runConfirm`** 에만 구현한다. Phase 1 스니펫에 `try/catch/finally` 블록을 **다시 붙이지 않는다.**
 - **`useCallback` + `dialog.open`:** `TDS_DIALOG_MESSAGES[lang]`의 **개별 문자열 필드를 deps에 나열하지 않는다**. 콜백 안에서 `TDS_DIALOG_MESSAGES[lang]`(또는 `.history` / `.refund` 등)으로 읽고, deps는 **`lang`·`…Dialog.open`·관련 props 핸들러** 위주로 둔다(Phase 0-6 `ConfirmDialogSample`, Phase 1-P0 `AuthModalCoordinator`, Phase 1-P1 `HistoryHeaderActions`·`RefundGuideController`와 동일 패턴).
 - **`open({ ..., action })`:** `action`은 **ref에만** 저장되며, `open` 호출 시점의 최신 props를 캡처한다. **`useState`에 함수를 넣지 않는다.**
-- **환불 안내 등 비동기 확인:** **`TdsConfirmDialog {...dialog.dialogProps} labels={…} hideCancel`** 패턴으로 단일 확인 버튼만 노출한다. **`TdsAlertDialog`는 쓰지 않는다.**
+- **환불 안내 등 비동기 확인:** **`TdsConfirmDialog {...dialog.dialogProps} labels={…} shouldHideCancel={true}`** 패턴으로 단일 확인 버튼만 노출한다. **`TdsAlertDialog`는 쓰지 않는다.**
 - **언마운트 경합 방지:** `action` 내부에서 **`await` 비동기 경계를 먼저 처리**하고, **부모 모달/패널을 닫는 동기 작업은 그 뒤에** 둔다(Phase 1-P0 `AuthModalCoordinator` 참고).
 
 ---
@@ -918,7 +967,7 @@ const AuthModalContainer: React.FC<AuthModalContainerProps> = ({
       type="login"
       onClose={onClose}
       onSwitchType={() => {}}
-      onLogin={() => {}}
+      onSignedIn={() => {}}
       onLogout={() => {}}
     />
   );
@@ -933,9 +982,11 @@ const AuthModalContainer: React.FC<AuthModalContainerProps> = ({
 
 ## After
 
-### 샘플: `AuthModalCoordinator.tsx` (현행 구현과 동일한 계약)
+### 샘플: `AuthModalCoordinator.tsx` (Rule 5 — 단일 SSOT 완성본)
 
-파일 위치: `components/auth/AuthModalCoordinator.tsx`. `AuthModals`의 나머지 필수 props(`onSwitchType`, `onLogin`, …)는 **`BaseAuthModalsProps`로 상위에서 전달**한다.
+**[Rule 5 / Architecture]** 본 Phase에서 `AuthModalCoordinator`의 **유일한 복사·붙여넣기 원본**은 아래 블록뿐이다. 종료 확인과 환영 확인은 각각 **`useAsyncTdsConfirm(lang)` 인스턴스를 분리**해 상태를 섞지 않는다.
+
+파일 위치: `components/auth/AuthModalCoordinator.tsx`. `AuthModals`의 나머지 필수 props(`onSwitchType`, `onLogout`, `currentUserEmail` 등)는 **`BaseAuthModalsProps`로 상위에서 전달**하고, **성공 경로는 `onSignedIn`을 코디네이터 내부에서 생성해 주입**한다.
 
 ```tsx
 import React, { useCallback } from 'react';
@@ -951,14 +1002,21 @@ import {
 
 type BaseAuthModalsProps = Omit<
   React.ComponentProps<typeof AuthModals>,
-  'lang' | 'onClose' | 'onRequestClose'
+  'lang' | 'onClose' | 'onRequestClose' | 'onSignedIn'
 >;
+
+type SignedInUser = {
+  id: string;
+  email: string;
+};
 
 interface AuthModalCoordinatorProps extends BaseAuthModalsProps {
   lang: AppLang;
   isOpen: boolean;
   onCloseAuthModal: () => void;
   onRequestMiniAppExit: () => Promise<void> | void;
+  onCommitSignedIn: (user: SignedInUser) => Promise<void> | void;
+  onFinishSignedInFlow: (user: SignedInUser) => Promise<void> | void;
 }
 
 export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
@@ -966,12 +1024,55 @@ export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
   isOpen,
   onCloseAuthModal,
   onRequestMiniAppExit,
+  onCommitSignedIn,
+  onFinishSignedInFlow,
   type,
   ...authModalProps
 }) => {
   const { isInTossApp } = useTossApp();
   const labels = TDS_DIALOG_MESSAGES[lang]?.actions;
   const exitDialog = useAsyncTdsConfirm(lang);
+  const welcomeDialog = useAsyncTdsConfirm(lang);
+
+  const handleSignedIn = useCallback(
+    async (user: SignedInUser) => {
+      await Promise.resolve(onCommitSignedIn(user));
+
+      const authMessages = TDS_DIALOG_MESSAGES[lang]?.auth;
+      const acknowledge = TDS_DIALOG_MESSAGES[lang]?.common?.acknowledge;
+      const actionLabels = TDS_DIALOG_MESSAGES[lang]?.actions;
+      const canShowSignedInWelcome =
+        isInTossApp && (type === 'login' || type === 'signup');
+
+      if (
+        !canShowSignedInWelcome ||
+        authMessages == null ||
+        acknowledge == null ||
+        actionLabels == null
+      ) {
+        await Promise.resolve(onFinishSignedInFlow(user));
+        return;
+      }
+
+      welcomeDialog.open({
+        title: authMessages.signedInSuccessTitle ?? '',
+        body: authMessages.signedInSuccessBody ?? '',
+        confirmLabel: acknowledge,
+        tone: 'primary',
+        action: async () => {
+          await Promise.resolve(onFinishSignedInFlow(user));
+        },
+      });
+    },
+    [
+      isInTossApp,
+      lang,
+      onCommitSignedIn,
+      onFinishSignedInFlow,
+      type,
+      welcomeDialog.open,
+    ],
+  );
 
   const handleRequestExit = useCallback(
     (reason: ExitDialogReason) => {
@@ -981,7 +1082,9 @@ export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
       }
 
       const exitMessage = TDS_DIALOG_MESSAGES[lang]?.exit?.[reason];
-      if (exitMessage == null) {
+      const actionLabels = TDS_DIALOG_MESSAGES[lang]?.actions;
+      if (exitMessage == null || actionLabels == null) {
+        onCloseAuthModal();
         return;
       }
 
@@ -1022,10 +1125,18 @@ export const AuthModalCoordinator: React.FC<AuthModalCoordinatorProps> = ({
         type={type}
         onClose={onCloseAuthModal}
         onRequestClose={handleAuthClose}
+        onSignedIn={handleSignedIn}
       />
 
       {labels != null ? (
-        <TdsConfirmDialog {...exitDialog.dialogProps} labels={labels} />
+        <>
+          <TdsConfirmDialog {...exitDialog.dialogProps} labels={labels} />
+          <TdsConfirmDialog
+            {...welcomeDialog.dialogProps}
+            labels={labels}
+            shouldHideCancel={true}
+          />
+        </>
       ) : null}
     </>
   );
@@ -1036,13 +1147,35 @@ export default AuthModalCoordinator;
 
 ### 설계 포인트
 
-- **`labels`:** `TDS_DIALOG_MESSAGES[lang]?.actions` 로 조회하고, **`labels == null`이면 `TdsConfirmDialog`를 렌더하지 않는다**(런타임·i18n 맵 불일치 시 WSOD 방지). `AuthModals`는 유지한다.
-- 종료 동작은 `onRequestMiniAppExit`로 위임하므로, 토스 공식 API 선택은 앱 경계에서만 결정됩니다.
-- **`!isInTossApp || type !== 'login'`:** 토스 앱이 아니거나 **로그인 모달이 아닐 때**는 이탈 확인 다이얼로그 없이 **`onCloseAuthModal()`만** 호출한다(Phase 4 계약과 동일).
-- `AuthModals`는 상위에서 내려준 비즈니스 props를 그대로 받고, **닫기 UX만 분리**한다: **`onClose={onCloseAuthModal}`**(예: 성공 후 모달 제거), **`onRequestClose={handleAuthClose}`**(사용자가 닫기 제스처 시 → 이탈 확인 플로우).
-- **`useAsyncTdsConfirm(lang)`:** `open`의 `action`만 ref에 보관하고, **`await onRequestMiniAppExit()` 이후에만 `onCloseAuthModal()`** 을 호출해 **언마운트 경합**과 Silent Failure를 동시에 피합니다. 실패 시 토스트는 훅이 **`TDS_DIALOG_MESSAGES[lang]?.common?.refundActionFailed` 가드 후 `showErrorToast`** 로만 처리합니다.
-- **`handleRequestExit`의 `useCallback`:** `dialogMessages.exit` 전체를 deps에 넣지 않고, **`TDS_DIALOG_MESSAGES[lang]?.exit?.[reason]`** 로 조회한 뒤 **`exitMessage == null`이면 조기 return** 한다. 필드는 **`?? ''`** 로 방어한다. **`labels`** 는 **`?.actions`** 및 **`labels != null` 조건부 렌더**로 동일 원칙을 적용한다. **`type`** 은 deps에 포함한다.
-- **default export:** `export default AuthModalCoordinator` 를 함께 두어도 되며, Phase 4 스니펫과의 정합을 위해 **named `AuthModalCoordinator` import를 표준**으로 쓰는 것을 권장한다.
+- **성공 경로 API SSOT:** `onSignedIn`은 **내부 핸들러**이며, 상위와의 공개 계약은 **`onCommitSignedIn` / `onFinishSignedInFlow`** 이다. Phase 4 `App.tsx` 발췌는 동일 SSOT를 전제로 읽는다.
+- **`labels`:** `TDS_DIALOG_MESSAGES[lang]?.actions` 로 조회하고, **`labels == null`이면 두 `TdsConfirmDialog` 모두 렌더하지 않는다**(WSOD 방지). `AuthModals`는 유지한다.
+- 종료 동작은 `onRequestMiniAppExit`로 위임하므로, 토스 공식 API 선택은 앱 경계에서만 결정된다.
+- **`!isInTossApp || type !== 'login'`:** 토스 앱이 아니거나 **로그인 모달이 아닐 때**는 이탈 확인 없이 **`onCloseAuthModal()`만** 호출한다(Phase 4 계약과 동일).
+- `AuthModals`는 **`onClose={onCloseAuthModal}`** / **`onRequestClose={handleAuthClose}`** 로 닫기 UX만 분리한다.
+- **`exitDialog` / `welcomeDialog`:** 각각 독립 훅 인스턴스로 **open 상태·콜백 ref를 섞지 않는다.**
+- **단일 버튼 환영 안내:** `TdsAlertDialog`가 아니라 **`shouldHideCancel={true}` 인 `TdsConfirmDialog`** 로, **확인 클릭 시점의 `action`에서만** `onFinishSignedInFlow`를 호출한다.
+- **`useAsyncTdsConfirm` (이탈):** **`await onRequestMiniAppExit()` 이후에만 `onCloseAuthModal()`**; 실패 토스트는 훅의 **`refundActionFailed` 가드 + `showErrorToast`** 계약(Phase 0-2b).
+- **`handleRequestExit`:** **`TDS_DIALOG_MESSAGES[lang]?.exit?.[reason]`** 및 **`actions`** 를 각각 조회한다. **`exitMessage == null`이거나 `actions == null`이면** TDS를 열지 않고 **`onCloseAuthModal()`** 로 폴백한다(라벨 없이 `open` 금지·화면 갇힘 방지). **`type`** 은 deps에 포함한다.
+- **`handleSignedIn` (Rule 5 & 10):** 가드에서 외부 스코프의 `labels` 대신 콜백 내부에서 **`actionLabels = TDS_DIALOG_MESSAGES[lang]?.actions`** 를 조회한다. **`useCallback` deps에 `labels`나 사전 하위 문자열을 넣지 않는다.**
+- **default export:** named import를 표준으로 쓰되, `export default` 병행은 Phase 4 발췌와 정합 가능하다.
+- **환영 노출 조건:** **토스 앱 + (`login` 또는 `signup`)** 에서만 환영 TDS; 그 외는 `onFinishSignedInFlow`만 즉시 호출한다.
+- **닫기 순서:** 환영 확인 후 **`onFinishSignedInFlow`만** 호출하고, 그 경로에서 **`onCloseAuthModal()`을 코디네이터가 추가로 무조건 호출하지 않는다**(프로필 전환 직후 `null` 덮어쓰기 방지). 필요 시 `onFinishSignedInFlow` 구현 안에서 상위가 모달 상태를 일관되게 정리한다.
+- **I18N:** 환영 문구는 **`auth.signedInSuccessTitle` / `auth.signedInSuccessBody`**, 확인 라벨은 **`common.acknowledge` 재사용**(DRY).
+- **애니메이션:** `useAsyncTdsConfirm`의 **`close`는 `isOpen`만 끄고 문구 유지**(Phase 0-2b).
+- **Soft Lock 범위:** `shouldHideCancel={true}` 는 **취소 버튼 숨김**이며, **X / Backdrop / ESC 차단은 어댑터 별도 API**(예: `isDismissible`)가 필요하면 별 작업으로 분리한다(Phase 1b 완료 기준과 동일).
+
+### `AuthModals.tsx` · `App.tsx` (Coordinator 외 필수 연동 — 스니펫 없이 요약)
+
+위 **`AuthModalCoordinator` 블록과 수동 병합하지 않는다.** 아래는 **해당 파일에만** 적용하는 계약 요약이다.
+
+- **`AuthModals.tsx`:** 로그인·회원가입 직후 세션 생성 등 **모든 성공 분기**에서 **`await onSignedIn(user)` 후 `return`**. 성공 경로에서 **`onClose()`를 호출하지 않는다.** Props: **`onSignedIn: (user: SignedInUser) => Promise<void> | void`** (기존 비즈니스 props는 유지).
+- **`AuthModals.tsx` (비로그인 성공 외):** 비밀번호 변경 완료·재설정 완료·탈퇴 완료 등은 **`TdsAlertDialog`** 로 표시한다. **`auth` 복사 또는 `actions` 라벨이 없으면** `useEffect`에서 **`handleAuthCompletionClose`** 를 호출해 기존 분기(`onSwitchType` / `onClose` / `onLogout`)로 **조용히 폴백**한다(WSOD 방지).
+- **`App.tsx`:** `AuthModalCoordinator`에 **`onCommitSignedIn`** 과 **`onFinishSignedInFlow`** 를 주입한다.
+  - **실제 구현:** `onCommitSignedIn`은 `setUser`, `justLoggedInRef`, `fetchUserProfile`, `fetchPortfolios`를 **`Promise.all`** 로 병렬 처리한다(UI 전환 없음).
+  - **실제 구현:** `onFinishSignedInFlow`는 **`setAuthModal('profile')`** 만 수행한다(모달 닫기는 코디네이터·환영 플로우와 중복하지 않음).
+  - **백 내비게이션:** `handleRequestBackNavigation`에서 **`exit` 메시지 또는 `actions`가 없으면** 다이얼로그 없이 **`onLeave()`** 를 호출한다(토스에서 조용히 멈추지 않도록).
+
+**근본 원인 요약(참고):** 환영 TDS 누락은 **i18n 키 부재**, **성공 시 즉시 `onClose`**, **상위에서 조기 UI 전환** 등이 겹칠 때 발생한다. 구현 시 **코디네이터 단일 SSOT + 위 두 파일 계약**을 함께 만족하면 된다.
 
 ---
 
@@ -1083,12 +1216,16 @@ const confirmAndRun = (msg: string, fn: () => void) => {
 
 ### After
 
+**SSOT 파일:** `components/HistoryHeaderActions.tsx` (아래는 레포 구현과 동일한 발췌)
+
 ```tsx
 import React, { useCallback } from 'react';
 import type { AppLang } from '../types';
-import { TdsConfirmDialog } from '../components/tds-adapter/TdsConfirmDialog';
-import { useAsyncTdsConfirm } from '../components/tds-adapter/useAsyncTdsConfirm';
+import { Trash2 } from 'lucide-react';
+import { TdsConfirmDialog } from './tds-adapter/TdsConfirmDialog';
+import { useAsyncTdsConfirm } from './tds-adapter/useAsyncTdsConfirm';
 import { TDS_DIALOG_MESSAGES } from '../constants/tdsDialogMessages';
+import { showErrorToast } from './tds-adapter/showErrorToast';
 
 interface HistoryHeaderActionsProps {
   lang: AppLang;
@@ -1103,18 +1240,29 @@ export const HistoryHeaderActions: React.FC<HistoryHeaderActionsProps> = ({
 }) => {
   const clearDialog = useAsyncTdsConfirm(lang);
   const labels = TDS_DIALOG_MESSAGES[lang]?.actions;
+  const historyMessages = TDS_DIALOG_MESSAGES[lang]?.history;
   const triggerLabel =
-    TDS_DIALOG_MESSAGES[lang]?.history?.openClearDialog ?? '';
+    historyMessages?.clearHistoryButton ??
+    historyMessages?.openClearDialog ??
+    '';
 
   const handleRequestClearHistory = useCallback(() => {
-    const messages = TDS_DIALOG_MESSAGES[lang]?.history;
-    if (messages == null) {
+    const currentLabels = TDS_DIALOG_MESSAGES[lang]?.actions;
+    const currentHistoryMessages = TDS_DIALOG_MESSAGES[lang]?.history;
+
+    if (currentHistoryMessages == null || currentLabels == null) {
+      const errorMessage =
+        TDS_DIALOG_MESSAGES[lang]?.common?.refundActionFailed;
+      if (errorMessage != null && errorMessage !== '') {
+        showErrorToast(errorMessage);
+      }
       return;
     }
+
     clearDialog.open({
-      title: messages.clearTitle ?? '',
-      body: messages.clearBody ?? '',
-      confirmLabel: messages.clearConfirm ?? '',
+      title: currentHistoryMessages.clearTitle ?? '',
+      body: currentHistoryMessages.clearBody ?? '',
+      confirmLabel: currentHistoryMessages.clearConfirm ?? '',
       tone: 'danger',
       action: onClearHistory,
     });
@@ -1126,8 +1274,9 @@ export const HistoryHeaderActions: React.FC<HistoryHeaderActionsProps> = ({
 
   return (
     <>
-      <button type="button" onClick={handleRequestClearHistory}>
-        {triggerLabel}
+      <button type="button" onClick={handleRequestClearHistory} /* …스타일 생략… */>
+        <Trash2 size={14} />
+        <span>{triggerLabel}</span>
       </button>
 
       {labels != null ? (
@@ -1138,12 +1287,18 @@ export const HistoryHeaderActions: React.FC<HistoryHeaderActionsProps> = ({
 };
 ```
 
+**`History.tsx`:** 헤더의 전체 초기화는 `HistoryHeaderActions`만 사용한다. **행 단위 기록 삭제**는 동일 화면에 **`historyDialog` 인스턴스(별도 `useAsyncTdsConfirm`)** 를 두고, `history`·`actions` 누락 시 **`refundActionFailed` 토스트** 후 `return`한다.
+
+**`usePortfolios.ts`:** `handleClearHistory` / `handleDeleteHistory`에서 **`window.confirm` / `alert`를 제거**하고, 실패 시 **`throw`** 로 UI 측 `useAsyncTdsConfirm`의 `catch`로 전달한다.
+
 ### 설계 포인트
 
 - 렌더 단계에서 state mutation이 일어나지 않습니다.
 - `onClearHistory`는 기존 비즈니스 로직을 유지하되, **실패 시 reject**하면 훅의 `catch` 경로로 들어갑니다.
-- **`useAsyncTdsConfirm(lang)` 단일 경로**로 §5-1·5-2·에러 토스트 i18n을 만족; 트리거 라벨은 **`history.openClearDialog`**(하드코딩 금지).
-- **`handleRequestClearHistory`:** `TDS_DIALOG_MESSAGES[lang]?.history` 가드 후 `open`; 필드 **`?? ''`**. **`labels`·`triggerLabel`은 `?.` / `??`**, **`TdsConfirmDialog`는 `labels != null`일 때만**(AuthModalCoordinator·ConfirmDialogSample과 동일 수준).
+- **`useAsyncTdsConfirm(lang)` 단일 경로**로 §5-1·5-2·에러 토스트 i18n을 만족한다.
+- **트리거 라벨:** **`history.clearHistoryButton`** 을 우선하고, 없으면 **`history.openClearDialog`** 로 폴백한다(하드코딩 금지).
+- **`handleRequestClearHistory` (Rule 5 & 10):** `history` **와** `actions` **둘 다** 있을 때만 `open`한다. 둘 중 하나라도 없으면 **`refundActionFailed` 토스트** 후 `return`. **`useCallback` deps에 사전 하위 객체를 넣지 않고**, 핸들러 내부에서 `TDS_DIALOG_MESSAGES[lang]`을 다시 조회한다.
+- **`TdsConfirmDialog`는 `labels != null`일 때만** 렌더한다.
 
 ## 샘플 B. `ProfileView.tsx`의 토스 환불 안내 `alert`
 
@@ -1175,119 +1330,78 @@ const handleRefundConfirm = async () => {
 
 ### After
 
-`ProfileView` 등 상위에서 **웹 환경의 기존 환불 플로우**(예: 포트원/서버 검증 후 처리)를 `onProcessWebRefund`로 주입한다. `if (!isInTossApp) return;`만 두면 웹 사용자는 버튼이 **무반응(Silent Failure)** 이 되므로 금지한다. **`!isInTossApp` 분기에서 `onProcessWebRefund`를 `await` 없이 호출하고 패널만 닫으면** 실패 시 **Unhandled Promise Rejection** 과 **에러 미인지**가 남으므로, 아래처럼 **동기화·토스트**를 맞춘다.
+**SSOT 파일:** `components/auth/RefundGuideController.tsx`  
+`ProfileView`는 **`onProcessWebRefund`** 만 주입한다(기존 `cancelSubscription()` 래핑). **단일 버튼으로 바로 안내 다이얼로그를 여는 구조가 아니라**, 아래 **2단계 UI**로 구현되어 있다.
+
+1. **1단계:** `refund.requestRefund` 라벨로 패널을 연다(토스는 `TDSButton`, 웹은 기존 텍스트 버튼 스타일).
+2. **2단계:** `refund.confirmPrompt` / `eligiblePolicy` / `ineligiblePolicy` 문구와 취소·확인 버튼을 보여준다. 취소 라벨은 **`actions.cancel`**.
+3. **웹:** 확인 클릭 시 **`isWebProcessingRef` + `isWebLoading`** 으로 연타를 막고, **`await Promise.resolve(onProcessWebRefund())`** 성공 시에만 패널을 닫는다. 실패 시 **`refundActionFailed` 토스트**.
+4. **토스:** 확인 클릭 시 **`refundDialog.open`** 으로 `TdsConfirmDialog`(`shouldHideCancel={true}`)를 연다. `action`에서는 **패널만 닫고** `onProcessWebRefund`는 호출하지 않는다(스토어 환불은 앱 결제 흐름으로 처리).
+
+**`TDS_DIALOG_MESSAGES.refund` 확장 (실제 SSOT):** 기존 `guideTitle` / `guideBody` / `openRefundGuide` 외에 **`requestRefund`**, **`confirmPrompt`**, **`eligiblePolicy`**, **`ineligiblePolicy`**, **`confirmRefund`** 키가 추가되어 있다.
+
+**토스트 헬퍼:** `showRefundErrorToast`는 **`useCallback`으로 감싸지 않고**, 호출 시점에 `TDS_DIALOG_MESSAGES[lang]?.common?.refundActionFailed`를 조회한다(Rule 5 & 10 deps 최소화).
 
 ```tsx
-// components/auth/ProfileView.tsx 내부 RefundGuideController (수정 스니펫)
-import React, { useCallback, useRef, useState } from 'react';
-import type { AppLang } from '../../types';
-import { TdsConfirmDialog } from '../tds-adapter/TdsConfirmDialog';
-import { useAsyncTdsConfirm } from '../tds-adapter/useAsyncTdsConfirm';
-import { TDS_DIALOG_MESSAGES } from '../../constants/tdsDialogMessages';
-import { showErrorToast } from '../tds-adapter/showErrorToast';
-
+// 발췌: 실제 파일과 동일한 책임 분리만 요약 (전체는 RefundGuideController.tsx 참고)
 interface RefundGuideControllerProps {
   lang: AppLang;
   isInTossApp: boolean;
-  onCloseRefundPanel: () => void;
+  isDisabled: boolean;
   onProcessWebRefund: () => Promise<void> | void;
 }
 
-export const RefundGuideController: React.FC<RefundGuideControllerProps> = ({
-  lang,
-  isInTossApp,
-  onCloseRefundPanel,
-  onProcessWebRefund,
-}) => {
-  const refundDialog = useAsyncTdsConfirm(lang);
-  const [isWebLoading, setIsWebLoading] = useState(false);
-  /** 배치 전 1틱 연타 방지(논리 락). `isWebLoading`과 병행 */
-  const isWebProcessingRef = useRef(false);
-
-  const handleRequestRefundGuide = useCallback(async () => {
-    if (!isInTossApp) {
-      if (isWebProcessingRef.current) {
-        return;
-      }
-      isWebProcessingRef.current = true;
-      setIsWebLoading(true);
-      try {
-        await Promise.resolve(onProcessWebRefund());
-        onCloseRefundPanel();
-      } catch (_error: unknown) {
-        const errorMsg =
-          TDS_DIALOG_MESSAGES[lang]?.common?.refundActionFailed;
-        if (errorMsg != null && errorMsg !== '') {
-          showErrorToast(errorMsg);
-        }
-      } finally {
-        isWebProcessingRef.current = false;
-        setIsWebLoading(false);
-      }
-      return;
-    }
-
-    const dm = TDS_DIALOG_MESSAGES[lang];
-    if (dm == null) {
-      return;
-    }
-    refundDialog.open({
-      title: dm.refund?.guideTitle ?? '',
-      body: dm.refund?.guideBody ?? '',
-      confirmLabel: dm.common?.acknowledge ?? '',
-      tone: 'primary',
-      action: async () => {
-        await Promise.resolve(onProcessWebRefund());
-        onCloseRefundPanel();
-      },
-    });
-  }, [
-    isInTossApp,
-    lang,
-    onCloseRefundPanel,
-    onProcessWebRefund,
-    refundDialog.open,
-  ]);
-
-  const messages = TDS_DIALOG_MESSAGES[lang];
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={handleRequestRefundGuide}
-        disabled={isWebLoading}
-        aria-busy={isWebLoading}
-      >
-        {isWebLoading
-          ? (messages?.common?.webAsyncProcessing ?? '')
-          : (messages?.refund?.openRefundGuide ?? '')}
-      </button>
-
-      {messages?.actions != null ? (
-        <TdsConfirmDialog
-          {...refundDialog.dialogProps}
-          labels={messages.actions}
-          hideCancel={true}
-        />
-      ) : null}
-    </>
-  );
-};
+// render: isRefundPanelOpen ? (안내 카드 + 취소/확인) : (requestRefund 버튼)
+// 토스 확인 → refundDialog.open({ ..., action: () => setIsRefundPanelOpen(false) })
+// 웹 확인 → try { await onProcessWebRefund(); setIsRefundPanelOpen(false); } catch { showRefundErrorToast(); }
 ```
 
 ### 설계 포인트
 
-- 토스: **`useAsyncTdsConfirm(lang)`** 으로 안내 모달을 연다. `action` 안에서 **`await onProcessWebRefund()` 후 `onCloseRefundPanel()`** — 성공 시 훅이 다이얼로그를 닫는다.
-- **웹(`!isInTossApp`):** **동기 락(필수) + `isWebLoading`(필수)** 를 **병행**한다. 입구에서 **`isWebProcessingRef.current`가 이미 `true`이면 즉시 return**; 아니면 **`isWebProcessingRef.current = true`** 후 **`setIsWebLoading(true)`**. **`await Promise.resolve(onProcessWebRefund())`** 후 **성공 시에만** `onCloseRefundPanel()`. 실패 시 **`TDS_DIALOG_MESSAGES[lang]?.common?.refundActionFailed`를 조회해 문자열이 있을 때만** `showErrorToast`(Phase 0-2b `catch`와 동일한 **WSOD 방어**). **`finally`에서 `isWebProcessingRef.current = false` 및 `setIsWebLoading(false)`**. 버튼은 **`disabled` + `aria-busy`**·라벨은 **`common.webAsyncProcessing`** / **`refund.openRefundGuide`** 를 **`?.` / `?? ''`** 로 전환(하드코딩 금지).
-- 기획상 **취소 버튼 없이 확인만** 노출: **`hideCancel={true}`** + **`{...refundDialog.dialogProps}`**(`tone`·`confirmLabel`은 스냅샷·훅이 책임). 헤더 닫기(X)·`onClose`는 `TdsDialogShell` 계약으로 그대로 둔다.
-- **`handleRequestRefundGuide`:** `async` + **`useCallback` 의존성**에는 **`isWebLoading`을 넣지 않는다**(연타 방어는 **ref 뮤텍스**가 담당). deps는 **`isInTossApp`·`lang`·`onCloseRefundPanel`·`onProcessWebRefund`·`refundDialog.open`** 등. 토스 분기 `open` 전 **`dm == null` 조기 return**; 필드는 **`?.` / `?? ''`**.
-- 트리거 `onClick`은 반환 Promise를 기다리지 않아도 되며, **거부는 콜백 내부 `try/catch`에서 흡수**한다.
-- §5-3: **`runConfirm`의 `catch`** 와 동일하게, **웹 단발 분기**도 **`?.` 조회 후 truthy일 때만** `showErrorToast` — **허용 키는 `refundActionFailed`만**(다이얼로그·훅을 타지 않기 때문에 호출부에서 한 번 처리).
-- 토스 안내용 **`TdsConfirmDialog`:** **`messages?.actions != null`일 때만** 렌더하여 **`labels` 무방비 접근**을 막는다(Phase 1-P0 `AuthModalCoordinator`·`HistoryHeaderActions`와 동일 수준).
-- 토스 안내 확인만 필요하면 부모가 `onProcessWebRefund`에 `async () => {}` 주입.
-- 트리거 라벨은 **`refund.openRefundGuide`**.
-- 문구는 모두 `TDS_DIALOG_MESSAGES`에서 주입한다.
+- **웹(`!isInTossApp`):** **동기 락(필수) + `isWebLoading`(필수)** 를 **병행**한다. **`await Promise.resolve(onProcessWebRefund())`** 후 **성공 시에만** 패널을 닫는다.
+- **토스:** 안내 **`TdsConfirmDialog`** 는 **`refund` + `common.acknowledge` + `actions`가 모두 있을 때만** `open`한다. 부족하면 **`refundActionFailed` 토스트**만 띄운다. 확인 **`action`에서 `onProcessWebRefund`를 호출하지 않는다**(계획서 초안 스니펫과 다름 — 실제 코드 기준).
+- **`useCallback` (Rule 5 & 10):** `handleConfirmRefund` deps는 **`isInTossApp`, `lang`, `onProcessWebRefund`, `refundDialog.open`** 만 포함한다. 에러 토스트는 deps에 넣지 않는다.
+- **취소 버튼:** 2단계 패널의 취소는 **`actions.cancel`** 을 사용한다(단일 버튼 다이얼로그만이 아님).
+- **확인 버튼 라벨:** 토스 2단계에서는 **`refund.openRefundGuide`**, 웹에서는 **`refund.confirmRefund`** / 로딩 중 **`common.webAsyncProcessing`**.
+- **`refund` 또는 `actions`가 없으면** 컨트롤러는 **`return null`**(상위에서 유료 구간만 렌더하는 전제와 함께 사용).
+
+### Phase 1: 계획서 초안 대비 실제 코드 차이 체크리스트 (유지보수용)
+
+아래는 **이 문서의 Phase 1 초안 스니펫과 달라진 점**을 한곳에 모은 것이다. 상세 스니펫은 위 **After** 블록 및 레포 파일이 SSOT다.
+
+| 구분 | 초안(문서) | 실제 코드 |
+|------|------------|-----------|
+| `AuthModalCoordinator` `handleSignedIn` | 가드에 외부 `labels` 사용, deps에 `labels` 포함 | 콜백 내부 `actionLabels` 조회, **deps에 `labels` 없음** |
+| `AuthModalCoordinator` `handleRequestExit` | `exitMessage == null`만 폴백 | **`exitMessage` 또는 `actions` 없으면** `onCloseAuthModal()` |
+| `App.tsx` `onCommitSignedIn` | 문서에 구체 코드 없음(Phase 4 참조) | **`Promise.all`** 로 `fetchUserProfile` + `fetchPortfolios` 병렬 |
+| `App.tsx` 백 내비게이션 | `exitMessage == null`이면 무응답 가능 | **`exit` 또는 `actions` 없으면 `onLeave()`** |
+| `AuthModals` | Phase 1 요약에 없음 | 비밀번호/탈퇴 완료 **`TdsAlertDialog`** + 사전 누락 시 **`useEffect` 폴백** |
+| `HistoryHeaderActions` | `openClearDialog`만 트리거, `history`만 검사 | **`clearHistoryButton ?? openClearDialog`**, **`history`+`actions` 동시 검사** |
+| `History.tsx` | 샘플은 헤더만 | **단건 삭제**는 별도 `historyDialog` 인스턴스 유지 |
+| `usePortfolios` 히스토리 | confirm/alert | **confirm/alert 제거, `throw`** |
+| `RefundGuideController` | 단일 버튼 + `onCloseRefundPanel` | **2단계 패널** + **`isDisabled`**, 토스 확인 시 **`onProcessWebRefund` 미호출** |
+| `TDS_DIALOG_MESSAGES.refund` | 3키 | **`requestRefund` 등 5키 추가** |
+
+### Phase 2·4: 계획서 초안 대비 실제 코드 차이 체크리스트 (유지보수용)
+
+아래는 **Phase 2·Phase 4 초안(본 문서)과 달라진 점**을 한곳에 모은 것이다. 세부 SSOT는 레포의 `hooks/usePortfolios.ts`, `hooks/useAuth.ts`, `App.tsx`, `constants/portfolioMutationErrors.ts`, `components/portfolio/PortfolioCardActions.tsx`, `components/auth/SessionExpiredAlertGate.tsx`다.
+
+| 구분 | 초안(문서) | 실제 코드 |
+|------|------------|-----------|
+| `usePortfolios` 범위 | 삭제(`handleDeletePortfolio`) + 히스토리 등 **일부** `alert`/`confirm` 제거를 전제로 “잔여 다수” 언급 | **전 경로**에서 네이티브 `alert`/`confirm` **0건**. 생성·검증·종료·거래·삭제·히스토리 등 모두 **`throw` + 기계 코드** |
+| 에러 코드 형태 | 예시로 `new Error('delete_failed', { cause })` | **`constants/portfolioMutationErrors.ts`** 의 `PORTFOLIO_MUTATION_ERROR_CODES` + `createPortfolioMutationError` (`portfolio_delete_failed` 등 **접두 `portfolio_`** 통일) |
+| 사용자 문구 위치 | Hook 밖에서만, 토스트는 `refundActionFailed` 등 TDS 사전만 언급 | 포트폴리오 **검증·실패 안내 본문**은 **`getPortfolioMutationNotice(lang, error)`** 가 **`portfolioMutationErrors.ts` 내 한·영 문자열**로 복원(제목·본문). 삭제 확인 문구만 `TDS_DIALOG_MESSAGES.portfolio` |
+| `usePortfolios` 옵션 | `lang` 포함 가정 | **`lang` 옵션 제거**(Hook에 언어 분기 없음) |
+| `deletePortfolioById` 쿼리 | `.delete().eq('id', id)` 예시 | **`.eq('user_id', userIdOption).eq('id', id)`** 로 소유자 스코프 명시 |
+| `PortfolioCardActions` | 삭제 버튼만, `onDeletePortfolio(id)` | **알람 + 삭제** 묶음. **`onDeletePortfolio: () => void \| Promise<void>`** (부모가 `id` 클로저 주입). `lang`은 **`'ko' \| 'en'`** |
+| `Dashboard.tsx` | “이번 마이그레이션에서 절대 수정하지 않는 범위”에 포함 | **Phase 2에서 예외적으로 수정** — 카드 우측 상단을 `PortfolioCardActions`로 치환 |
+| `App.tsx` 포트폴리오 실패 UX | 문서에 없음(토스트만 가정) | **`portfolioMutationNotice` 상태 + `TdsAlertDialog`** (`common.acknowledge` + `actions`). `runPortfolioMutation`으로 **저장 실패와 광고(`showInterstitialOnTransition`) 실패 분리**(전략 저장은 `handleAddPortfolio` 성공 후 별도 광고) |
+| `handleAddTradeWithAd` | 문서 미기술 | **`handleAddTrade`만 `runPortfolioMutation`**, 이후 인터스티셜(광고 실패가 포트폴리오 오류로 매핑되지 않게) |
+| `useAuth` `USER_UPDATED` | 비번 성공 `alert` → UI 이전 언급 | **`alert` 제거**, 성공 안내는 **`AuthModals`의 `TdsAlertDialog`** 경로에 위임(훅에서 중복 알림 없음) |
+| `SessionExpiredAlertGate` | 예시 prop `onDismiss` | 실제 prop은 **`onClose`** (`App` → `handleDismissSessionExpired`) |
+| `useAuth` 옵션 | `lang` 전달 가정 | **`lang` 제거**, `setPortfolios` 타입을 **`Portfolio[]`** 로 정리 |
+| Phase 4 동적 import | `App`만 동적 import, 청크 분리 기대 | **Vite 빌드 시** `@apps-in-toss/web-framework` / `web-analytics` 등이 **전이 정적 import**로 `web-bridge`를 끌어올 수 있어, **“완전 별도 청크”는 보장되지 않을 수 있음**. **`App.tsx` 최상단 정적 import 금지** 계약은 준수 |
+| `AuthModalCoordinator` import | Phase 4 스니펫은 named import 권장 | **`App.tsx`는 `import AuthModalCoordinator from '…'` (default)** 유지 가능(문서 권장과 불일치 — 팀에서 하나로 통일 권장) |
 
 ---
 
@@ -1307,7 +1421,8 @@ export const RefundGuideController: React.FC<RefundGuideControllerProps> = ({
 
 ## 3. Hook에서 UI 직접 호출 금지
 
-- `usePortfolios.ts`, `useAuth.ts`는 2차 라운드에서 `alert`를 제거합니다.
+- **`usePortfolios.ts` (반영 완료):** **`alert` / `window.confirm` 0건**. 실패·검증 위반은 **`createPortfolioMutationError` + 코드**로 `throw`한다. 호출부(`App.tsx` 등)는 **`getPortfolioMutationNotice`** 또는 `useAsyncTdsConfirm`으로 사용자 안내를 연다.
+- **`useAuth.ts` (반영 완료):** 세션 만료 등 **`alert` 0건**. **`hasSessionExpired` + `SessionExpiredAlertGate`(`TdsAlertDialog`)** 로만 노출한다.
 - 최종 목표는 Hook이 `Result` 또는 `ErrorCode`만 반환하고, 화면이 다이얼로그를 열도록 분리하는 것입니다.
 
 ## 4. i18n SSOT 강제
@@ -1329,7 +1444,7 @@ export const RefundGuideController: React.FC<RefundGuideControllerProps> = ({
 ### 5-2. 로딩 중 화면 잠금 (Block Close during Loading)
 
 - `isConfirmLoading` 동안은 **X(닫기)**, **배경(Backdrop) 클릭**, **Escape**, 그리고 토스 경로에서 `TDSModal`이 호출하는 **`onClose`**까지 **`guardedClose`로 통일**해 닫기 호출을 무시합니다.
-- `TdsConfirmDialog`는 **`hideCancel`이 `false`일 때만** 취소 버튼을 렌더하며, 해당 버튼은 동일 구간에서 **`disabled`** 처리해 진행 중인 확인과 경쟁하는 닫기 동작을 막습니다. **`hideCancel={true}`** 인 화면은 푸터 취소는 없고, 헤더 X·배경·ESC·`guardedClose` 계약은 동일합니다.
+- `TdsConfirmDialog`는 **`shouldHideCancel`이 `false`일 때만** 취소 버튼을 렌더하며, 해당 버튼은 동일 구간에서 **`disabled`** 처리해 진행 중인 확인과 경쟁하는 닫기 동작을 막습니다. **`shouldHideCancel={true}`** 인 화면은 푸터 취소는 없고, 헤더 X·배경·ESC·`guardedClose` 계약은 동일합니다.
 
 ### 5-3. Safe Try-Catch-Finally
 
@@ -1378,25 +1493,29 @@ export const RefundGuideController: React.FC<RefundGuideControllerProps> = ({
 1. `History.tsx`의 `window.confirm`
 2. `ProfileView.tsx`의 토스 환불 `alert`
 3. `CheckoutModal.tsx`의 결제 결과 안내
-4. `AuthModals.tsx`의 완료형 `alert`
+4. `AuthModals.tsx`의 비밀번호 변경/회원 탈퇴 완료형 `alert`
 5. `App.tsx`의 한도 초과 `alert`
+6. 로그인/즉시 세션 생성 회원가입 성공 -> 환영 안내(TDS) -> 확인 후 후속 화면 전환/닫기
 
 **완료 기준**
 
 - 토스 앱 주요 경로에서 브라우저 기본 팝업이 사라짐
 - 안내/확인 모달이 동일 어댑터 패턴으로 통일됨
 - **`TdsConfirmDialog` 코디네이터**는 **`useAsyncTdsConfirm(lang)`** 을 거치며, 상태에 콜백을 저장하거나 `try/catch`·**에러 토스트**를 화면마다 복붙하지 않음(`lang`은 화면이 이미 보유한 `AppLang`과 동일 소스에서 전달). **`TdsAlertDialog`는 로컬 `onClose`만** 두고 본 훅과 짝짓지 않음.
+- 로그인/즉시 세션 생성 회원가입 성공 후 환영 안내를 붙일 때도 **`AuthModals`가 직접 닫히지 않고**, **코디네이터가 `useAsyncTdsConfirm(lang)`로 TDS를 연 뒤 상위 `App.tsx`가 최종 전환을 결정**한다.
+- 사용자가 확인하기 전까지 **인증 패널은 직접 닫히지 않는다.**
+- 환영 TDS는 **`shouldHideCancel={true}` 기반 Soft Lock** 이며, **`X` / `Backdrop` / `ESC` dismiss 차단은 이번 범위에 포함되지 않는다.**
 
 ## Phase 2. Hook 계층 분리
 
 **목표:** `usePortfolios`·`useAuth`가 **`alert` / `window.confirm` / DOM 기반 팝업을 호출하지 않는다**. 데이터·세션 상태와 **부작용(API 호출)** 만 담당하고, **사용자 의사 확인·문구 표시·접근성**은 **UI 계층 + `Tds*Dialog` + `useAsyncTdsConfirm` / `TdsAlertDialog`** 가 전담한다.
 
-**범위(본 Phase에서 다루는 대표 케이스):**
+**범위(실제 구현 기준):**
 
-1. `usePortfolios.ts`의 **`handleDeletePortfolio`** — `window.confirm` + 실패 `alert` 제거.
-2. `useAuth.ts`의 **`clearAuthState(showAlert)`** — 세션 만료 시 **`alert` 제거**, UI가 감지 가능한 **상태 신호**로 대체.
+1. `usePortfolios.ts` — **전체** mutation 경로에서 **`window.confirm` / `alert` 제거**. 삭제 확인은 UI(`PortfolioCardActions` + `useAsyncTdsConfirm`)로 이전하고, 훅은 **`deletePortfolioById`** 만 노출한다.
+2. `useAuth.ts` — **`clearAuthState(shouldShowAlert)`** 경로의 세션 만료 **`alert` 제거**, **`hasSessionExpired`** 상태로 대체. `USER_UPDATED` 비밀번호 성공 **`alert`는 훅에서 제거**하고, 완료 안내는 **`AuthModals`의 `TdsAlertDialog`** 에 맡긴다.
 
-> **같은 훅의 잔여 UI 호출:** `usePortfolios.ts`에는 저장·검증·거래 CRUD 등 **다수의 `alert`가 남아 있다**. 본 Phase 스니펫은 **삭제 플로우를 SSOT 예시**로 제시하고, 나머지는 **동일 패턴(검증 → 결과/에러 코드 반환 또는 throw, UI에서 다이얼로그·토스트)** 으로 순차 제거한다. `useAuth.ts`의 `USER_UPDATED` 비밀번호 성공 `alert` 등도 **동일 원칙**으로 UI 또는 토스트 SSOT로 이전한다.
+> **문서 초안과의 차이:** 초안은 “삭제만 예시 + 나머지 `alert`는 순차”였으나, **토스 심사·Hook 순수성**을 위해 **`usePortfolios`는 한 번에 전 경로 정리**했다. 에러 코드·문구 매핑은 **`constants/portfolioMutationErrors.ts`** 가 SSOT다(아래 Phase 2·4 체크리스트 참고).
 
 ---
 
@@ -1425,7 +1544,7 @@ Hook에는 **사용자 노출 문자열을 두지 않는다**. 아래 키를 **P
 - **`portfolio.*`:** `useAsyncTdsConfirm` + `TdsConfirmDialog` (`tone: 'danger'`)용.
 - **`auth.*`:** `TdsAlertDialog`용(비동기 없음, 확인 클릭 → `onClose`만).
 
-삭제 **API 실패** 후 토스트는 Phase 0-2b 계약에 따라 **`common.refundActionFailed`(범용 비동기 실패 SSOT)** 로 통일하거나, 필요 시 `common`에 **`mutationFailed`** 를 추가해 포트폴리오·거래 등에 공통 사용한다(키 추가 시 **한국어/영어 모두** 채울 것).
+삭제 **API 실패**는 `useAsyncTdsConfirm` 경로면 Phase 0-2b대로 **`common.refundActionFailed`** 토스트가 잡힌다. 그 외 **검증 실패·DB 실패** 등은 **`App.tsx`의 `TdsAlertDialog` notice**(`getPortfolioMutationNotice` + `common.acknowledge`)로 안내한다(문서 초안의 “전부 토스트/단일 키”만 쓰기와 다름).
 
 ---
 
@@ -1466,26 +1585,31 @@ const handleDeletePortfolio = useCallback(
 
 - **`window.confirm` / `alert` 전면 제거.**
 - 확인은 호출하지 않는다. **이미 사용자가 확인한 뒤** UI가 호출한다고 가정한다.
-- 실패 시 **`throw new Error('delete_failed', { cause: error })`** 형태로 **기계 판별 가능한 코드**만 던진다(메시지 문자열은 사용자 노출용이 아니라 **UI 계층에서 토스트/매핑용 식별자**로만 쓴다). 디버깅을 위해 **원인 객체는 `cause`에 유지**하는 것을 권장한다. 팀 규약으로 `const DELETE_PORTFOLIO_FAILED = 'delete_failed' as const` 를 **`constants/portfolioErrors.ts`** 등에 두고 재사용해도 된다.
+- 실패 시 **`createPortfolioMutationError(PORTFOLIO_MUTATION_ERROR_CODES.deleteFailed, error)`** 등 **`constants/portfolioMutationErrors.ts`** 의 코드만 던진다(문서 초안의 리터럴 `'delete_failed'` 대신 **`portfolio_delete_failed`** 등 접두 통일). **`cause`** 에 Supabase `error` 등 원인을 유지한다.
 - 성공 시에만 로컬 상태에서 해당 `id`를 제거한다.
 
 ```ts
-// hooks/usePortfolios.ts — 발췌
+// hooks/usePortfolios.ts — 발췌(실제 코드 요약)
 const deletePortfolioById = useCallback(
   async (id: string) => {
-    const { error } = await supabase.from('portfolios').delete().eq('id', id);
+    if (!userIdOption) {
+      throw createPortfolioMutationError(PORTFOLIO_MUTATION_ERROR_CODES.sessionExpired);
+    }
+    const { error } = await supabase
+      .from('portfolios')
+      .delete()
+      .eq('user_id', userIdOption)
+      .eq('id', id);
     if (error != null) {
-      throw new Error('delete_failed', { cause: error });
+      throw createPortfolioMutationError(PORTFOLIO_MUTATION_ERROR_CODES.deleteFailed, error);
     }
     setPortfolios((prev) => prev.filter((p) => p.id !== id));
   },
-  [setPortfolios],
+  [setPortfolios, userIdOption],
 );
-// return 객체에는 deletePortfolioById 노출; 기존 handleDeletePortfolio 이름은 제거하거나
-// 레거시 호출부 마이그레이션 후 삭제(Dead code 금지).
 ```
 
-- **의존성 무결성:** `setPortfolios`는 `usePortfolios` 내부 로컬 state가 아니라 **외부에서 주입된 setter** 이므로, `useCallback` deps에 **반드시 포함**한다. 삭제 경로에서 **Stale Closure** 를 허용하지 않는다.
+- **의존성 무결성:** `setPortfolios`·`userIdOption` 등 훅이 참조하는 **외부 주입 값은 deps에 전부 포함**한다. `loadPortfoliosFromCache` / `fetchPortfoliosFromSupabase` 등에도 **`setPortfolios`** 를 포함한다(초안 스니펫에는 없었으나 실제 코드 기준).
 
 #### After — UI Consumer 스니펫 (`PortfolioCardActions.tsx` 예시)
 
@@ -1494,22 +1618,24 @@ const deletePortfolioById = useCallback(
 - **`labels` / `actions` 무방비 접근 금지:** Phase 1-P1과 동일하게 **`?.` + `labels != null`일 때만** `TdsConfirmDialog` 렌더.
 
 ```tsx
-// components/portfolio/PortfolioCardActions.tsx — 계획용 예시(경로는 프로젝트에 맞게 조정)
+// components/portfolio/PortfolioCardActions.tsx — 발췌(알람·삭제 UI 전체는 레포 SSOT)
 import React, { useCallback } from 'react';
-import type { AppLang } from '../../types';
 import { TDS_DIALOG_MESSAGES } from '../../constants/tdsDialogMessages';
 import { TdsConfirmDialog } from '../tds-adapter/TdsConfirmDialog';
 import { useAsyncTdsConfirm } from '../tds-adapter/useAsyncTdsConfirm';
+import { showErrorToast } from '../tds-adapter/showErrorToast';
 
 interface PortfolioCardActionsProps {
-  lang: AppLang;
-  portfolioId: string;
-  onDeletePortfolio: (id: string) => Promise<void>;
+  lang: 'ko' | 'en';
+  isAlarmEnabled: boolean;
+  onOpenAlarm: () => void;
+  onDeletePortfolio: () => Promise<void> | void;
 }
 
 export const PortfolioCardActions: React.FC<PortfolioCardActionsProps> = ({
   lang,
-  portfolioId,
+  isAlarmEnabled,
+  onOpenAlarm,
   onDeletePortfolio,
 }) => {
   const deleteDialog = useAsyncTdsConfirm(lang);
@@ -1519,22 +1645,27 @@ export const PortfolioCardActions: React.FC<PortfolioCardActionsProps> = ({
 
   const handleRequestDelete = useCallback(() => {
     const messages = TDS_DIALOG_MESSAGES[lang]?.portfolio;
-    if (messages == null) return;
+    if (messages == null) {
+      const errorMsg =
+        TDS_DIALOG_MESSAGES[lang]?.common?.refundActionFailed;
+      if (errorMsg != null && errorMsg !== '') {
+        showErrorToast(errorMsg);
+      }
+      return;
+    }
 
     deleteDialog.open({
       title: messages.deleteTitle ?? '',
       body: messages.deleteBody ?? '',
       confirmLabel: messages.deleteConfirm ?? '',
       tone: 'danger',
-      action: () => onDeletePortfolio(portfolioId),
+      action: onDeletePortfolio,
     });
-  }, [deleteDialog.open, lang, onDeletePortfolio, portfolioId]);
+  }, [deleteDialog.open, lang, onDeletePortfolio]);
 
   return (
     <>
-      <button type="button" onClick={handleRequestDelete}>
-        {triggerLabel}
-      </button>
+      {/* …알람(onOpenAlarm)·삭제(handleRequestDelete) 버튼 렌더 — 토스는 TDSButton, 웹은 네이티브 button … */}
       {labels != null ? (
         <TdsConfirmDialog {...deleteDialog.dialogProps} labels={labels} />
       ) : null}
@@ -1543,8 +1674,9 @@ export const PortfolioCardActions: React.FC<PortfolioCardActionsProps> = ({
 };
 ```
 
+- **`portfolio` 사전 누락 시:** 빈 `return` 금지 → **`refundActionFailed` 가드 후 `showErrorToast`**(Phase 0-6a·삭제는 무분별 실행 금지).
 - **Prop 네이밍 계약:** Hook 내부 구현 이름은 **`deletePortfolioById`** 여도 괜찮지만, **자식 컴포넌트에 주입하는 callback prop은 `onDeletePortfolio`** 로 통일한다.
-- **`App.tsx` 등 상위:** `usePortfolios()`의 **`deletePortfolioById`** 를 **`onDeletePortfolio={deletePortfolioById}`** 형태로 내려주고, 기존 **`onDeletePortfolio={handleDeletePortfolio}`** 는 위 컴포넌트로 대체한다.
+- **`App.tsx` 등 상위:** `usePortfolios()`의 **`deletePortfolioById`** 를 **`Dashboard`의 `onDeletePortfolio`** 로 그대로 내려보내고, 카드에서는 **`() => onDeletePortfolio(p.id)`** 클로저로 `PortfolioCardActions`에 넘긴다. 그 외 mutation 실패는 **`runPortfolioMutation` + `portfolioMutationNotice` + `TdsAlertDialog`** 로 처리한다(초안에는 없던 패턴).
 
 ---
 
@@ -1552,15 +1684,15 @@ export const PortfolioCardActions: React.FC<PortfolioCardActionsProps> = ({
 
 #### Before — 문제점
 
-- **`clearAuthState`** 가 `showAlert === true`일 때 **`alert(lang === 'ko' ? '…' : '…')`** 를 직접 호출한다. 인증 상태 정리(스토리지·`signOut`·`setUser(null)` 등)와 **사용자 알림**이 한 함수에 섞여 **SRP 위반**이며, Hook이 **DOM `alert`** 에 의존한다.
+- **`clearAuthState`** 가 `shouldShowAlert === true`일 때 **`alert(lang === 'ko' ? '…' : '…')`** 를 직접 호출한다. 인증 상태 정리(스토리지·`signOut`·`setUser(null)` 등)와 **사용자 알림**이 한 함수에 섞여 **SRP 위반**이며, Hook이 **DOM `alert`** 에 의존한다.
 
 #### Before 코드 스니펫(실제 저장소 구조 요약)
 
 ```ts
 // hooks/useAuth.ts — useEffect 내부 발췌
-const clearAuthState = async (showAlert: boolean = true) => {
+const clearAuthState = async (shouldShowAlert: boolean = true) => {
   // … clearAuthStorage, signOut, setUser(null), setPortfolios([]) …
-  if (showAlert) {
+  if (shouldShowAlert) {
     alert(
       lang === 'ko'
         ? '세션이 만료되었습니다. 다시 로그인해 주세요.'
@@ -1573,7 +1705,8 @@ const clearAuthState = async (showAlert: boolean = true) => {
 #### After — Hook 스니펫(상태 신호)
 
 - **`alert` 호출 삭제.**
-- 세션 오류로 **강제 로그아웃이며 사용자에게 알려야 할 때**만, **`hasSessionExpired`** 를 `true`(또는 리터럴 유니온)로 세팅한다. `showAlert: false` 경로(복구 가능 오류 등)는 기존처럼 **조용히 정리**만 한다.
+- **[Rule 8]** 플래그 매개변수명은 **`shouldShowAlert`** (`showAlert` 금지).
+- 세션 오류로 **강제 로그아웃이며 사용자에게 알려야 할 때**만, **`hasSessionExpired`** 를 `true`(또는 리터럴 유니온)로 세팅한다. `shouldShowAlert: false` 경로(복구 가능 오류 등)는 기존처럼 **조용히 정리**만 한다.
 - UI는 다이얼로그를 닫을 때 **`handleDismissSessionExpired`** 로 플래그를 내린다.
 
 ```ts
@@ -1589,7 +1722,7 @@ const handleDismissSessionExpired = useCallback(() => {
 }, []);
 
 // clearAuthState 내부: alert 제거 후
-if (showAlert) {
+if (shouldShowAlert) {
   setHasSessionExpired(true);
 }
 
@@ -1611,13 +1744,13 @@ import { TdsAlertDialog } from '../tds-adapter/TdsAlertDialog';
 interface SessionExpiredAlertGateProps {
   lang: AppLang;
   isOpen: boolean;
-  onDismiss: () => void;
+  onClose: () => void;
 }
 
 export const SessionExpiredAlertGate: React.FC<SessionExpiredAlertGateProps> = ({
   lang,
   isOpen,
-  onDismiss,
+  onClose,
 }) => {
   const labels = TDS_DIALOG_MESSAGES[lang]?.actions;
   const authMessages = TDS_DIALOG_MESSAGES[lang]?.auth;
@@ -1633,7 +1766,7 @@ export const SessionExpiredAlertGate: React.FC<SessionExpiredAlertGateProps> = (
       body={authMessages.sessionExpiredBody ?? ''}
       confirmLabel={authMessages.sessionExpiredAcknowledge ?? ''}
       labels={labels}
-      onClose={onDismiss}
+      onClose={onClose}
     />
   );
 };
@@ -1642,11 +1775,12 @@ export const SessionExpiredAlertGate: React.FC<SessionExpiredAlertGateProps> = (
 // <SessionExpiredAlertGate
 //   lang={lang}
 //   isOpen={hasSessionExpired}
-//   onDismiss={handleDismissSessionExpired}
+//   onClose={handleDismissSessionExpired}
 // />
 ```
 
 - **`AuthModalCoordinator`와의 관계:** 세션 만료는 **전역·비모달 우선** 알림이므로 **`App` 최상단** 또는 **인증 레이아웃**에 두는 것이 자연스럽다. 로그인 모달 코디네이터와 **동일 사전(`TDS_DIALOG_MESSAGES`)** 을 쓰되, **책임 분리**를 위해 컴포넌트는 분리해도 된다.
+- **사전 누락 시(`return null` 유지):** `authMessages == null || labels == null`이면 **지금처럼 `return null`로 조용히 실패**하게 둔다. **`refundActionFailed` 등 공통 토스트를 여기서 억지로 띄우지 않는다** — 세션 만료 맥락과 섞이면 사용자에게 **혼란**만 줄 수 있다. **`actions`·`auth.sessionExpired*`** 등은 **Phase 0-1 CI·타입 검증**으로 누락 시 빌드 실패를 강제해, 런타임에 이 분기에 들어가지 않게 한다.
 - **Blind `useMemo` 금지:** `SessionExpiredAlertGate`의 문구 매핑은 **가벼운 문자열 읽기 + Guard Clause** 로 충분하다. 단순 객체 조립을 메모이제이션하지 말고, **`authMessages == null || labels == null` 조기 반환**으로 평탄하게 유지한다.
 
 ---
@@ -1655,18 +1789,19 @@ export const SessionExpiredAlertGate: React.FC<SessionExpiredAlertGateProps> = (
 
 1. **SRP:** Hook은 **API·캐시·React state** 만; **모달/confirm/alert** 는 **React 컴포넌트 트리**에서만.
 2. **에러 핸들링 일원화:** 비동기 확인 실패 토스트는 **`useAsyncTdsConfirm.runConfirm`의 `catch`** 한 경로(Phase 0-2b). Hook은 **`throw` 또는 Result 타입**으로만 신호한다.
-3. **Strict I18N:** Hook에 **한글/영문 리터럴 금지**. 식별은 **`delete_failed` 같은 기계 코드**(필요 시 `as const` 상수화) 또는 Result의 **discriminated union**으로.
+3. **Strict I18N:** Hook에 **한글/영문 리터럴 금지**. 식별은 **`PORTFOLIO_MUTATION_ERROR_CODES` 등 기계 코드**로 `throw`하고, 사용자 문구는 **`getPortfolioMutationNotice`**(또는 TDS 사전)에서만 조합한다(초안의 `'delete_failed'` 단일 문자열만 언급과 다름).
 4. **토스 심사·UX:** 네이티브 `alert`/`confirm` 제거 후 **TDS/어댑터**만 사용자 대면 창으로 사용한다.
 5. **React Hook 규칙:** 외부에서 주입된 함수·값을 참조하는 `useCallback`은 **필요 의존성을 생략하지 않는다**. 본 Phase의 `deletePortfolioById`는 **`[setPortfolios]`** 를 유지한다.
 6. **Zero Dead Code / No Blind useMemo:** 분리 후 **`window.confirm` 분기·미사용 `lang` 기반 메시지 조합**은 Hook에서 **완전 삭제**하고, Consumer에서도 **단순 문자열 매핑용 `useMemo`** 는 추가하지 않는다.
-7. **Naming Convention:** Boolean state는 **`is` / `has` / `should` / `can`** 접두사를, 이벤트 핸들러는 **`handle*`**, callback prop은 **`on*`** 접두사를 유지한다. 본 Phase에서는 **`hasSessionExpired`**, **`handleDismissSessionExpired`**, **`onDeletePortfolio`** 를 기준 이름으로 사용한다.
+7. **Naming Convention (Rule 8):** Boolean state·파라미터는 **`is` / `has` / `should` / `can`** 접두사를, 이벤트 핸들러는 **`handle*`**, callback prop은 **`on*`** 접두사를 유지한다. 본 Phase에서는 **`clearAuthState(shouldShowAlert)`**, **`hasSessionExpired`**, **`handleDismissSessionExpired`**, **`onDeletePortfolio`**, 그리고 Phase 0-5 **`TdsConfirmDialog`의 `shouldHideCancel`** 을 기준으로 사용한다.
 
 **완료 기준**
 
-- `usePortfolios`의 **삭제 경로**에서 `window.confirm` / `alert` 가 **0건**.
-- `useAuth`의 **`clearAuthState`** 에서 **`alert` 가 0건**; 세션 만료는 **`hasSessionExpired` + `TdsAlertDialog`** 로만 노출.
-- 포트폴리오 삭제는 **`PortfolioCardActions`(또는 동등 코디네이터) + `useAsyncTdsConfirm` + `deletePortfolioById`** 패턴으로 동작.
-- **`TDS_DIALOG_MESSAGES`** 에 **`portfolio`·`auth` 섹션**이 추가되어 있고, Consumer에서만 참조한다.
+- `usePortfolios` **전 경로**에서 `window.confirm` / `alert` 가 **0건**.
+- `useAuth`의 **`clearAuthState`** 에서 **`alert` 가 0건**; 세션 만료는 **`hasSessionExpired` + `SessionExpiredAlertGate`(`TdsAlertDialog`)** 로만 노출.
+- 포트폴리오 삭제는 **`PortfolioCardActions` + `useAsyncTdsConfirm` + `deletePortfolioById`** 패턴으로 동작.
+- **`TDS_DIALOG_MESSAGES`** 에 **`portfolio`·`auth.sessionExpired*`** 가 있고, 삭제 확인·세션 만료 문구는 여기서 읽는다.
+- **`constants/portfolioMutationErrors.ts`** 에 mutation 코드·`getPortfolioMutationNotice`가 있고, **`App.tsx`** 에서 검증/DB 실패 안내용 **`TdsAlertDialog`** notice와 연결된다.
 
 ## Phase 3. 선택적 일관성 개선
 
@@ -1683,7 +1818,7 @@ export const SessionExpiredAlertGate: React.FC<SessionExpiredAlertGateProps> = (
 
 - `components/StrategyCreator.tsx`
 - `components/strategies/VrBandStrategyForm.tsx`
-- `components/Dashboard.tsx`
+- `components/Dashboard.tsx` — **예외:** Phase 2에서 **카드 우측 상단 액션만** `PortfolioCardActions`로 교체하기 위해 **해당 구간만 수정**했다(전면 TDS화·로직 변경은 아님).
 - `components/Backtest.tsx`
 - `components/BacktestResultsCharts.tsx`
 - `components/Markets.tsx`
@@ -1725,20 +1860,41 @@ export const SessionExpiredAlertGate: React.FC<SessionExpiredAlertGateProps> = (
 
 ### 구현 스니펫 (`useCallback` + 코디네이터 주입)
 
-인라인 화살표 함수를 `AuthModalCoordinator`에 직접 넘기지 않고, **Rule 10** 에 맞춰 **`useCallback`으로 안정 참조**를 만든 뒤 주입한다. **`@apps-in-toss/web-bridge`는 Rule 6에 따라 최상단 정적 import를 쓰지 않고**, `handleRequestMiniAppExit` 내부에서만 **동적 `import()`** 로 로드한다. 아래 스니펫은 **Phase 4 변경분만 보여 주는 발췌**이며, `onSwitchType`·`onLogin`·`onLogout` 등 **나머지 필수 props는 기존 `App.tsx`와 동일하게** 태그 **닫는 괄호 위 한 줄 주석**으로만 상기한다(열려 있는 JSX 태그 **속성 목록 안**에 `{/* */}`를 넣지 않는다 — 파서가 허용하지 않아 **Syntax Error**가 난다).
+인라인 화살표 함수를 `AuthModalCoordinator`에 직접 넘기지 않고, **Rule 10** 에 맞춰 **`useCallback`으로 안정 참조**를 만든 뒤 주입한다. **`@apps-in-toss/web-bridge`는 Rule 6에 따라 최상단 정적 import를 쓰지 않고**, `handleRequestMiniAppExit` 내부에서만 **동적 `import()`** 로 로드한다. 아래 스니펫은 **Phase 4에서 추가/변경되는 핸들러와 코디네이터 주입 props만** 보여 주는 발췌이며, **Phase 1b의 성공 경로 SSOT(`onSignedIn` / `onCommitSignedIn` / `onFinishSignedInFlow`)를 이미 반영한 `App.tsx`를 전제**한다. 여기서 **`onSignedIn`은 `App.tsx`가 직접 넘기는 prop이 아니라, `AuthModalCoordinator`가 내부에서 만들어 `AuthModals`에 주입하는 prop**이다.
 
 ```tsx
 import React, { useCallback } from 'react';
 import { AuthModalCoordinator } from './components/auth/AuthModalCoordinator';
 
 const App: React.FC = () => {
+  const handleCommitSignedIn = useCallback(
+    async (user: SignedInUser): Promise<void> => {
+      setUser(user);
+      justLoggedInRef.current = true;
+      await Promise.all([
+        Promise.resolve(fetchUserProfile(user.id)),
+        Promise.resolve(fetchPortfolios(user.id)),
+      ]);
+    },
+    [fetchPortfolios, fetchUserProfile, setUser],
+  );
+
+  const handleFinishSignedInFlow = useCallback(
+    async (_user: SignedInUser): Promise<void> => {
+      setAuthModal('profile');
+    },
+    [setAuthModal],
+  );
+
   const handleRequestMiniAppExit = useCallback(async (): Promise<void> => {
     try {
       const bridge = await import('@apps-in-toss/web-bridge');
       if (typeof bridge.closeView !== 'function') {
         throw new Error('closeView is not available on the loaded bridge module');
       }
-      bridge.closeView();
+      // [Rule 6] closeView가 void를 반환하든 Promise를 반환하든, await Promise.resolve로 통일해
+      // 비동기 reject가 try/catch 밖으로 새 나가 Unhandled Rejection이 되지 않게 한다.
+      await Promise.resolve(bridge.closeView());
     } catch (error) {
       console.error('Failed to execute Toss closeView:', error);
       throw error;
@@ -1748,13 +1904,15 @@ const App: React.FC = () => {
   return (
     <>
       {/* …기존 앱 본문… */}
-      {/* 기존 App과 동일: onSwitchType, onLogin, onLogout, currentUserEmail 등 필수 props 전부 유지 */}
+      {/* 기존 App과 동일: onSwitchType, onLogout, currentUserEmail 등 나머지 필수 props 유지 */}
       {/* 닫힘(authModal === null)일 때 type은 TS·런타임 계약용 placeholder. isOpen이 false면 코디네이터가 조기 return 하여 AuthModals에는 전달되지 않음 */}
       <AuthModalCoordinator
         isOpen={authModal != null}
         lang={lang}
         type={authModal ?? 'login'}
         onCloseAuthModal={handleCloseAuthModal}
+        onCommitSignedIn={handleCommitSignedIn}
+        onFinishSignedInFlow={handleFinishSignedInFlow}
         onRequestMiniAppExit={handleRequestMiniAppExit}
       />
     </>
@@ -1763,12 +1921,14 @@ const App: React.FC = () => {
 ```
 
 - **import 형태 (Phase 1-P0와 AST 계약 일치):** `AuthModalCoordinator.tsx`는 **`export const AuthModalCoordinator`**(Phase 1-P0 스니펫)와 **`export default`**를 **함께** 제공한다. 현행 `App.tsx`가 default를 쓰고 있어도 런타임은 정상이나, **계획서상 Phase 4 스니펫은 Phase 1-P0과 동일하게 `import { AuthModalCoordinator } from '…'` named import를 표준**으로 한다(복붙 시 문서 간 모순·`undefined` 컴포넌트 혼동 방지). 실제 코드 정리 시 **한 스타일로 통일**하면 된다.
+- **성공 경로 API SSOT:** `AuthModalCoordinator`의 성공 경로 퍼블릭 계약은 **`onCommitSignedIn` / `onFinishSignedInFlow`** 이다. Phase 4를 포함한 본 문서의 모든 `App.tsx` 발췌는 이 기준을 전제로 읽는다.
 - **`type`과 `authModal === null` (Rule 7·계약 명시성):** `authModal`이 `null`이면 `type={authModal}`만으로는 **TypeScript에서 `type`이 `AuthModalType`을 요구할 때 컴파일 에러**가 난다. **`AuthModalCoordinator`의 `type`을 `| null`로 늘리는 방식**도 가능하나, 본 계획서는 **호출부(`App.tsx`)만 수정**하는 경로를 기본으로 한다: **`type={authModal ?? 'login'}`**. `isOpen={authModal != null}`와 함께 쓰면 닫힘 시 **`!isOpen` 조기 반환** 때문에 placeholder `'login'`은 **`AuthModals` 렌더 경로에 실제로 쓰이지 않는다**(컴파일·참조 안정용 sentinel). 다만 코디네이터 훅의 의존성 배열에는 닫힘 중에도 `'login'`이 잡힐 수 있으므로, **sentinel 문자열은 팀 내에서 한 가지로 고정**하고(본 스니펫은 `'login'`), Phase 1a와의 정합(로그인 종료 플로우)과 어긋나지 않게 둔다. 대안으로 `AuthModalType | null`을 코디네이터에 도입하는 모델링도 타당하나, **이 문서의 Phase 4 스니펫은 상위 `??` 패턴을 채택**한다.
 - **상위 `{authModal && …}` 제거(이중 가딩 정리):** 가시성은 **`isOpen` 한 축**에 두는 편이 읽기 쉽고, 코디네이터 인스턴스·내부 훅 상태가 **모달을 닫았다가 다시 열 때** 상위 언마운트 없이 유지될 수 있다. 다만 **현행 `AuthModalCoordinator`는 `!isOpen`이면 즉시 `return null`** 이라, 자식(`AuthModals` 등) 트리는 닫힘과 함께 언마운트된다. 즉 **이 변경만으로 TDS 퇴장 애니메이션(onExited 등) 문제가 자동 해결된다고 단정할 수 없고**, 진짜 “닫히는 동안 셸 유지”는 **`TDSModal`·쉘 계약을 별도로 다루는 작업**과 연결된다.
-- **`handleRequestMiniAppExit`·동적 import (Rule 6):** `useCallback`으로 메모이제이션한다. **`await import('…')`** 는 **네트워크·청크 로드**이므로 실패할 수 있다고 가정하고, 위 스니펫처럼 **`try/catch` + `closeView` 존재 검사(`typeof … === 'function'`)** 를 둔다. **`catch`에서 로깅 후 반드시 `throw error`로 재전파**하여 Promise가 resolve되지 않게 하고, `AuthModalCoordinator`의 `await Promise.resolve(onRequestMiniAppExit())` → **`useAsyncTdsConfirm`의 `catch`/토스트 계약**으로 이어지게 한다(삼키면 모달만 닫히는 등 UX 불일치). 사용자 대면 문구가 아닌 **콘솔/로그 메시지**는 프로젝트 표준 로거(Sentry 등)로 치환 가능하다. **`await import()`** 는 종료 확정 시점에만 실행되어 브리지 모듈 top-level이 **첫 페인트 전**에 평가될 위험을 줄인다(완전한 브리지 예외 모델은 토스 SDK 문서로 재확인).
+- **`handleRequestMiniAppExit`·동적 import (Rule 6):** `useCallback`으로 메모이제이션한다. **`await import('…')`** 는 **네트워크·청크 로드**이므로 실패할 수 있다고 가정하고, 위 스니펫처럼 **`try/catch` + `closeView` 존재 검사(`typeof … === 'function'`)** 를 둔다. **`closeView` 호출은 `await Promise.resolve(bridge.closeView())` 로만 수행**한다 — 브리지가 **동기 `void`** 이든 **비동기 `Promise<void>`** 이든, **`try` 안에서 reject가 잡히지 않고 허공으로 나가는 Unhandled Rejection** 을 막고, 상위가 성공으로 착각해 모달만 닫히는 **Silent Failure** 를 방지한다. **`catch`에서 로깅 후 반드시 `throw error`로 재전파**하여 `AuthModalCoordinator`의 `await Promise.resolve(onRequestMiniAppExit())` → **`useAsyncTdsConfirm`의 `catch`/토스트 계약**으로 이어지게 한다. 사용자 대면 문구가 아닌 **콘솔/로그 메시지**는 프로젝트 표준 로거(Sentry 등)로 치환 가능하다. **`await import()`** 는 종료 확정 시점에만 실행되어 브리지 모듈 top-level이 **첫 페인트 전**에 평가될 위험을 줄인다(완전한 브리지 예외 모델은 토스 SDK 문서로 재확인).
 - **Phase 1a와의 정합:** `AuthModalCoordinator` 내부의 조건은 **`!isInTossApp || type !== 'login'` 이면 `onCloseAuthModal()`만 호출하고 즉시 반환**하는 구조다. 따라서 현행 설계에서 `onRequestMiniAppExit`는 **웹 브라우저 경로뿐 아니라, 토스 앱의 비로그인 모달 경로에서도 호출되지 않는다.**
-- **비동기/오류 계약:** `onRequestMiniAppExit` 타입은 `() => Promise<void> | void`를 유지한다. `async` 핸들러는 `Promise<void>`에 해당한다. `closeView()`가 자체적으로 Promise를 반환하는 API로 바뀌면 핸들러 내부에서 **`await closeView()`** 로 전파 여부를 한 번 더 맞춘다. 호출이 reject되면 **기존 `useAsyncTdsConfirm`의 `catch` 계약**에 따라 다이얼로그는 즉시 닫히지 않고, 실패 알림 경로로 위임된다.
+- **비동기/오류 계약 (Rule 7):** `onRequestMiniAppExit` 타입은 `() => Promise<void> | void`를 유지한다. `async` 핸들러는 `Promise<void>`에 해당한다. **`closeView`만 `await` 하면** 타입 정의가 `void`일 때 **`await-thenable`** 등 린트/TS 경고가 날 수 있으므로, **항상 `await Promise.resolve(bridge.closeView())`** 로 통일한다 — **동기·비동기 시그니처 변경에도 동일 패턴**으로 reject를 `catch`에 포착한다. 호출이 reject되면 **기존 `useAsyncTdsConfirm`의 `catch` 계약**에 따라 다이얼로그는 즉시 닫히지 않고, 실패 알림 경로로 위임된다.
 - **빌드·의존성:** Vite 등은 **빌드 타임**에 `@apps-in-toss/web-bridge` 청크를 묶을 수 있어야 하므로, 패키지가 **의존성 그래프에 존재**하는지(직접 또는 전이)는 여전히 필요하다. Phase 4의 **런타임 정책**은 “**최상단 정적 import 금지 + 종료 핸들러 내 동적 import**”로 확정한다.
+- **Vite 리포터 주의:** `@apps-in-toss/web-framework` / `web-analytics` 등이 **`web-bridge`를 전이 정적 import**하면, 빌드 시 **“동적 import인데도 다른 모듈이 정적으로 끌어온다”** 류 경고가 날 수 있다. **`App.tsx`의 정책(최상단 정적 import 없음)** 과는 별개로, 번들에 브리지가 포함될 수 있음을 전제한다.
 
 ### 설계 철학 — 의존성 주입(DI)으로 결합도 낮추기
 

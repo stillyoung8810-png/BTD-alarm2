@@ -27,6 +27,8 @@ import { TdsAlertDialog } from './components/tds-adapter/TdsAlertDialog';
 import { TdsConfirmDialog } from './components/tds-adapter/TdsConfirmDialog';
 import { useAsyncTdsConfirm } from './components/tds-adapter/useAsyncTdsConfirm';
 import { TDS_DIALOG_MESSAGES } from './constants/tdsDialogMessages';
+import SessionExpiredAlertGate from './components/auth/SessionExpiredAlertGate';
+import { getPortfolioMutationNotice } from './constants/portfolioMutationErrors';
 import { 
   LayoutDashboard, 
   BarChart3, 
@@ -149,8 +151,9 @@ const App: React.FC = () => {
     setAuthModal,
     fetchUserProfile,
     justLoggedInRef,
+    hasSessionExpired,
+    handleDismissSessionExpired,
   } = useAuth({
-    lang,
     setPortfolios,
     saveFCMToken,
     fetchPortfoliosRef,
@@ -163,11 +166,10 @@ const App: React.FC = () => {
     handleUpdatePortfolio,
     handleAddTrade,
     handleDeleteTrade,
-    handleDeletePortfolio,
+    deletePortfolioById,
     handleDeleteHistory,
     handleClearHistory,
   } = usePortfolios({
-    lang,
     userId: user?.id ?? null,
     userProfile,
     portfolios,
@@ -462,12 +464,6 @@ const App: React.FC = () => {
     calcValuation();
   }, [aggregateHoldings]);
 
-  // 🚀 패치 1: 퀵입력/실행 모달 저장 (currentTier 주입)
-  const handleAddTradeWithAd = async (portfolioId: string, trade: Trade) => {
-    await handleAddTrade(portfolioId, trade);
-    await showInterstitialOnTransition(AdPlacement.INTERSTITIAL_TRADE_SAVE, adsUserTier);
-  };
-
   const portfoliosRef = useRef<Portfolio[]>(portfolios);
   useEffect(() => {
     portfoliosRef.current = portfolios;
@@ -478,6 +474,42 @@ const App: React.FC = () => {
   const settlementDetailsCloseUiDedupeOpenIdRef = useRef<string | null>(null);
   const settlementDetailsCloseUiDedupeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigationExitDialog = useAsyncTdsConfirm(lang);
+  const [portfolioMutationNotice, setPortfolioMutationNotice] = useState<{
+    title: string;
+    body: string;
+  } | null>(null);
+
+  const handlePortfolioMutationNoticeClose = useCallback(() => {
+    setPortfolioMutationNotice(null);
+  }, []);
+
+  const openPortfolioMutationNotice = useCallback((error: unknown) => {
+    setPortfolioMutationNotice(getPortfolioMutationNotice(lang, error));
+  }, [lang]);
+
+  const runPortfolioMutation = useCallback(
+    async <Result,>(operation: () => Promise<Result>): Promise<Result> => {
+      try {
+        return await operation();
+      } catch (error: unknown) {
+        openPortfolioMutationNotice(error);
+        throw error;
+      }
+    },
+    [openPortfolioMutationNotice],
+  );
+
+  // 🚀 패치 1: 퀵입력/실행 모달 저장 (currentTier 주입)
+  const handleAddTradeWithAd = useCallback(
+    async (portfolioId: string, trade: Trade): Promise<void> => {
+      await runPortfolioMutation(() => handleAddTrade(portfolioId, trade));
+      await showInterstitialOnTransition(
+        AdPlacement.INTERSTITIAL_TRADE_SAVE,
+        adsUserTier,
+      );
+    },
+    [adsUserTier, handleAddTrade, runPortfolioMutation],
+  );
 
   useEffect(() => {
     return () => {
@@ -509,9 +541,13 @@ const App: React.FC = () => {
       if (detailsTargetId === null) {
         return;
       }
-      handleDeleteTrade(detailsTargetId, tradeId);
+      void handleDeleteTrade(detailsTargetId, tradeId).catch(
+        (error: unknown) => {
+          openPortfolioMutationNotice(error);
+        },
+      );
     },
-    [detailsTargetId, handleDeleteTrade],
+    [detailsTargetId, handleDeleteTrade, openPortfolioMutationNotice],
   );
 
   const handlePortfolioDetailsModalClose = useCallback(() => {
@@ -576,9 +612,38 @@ const App: React.FC = () => {
     setAuthModal(null);
   }, []);
 
-  const handleRequestMiniAppExit = useCallback((): void => {
-    // 공식 미니앱 종료 API는 아직 앱 경계에 연결하지 않았다.
+  const handleRequestMiniAppExit = useCallback(async (): Promise<void> => {
+    try {
+      const bridge = await import('@apps-in-toss/web-bridge');
+      if (typeof bridge.closeView !== 'function') {
+        throw new Error('closeView is not available on the loaded bridge module');
+      }
+
+      await Promise.resolve(bridge.closeView());
+    } catch (error: unknown) {
+      console.error('Failed to execute Toss closeView:', error);
+      throw error;
+    }
   }, []);
+
+  const handleCommitSignedIn = useCallback(
+    async (signedInUser: { id: string; email: string }) => {
+      setUser(signedInUser);
+      justLoggedInRef.current = true;
+      await Promise.all([
+        fetchUserProfile(signedInUser.id),
+        Promise.resolve(fetchPortfolios(signedInUser.id)),
+      ]);
+    },
+    [fetchPortfolios, fetchUserProfile, justLoggedInRef, setUser],
+  );
+
+  const handleFinishSignedInFlow = useCallback(
+    async (_signedInUser: { id: string; email: string }) => {
+      setAuthModal('profile');
+    },
+    [setAuthModal],
+  );
 
   const handleRequestBackNavigation = useCallback(
     (onLeave: () => void) => {
@@ -588,7 +653,9 @@ const App: React.FC = () => {
       }
 
       const exitMessage = TDS_DIALOG_MESSAGES[lang]?.exit?.back_navigation;
-      if (exitMessage == null) {
+      const labels = TDS_DIALOG_MESSAGES[lang]?.actions;
+      if (exitMessage == null || labels == null) {
+        onLeave();
         return;
       }
 
@@ -636,8 +703,12 @@ const App: React.FC = () => {
               lang={lang}
               portfolios={activePortfolios}
               onClosePortfolio={(id) => setTerminateTargetId(id)}
-              onDeletePortfolio={handleDeletePortfolio}
-              onUpdatePortfolio={handleUpdatePortfolio}
+              onDeletePortfolio={deletePortfolioById}
+              onUpdatePortfolio={(updated) => {
+                void handleUpdatePortfolio(updated).catch((error: unknown) => {
+                  openPortfolioMutationNotice(error);
+                });
+              }}
               onOpenCreator={handleRequestOpenCreator}
               onOpenAlarm={(id) => setAlarmTargetId(id)}
               onOpenDetails={(id) => setDetailsTargetId(id)}
@@ -746,8 +817,13 @@ const App: React.FC = () => {
     totalValuationChangePct,
     onDailyExecutionSummaryChange,
     canAccessPaidStocks,
+    deletePortfolioById,
+    handleClearHistory,
+    handleDeleteHistory,
     handleRequestBackNavigation,
     handleRequestOpenCreator,
+    handleUpdatePortfolio,
+    openPortfolioMutationNotice,
   ]);
 
   const MainContent = () => (
@@ -877,10 +953,14 @@ const App: React.FC = () => {
               onClose={() => setIsCreatorOpen(false)}
               // 🚀 패치 3: 전략 생성기 완료 후 (currentTier 주입)
               onSave={async (newP) => {
-                await handleAddPortfolio(newP, async () => {
-                  await showInterstitialOnTransition(AdPlacement.INTERSTITIAL_STRATEGY_SAVE, adsUserTier);
+                try {
+                  await runPortfolioMutation(() => handleAddPortfolio(newP));
+                  await showInterstitialOnTransition(
+                    AdPlacement.INTERSTITIAL_STRATEGY_SAVE,
+                    adsUserTier,
+                  );
                   setIsCreatorOpen(false);
-                });
+                } catch (_error: unknown) {}
               }}
               canAccessPaidStocks={canAccessPaidStocks}
               maxPortfolios={getMaxPortfolios(userProfile)}
@@ -898,9 +978,19 @@ const App: React.FC = () => {
               onSave={async (config) => {
                 const tz = userProfile?.timezone || getDeviceTimeZone();
                 const nextConfig = { ...config, timezone: config.timezone || tz };
-                handleUpdatePortfolio({ ...currentAlarmPortfolio, alarmconfig: nextConfig });
-                await showInterstitialOnTransition(AdPlacement.INTERSTITIAL_ALARM_SAVE, adsUserTier);
-                setAlarmTargetId(null);
+                try {
+                  await runPortfolioMutation(() =>
+                    handleUpdatePortfolio({
+                      ...currentAlarmPortfolio,
+                      alarmconfig: nextConfig,
+                    }),
+                  );
+                  await showInterstitialOnTransition(
+                    AdPlacement.INTERSTITIAL_ALARM_SAVE,
+                    adsUserTier,
+                  );
+                  setAlarmTargetId(null);
+                } catch (_error: unknown) {}
               }}
               maxAlarms={getMaxAlarms(userProfile)}
             />
@@ -919,10 +1009,37 @@ const App: React.FC = () => {
         )}
         {currentQuickInputPortfolio && (
           <React.Suspense fallback={LAZY_MODAL_FALLBACK}>
-            <QuickInputModal lang={lang} portfolio={currentQuickInputPortfolio} activeSection={quickInputActiveSection} onClose={() => { setQuickInputTargetId(null); setQuickInputActiveSection(undefined); }} onSave={async (trade) => { await handleAddTradeWithAd(currentQuickInputPortfolio.id, trade); setQuickInputTargetId(null); setQuickInputActiveSection(undefined); }} />
+            <QuickInputModal
+              lang={lang}
+              portfolio={currentQuickInputPortfolio}
+              activeSection={quickInputActiveSection}
+              onClose={() => {
+                setQuickInputTargetId(null);
+                setQuickInputActiveSection(undefined);
+              }}
+              onSave={async (trade) => {
+                try {
+                  await handleAddTradeWithAd(currentQuickInputPortfolio.id, trade);
+                  setQuickInputTargetId(null);
+                  setQuickInputActiveSection(undefined);
+                } catch (_error: unknown) {}
+              }}
+            />
           </React.Suspense>
         )}
-        {currentExecutionPortfolio && <TradeExecutionModal lang={lang} portfolio={currentExecutionPortfolio} onClose={() => setExecutionTargetId(null)} onSave={async (trade) => { await handleAddTradeWithAd(currentExecutionPortfolio.id, trade); setExecutionTargetId(null); }} />}
+        {currentExecutionPortfolio && (
+          <TradeExecutionModal
+            lang={lang}
+            portfolio={currentExecutionPortfolio}
+            onClose={() => setExecutionTargetId(null)}
+            onSave={async (trade) => {
+              try {
+                await handleAddTradeWithAd(currentExecutionPortfolio.id, trade);
+                setExecutionTargetId(null);
+              } catch (_error: unknown) {}
+            }}
+          />
+        )}
         {currentAIImagePortfolio && (
           <React.Suspense fallback={LAZY_MODAL_FALLBACK}>
             <AIImageInputModal
@@ -934,13 +1051,20 @@ const App: React.FC = () => {
               onClose={() => setAiImageTargetId(null)}
               // 🚀 패치 5: AI 이미지 인식 매매 저장 시 (currentTier 주입)
               onSave={async (trades, skipAd) => {
-                for (const trade of trades) {
-                  await handleAddTrade(currentAIImagePortfolio.id, trade);
-                }
-                if (!skipAd) {
-                  await showInterstitialOnTransition(AdPlacement.INTERSTITIAL_TRADE_SAVE, adsUserTier);
-                }
-                setAiImageTargetId(null);
+                try {
+                  for (const trade of trades) {
+                    await runPortfolioMutation(() =>
+                      handleAddTrade(currentAIImagePortfolio.id, trade),
+                    );
+                  }
+                  if (!skipAd) {
+                    await showInterstitialOnTransition(
+                      AdPlacement.INTERSTITIAL_TRADE_SAVE,
+                      adsUserTier,
+                    );
+                  }
+                  setAiImageTargetId(null);
+                } catch (_error: unknown) {}
               }}
             />
           </React.Suspense>
@@ -952,15 +1076,19 @@ const App: React.FC = () => {
             portfolio={currentTerminatePortfolio}
             onClose={() => setTerminateTargetId(null)}
             onSave={async (finalSells, additionalFee) => {
-              const result = await handleClosePortfolio(
-                currentTerminatePortfolio.id,
-                finalSells,
-                additionalFee,
-              );
-              if (result) {
-                setSettlementResult(result);
-                setTerminateTargetId(null);
-              }
+              try {
+                const result = await runPortfolioMutation(() =>
+                  handleClosePortfolio(
+                    currentTerminatePortfolio.id,
+                    finalSells,
+                    additionalFee,
+                  ),
+                );
+                if (result) {
+                  setSettlementResult(result);
+                  setTerminateTargetId(null);
+                }
+              } catch (_error: unknown) {}
             }}
           />
         )}
@@ -979,14 +1107,9 @@ const App: React.FC = () => {
             type={authModal} 
             onCloseAuthModal={handleCloseAuthModal}
             onRequestMiniAppExit={handleRequestMiniAppExit}
+            onCommitSignedIn={handleCommitSignedIn}
+            onFinishSignedInFlow={handleFinishSignedInFlow}
             onSwitchType={(type) => setAuthModal(type)} 
-            onLogin={async (u) => { 
-              setUser(u); 
-              setAuthModal('profile');
-              justLoggedInRef.current = true;
-              fetchUserProfile(u.id);
-              fetchPortfolios(u.id);
-            }}
             onLogout={async () => { 
               try {
                 const { error } = await supabase.auth.signOut();
@@ -1054,6 +1177,12 @@ const App: React.FC = () => {
           );
         })()}
 
+        <SessionExpiredAlertGate
+          lang={lang}
+          isOpen={hasSessionExpired}
+          onClose={handleDismissSessionExpired}
+        />
+
         {portfolioLimitNoticeMax != null ? (() => {
           const limitLabels = TDS_DIALOG_MESSAGES[lang]?.actions;
           const appMessages = TDS_DIALOG_MESSAGES[lang]?.app;
@@ -1069,6 +1198,25 @@ const App: React.FC = () => {
               confirmLabel={acknowledge}
               labels={limitLabels}
               onClose={handlePortfolioLimitNoticeClose}
+            />
+          );
+        })() : null}
+
+        {portfolioMutationNotice != null ? (() => {
+          const labels = TDS_DIALOG_MESSAGES[lang]?.actions;
+          const acknowledge = TDS_DIALOG_MESSAGES[lang]?.common?.acknowledge;
+          if (labels == null || acknowledge == null) {
+            return null;
+          }
+
+          return (
+            <TdsAlertDialog
+              isOpen
+              title={portfolioMutationNotice.title}
+              body={portfolioMutationNotice.body}
+              confirmLabel={acknowledge}
+              labels={labels}
+              onClose={handlePortfolioMutationNoticeClose}
             />
           );
         })() : null}

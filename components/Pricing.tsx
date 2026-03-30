@@ -4,7 +4,23 @@ import { useTossApp } from '../contexts/TossAppContext';
 import { TDSButton } from './tds';
 import { I18N } from '../constants';
 import { MembershipConfig } from '../constants/membership';
+import { PRICING_PRO_TIER_CARD_SURFACE_CLASSES } from '../constants/proPlanSurface';
 import { formatPriceKRW, formatPriceUSDForDisplay } from '../utils/currency';
+
+function getTierSurfaceClasses(theme: 'free' | 'pro' | 'premium'): string {
+  switch (theme) {
+    case 'premium':
+      return 'bg-[#000000] border border-amber-500/30 ring-1 ring-amber-500/20';
+    case 'pro':
+      return PRICING_PRO_TIER_CARD_SURFACE_CLASSES;
+    case 'free':
+      return 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/70 shadow-xl dark:shadow-2xl';
+    default: {
+      const _exhaustiveCheck: never = theme;
+      return _exhaustiveCheck;
+    }
+  }
+}
 
 const PREMIUM_GLOW_STYLE = `
   @keyframes breathe-gold {
@@ -216,12 +232,7 @@ const Pricing = ({ lang, currentTier, onUpgrade }: PricingProps) => {
             const isDisabled = tier.id === 'premium';
             const isProTier = tier.id === 'pro';
 
-            const baseCardClasses =
-              tier.theme === 'premium'
-                ? 'bg-[#000000] border border-amber-500/30 ring-1 ring-amber-500/20'
-                : tier.theme === 'pro'
-                ? 'bg-gradient-to-br from-[#E0F2FE] via-[#F3E8FF] to-[#FFFFFF] dark:from-blue-900/40 dark:via-indigo-900/40 dark:to-slate-900 border border-blue-200 dark:border-blue-500/30 shadow-xl'
-                : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/70 shadow-xl dark:shadow-2xl';
+            const baseCardClasses = getTierSurfaceClasses(tier.theme);
 
             return (
               <div

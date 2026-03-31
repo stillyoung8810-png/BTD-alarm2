@@ -2,9 +2,11 @@
 
 ## 1. 문제 정의와 목표
 
-현재 `App.tsx`는 `showInterstitialOnTransition()`을 사용해 저장 성공 직후 광고를 호출합니다. 하지만 현재 `services/ads/adService.ts`는 "클릭 또는 저장 완료 시점에 load + show를 한 번에 수행"하는 구조라서, 사용자가 `새 포트폴리오 저장`, `알람 저장`, `매수 저장` 같은 액션을 누른 뒤 광고 네트워크 응답을 기다리게 됩니다.
+**과거(레거시)**: `App.tsx`가 저장 직후 `showInterstitialOnTransition()`을 호출하고, 삭제된 `services/ads/adService.ts`가 **클릭·저장 시점에 load + show를 연속 실행**해 사용자가 네트워크 응답을 기다리는 구조였습니다.
 
-이 구조는 토스 공식 문서의 권장 흐름과 맞지 않습니다. 공식 문서 기준 핵심 원칙은 다음과 같습니다.
+**현재(코드 기준, 2026-03)**: 레거시 전면 경로는 제거되었습니다. 전면은 `services/ads/globalAdManager.ts` + `createTossIntegratedFullScreenAdBridge` + 통합 API **`loadFullScreenAd` / `showFullScreenAd`** 로만 이어지며, logical key·라우트는 `services/ads/interstitialPlacementConfig.ts`가 SSOT입니다. 보상형만 `services/ads/rewardAdService.ts`에서 **`GoogleAdMob.loadAppsInTossAdMob` / `showAppsInTossAdMob`**(load → show)를 사용합니다.
+
+이 문서가 지적하는 본질은 여전히 유효합니다. 토스 공식 문서 기준 핵심 원칙은 다음과 같습니다.
 
 - 광고는 **표시 전에 미리 로드**해야 합니다.
 - 흐름은 반드시 **`load -> show -> 다음 load`** 여야 합니다.
@@ -26,8 +28,8 @@
    - 광고는 "전환 직후 보여줄 수 있으면 보여주고, 아니면 그냥 지나간다"가 기본 정책입니다.
 
 3. **토스 공식 API 정렬 (일괄 전환)**
-   - `@apps-in-toss/web-framework` 통합 API **`loadFullScreenAd` / `showFullScreenAd`**만 사용한다. ([IntegratedAd.html](https://developers-apps-in-toss.toss.im/bedrock/reference/framework/%EA%B4%91%EA%B3%A0/IntegratedAd.html))
-   - 마이그레이션 시 기존 `services/ads/adService.ts`의 **`loadAppsInTossAdMob` / `showAppsInTossAdMob` 전면 경로는 제거**한다. 레거시와 신규 전면 파이프라인을 **병행하지 않는다** (§7).
+   - **전면**: `@apps-in-toss/web-framework` 통합 API **`loadFullScreenAd` / `showFullScreenAd`**만 사용한다. ([IntegratedAd.html](https://developers-apps-in-toss.toss.im/bedrock/reference/framework/%EA%B4%91%EA%B3%A0/IntegratedAd.html)) — 브리지는 `services/ads/globalAdManager.ts`의 `createTossIntegratedFullScreenAdBridge`.
+   - 레거시 `adService` 기반 **전면용** `loadAppsInTossAdMob` / `showAppsInTossAdMob` 래핑은 **삭제 완료**. 신규 전면과 **병행하지 않는다** (§7). (보상형 전용 호출은 `rewardAdService.ts`에만 남는다.)
 
 4. **Global 관리 (단일 SSOT)**
    - 광고 상태는 각 화면/모달이 아니라 전역 매니저가 단일 소스로 관리합니다.
@@ -39,20 +41,15 @@
 
 ### 2.1 클릭 시점 load
 
-현재 서비스는 `showInterstitialOnTransition()` 안에서 load와 show를 연속 실행합니다. 이 방식은 preload가 아니라 **on-demand network fetch** 입니다. 따라서 광고 fill, SDK 초기화, 네트워크 RTT가 모두 사용자 대기 시간으로 전가됩니다.
+**과거 레거시 전면**은 `showInterstitialOnTransition()` 안에서 load와 show를 연속 실행했습니다. 이 방식은 preload가 아니라 **on-demand network fetch** 입니다. 따라서 광고 fill, SDK 초기화, 네트워크 RTT가 모두 사용자 대기 시간으로 전가됩니다. (현재 코드에서는 해당 전면 경로가 제거되었고, 목표 아키텍처는 §3의 프리로드 + `showInstant`입니다.)
 
 ### 2.2 placement key와 adGroupId의 혼합
 
-현재 `services/ads/adPlacements.ts`는 여러 logical placement가 하나의 문자열 값으로 수렴합니다.
+**과거**: 삭제된 `AdPlacement` 객체에서 여러 logical placement가 하나의 전면 `adGroupId` 문자열로 수렴했습니다(예: 전략/매매/알람/정산 상세가 동일 ID).
 
-- `INTERSTITIAL_STRATEGY_SAVE`
-- `INTERSTITIAL_TRADE_SAVE`
-- `INTERSTITIAL_ALARM_SAVE`
-- `INTERSTITIAL_SETTLEMENT_DETAIL`
+**현재**: 전면 logical key는 `services/ads/interstitialPlacementConfig.ts`의 `INTERSTITIAL_PLACEMENT_KEYS` / `getInterstitialPlacementDefinitions()`가 SSOT이며, `adGroupId`는 `getResolvedInterstitialAdGroupId()` 등으로 주입합니다. `services/ads/adPlacements.ts`는 운영 전면 ID·배너·**보상형 AI 해제 ID** 등 상수만 유지합니다.
 
-이 네 개가 모두 동일한 `INTERSTITIAL_AD_GROUP_ID` 값을 가집니다.
-
-이 자체는 광고 콘솔 측 구성으로는 가능하지만, preload 상태 관점에서는 치명적입니다. 이유는 다음과 같습니다.
+하나의 `adGroupId`만으로 여러 logical slot을 합치면, preload 상태 관점에서는 치명적일 수 있습니다. 이유는 다음과 같습니다.
 
 - preload 캐시 키는 "광고 그룹 ID"가 아니라 **"언제 어떤 UX에서 쓸 placement인지"** 를 기준으로 추적해야 합니다.
 - 쿨타임, preload 우선순위, show rate, skip rate, 실패율은 logical placement마다 달라야 합니다.
@@ -412,9 +409,9 @@ Interstitial은 사용자 자발 액션이 아니므로, preload 실패 시 매�
 
 ## 7. 마이그레이션 전략 — **일괄 전환 (Big Bang) 확정**
 
-레거시 `adService.ts`의 **`GoogleAdMob.loadAppsInTossAdMob` / `showAppsInTossAdMob` 경로와 신규 `loadFullScreenAd` / `showFullScreenAd` + `GlobalAdManager` 경로를 병행 유지하지 않는다.** **신규 프리로드 시스템으로 100% 전환**한다 — 기능 플래그·레거시 폴백 분기 없음.
+**전면**: 레거시 `adService.ts`의 전면용 **`loadAppsInTossAdMob` / `showAppsInTossAdMob` 래핑과 신규 `loadFullScreenAd` / `showFullScreenAd` + `GlobalAdManager` 경로를 병행하지 않는다.** **신규 프리로드 시스템으로 100% 전환**한다 — 기능 플래그·레거시 폴백 분기 없음. (`adService.ts` **삭제 완료**.)
 
-**Zero dead code — 레거시 전면 API 완전 제거 (§7 Step 1, 필수):** `adService.ts` 및 `services/ads/` 안에 남아 있는 **`loadAppsInTossAdMob` / `showAppsInTossAdMob` 및 이를 호출·래핑하는 전면 전용 코드**(관련 타입·상수·헬퍼·미사용 import 포함)를 **주석·`TODO` 복구용 잔재 없이 전부 삭제**한다. Git 이력만 보존 매체로 삼는다. 남는 광고 진입점은 **`GlobalAdManager` + 통합 브리지 + `showInstant` / `AdPreloadProvider`** 뿐이어야 한다.
+**Zero dead code — 레거시 전면 API 완전 제거 (§7 Step 1, 필수):** 전면 전용으로 남아 있던 **`loadAppsInTossAdMob` / `showAppsInTossAdMob` 호출·래핑**(관련 타입·상수·헬퍼·미사용 import 포함)은 **제거 완료**다. 남는 **전면** 진입점은 **`GlobalAdManager` + 통합 브리지 + `showInstant` / `AdPreloadProvider`** 뿐이어야 한다. **보상형**만 `services/ads/rewardAdService.ts`에서 동일 GoogleAdMob API를 사용한다(전면과 파일·책임 분리).
 
 **SRP·호출부 (§7 Step 2):** 도메인 `onSave` / `onSubmit` 안에서 **광고 성공·실패로 비즈니스 분기를 두지 않는다.** 저장·제출은 **항상 완료**하고, 전면 노출은 **fire-and-forget safe bypass** (`await showInstantAd(...)` 결과 true/false를 **비즈니스 조건에 쓰지 않음**).
 
@@ -422,14 +419,34 @@ Interstitial은 사용자 자발 액션이 아니므로, preload 실패 시 매�
 
 **Telemetry·관측 (보류):** Datadog / Amplitude / 사내 로깅·**퍼널 대시보드 연동은 당장 스킵**한다. `AdResultCode`·슬롯 phase 전이에 대한 구조화 이벤트는 **후속 스프린트**에서 별도 합의 후 도입한다. Big Bang 1차 범위는 **레거시 삭제 + 100% 신규 파이프라인**에 한정한다. 다만 **`onDrainError`**(§3.3)는 **전이 이벤트 스트림과 별개**로, 드레인 **예외 보고용 플러그만** OCP에 맞게 **선제 주입**할 수 있다.
 
-권장 작업 순서 (한 스프린트 내 완료를 전제):
+권장 작업 순서 — **코드 작업 1~6** (한 스프린트 내 완료를 전제):
 
 1. `services/ads/` 아래에 `placementKey`와 `adGroupId`를 분리한 신규 config 도입
 2. `GlobalAdManager`·통합 브리지(`createTossIntegratedFullScreenAdBridge`) 도입 — **Rule 11:** `executeWithTimeout` + 타임아웃 시 `onCancel`으로 unregister. **`audioManager`·`initialTier` 필수**(§3.3 티어 SSOT). 운영 빌드는 콘솔 `adGroupId`, 로컬/QR 테스트는 **`ait-ad-test-interstitial-id`** ([develop/intro](https://developers-apps-in-toss.toss.im/ads/develop.html)).
 3. `AdPreloadProvider`를 `App.tsx` 루트에 연결 (`docs2/ad-preload-AdPreloadProvider.tsx`: **`useSyncExternalStore`**, **`useLayoutEffect`·`setCurrentTier`**, **`showInstant(key)`**, Rule 11 블록 유지)
-4. **`adService.ts` 등에서 구형 전면 경로를 흔적 없이 전부 삭제** — 위 Step 1 Zero dead code와 동일 기준. 호출부는 `manager.showInstant(placementKey)`만 사용(tier 인자 없음)
+4. **구형 전면 경로 철거** — 위 Step 1과 동일 기준으로 **완료**. 호출부는 `manager.showInstant(placementKey)`만 사용(tier 인자 없음)
 5. dashboard/landing 등에서 **`prime()` / `primeRoute()`**(tier 인자 없음 — `setCurrentTier` 선행)로 프리로드 트리거 정렬
 6. `dismissed` 후 auto reload 등 신규 슬롯 머신 동작 완료 (**Telemetry는 보류** — 본 절 상단)
+
+위 **1~6은 구현 커밋** 단위로 진행한다. **머지·출시·스프린트 종료 전**에는 아래 **Step 5 (QA)** 를 **별도 게이트**로 한 바퀴 돌린다 (실행 로드맵에서 “코어 이식 → 마운트 → 철거 → 혈관 연결” 다음 단계).
+
+### Step 5 (별도 QA 게이트): 통합 회귀 체크리스트
+
+**목적:** 구현 1~6 완료 후, 토스 정책·본 문서 불변식과 어긋남이 없는지 **수동·실기기 중심**으로 확인한다. 전항목을 **통과(또는 알려진 제외 사유 문서화)** 한 뒤에만 릴리스 브랜치 머지를 권장한다.
+
+| # | 점검 항목 | 기대 동작 / 참고 |
+|---|-----------|------------------|
+| 1 | **환경** | [광고 QA](https://developers-apps-in-toss.toss.im/ads/qa.html)에 맞춰 **실기기·토스앱**에서 검증. QR/샌드박스는 [develop/intro](https://developers-apps-in-toss.toss.im/ads/develop.html)의 **테스트용 전면 ID**(`ait-ad-test-interstitial-id`)만 사용. |
+| 2 | **클릭 시 load 금지** | 저장/액션 직전에 **새 `load`가 트리거되지 않음**. 준비 안 됨이면 **즉시 skip**·저장은 완료 (§1 Delay Zero). |
+| 3 | **첫 `showInstant` 면제** | 세션 첫 전면 트리거에서 **`skipped_first_action_exemption`** 동작, 두 번째부터 정상 시도 (§4.4). |
+| 4 | **오디오** | 전면 **노출 구간 BGM/효과음 일시 정지**, 닫힌 뒤 **재개** ([ads/qa](https://developers-apps-in-toss.toss.im/ads/qa.html)). `pause`/`resume` 구현체가 깨져도 **앱이 멈추지 않고** 슬롯이 `showing`에 고정되지 않음 (§4.2 Rule 6·엣지). |
+| 5 | **티어 SSOT** | 결제/상태 변경 후 **`setCurrentTier` 반영 뒤** `prime`·`showInstant`가 **현재 티어 기준**으로 동작 (§3.3). |
+| 6 | **연타·이중 전면** | `isExecutingRef`로 **전역 one-flight** — 짧은 간격 연속 호출 시 하나만 처리·나머지 `false` 허용 (부록 B). |
+| 7 | **실패 내성** | fill 실패·오프라인·`failedToShow` 시 **저장/비즈니스는 완료**, 광고만 bypass·토스트 남발 없음 (§6). |
+| 8 | **닫힘 후 재프리로드** | `dismissed` → cooldown → **auto reload / `prime` 경로**가 막히지 않음 (§5). |
+| 9 | **콘솔·크래시** | 전면 열고 닫기·라우트 이동 반복 시 **Unhandled rejection·좀비 타이머** 의심 로그 없음 (`onDrainError`·드레인 `.catch` 확인). |
+
+**산출물 (권장):** 체크리스트를 이슈·PR 설명 또는 내부 위키에 **체크박스**로 남겨, 담당자·검증 일자를 기록한다.
 
 ---
 
@@ -445,6 +462,7 @@ Interstitial은 사용자 자발 액션이 아니므로, preload 실패 시 매�
 - **show 전 TTL 기반 임의 재요청 금지** (SSP 주기적 refresh 금지와 정합)
 - **첫 `showInstant` 1회 면제** + **전면 중 앱 사운드 일시 정지/복구** ([ads/qa.html](https://developers-apps-in-toss.toss.im/ads/qa.html))
 - **Rule 11:** Bridge 타임아웃 시 `unregister` + Provider **`isExecutingRef` 전역 one-flight**(placement 락 미사용, 최종) ·`Promise.resolve` (부록 B)
+- **§7 Step 5 (QA):** 마이그레이션 구현 1~6 완료 후 **별도 게이트**로 통합 회귀 체크리스트 수행
 
 ---
 

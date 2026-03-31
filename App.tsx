@@ -17,7 +17,22 @@ import { useFCMToken } from './hooks/useFCMToken';
 import { useAuth } from './hooks/useAuth';
 import { usePortfolios } from './hooks/usePortfolios';
 import { isTossApp } from './services/tossAppBridge';
-import { showInterstitialOnTransition, AdPlacement, type UserTier } from './services/ads/adService';
+import {
+  AdPreloadProvider,
+  useAdPreload,
+} from './services/ads/AdPreloadProvider';
+import {
+  createTossIntegratedFullScreenAdBridge,
+  GlobalAdManager,
+  type AppAudioManager,
+} from './services/ads/globalAdManager';
+import { tossIntegratedFullScreenAdApi } from './services/ads/tossIntegratedFullScreenAdApi';
+import {
+  getInterstitialPlacementDefinitions,
+  INTERSTITIAL_PLACEMENT_KEYS,
+  type AdRouteKey,
+  type InterstitialPlacementKey,
+} from './services/ads/interstitialPlacementConfig';
 import { restorePendingIapOrders } from './services/payment/tossIapService';
 import { TossAppProvider } from './contexts/TossAppContext';
 import { buildDailyExecutionSummary } from './utils/dailyExecutionSummary';
@@ -45,9 +60,9 @@ import {
   getMaxAlarms, 
   getEffectiveSubscription,
 } from './utils/subscriptionUtils';
+import type { UserTier } from '@/types/userTier';
 import { useTierDisplay } from './hooks/useTierDisplay';
 import AuthModalCoordinator from './components/auth/AuthModalCoordinator';
-
 const Backtest = React.lazy(() => import('./components/Backtest'));
 const Dashboard = React.lazy(() => import('./components/Dashboard'));
 const Markets = React.lazy(() => import('./components/Markets'));
@@ -59,21 +74,68 @@ const AlarmModal = React.lazy(() => import('./components/AlarmModal'));
 const PortfolioDetailsModal = React.lazy(() => import('./components/PortfolioDetailsModal'));
 const AIImageInputModal = React.lazy(() => import('./components/AIImageInputModal'));
 
+const BOOTSTRAP_AD_USER_TIER: UserTier = 'free';
+const SILENT_AD_AUDIO_MANAGER: AppAudioManager = {
+  pauseAllSounds: () => {},
+  resumeAllSounds: () => {},
+};
+const GLOBAL_INTERSTITIAL_AD_MANAGER = new GlobalAdManager(
+  createTossIntegratedFullScreenAdBridge(tossIntegratedFullScreenAdApi),
+  getInterstitialPlacementDefinitions(),
+  {
+    audioManager: SILENT_AD_AUDIO_MANAGER,
+    initialTier: BOOTSTRAP_AD_USER_TIER,
+  },
+);
+
 /** Lazy-loaded 모달 공통 Suspense fallback — DRY */
 const LAZY_MODAL_FALLBACK = (
   <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/50 dark:bg-slate-950/80 text-slate-400 font-bold">…</div>
 );
 
-/** 정산 상세 닫기 전면: 실제 노출 후 재호출 쿨타임 */
-const SETTLEMENT_DETAIL_EXIT_INTERSTITIAL_COOLDOWN_MS = 5_000;
 /** 동일 openId 닫기: setTimeout 기반 물리적 더블 입력 디듀프 */
 const UI_DOUBLE_CLICK_PREVENTION_MS = 300;
+const NON_BLOCKING_AD_TRIGGER_DELAY_MS = 0;
 
 type ActiveTab = 'dashboard' | 'markets' | 'history' | 'backtest' | 'pricing' | 'privacy' | 'terms';
 
 interface FinishSignedInFlowOptions {
   shouldShowWelcome: boolean;
 }
+
+function getPrimeableAdRouteKey(activeTab: ActiveTab): AdRouteKey | null {
+  switch (activeTab) {
+    case 'dashboard':
+      return 'dashboard';
+    case 'history':
+      return 'history';
+    default:
+      return null;
+  }
+}
+
+interface AdPreloadBridgeProps {
+  onShowInstantAdChange: (
+    nextShowInstantAd:
+      | ((key: InterstitialPlacementKey) => Promise<boolean>)
+      | null,
+  ) => void;
+}
+
+const AdPreloadBridge: React.FC<AdPreloadBridgeProps> = ({
+  onShowInstantAdChange,
+}) => {
+  const { showInstantAd } = useAdPreload();
+
+  useEffect(() => {
+    onShowInstantAdChange(showInstantAd);
+    return () => {
+      onShowInstantAdChange(null);
+    };
+  }, [onShowInstantAdChange, showInstantAd]);
+
+  return null;
+};
 
 const App: React.FC = () => {
   const [lang, setLang] = useState<'ko' | 'en'>('ko');
@@ -86,6 +148,9 @@ const App: React.FC = () => {
   );
   const [checkoutPlan, setCheckoutPlan] = useState<'pro' | 'premium' | null>(null);
   const fetchPortfoliosRef = useRef<(userId: string) => void>(() => {});
+  const showInstantAdRef = useRef<
+    ((key: InterstitialPlacementKey) => Promise<boolean>) | null
+  >(null);
 
   const [alarmTargetId, setAlarmTargetId] = useState<string | null>(null);
   const [detailsTargetId, setDetailsTargetId] = useState<string | null>(null);
@@ -226,11 +291,29 @@ const App: React.FC = () => {
 
   const t = I18N[lang];
   const isInTossApp = isTossApp();
+  const primeableAdRouteKey = useMemo(
+    () => getPrimeableAdRouteKey(activeTab),
+    [activeTab],
+  );
 
   useEffect(() => {
     if (!isInTossApp) return;
     setIsDarkMode(false);
   }, [isInTossApp]);
+
+  useEffect(() => {
+    if (primeableAdRouteKey === null) {
+      return;
+    }
+    GLOBAL_INTERSTITIAL_AD_MANAGER.primeRoute(primeableAdRouteKey);
+  }, [primeableAdRouteKey]);
+
+  useEffect(() => {
+    if (detailsTargetId === null) {
+      return;
+    }
+    GLOBAL_INTERSTITIAL_AD_MANAGER.primeRoute('portfolio_details');
+  }, [detailsTargetId]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -469,13 +552,6 @@ const App: React.FC = () => {
     calcValuation();
   }, [aggregateHoldings]);
 
-  const portfoliosRef = useRef<Portfolio[]>(portfolios);
-  useEffect(() => {
-    portfoliosRef.current = portfolios;
-  }, [portfolios]);
-
-  const isSettlementExitAdPipelineActiveRef = useRef(false);
-  const lastSettlementExitInterstitialShownAtMsRef = useRef(0);
   const settlementDetailsCloseUiDedupeOpenIdRef = useRef<string | null>(null);
   const settlementDetailsCloseUiDedupeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigationExitDialog = useAsyncTdsConfirm(lang);
@@ -483,10 +559,46 @@ const App: React.FC = () => {
     title: string;
     body: string;
   } | null>(null);
+  const portfoliosRef = useRef(portfolios);
+
+  useEffect(() => {
+    portfoliosRef.current = portfolios;
+  }, [portfolios]);
 
   const handlePortfolioMutationNoticeClose = useCallback(() => {
     setPortfolioMutationNotice(null);
   }, []);
+
+  const handleShowInstantAdChange = useCallback(
+    (
+      nextShowInstantAd:
+        | ((key: InterstitialPlacementKey) => Promise<boolean>)
+        | null,
+    ) => {
+      showInstantAdRef.current = nextShowInstantAd;
+    },
+    [],
+  );
+
+  const scheduleInterstitialAd = useCallback(
+    (key: InterstitialPlacementKey) => {
+      if (typeof window === 'undefined') {
+        return;
+      }
+
+      window.setTimeout(() => {
+        const showInstantAd = showInstantAdRef.current;
+        if (showInstantAd == null) {
+          return;
+        }
+
+        void showInstantAd(key).catch((error: unknown) => {
+          console.error('[App] Fire-and-forget interstitial failed:', error);
+        });
+      }, NON_BLOCKING_AD_TRIGGER_DELAY_MS);
+    },
+    [],
+  );
 
   const openPortfolioMutationNotice = useCallback((error: unknown) => {
     setPortfolioMutationNotice(getPortfolioMutationNotice(lang, error));
@@ -504,16 +616,12 @@ const App: React.FC = () => {
     [openPortfolioMutationNotice],
   );
 
-  // 🚀 패치 1: 퀵입력/실행 모달 저장 (currentTier 주입)
-  const handleAddTradeWithAd = useCallback(
+  const handleSaveTrade = useCallback(
     async (portfolioId: string, trade: Trade): Promise<void> => {
       await runPortfolioMutation(() => handleAddTrade(portfolioId, trade));
-      await showInterstitialOnTransition(
-        AdPlacement.INTERSTITIAL_TRADE_SAVE,
-        adsUserTier,
-      );
+      scheduleInterstitialAd(INTERSTITIAL_PLACEMENT_KEYS.TRADE_SAVE);
     },
-    [adsUserTier, handleAddTrade, runPortfolioMutation],
+    [handleAddTrade, runPortfolioMutation, scheduleInterstitialAd],
   );
 
   useEffect(() => {
@@ -560,6 +668,7 @@ const App: React.FC = () => {
     if (openId === null) {
       return;
     }
+    const portfolio = portfoliosRef.current.find((item) => item.id === openId);
 
     if (settlementDetailsCloseUiDedupeOpenIdRef.current === openId) {
       return;
@@ -572,46 +681,11 @@ const App: React.FC = () => {
       settlementDetailsCloseUiDedupeTimerRef.current = null;
       settlementDetailsCloseUiDedupeOpenIdRef.current = null;
     }, UI_DOUBLE_CLICK_PREVENTION_MS);
-
-    const portfolio = portfoliosRef.current.find((p) => p.id === openId);
-
     setDetailsTargetId(null);
-
-    if (!portfolio?.isClosed) {
-      return;
+    if (portfolio?.isClosed) {
+      scheduleInterstitialAd(INTERSTITIAL_PLACEMENT_KEYS.SETTLEMENT_DETAIL);
     }
-
-    if (
-      Date.now() - lastSettlementExitInterstitialShownAtMsRef.current <
-      SETTLEMENT_DETAIL_EXIT_INTERSTITIAL_COOLDOWN_MS
-    ) {
-      return;
-    }
-
-    if (isSettlementExitAdPipelineActiveRef.current) {
-      return;
-    }
-
-    const tierForAd: UserTier = adsUserTier;
-
-    isSettlementExitAdPipelineActiveRef.current = true;
-
-    void (async () => {
-      try {
-        const result = await showInterstitialOnTransition(
-          AdPlacement.INTERSTITIAL_SETTLEMENT_DETAIL,
-          tierForAd,
-        );
-        if (result.shown) {
-          lastSettlementExitInterstitialShownAtMsRef.current = Date.now();
-        }
-      } catch (error: unknown) {
-        console.error('[Ad] Settlement detail exit interstitial failed:', error);
-      } finally {
-        isSettlementExitAdPipelineActiveRef.current = false;
-      }
-    })();
-  }, [detailsTargetId, adsUserTier]);
+  }, [detailsTargetId, scheduleInterstitialAd]);
 
   const handleCloseAuthModal = useCallback(() => {
     setShouldShowSignedInWelcome(false);
@@ -982,15 +1056,13 @@ const App: React.FC = () => {
             <StrategyCreator
               lang={lang}
               onClose={() => setIsCreatorOpen(false)}
-              // 🚀 패치 3: 전략 생성기 완료 후 (currentTier 주입)
               onSave={async (newP) => {
                 try {
                   await runPortfolioMutation(() => handleAddPortfolio(newP));
-                  await showInterstitialOnTransition(
-                    AdPlacement.INTERSTITIAL_STRATEGY_SAVE,
-                    adsUserTier,
-                  );
                   setIsCreatorOpen(false);
+                  scheduleInterstitialAd(
+                    INTERSTITIAL_PLACEMENT_KEYS.STRATEGY_SAVE,
+                  );
                 } catch (_error: unknown) {}
               }}
               canAccessPaidStocks={canAccessPaidStocks}
@@ -1005,7 +1077,6 @@ const App: React.FC = () => {
               lang={lang}
               portfolio={currentAlarmPortfolio}
               onClose={() => setAlarmTargetId(null)}
-              // 🚀 패치 4: 알람 설정 저장 완료 후 (currentTier 주입)
               onSave={async (config) => {
                 const tz = userProfile?.timezone || getDeviceTimeZone();
                 const nextConfig = { ...config, timezone: config.timezone || tz };
@@ -1016,11 +1087,10 @@ const App: React.FC = () => {
                       alarmconfig: nextConfig,
                     }),
                   );
-                  await showInterstitialOnTransition(
-                    AdPlacement.INTERSTITIAL_ALARM_SAVE,
-                    adsUserTier,
-                  );
                   setAlarmTargetId(null);
+                  scheduleInterstitialAd(
+                    INTERSTITIAL_PLACEMENT_KEYS.ALARM_SAVE,
+                  );
                 } catch (_error: unknown) {}
               }}
               maxAlarms={getMaxAlarms(userProfile)}
@@ -1050,7 +1120,7 @@ const App: React.FC = () => {
               }}
               onSave={async (trade) => {
                 try {
-                  await handleAddTradeWithAd(currentQuickInputPortfolio.id, trade);
+                  await handleSaveTrade(currentQuickInputPortfolio.id, trade);
                   setQuickInputTargetId(null);
                   setQuickInputActiveSection(undefined);
                 } catch (_error: unknown) {}
@@ -1065,7 +1135,7 @@ const App: React.FC = () => {
             onClose={() => setExecutionTargetId(null)}
             onSave={async (trade) => {
               try {
-                await handleAddTradeWithAd(currentExecutionPortfolio.id, trade);
+                await handleSaveTrade(currentExecutionPortfolio.id, trade);
                 setExecutionTargetId(null);
               } catch (_error: unknown) {}
             }}
@@ -1080,21 +1150,15 @@ const App: React.FC = () => {
               isPaidUser={currentTier === 'pro' || currentTier === 'premium'}
               currentTier={currentTier === 'premium' || currentTier === 'pro' ? currentTier : 'free'}
               onClose={() => setAiImageTargetId(null)}
-              // 🚀 패치 5: AI 이미지 인식 매매 저장 시 (currentTier 주입)
-              onSave={async (trades, skipAd) => {
+              onSave={async (trades, _skipAd) => {
                 try {
                   for (const trade of trades) {
                     await runPortfolioMutation(() =>
                       handleAddTrade(currentAIImagePortfolio.id, trade),
                     );
                   }
-                  if (!skipAd) {
-                    await showInterstitialOnTransition(
-                      AdPlacement.INTERSTITIAL_TRADE_SAVE,
-                      adsUserTier,
-                    );
-                  }
                   setAiImageTargetId(null);
+                  scheduleInterstitialAd(INTERSTITIAL_PLACEMENT_KEYS.TRADE_SAVE);
                 } catch (_error: unknown) {}
               }}
             />
@@ -1118,6 +1182,9 @@ const App: React.FC = () => {
                 if (result) {
                   setSettlementResult(result);
                   setTerminateTargetId(null);
+                  scheduleInterstitialAd(
+                    INTERSTITIAL_PLACEMENT_KEYS.SETTLEMENT_DETAIL,
+                  );
                 }
               } catch (_error: unknown) {}
             }}
@@ -1307,9 +1374,15 @@ const App: React.FC = () => {
 
   return (
     <TossAppProvider>
-      <TDSWrapper isInTossApp={isInTossApp}>
-        <MainContent />
-      </TDSWrapper>
+      <AdPreloadProvider
+        manager={GLOBAL_INTERSTITIAL_AD_MANAGER}
+        userTier={adsUserTier}
+      >
+        <AdPreloadBridge onShowInstantAdChange={handleShowInstantAdChange} />
+        <TDSWrapper isInTossApp={isInTossApp}>
+          <MainContent />
+        </TDSWrapper>
+      </AdPreloadProvider>
     </TossAppProvider>
   );
 };

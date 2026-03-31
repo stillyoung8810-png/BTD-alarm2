@@ -5,8 +5,9 @@ import { I18N } from '../constants';
 import { X, Camera, Upload, Clipboard, Sparkles, ChevronRight, Video } from 'lucide-react';
 import { analyzeTradeScreenshot, RecognizedTradeItem } from '../services/geminiService';
 import { ensureValidSession } from '../services/supabase';
+import { REWARD_UNLOCK_AI_AD_GROUP_ID } from '../services/ads/adPlacements';
+import { requestRewardAd } from '../services/ads/rewardAdService';
 import { incrementUsage } from '../utils/subscriptionUtils';
-import { requestRewardAd, AdPlacement } from '../services/ads/adService';
 
 interface AIImageInputModalProps {
   lang: 'ko' | 'en';
@@ -248,7 +249,7 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
   };
 
   const handleWatchAdToUnlock = async () => {
-    const isRewardEarned = await requestRewardAd(AdPlacement.REWARD_UNLOCK_AI as any);
+    const isRewardEarned = await requestRewardAd(REWARD_UNLOCK_AI_AD_GROUP_ID);
     if (isRewardEarned) {
       setRewardWatched(true);
       onStartScan(true);

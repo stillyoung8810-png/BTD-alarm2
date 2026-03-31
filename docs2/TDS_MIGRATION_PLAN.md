@@ -1395,7 +1395,7 @@ interface RefundGuideControllerProps {
 | `deletePortfolioById` 쿼리 | `.delete().eq('id', id)` 예시 | **`.eq('user_id', userIdOption).eq('id', id)`** 로 소유자 스코프 명시 |
 | `PortfolioCardActions` | 삭제 버튼만, `onDeletePortfolio(id)` | **알람 + 삭제** 묶음. **`onDeletePortfolio: () => void \| Promise<void>`** (부모가 `id` 클로저 주입). `lang`은 **`'ko' \| 'en'`** |
 | `Dashboard.tsx` | “이번 마이그레이션에서 절대 수정하지 않는 범위”에 포함 | **Phase 2에서 예외적으로 수정** — 카드 우측 상단을 `PortfolioCardActions`로 치환 |
-| `App.tsx` 포트폴리오 실패 UX | 문서에 없음(토스트만 가정) | **`portfolioMutationNotice` 상태 + `TdsAlertDialog`** (`common.acknowledge` + `actions`). `runPortfolioMutation`으로 **저장 실패와 광고(`showInterstitialOnTransition`) 실패 분리**(전략 저장은 `handleAddPortfolio` 성공 후 별도 광고) |
+| `App.tsx` 포트폴리오 실패 UX | 문서에 없음(토스트만 가정) | **`portfolioMutationNotice` 상태 + `TdsAlertDialog`** (`common.acknowledge` + `actions`). `runPortfolioMutation`으로 **저장 실패**와 **포트폴리오 비즈니스 오류**를 분리. **전면/리워드 광고**는 `GlobalAdManager`·`rewardAdService` 등 별도 경로(레거시 `showInterstitialOnTransition`·`adService` 전면 제거 후) |
 | `handleAddTradeWithAd` | 문서 미기술 | **`handleAddTrade`만 `runPortfolioMutation`**, 이후 인터스티셜(광고 실패가 포트폴리오 오류로 매핑되지 않게) |
 | `useAuth` `USER_UPDATED` | 비번 성공 `alert` → UI 이전 언급 | **`alert` 제거**, 성공 안내는 **`AuthModals`의 `TdsAlertDialog`** 경로에 위임(훅에서 중복 알림 없음) |
 | `SessionExpiredAlertGate` | 예시 prop `onDismiss` | 실제 prop은 **`onClose`** (`App` → `handleDismissSessionExpired`) |

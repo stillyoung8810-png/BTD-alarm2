@@ -2,6 +2,8 @@
 
 **제약**: 모든 변동 사항은 **토스 미니앱 환경에서만** 적용. 일반 웹 서비스에는 변경 없어야 함.
 
+**갱신 (2026-03, 코드 기준):** 레거시 `services/ads/adService.ts`는 **삭제**되었습니다. **전면**은 `GlobalAdManager` + 통합 `loadFullScreenAd` / `showFullScreenAd` 브리지(`docs2/ad-preload-architecture.md`)를 따르고, **보상형**은 `services/ads/rewardAdService.ts`에서 `GoogleAdMob.loadAppsInTossAdMob` → `showAppsInTossAdMob`(load 후 show)를 사용합니다. 아래 §1.1 등 일부 표·문단은 **과거 리뷰 시점** 서술이 남아 있을 수 있으니, 판정 재검증은 저장소를 기준으로 하시면 됩니다.
+
 ---
 
 ## 0. Cursor에게 줄 추가 지시사항 (Action Plan) — 절대 엄수
@@ -20,18 +22,18 @@
 
 ### 1.1 인앱광고 (공식 문서 기준)
 
-| 문서 항목 | 공식 요구사항 | 현재 구현 | 판정 |
+| 문서 항목 | 공식 요구사항 | 현재 구현 (2026-03 코드 기준) | 판정 |
 |-----------|----------------|-----------|------|
 | SDK | 1.0.3 이상 | @apps-in-toss/web-framework ^1.9.4 | ✅ |
-| **광고 불러오기** | `loadAppsInTossAdMob`로 **미리 로드** 필수 | **로드 단계 없음**. 곧바로 show 호출 | ❌ **스펙 위반** |
-| **광고 보여주기** | `showAppsInTossAdMob` — **load 완료 후** 호출 | load 없이 `window.TossApp.ads.showReward` / `showInterstitial` 호출 | ❌ **스펙 위반** |
-| **API 출처** | `GoogleAdMob.loadAppsInTossAdMob` / `GoogleAdMob.showAppsInTossAdMob` (옵션: `adGroupId`) | `window.TossApp.ads.showReward(placementId)` / `showInterstitial(placementId)` | ❌ **가이드라인과 상이 (hallucination 위험)** |
-| **파라미터** | `options.adGroupId` (콘솔 발급 ID). 테스트: 리워드 `ait-ad-test-rewarded-id`, 전면 `ait-ad-test-interstitial-id` | `AdPlacement` 값: `strategy_save`, `trade_save`, `alarm_save`, `settlement_detail` (우리 정의 문자열) | ❌ **adGroupId가 아님. 테스트 ID와 불일치** |
-| **순서** | load → (loaded 이벤트) → show → (다음 광고 load) | load 없이 show만 반복 | ❌ |
-| **지원 확인** | `GoogleAdMob.loadAppsInTossAdMob.isSupported()` 사용 권장 | `isTossApp()`만 사용, isSupported() 미호출 | ⚠️ |
+| **광고 불러오기** | `loadAppsInTossAdMob`로 **미리 로드** 필수 | **전면**: `GlobalAdManager` + 통합 **`loadFullScreenAd`** 프리로드 큐. **보상형**: `rewardAdService.requestRewardAd`가 `loadAppsInTossAdMob` 후 `loaded`까지 대기 | ✅ **경로별 정렬** |
+| **광고 보여주기** | `showAppsInTossAdMob` — **load 완료 후** 호출 | **전면**: 통합 **`showFullScreenAd`**(브리지, 매니저가 READY 슬롯에서 호출). **보상형**: load 완료 후 `showAppsInTossAdMob` | ✅ |
+| **API 출처** | `GoogleAdMob.*` 및 통합 전면 API | `@apps-in-toss/web-framework` — 전면은 **IntegratedAd** `loadFullScreenAd`/`showFullScreenAd`, 보상은 **GoogleAdMob** load/show | ✅ **`window.TossApp.ads` 미사용** |
+| **파라미터** | `options.adGroupId` 등 | 전면: `interstitialPlacementConfig`·`getResolvedInterstitialAdGroupId` 등. 보상: `adPlacements.ts` 등 **adGroupId 상수** | ⚠️ **콘솔 ID·테스트 ID와의 일치는 운영에서 재검증** |
+| **순서** | load → (loaded) → show | 전면: 프리로드·슬롯 상태 머신. 보상: `requestRewardAd` 내부 load → show | ✅ |
+| **지원 확인** | `isSupported()` 사용 권장 | 전면 브리지·보상 `isRewardAdSupported()` 등에서 확인 | ✅/⚠️ **지면마다 상세 점검 권장** |
 | **샌드박스** | 인앱 광고 미지원. QR로 테스트 | (동일 제약 인지 필요) | — |
 
-**요약**: 공식 문서에는 **TOSS_CLIENT_ID 같은 문서에 없는 필드는 없음**. 다만 현재 광고 코드는 **공식 API(GoogleAdMob + adGroupId + load → show)** 가 아닌 **다른 API(Window.TossApp.ads + placementId, show만)** 를 사용하고 있어, 가이드라인과 불일치하며 **문서에 없는 API를 사용한 hallucination 가능성**이 있음. 반드시 `@apps-in-toss/web-framework`(또는 공식 문서)에서 **GoogleAdMob.loadAppsInTossAdMob / showAppsInTossAdMob** 시그니처를 확인하고, **load → show** 순서 및 **adGroupId**(또는 테스트 ID) 기준으로 재연동할 것.
+**요약 (갱신)**: 과거 리뷰 시점의 **`window.TossApp.ads` + show만** 패턴은 **제거**되었다. **전면**은 통합 전면 API + `GlobalAdManager`(`docs2/ad-preload-architecture.md`), **보상형**은 `GoogleAdMob` **load → show** 를 `rewardAdService.ts`에서 수행한다. **남은 과제**는 `shouldShowAds` 연동·텔레메트리·NO_FILL UX 등 본문 P1/P2 항목과 동일하다.
 
 #### 1.1.1 "로딩 없는 광고"가 치명적인 이유 (엔지니어링 관점)
 
@@ -96,14 +98,11 @@ IDLE → LOADING → READY → SHOWING → COMPLETED / ERROR
 
 ## 2. 현재 광고가 어디에·어떻게 뜨는지 요약
 
-- **토스 미니앱 내부에서만** 동작 (`isTossApp()` 일 때만 광고 호출).
-- **리워드 광고** (저장 직전 1회):
-  - **전략 저장**: 전략 생성기(StrategyCreator)에서 저장 버튼 클릭 시 → `showRewardBeforeAction(REWARD_STRATEGY_SAVE)` 후 저장.
-  - **매매 저장**: (1) 퀵입력 모달 저장, (2) 실행 모달 저장, (3) AI 이미지로 추가한 매매 저장 시 → `showRewardBeforeAction(REWARD_TRADE_SAVE)` 후 저장.
-  - **알람 저장**: 알람 모달에서 저장 시 → `showRewardBeforeAction(REWARD_ALARM_SAVE)` 후 저장.
-- **전면 광고**: 히스토리 탭에서 **정산 상세보기** 진입 시 → `showInterstitialBeforeAction(INTERSTITIAL_SETTLEMENT_DETAIL)` 후 상세 오픈.
-- **광고 실패 정책**: `AD_FAILURE_POLICY === 'proceed'` 로, 실패해도 저장/진입은 진행(콘솔 경고만).
-- **유료 사용자**: `shouldShowAds(profile)` 로 “광고 제거” 조건이 정의되어 있으나, **App.tsx 등 호출부에서 사용하지 않음** → 토스 앱 내에서도 유료 사용자에게 광고가 노출될 수 있음.
+- **토스 미니앱 내부에서만** 동작 (`isTossApp()` 등 분기).
+- **전면 광고**: `App.tsx`가 `GlobalAdManager` + `AdPreloadProvider`로 감싼 뒤, 지면 트리거에서 **`useAdPreload().showInstantAd(placementKey)`** 또는 매니저 `showInstant`를 호출하는 구조(`interstitialPlacementConfig`의 logical key). 레거시 **저장 직후 `adService` 전면**·**정산 진입 직전 전면** 호출은 **제거됨** — 트리거는 제품·`docs2/ad-preload-architecture.md` 기준으로 유지보수.
+- **리워드 광고**: `services/ads/rewardAdService.ts`의 **`requestRewardAd(adGroupId)`** — `GoogleAdMob` **load → loaded → show**. 예: `AIImageInputModal`에서 AI 해제용 `REWARD_UNLOCK_AI_AD_GROUP_ID` (`adPlacements.ts`). (과거 문서의 “모든 저장 직전 리워드” 패턴은 **현재 코드에 없을 수 있음** — 호출부는 저장소 검색으로 확인.)
+- **광고 실패 정책**: 지면별로 상이; 보상·전면 각 모듈에서 진행/스킵 처리.
+- **유료 사용자**: `shouldShowAds(profile)` 가 정의되어 있어도 **전면 매니저 티어 동기화·호출부 가드**가 완전히 맞물렸는지는 **재점검 권장**(본문 P1 항목 5).
 
 ---
 
@@ -123,25 +122,25 @@ IDLE → LOADING → READY → SHOWING → COMPLETED / ERROR
 
 ### P0 (스펙/가이드라인 위반)
 
-1. **광고 API 스펙 위반**  
-   공식: `loadAppsInTossAdMob` → (loaded) → `showAppsInTossAdMob`, 파라미터 `adGroupId`.  
-   현재: load 없이 `window.TossApp.ads.showReward(placementId)` / `showInterstitial(placementId)` 만 사용.  
-   → **토스 미니앱 전용**으로 `GoogleAdMob` 공식 API + load → show + adGroupId(또는 테스트 ID) 기준 재연동 필요.
+1. **광고 API 스펙 위반 (과거 과제 → 대부분 해소)**  
+   공식: load → (loaded) → show, `adGroupId` / 통합 전면 API.  
+   **현재**: 전면은 **`loadFullScreenAd` / `showFullScreenAd`** 브리지, 보상은 **`GoogleAdMob` load/show** (`rewardAdService.ts`).  
+   → **잔여**: 통합 전면·슬롯별 fill/에러 코드가 가이드와 1:1인지, 실기기에서 **회귀 검증**.
 
-2. **placementId vs adGroupId**  
-   가이드라인은 콘솔 발급 **adGroupId** 및 테스트 ID(리워드/전면)만 명시.  
-   현재 `AdPlacement` 값(`strategy_save` 등)은 우리가 정의한 문자열로, **공식 adGroupId와 일치 여부 불명**.  
-   → 플레이스먼트별 **adGroupId 매핑**을 단일 소스로 두고, 토스 환경에서만 해당 ID로 load/show 호출.
+2. **logical key vs adGroupId**  
+   가이드라인은 콘솔 **adGroupId** 기준.  
+   **현재**: 전면은 **`interstitialPlacementConfig` + `getResolvedInterstitialAdGroupId`**, 보상은 **`adPlacements` 상수**.  
+   → **운영 ID·테스트 ID**가 콘솔·문서와 일치하는지 주기적 확인.
 
 ### P1 (유지보수성·클린코드)
 
-3. **DRY 위반 — showRewardAd / showInterstitialAd**  
-   `adService.ts` 에서 두 함수가 거의 동일: `loadWebFramework()` → bridge/mod → show 함수 추출 → `withTimeout` → catch에서 `{ shown: false, error }` 반환.  
-   → 하나의 `showAdByType(placementId, 'reward' | 'interstitial')` (또는 공식 API 전환 시 load+show 래퍼)로 통합.
+3. **DRY — 보상 vs 전면 분리 유지**  
+   과거 `adService.ts`의 이중 래퍼는 **삭제**됨. **보상**은 `rewardAdService.ts`, **전면**은 `globalAdManager.ts` + 브릿지.  
+   → **잔여**: 공통 타임아웃·로깅이 필요하면 **얇은 공유 유틸**만 두고, 파일 책임은 분리 유지.
 
-4. **SRP 위반 — adService 한 파일이 “정책 + 브릿지 추출 + 타임아웃 + 실행” 모두 담당**  
-   브릿지/모듈에서 show 함수만 꺼내는 부분, 타임아웃 래핑, 실패 정책(proceed/block)이 한 파일에 혼재.  
-   → (1) 토스 광고 **브릿지 추출** (공식 API면 load/show 옵션 반환), (2) **실행 + 타임아웃** (단일 함수), (3) **정책** (실패 시 proceed/block)으로 역할 분리.
+4. **SRP — 모듈 경계**  
+   전면 프리로드·슬롯 상태는 **`GlobalAdManager`**, 보상 1회성 플로우는 **`rewardAdService`**.  
+   → 정책(proceed/block)·`shouldShowAds`는 **호출부 또는 매니저 옵션**에 명시적으로 모으기.
 
 5. **Dead Code — shouldShowAds 미사용**  
    `subscriptionUtils.shouldShowAds` 는 정의·문서화만 되어 있고, App.tsx 등에서 **호출되지 않음**.  
@@ -158,17 +157,17 @@ IDLE → LOADING → READY → SHOWING → COMPLETED / ERROR
 
 ### P2 (가독성·일관성)
 
-8. **Cognitive Complexity — App.tsx 내 광고 호출 반복**  
-   `showRewardBeforeAction(AdPlacement.XXX)` 후 비즈니스 로직 실행 패턴이 여러 곳에 동일하게 반복.  
-   → `runWithOptionalReward(placementId, async () => { ... })` 같은 **한 번만 쓰는 래퍼**를 두어, 토스 여부·실패 정책을 한 곳에서 처리.
+8. **Cognitive Complexity — 호출부 산재**  
+   리워드·전면 트리거가 여러 컴포넌트에 생기면 동일 패턴이 반복된다.  
+   → `runWithOptionalReward` / `showInstantAd` 래핑 등 **한 레이어**에서 토스 여부·실패 정책을 모을지 팀 규칙으로 정한다.
 
 9. **광고 ID 상수 이원화**  
    테스트용 ID(리워드/전면)는 가이드라인에만 있고 코드에는 없음.  
    → `adPlacements.ts`(또는 토스 전용 설정)에 **플레이스먼트 → adGroupId 매핑** 및 **개발용 테스트 ID**를 명시해, 토스 환경에서만 참조.
 
 10. **일반 웹과의 경계**  
-    “토스 미니앱에서만 적용”을 위해 모든 광고 관련 분기는 `isTossApp()` 내부로 한정되어 있는지 확인 필요.  
-    → `showRewardBeforeAction` / `showInterstitialBeforeAction` 내부에서 이미 `if (!isTossApp()) return { shown: false }` 하고 있으므로, **신규 로직(load, adGroupId, shouldShowAds 체크)도 이 함수들 안쪽 또는 토스 전용 모듈에만 두면** 일반 웹에는 변동 없음.
+    “토스 미니앱에서만 적용”을 위해 광고 분기는 **`isTossApp()` / 브리지 `isSupported()`** 안쪽에 한정되는지 확인.  
+    → **신규** 트리거도 `rewardAdService`·`GlobalAdManager`·Provider 경로에만 두면 일반 웹 동작은 불변에 가깝다.
 
 ---
 
@@ -207,7 +206,7 @@ export const TOSS_AD_GROUP_IDS = {
 //   LOADING이 해당 시간 초과 시 ERROR(또는 타임아웃) 전이, "광고를 불러오지 못했습니다" 등 방어적 UX
 ```
 
-`adService.ts`(또는 비즈니스가 사용하는 진입점)는 **AdProvider** 인터페이스만 호출하고, 내부에서 주입된 Adapter가 TossAdAdapter이면 위 로직이 실행되며, WebAdAdapter이면 no-op이다.
+비즈니스 레이어는 **`requestRewardAd` / `useAdPreload().showInstantAd` / DI된 `GlobalAdManager`** 같은 **명시적 진입점**만 호출하고, Web/no-op은 각 구현 내부에서 처리하는 패턴을 유지한다(또는 향후 `AdProvider` 도입 시 동일 경계).
 
 #### Logger 통합 (광고·결제 상태 변화)
 
@@ -235,7 +234,7 @@ export const TOSS_AD_GROUP_IDS = {
 ### 4.3 (P1) DRY — show 한 곳으로 모으기
 
 ```ts
-// adService.ts (현재 showRewardAd / showInterstitialAd 통합)
+// 예시: 보상 전용 래퍼 (실제는 rewardAdService.requestRewardAd 사용)
 type AdType = 'reward' | 'interstitial';
 
 async function showAd(placementId: string, type: AdType): Promise<AdResult> {
@@ -262,7 +261,7 @@ async function showAd(placementId: string, type: AdType): Promise<AdResult> {
 ### 4.4 (P1) shouldShowAds 사용 (토스 내부에서만)
 
 ```ts
-// adService.ts — showRewardBeforeAction (토스 전용 분기 내부에서만 사용)
+// 예시: 저장 전 리워드 (과거 패턴) — 현재는 지면별로 rewardAdService 등 호출부에서 처리
 export async function showRewardBeforeAction(
   placementId: AdPlacementId,
   options?: { userProfile?: UserProfile | SimpleUserProfile | null }
@@ -279,7 +278,7 @@ App.tsx 등에서는 `showRewardBeforeAction(AdPlacement.XXX, { userProfile })` 
 ### 4.5 (P2) runWithOptionalReward 래퍼 (반복 제거)
 
 ```ts
-// adService.ts 또는 App 전용 훅/유틸
+// App 전용 훅/유틸 또는 rewardAdService 래퍼
 export async function runWithOptionalReward<T>(
   placementId: AdPlacementId,
   action: () => Promise<T>,
@@ -304,18 +303,11 @@ onSave={async (newP) => {
 
 ```ts
 // adPlacements.ts (토스 전용 참고용 — 실제 ID는 콘솔/테스트 값으로 교체)
-export const AdPlacement = { ... } as const;
-
-/** 토스 미니앱 전용: 플레이스먼트 → adGroupId (공식 load/show API용). 일반 웹에서는 미사용 */
-export const TOSS_AD_GROUP_IDS: Partial<Record<AdPlacementId, string>> = {
-  [AdPlacement.REWARD_STRATEGY_SAVE]: 'ait-ad-test-rewarded-id',   // 개발 시 테스트 ID
-  [AdPlacement.REWARD_TRADE_SAVE]: 'ait-ad-test-rewarded-id',
-  [AdPlacement.REWARD_ALARM_SAVE]: 'ait-ad-test-rewarded-id',
-  [AdPlacement.INTERSTITIAL_SETTLEMENT_DETAIL]: 'ait-ad-test-interstitial-id',
-};
+// 전면: interstitialPlacementConfig + getResolvedInterstitialAdGroupId
+// 보상: adPlacements.ts 등 adGroupId 상수 + rewardAdService.requestRewardAd
 ```
 
-실서비스에서는 콘솔에서 발급한 adGroupId로 교체하고, **이 객체는 토스 광고 로더에서만 참조**하도록 하면 일반 웹에는 영향 없음.
+실서비스에서는 콘솔에서 발급한 adGroupId로 교체하고, **이 상수들은 토스 광고 모듈에서만 참조**하도록 하면 일반 웹에는 영향 없음.
 
 ---
 
@@ -364,6 +356,6 @@ export const TOSS_AD_GROUP_IDS: Partial<Record<AdPlacementId, string>> = {
 | Verify API 보안 | 결제 검증 시 mTLS 또는 Secret Header 필요 여부 확인, TossIAPManager에 반영. |
 | Strict Validation | 토스 amount ≠ DB price 시 **'Abnormal Transaction'** 로그 후 지급 차단. |
 | Logger 통합 | **모든 광고/결제 상태 변화**를 **request.log (Correlation ID 포함)** 에 기록. BFF 결제 검증·검증 결과·광고 노출 이벤트 등 구조화 로그. |
-| DRY/SRP | showRewardAd/showInterstitialAd 통합, 브릿지/실행/정책 분리. |
+| DRY/SRP | 보상(`rewardAdService`)·전면(`GlobalAdManager`/브리지) 분리 유지, 공통 타임아웃·로깅만 얇게 공유. |
 | Dead Code | shouldShowAds를 토스 광고 호출 직전에만 사용 (선택). |
 | 일반 웹 무변경 | Adapter 주입으로 웹은 WebAdAdapter(no-op). 모든 토스 전용 로직은 Adapter·토스 전용 파일 안에만 두기. |

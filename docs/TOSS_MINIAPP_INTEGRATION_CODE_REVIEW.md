@@ -2,6 +2,8 @@
 
 > 목표: 유지보수성, 클린 코드, 효율성 관점에서 계획 및 구현 전략을 검토하고 개선점을 제안한다.
 
+**갱신 (2026-03):** 광고 레이어는 **`services/ads/rewardAdService.ts`(보상형)**, **`globalAdManager.ts` + `AdPreloadProvider` + `interstitialPlacementConfig.ts`(전면·프리로드)**, **`adPlacements.ts`(ID 상수)** 로 정리되었습니다. 과거 계획의 단일 **`adService.ts`** 는 **삭제**되었으므로, 본문의 `adService` 언급은 **동일 책임을 가진 현재 모듈**로 읽어 주시면 됩니다.
+
 ---
 
 ## 1. 발견된 문제점 리스트 (중요도 순)
@@ -50,7 +52,7 @@
 **권장**  
 - `tossAuth.ts` — 토스 로그인(브릿지 호출 + code 전달)  
 - `tossPayment.ts` 또는 payment 서비스 내 토스 전용 함수 — 결제 요청  
-- `adService.ts` — 광고만 (이미 계획에 있음)  
+- `services/ads/rewardAdService.ts` / `globalAdManager.ts` / `AdPreloadProvider.tsx` — 광고(보상·전면 분리)  
 브릿지가 필요한 부분만 각 모듈에서 `loadWebFramework()` 또는 공용 브릿지 래퍼를 호출하도록 분리.
 
 #### 2.2 AuthModals에 토스 분기 직접 삽입 시 컴포넌트 비대화
@@ -73,19 +75,19 @@ StrategyCreator / TradeExecutionModal / AlarmModal 각각에 “Reward Ad 표시
 
 **권장**  
 “저장 직전 리워드 광고”를 **한 레이어**에서 처리한다.  
-- **옵션 A**: `adService.showRewardBeforeSave(placement).then(() => proceedSave())` 같은 공용 함수를 두고, 각 모달은 “저장할 데이터”만 넘기고 실제 저장은 부모(App)의 하나의 핸들러에서 수행.  
-- **옵션 B**: 부모에서 “저장 요청”을 받을 때마다 `adService.showReward(placement)`를 먼저 호출하고, 완료 후 기존 `handleAddPortfolio` / `handleAddTrade` 등 호출.  
+- **옵션 A**: `requestRewardAd(adGroupId)`(또는 공용 래퍼) 후 `proceedSave()` 같은 패턴을 한곳에 두고, 각 모달은 “저장할 데이터”만 넘기고 실제 저장은 부모(App)의 하나의 핸들러에서 수행.  
+- **옵션 B**: 부모에서 “저장 요청”을 받을 때마다 보상 API를 먼저 호출하고, 완료 후 기존 `handleAddPortfolio` / `handleAddTrade` 등 호출.  
 그러면 “광고 표시 + 완료 후 다음 단계” 규칙이 한 곳에만 있어 유지보수가 쉬워진다.
 
 #### 2.4 정산 상세보기(History) 인터스티셜 트리거 위치
 
 **문제**  
-“정산 상세보기 클릭 시 Interstitial 표시”를 **History.tsx** 안에서 처리하면, History가 `adService`에 직접 의존하고, “상세 열기”가 `onOpenDetails(id)` 한 번의 콜백으로만 부모에 알려지는 현재 구조와 맞지 않을 수 있다.  
+“정산 상세보기 클릭 시 Interstitial 표시”를 **History.tsx** 안에서 처리하면, History가 광고 모듈에 직접 의존하고, “상세 열기”가 `onOpenDetails(id)` 한 번의 콜백으로만 부모에 알려지는 현재 구조와 맞지 않을 수 있다.  
 인터스티셜은 “보기 완료/닫힘” 시점에 콜백이 오므로, **클릭 → 광고 표시 → (닫힘) → onOpenDetails(id)** 순서를 어디서 보장할지가 명확해야 한다.
 
 **권장**  
-- **방안 1**: History는 “상세보기 클릭” 시 `onRequestDetails(id)` 같은 새 콜백을 호출. App에서 `onRequestDetails`가 호출되면 `adService.showInterstitial(Placement.SETTLEMENT_DETAIL).then(() => setDetailsTargetId(id))`로 처리. 그러면 광고 로직은 App(또는 전용 훅)에만 있고, History는 “요청”만 한다.  
-- **방안 2**: History에 `adService`를 주입하고, History 내부에서 “클릭 → showInterstitial → 완료 시 onOpenDetails(id)”로 처리. 이 경우 History가 광고에 의존하는 대신, 상세 열기/광고 순서가 한 컴포넌트에 모인다.  
+- **방안 1**: History는 “상세보기 클릭” 시 `onRequestDetails(id)` 같은 새 콜백을 호출. App에서 `useAdPreload().showInstantAd(INTERSTITIAL_PLACEMENT_KEYS.SETTLEMENT_DETAIL)` 등 **전면 트리거**(또는 “닫힘 이후” 정책이면 닫기 핸들러) 후 `setDetailsTargetId(id)` — 광고 로직은 App/훅에만 두고 History는 “요청”만 한다.  
+- **방안 2**: History에 광고 훅/매니저를 주입하고, History 내부에서 “클릭 → 전면 → 완료 시 onOpenDetails(id)”로 처리. 이 경우 History가 광고에 의존하는 대신, 상세 열기/광고 순서가 한 컴포넌트에 모인다.  
 일관성을 위해 “광고 트리거는 App/훅에서만” 또는 “트리거는 해당 화면 컴포넌트에서만” 중 하나로 팀 규칙을 정하는 것이 좋다.
 
 #### 2.5 푸시: 토스 미니앱 내 채널 분기 부재
@@ -125,7 +127,7 @@ StrategyCreator / TradeExecutionModal / AlarmModal 각각에 “Reward Ad 표시
 **권장**  
 - Auth: 토스 로그인 실패 시 “다시 시도” 버튼과 명확한 에러 메시지, 필요 시 Sentry 등으로 로그 전송.  
 - Payment: 토스 결제 실패/취소 시 `PaymentResult`에 `success: false`와 구체적인 `code`/`message`를 넣고, UI에서 “결제가 취소되었습니다” 등으로 표시.  
-- Ads: “실패 시 저장 허용 여부”, “타임아웃(예: 5초) 후 진행 여부”를 product 정책으로 정한 뒤 `adService`와 호출부에 일관되게 반영한다.
+- Ads: “실패 시 저장 허용 여부”, “타임아웃(예: 5초) 후 진행 여부”를 product 정책으로 정한 뒤 `rewardAdService` / `GlobalAdManager` 경로와 호출부에 일관되게 반영한다.
 
 #### 3.3 타입 안전성
 
@@ -157,7 +159,7 @@ StrategyCreator / TradeExecutionModal / AlarmModal 각각에 “Reward Ad 표시
 Placement ID를 “Strategies, Trade Logs, Alarms, History”로만 두고 각 트리거 지점에 문자열을 하드코딩하면, 나중에 플레이스먼트 추가/이름 변경 시 여러 파일을 찾아 수정해야 한다.
 
 **권장**  
-`adService.ts` 또는 `constants/ads.ts`에  
+`adPlacements.ts` / `interstitialPlacementConfig.ts` 등에  
 `export const AdPlacement = { REWARD_STRATEGY_SAVE: '...', REWARD_TRADE_SAVE: '...', REWARD_ALARM_SAVE: '...', INTERSTITIAL_SETTLEMENT_DETAIL: '...' } as const;`  
 같이 상수로 두고, 호출부는 `AdPlacement.REWARD_STRATEGY_SAVE`만 참조하도록 한다.
 
@@ -182,8 +184,11 @@ services/
     tossAuth.ts        # requestTossAuth() → code 반환
     tossPayment.ts     # requestTossPayment(params) → PaymentResult 형태
   ads/
-    adService.ts       # showReward(placement), showInterstitial(placement), 실패 정책
-    adPlacements.ts    # AdPlacement 상수
+    rewardAdService.ts # 보상: requestRewardAd(adGroupId), load→show
+    globalAdManager.ts # 전면: 프리로드, showInstant
+    AdPreloadProvider.tsx
+    interstitialPlacementConfig.ts
+    adPlacements.ts    # adGroupId 등 상수
   payment/
     paymentService.ts # isTossApp() ? tossPayment.request() : PortOne
 ```
@@ -250,44 +255,22 @@ if (type === 'login' || type === 'signup') {
 StrategyCreator는 “저장할 데이터”만 부모에게 넘기고, “광고 표시 후 저장”은 App에서 처리한다.
 
 ```ts
-// adService.ts
-export type AdPlacement = typeof AdPlacement[keyof typeof AdPlacement];
-export const AdPlacement = {
-  REWARD_STRATEGY_SAVE: 'strategy_save',
-  REWARD_TRADE_SAVE: 'trade_save',
-  REWARD_ALARM_SAVE: 'alarm_save',
-  INTERSTITIAL_SETTLEMENT_DETAIL: 'settlement_detail',
-} as const;
-
-export type AdResult = { shown: boolean; error?: string };
-
-export async function showRewardBeforeAction(placement: AdPlacement): Promise<AdResult> {
-  if (!isTossApp()) return { shown: false };
-  try {
-    await showRewardAd(placement); // 내부에서 toss.ads.show 등 호출
-    return { shown: true };
-  } catch (e) {
-    // 정책: 타임아웃/실패 시에도 진행할지 여부는 여기서 결정
-    const policy = getAdFailurePolicy(); // e.g. { onFailure: 'proceed' }
-    if (policy.onFailure === 'proceed') return { shown: false, error: (e as Error).message };
-    throw e;
-  }
-}
+// 보상 예시: rewardAdService.requestRewardAd(REWARD_*_AD_GROUP_ID) — GoogleAdMob load→show
+// 전면 예시: useAdPreload().showInstantAd(INTERSTITIAL_PLACEMENT_KEYS.SETTLEMENT_DETAIL)
 ```
 
 App.tsx에서:
 
 ```ts
 const handleAddPortfolio = async (newP: Omit<Portfolio, 'id'>) => {
-  const adResult = await showRewardBeforeAction(AdPlacement.REWARD_STRATEGY_SAVE);
-  if (adResult.error) console.warn('[Ad] Reward skipped:', adResult.error);
+  // 필요 시: await requestRewardAd(REWARD_*_AD_GROUP_ID);
   // 기존 handleAddPortfolio 로직 (Supabase insert 등)
   ...
 };
 ```
 
 - Trade 실행/알람 저장도 동일하게 `handleAddTrade`, 알람 onSave 쪽에서 `showRewardBeforeAction(AdPlacement.REWARD_TRADE_SAVE)` 등으로 한 번만 호출한다.  
-- StrategyCreator / TradeExecutionModal / AlarmModal은 **광고를 모르고** “저장 요청”만 하도록 두면, 광고 정책 변경 시 App과 adService만 수정하면 된다.
+- StrategyCreator / TradeExecutionModal / AlarmModal은 **광고를 모르고** “저장 요청”만 하도록 두면, 광고 정책 변경 시 App과 `rewardAdService`/`AdPreloadProvider` 경로만 수정하면 된다.
 
 ### 2.4 정산 상세보기 — 인터스티셜은 App에서
 
@@ -296,10 +279,8 @@ History는 “상세보기 요청”만 하고, “광고 표시 후 열기”�
 ```tsx
 // App.tsx
 const handleRequestSettlementDetail = async (id: string) => {
-  if (isTossApp()) {
-    const result = await showInterstitial(AdPlacement.INTERSTITIAL_SETTLEMENT_DETAIL);
-    if (result.error) console.warn('[Ad] Interstitial skipped:', result.error);
-  }
+  // 정책이 “진입 전 전면”일 때만: showInstantAd(INTERSTITIAL_PLACEMENT_KEYS.SETTLEMENT_DETAIL) 등
+  // “닫힘 후 전면”이면 모달 onClose 쪽에서 호출 (docs/ad_placement_refactoring_plan.md·ad-preload-architecture.md 참고)
   setDetailsTargetId(id);
 };
 
@@ -358,7 +339,7 @@ App.tsx의 `saveFCMToken`에서는 `getPushIdentifierForSave()`를 쓰고, 저�
 |------|-----------|--------------|
 | 토스 로그인 | 클라이언트 + Edge Function code 교환 | mTLS 백엔드 필요; Edge Function만으로 불가할 수 있음. 토스 전용 로그인 UI는 별도 컴포넌트로 분리 |
 | 토스페이 | 브릿지 requestPayment만 | 서버 검증(verifyTossPaymentOnServer) 필수; paymentService에서 토스 분기 시 검증까지 호출 |
-| 광고 | 3개 모달 + History에 각각 트리거 | adService + Placement 상수로 일원화; “광고 후 저장”은 App 또는 한 레이어에서만 수행. 실패 정책 명시 |
+| 광고 | 3개 모달 + History에 각각 트리거 | `rewardAdService`·`GlobalAdManager`/Provider + placement 상수로 일원화; “광고 후 저장”은 App 또는 한 레이어에서만 수행. 실패 정책 명시 |
 | 푸시 | requestPermission 호환 여부만 | 토스 미니앱 시 토스 푸시 경로 분기; 푸시 식별자 저장 채널 구분 |
 | 테스트 | isTossApp mock | 브릿지 전체 stub 가능하도록 인터페이스 추상화 |
 | 에러/재시도 | 미정의 | Auth/Payment/Ad별 실패 메시지·재시도·정책 정리 |

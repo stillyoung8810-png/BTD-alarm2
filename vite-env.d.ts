@@ -19,6 +19,11 @@ interface ImportMetaEnv {
   readonly VITE_FIREBASE_VAPID_KEY?: string
   /** Railway BFF base URL (토스 mTLS·인증·결제 검증용). 예: https://your-app.railway.app */
   readonly VITE_RAILWAY_BFF_URL?: string
+  /**
+   * `true`/`1`이면 전면 프리로드 config가 운영 ID 대신 토스 테스트 전면 ID를 씁니다.
+   * @see services/ads/interstitialPlacementConfig.ts
+   */
+  readonly VITE_TOSS_INTERSTITIAL_USE_TEST?: string
 }
 
 interface ImportMeta {

@@ -10,6 +10,7 @@ const SHOW_TIMEOUT_MS = 10_000;
 const BASE_RETRY_DELAY_MS = 3_000;
 const MAX_BACKOFF_EXPONENT = 4;
 const POST_DISMISS_COOLDOWN_MS = 1_000;
+const DEFAULT_INTERSTITIAL_GLOBAL_COOLDOWN_MS = 60_000;
 
 export type { UserTier };
 
@@ -32,6 +33,7 @@ export type AdResultCode =
   | 'skipped_not_ready'
   | 'skipped_first_action_exemption'
   | 'skipped_show_in_progress'
+  | 'skipped_global_cooldown'
   | 'load_timeout'
   | 'load_error'
   | 'show_timeout'
@@ -117,6 +119,11 @@ export interface GlobalAdManagerOptions {
   readonly deferFirstInterstitialAttemptOncePerSession?: boolean;
   readonly onDrainError?: (error: unknown) => void;
   readonly initialTier: UserTier;
+  /**
+   * 전역 전면 광고 성공 노출 직후 쿨타임(ms). A/B·Remote Config 주입용.
+   * 미주입 시 `DEFAULT_INTERSTITIAL_GLOBAL_COOLDOWN_MS`. 음수는 생성자에서 0으로 클램프.
+   */
+  readonly globalCooldownMs?: number;
 }
 
 interface SlotRuntime {
@@ -398,6 +405,8 @@ export class GlobalAdManager {
   private cachedSnapshotsReadonly: ReadonlyArray<AdSlotSnapshot> | null = null;
   private currentTier: UserTier;
   private hasConsumedDeferredFirstInterstitialAttempt = false;
+  private lastInterstitialShowCompletedAtMs: number | null = null;
+  private readonly globalCooldownMs: number;
 
   public constructor(
     private readonly bridge: FullScreenAdBridge,
@@ -417,6 +426,10 @@ export class GlobalAdManager {
           error,
         );
       });
+    this.globalCooldownMs = Math.max(
+      0,
+      options.globalCooldownMs ?? DEFAULT_INTERSTITIAL_GLOBAL_COOLDOWN_MS,
+    );
 
     definitions.forEach((definition) => {
       this.definitions.set(definition.key, definition);
@@ -428,6 +441,26 @@ export class GlobalAdManager {
         cooldownTimerId: null,
       });
     });
+  }
+
+  /**
+   * Task-sized grace window: 연속 저장/설정 중에는 전면이 끼어들지 않도록 전역 노출 간격을 둡니다.
+   * 시스템 시계가 역전되어도 남은 쿨타임이 비정상적으로 늘어나지 않게 경과 시간을 0 이상으로 고정합니다.
+   */
+  private getRemainingInterstitialCooldownMs(nowMs: number): number {
+    if (this.lastInterstitialShowCompletedAtMs == null) {
+      return 0;
+    }
+
+    const elapsedMs = Math.max(
+      0,
+      nowMs - this.lastInterstitialShowCompletedAtMs,
+    );
+    if (elapsedMs >= this.globalCooldownMs) {
+      return 0;
+    }
+
+    return this.globalCooldownMs - elapsedMs;
   }
 
   public setCurrentTier(tier: UserTier): void {
@@ -567,9 +600,11 @@ export class GlobalAdManager {
         return { shown: false, code: 'show_error' };
       }
 
+      const completedAtMs = this.nowFn();
+      this.lastInterstitialShowCompletedAtMs = completedAtMs;
       this.updateSnapshot(key, {
         phase: 'cooldown',
-        lastShowCompletedAtMs: this.nowFn(),
+        lastShowCompletedAtMs: completedAtMs,
         lastResultCode: 'shown',
         lastErrorMessage: null,
       });
@@ -628,6 +663,11 @@ export class GlobalAdManager {
       }
     }
 
+    const nowMs = this.nowFn();
+    if (this.getRemainingInterstitialCooldownMs(nowMs) > 0) {
+      return { ok: false, code: 'skipped_global_cooldown' };
+    }
+
     if (slot.isShowLocked) {
       return { ok: false, code: 'skipped_show_in_progress' };
     }
@@ -663,6 +703,14 @@ export class GlobalAdManager {
       return;
     }
 
+    if (code === 'skipped_global_cooldown') {
+      this.updateSnapshot(key, {
+        lastResultCode: 'skipped_global_cooldown',
+        lastErrorMessage: null,
+      });
+      return;
+    }
+
     if (code === 'skipped_show_in_progress') {
       this.updateSnapshot(key, {
         lastResultCode: 'skipped_show_in_progress',
@@ -694,6 +742,7 @@ export class GlobalAdManager {
     this.listeners.clear();
     this.loadQueue.length = 0;
     this.hasConsumedDeferredFirstInterstitialAttempt = false;
+    this.lastInterstitialShowCompletedAtMs = null;
 
     for (const slot of this.slots.values()) {
       this.clearRetryTimer(slot);

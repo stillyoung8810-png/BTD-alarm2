@@ -96,7 +96,6 @@ export interface ProfileViewProps {
   setShowDeleteConfirm: (b: boolean) => void;
   deleteConfirmText: string;
   setDeleteConfirmText: (s: string) => void;
-  cancelSubscription: () => Promise<{ success: boolean; message?: string; error?: string }>;
   /** 텔레그램 연결 요청 — 성공 시 링크 토큰 반환 */
   onConnectTelegram: () => Promise<string>;
   /** 회원 탈퇴 실행 (세션 기반, 내부에서 getSession 등 호출) */

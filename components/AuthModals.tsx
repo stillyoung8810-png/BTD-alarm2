@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { I18N } from '../constants';
 import { X, UserCheck, ShieldCheck } from 'lucide-react';
 import { supabase } from '../services/supabase';
-import { cancelSubscription } from '../services/payment/paymentService';
 import { buildRedirectUrl } from '../utils/authHelpers';
 import { TDSButton, TDSModal, TDSModalHeader } from './tds';
 import { useTossApp } from '../contexts/TossAppContext';
@@ -684,7 +683,6 @@ const AuthModals: React.FC<AuthModalsProps> = ({
                   setShowDeleteConfirm,
                   deleteConfirmText,
                   setDeleteConfirmText,
-                  cancelSubscription,
                   onConnectTelegram,
                   onDeleteAccount,
                 };

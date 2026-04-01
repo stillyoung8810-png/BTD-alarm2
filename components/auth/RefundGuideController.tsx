@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import type { AppLang } from '../../types';
 import { TDSButton } from '../tds';
 import { TdsConfirmDialog } from '../tds-adapter/TdsConfirmDialog';
@@ -8,62 +8,27 @@ import { showErrorToast } from '../tds-adapter/showErrorToast';
 
 interface RefundGuideControllerProps {
   lang: AppLang;
-  isInTossApp: boolean;
   isDisabled: boolean;
-  onProcessWebRefund: () => Promise<void> | void;
 }
 
 const RefundGuideController: React.FC<RefundGuideControllerProps> = ({
   lang,
-  isInTossApp,
   isDisabled,
-  onProcessWebRefund,
 }) => {
   const refundDialog = useAsyncTdsConfirm(lang);
   const [isRefundPanelOpen, setIsRefundPanelOpen] = useState(false);
-  const [isWebLoading, setIsWebLoading] = useState(false);
-  const isWebProcessingRef = useRef(false);
-
   const messages = TDS_DIALOG_MESSAGES[lang];
   const labels = messages?.actions;
   const refundMessages = messages?.refund;
-  
+
   const showRefundErrorToast = () => {
-    const currentErrorMessage =
-      TDS_DIALOG_MESSAGES[lang]?.common?.refundActionFailed;
+    const currentErrorMessage = TDS_DIALOG_MESSAGES[lang]?.common?.refundActionFailed;
     if (currentErrorMessage != null && currentErrorMessage !== '') {
       showErrorToast(currentErrorMessage);
     }
   };
 
-  const handleCloseRefundPanel = useCallback(() => {
-    if (isWebLoading) {
-      return;
-    }
-    setIsRefundPanelOpen(false);
-  }, [isWebLoading]);
-
-  const handleConfirmRefund = useCallback(async () => {
-    if (!isInTossApp) {
-      if (isWebProcessingRef.current) {
-        return;
-      }
-
-      isWebProcessingRef.current = true;
-      setIsWebLoading(true);
-
-      try {
-        await Promise.resolve(onProcessWebRefund());
-        setIsRefundPanelOpen(false);
-      } catch (_error: unknown) {
-        showRefundErrorToast();
-      } finally {
-        isWebProcessingRef.current = false;
-        setIsWebLoading(false);
-      }
-      return;
-    }
-
+  const handleConfirmRefund = useCallback(() => {
     const currentLabels = TDS_DIALOG_MESSAGES[lang]?.actions;
     const currentRefundMessages = TDS_DIALOG_MESSAGES[lang]?.refund;
     const currentAcknowledge = TDS_DIALOG_MESSAGES[lang]?.common?.acknowledge;
@@ -86,45 +51,23 @@ const RefundGuideController: React.FC<RefundGuideControllerProps> = ({
         setIsRefundPanelOpen(false);
       },
     });
-  }, [
-    isInTossApp,
-    lang,
-    onProcessWebRefund,
-    refundDialog.open,
-  ]);
+  }, [lang, refundDialog.open]);
 
   if (refundMessages == null || labels == null) {
     return null;
   }
 
-  const confirmButtonLabel = isInTossApp
-    ? refundMessages.openRefundGuide
-    : isWebLoading
-    ? (messages?.common?.webAsyncProcessing ?? '')
-    : refundMessages.confirmRefund;
-
   return (
     <>
       {!isRefundPanelOpen ? (
-        isInTossApp ? (
-          <TDSButton
-            variant="tertiary"
-            fullWidth
-            onClick={() => setIsRefundPanelOpen(true)}
-            disabled={isDisabled}
-          >
-            {refundMessages.requestRefund}
-          </TDSButton>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setIsRefundPanelOpen(true)}
-            disabled={isDisabled}
-            className="w-full py-3 text-[11px] font-bold text-slate-400 hover:text-amber-500 transition-colors uppercase tracking-widest disabled:opacity-60"
-          >
-            {refundMessages.requestRefund}
-          </button>
-        )
+        <TDSButton
+          variant="tertiary"
+          fullWidth
+          onClick={() => setIsRefundPanelOpen(true)}
+          disabled={isDisabled}
+        >
+          {refundMessages.requestRefund}
+        </TDSButton>
       ) : (
         <div className="space-y-3 p-4 bg-amber-50 dark:bg-amber-950/20 rounded-2xl border border-amber-200 dark:border-amber-800/40">
           <p className="text-xs font-bold text-amber-600 dark:text-amber-400">
@@ -135,60 +78,31 @@ const RefundGuideController: React.FC<RefundGuideControllerProps> = ({
             <li>{refundMessages.ineligiblePolicy}</li>
           </ul>
           <div className="flex gap-2">
-            {isInTossApp ? (
-              <>
-                <TDSButton
-                  variant="tertiary"
-                  className="flex-1"
-                  onClick={handleCloseRefundPanel}
-                  disabled={isWebLoading}
-                >
-                  {labels.cancel}
-                </TDSButton>
-                <TDSButton
-                  variant="primary"
-                  className="flex-1"
-                  onClick={() => {
-                    void handleConfirmRefund();
-                  }}
-                >
-                  {confirmButtonLabel}
-                </TDSButton>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={handleCloseRefundPanel}
-                  disabled={isWebLoading}
-                  className="flex-1 py-3 text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {labels.cancel}
-                </button>
-                <button
-                  type="button"
-                  disabled={isWebLoading}
-                  aria-busy={isWebLoading}
-                  onClick={() => {
-                    void handleConfirmRefund();
-                  }}
-                  className="flex-1 py-3 text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-xl transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {confirmButtonLabel}
-                </button>
-              </>
-            )}
+            <TDSButton
+              variant="tertiary"
+              className="flex-1"
+              onClick={() => setIsRefundPanelOpen(false)}
+            >
+              {labels.cancel}
+            </TDSButton>
+            <TDSButton
+              variant="primary"
+              className="flex-1"
+              onClick={() => {
+                void handleConfirmRefund();
+              }}
+            >
+              {refundMessages.openRefundGuide}
+            </TDSButton>
           </div>
         </div>
       )}
 
-      {labels != null ? (
-        <TdsConfirmDialog
-          {...refundDialog.dialogProps}
-          labels={labels}
-          shouldHideCancel={true}
-        />
-      ) : null}
+      <TdsConfirmDialog
+        {...refundDialog.dialogProps}
+        labels={labels}
+        shouldHideCancel={true}
+      />
     </>
   );
 };

@@ -22,6 +22,7 @@ import type { UserTier } from '@/types/userTier';
  * - Rule 10: 스냅샷 객체 얕은 복사 금지 + getSnapshots 배열 참조 캐시(cachedSnapshotsReadonly)
  * - Rule 2: subscribe 즉시 호출 없음; React는 useSyncExternalStore로 스토어 구독(티어는 useLayoutEffect로 ref 동기화)
  * - Rule 6·7·11: 앱 부트스트랩에서는 SDK 심볼을 `IntegratedAdApi`에 **직접 대입하지 않음** — `services/ads/tossIntegratedFullScreenAdApi.ts`의 **Safe Wrapper**(`checkIsSupported`, `createSafeLoadAd`/`createSafeShowAd`)로 타입 경계·`undefined` 크래시를 선제 차단 (`docs2/integrated-full-screen-ad-bridge-refactor-plan.md` §3.2)
+ * - 전면 전역 쿨타임: 생성자에서 `Math.max(0, globalCooldownMs ?? DEFAULT)` 클램프 + `elapsedMs = Math.max(0, nowMs - lastShown)` 시계 역전 방어 (`docs2/interstitial-global-cooldown-plan.md`)
  */
 
 /** @see https://developers-apps-in-toss.toss.im/ads/develop.html — 테스트하기 */
@@ -32,6 +33,8 @@ const SHOW_TIMEOUT_MS = 10_000;
 const BASE_RETRY_DELAY_MS = 3_000;
 const MAX_BACKOFF_EXPONENT = 4;
 const POST_DISMISS_COOLDOWN_MS = 1_000;
+/** 전역 전면 쿨타임 기본값 — `GlobalAdManagerOptions.globalCooldownMs` 미주입 시 사용(Rule 8·OCP). */
+const DEFAULT_INTERSTITIAL_GLOBAL_COOLDOWN_MS = 60_000;
 const DEFAULT_WAIT_FOR_PHASE_TIMEOUT_MS = 15_000;
 const WAIT_FOR_PHASE_POLL_INTERVAL_MS = 50;
 
@@ -101,6 +104,7 @@ export type AdResultCode =
   | 'skipped_not_ready'
   | 'skipped_first_action_exemption'
   | 'skipped_show_in_progress'
+  | 'skipped_global_cooldown'
   | 'load_timeout'
   | 'load_error'
   | 'show_timeout'
@@ -209,6 +213,11 @@ export interface GlobalAdManagerOptions {
    * 생성 시점 티어 + `setCurrentTier`로만 동기화하고, 평가는 항상 `this.currentTier` 단일 소스.
    */
   readonly initialTier: UserTier;
+  /**
+   * 전역 전면 광고 성공 노출 직후 쿨타임(ms). A/B·Remote Config 주입용.
+   * 미주입 시 `DEFAULT_INTERSTITIAL_GLOBAL_COOLDOWN_MS`. 음수는 생성자에서 0으로 클램프.
+   */
+  readonly globalCooldownMs?: number;
 }
 
 interface SlotRuntime {
@@ -450,7 +459,7 @@ export class GlobalAdManager {
 
   private readonly slots = new Map<InterstitialPlacementKey, SlotRuntime>();
   private readonly listeners = new Set<ManagerListener>();
-  private readonly loadQueue: InterstitialPlacementKey[] = [];
+  private loadQueue: InterstitialPlacementKey[] = [];
 
   /** 동시에 여러 `drainLoadQueue` 비동기 진입 방지 — while 루프 단일 드레이너 보장 */
   private isDrainingQueue = false;
@@ -468,6 +477,8 @@ export class GlobalAdManager {
   private readonly onDrainError: (error: unknown) => void;
   private hasConsumedDeferredFirstInterstitialAttempt = false;
   private currentTier: UserTier;
+  private lastInterstitialShowCompletedAtMs: number | null = null;
+  private readonly globalCooldownMs: number;
 
   public constructor(
     private readonly bridge: FullScreenAdBridge,
@@ -487,6 +498,10 @@ export class GlobalAdManager {
           error,
         );
       });
+    this.globalCooldownMs = Math.max(
+      0,
+      options.globalCooldownMs ?? DEFAULT_INTERSTITIAL_GLOBAL_COOLDOWN_MS,
+    );
 
     definitions.forEach((definition) => {
       this.definitions.set(definition.key, definition);
@@ -498,6 +513,26 @@ export class GlobalAdManager {
         cooldownTimerId: null,
       });
     });
+  }
+
+  /**
+   * Task-sized grace window: 연속 저장/설정 중에는 전면이 끼어들지 않도록 전역 노출 간격을 둔다.
+   * 시스템 시계가 역전되어도 남은 쿨타임이 비정상적으로 늘어나지 않게 경과 시간을 0 이상으로 고정한다.
+   */
+  private getRemainingInterstitialCooldownMs(nowMs: number): number {
+    if (this.lastInterstitialShowCompletedAtMs == null) {
+      return 0;
+    }
+
+    const elapsedMs = Math.max(
+      0,
+      nowMs - this.lastInterstitialShowCompletedAtMs,
+    );
+    if (elapsedMs >= this.globalCooldownMs) {
+      return 0;
+    }
+
+    return this.globalCooldownMs - elapsedMs;
   }
 
   /**
@@ -621,7 +656,7 @@ export class GlobalAdManager {
     }
 
     const validation = this.validateShowInstant(key);
-    if (!validation.ok) {
+    if (validation.ok === false) {
       this.handleShowInstantRejected(key, validation.code);
       return { shown: false, code: validation.code };
     }
@@ -644,9 +679,11 @@ export class GlobalAdManager {
         return { shown: false, code: 'show_error' };
       }
 
+      const completedAtMs = this.nowFn();
+      this.lastInterstitialShowCompletedAtMs = completedAtMs;
       this.updateSnapshot(key, {
         phase: 'cooldown',
-        lastShowCompletedAtMs: this.nowFn(),
+        lastShowCompletedAtMs: completedAtMs,
         lastResultCode: 'shown',
         lastErrorMessage: null,
       });
@@ -702,6 +739,11 @@ export class GlobalAdManager {
       }
     }
 
+    const nowMs = this.nowFn();
+    if (this.getRemainingInterstitialCooldownMs(nowMs) > 0) {
+      return { ok: false, code: 'skipped_global_cooldown' };
+    }
+
     if (slot.isShowLocked) {
       return { ok: false, code: 'skipped_show_in_progress' };
     }
@@ -734,6 +776,14 @@ export class GlobalAdManager {
         lastResultCode: 'skipped_not_ready',
       });
       this.prime(key);
+      return;
+    }
+
+    if (code === 'skipped_global_cooldown') {
+      this.updateSnapshot(key, {
+        lastResultCode: 'skipped_global_cooldown',
+        lastErrorMessage: null,
+      });
       return;
     }
 
@@ -771,6 +821,7 @@ export class GlobalAdManager {
     this.listeners.clear();
     this.loadQueue.length = 0;
     this.hasConsumedDeferredFirstInterstitialAttempt = false;
+    this.lastInterstitialShowCompletedAtMs = null;
 
     for (const slot of this.slots.values()) {
       this.clearRetryTimer(slot);
@@ -1059,6 +1110,10 @@ export class VirtualFullScreenAdBridge implements FullScreenAdBridge {
     return this.isFeatureSupported;
   }
 
+  public getShowAttemptCount(adGroupId: string): number {
+    return this.showCursor.get(adGroupId) ?? 0;
+  }
+
   public async load(adGroupId: string): Promise<void> {
     const plan = this.getCurrentStep(adGroupId, this.loadPlans, this.loadCursor);
     await this.sleep(plan.delayMs);
@@ -1101,6 +1156,15 @@ export class VirtualFullScreenAdBridge implements FullScreenAdBridge {
 export interface SimulationResult {
   firstShow: InstantShowResult;
   secondShow: InstantShowResult;
+  finalSnapshots: ReadonlyArray<AdSlotSnapshot>;
+}
+
+export interface CooldownSimulationResult {
+  firstShow: InstantShowResult;
+  blockedWithinCooldown: InstantShowResult;
+  showCallCountBeforeIdleWait: number;
+  showCallCountAfterIdleWait: number;
+  shownAfterCooldownWithNewTrigger: InstantShowResult;
   finalSnapshots: ReadonlyArray<AdSlotSnapshot>;
 }
 
@@ -1175,6 +1239,81 @@ export async function runVirtualAdSimulation(): Promise<SimulationResult> {
   return {
     firstShow,
     secondShow,
+    finalSnapshots: manager.getSnapshots(),
+  };
+}
+
+export async function runVirtualCooldownSimulation(): Promise<CooldownSimulationResult> {
+  let nowMs = 1_000_000;
+  const bridge = new VirtualFullScreenAdBridge(
+    {
+      [TOSS_INTERSTITIAL_TEST_AD_GROUP_ID]: [
+        { delayMs: 120, shouldSucceed: true },
+        { delayMs: 120, shouldSucceed: true },
+        { delayMs: 120, shouldSucceed: true },
+        { delayMs: 120, shouldSucceed: true },
+      ],
+    },
+    {
+      [TOSS_INTERSTITIAL_TEST_AD_GROUP_ID]: [
+        { delayMs: 80, shouldSucceed: true },
+        { delayMs: 80, shouldSucceed: true },
+      ],
+    },
+  );
+
+  const manager = new GlobalAdManager(bridge, INTERSTITIAL_PLACEMENT_DEFINITIONS, {
+    audioManager: DOCUMENT_SIMULATION_SILENT_AUDIO,
+    deferFirstInterstitialAttemptOncePerSession: false,
+    initialTier: 'free',
+    now: () => nowMs,
+    globalCooldownMs: DEFAULT_INTERSTITIAL_GLOBAL_COOLDOWN_MS,
+  });
+
+  manager.primeRoute('dashboard');
+  await waitForSlotPhase(
+    manager,
+    INTERSTITIAL_PLACEMENT_KEYS.STRATEGY_SAVE,
+    'ready',
+  );
+  await waitForSlotPhase(
+    manager,
+    INTERSTITIAL_PLACEMENT_KEYS.TRADE_SAVE,
+    'ready',
+  );
+
+  const firstShow = await manager.showInstant(
+    INTERSTITIAL_PLACEMENT_KEYS.STRATEGY_SAVE,
+  );
+
+  nowMs += 30_000;
+  const blockedWithinCooldown = await manager.showInstant(
+    INTERSTITIAL_PLACEMENT_KEYS.TRADE_SAVE,
+  );
+
+  const showCallCountBeforeIdleWait = bridge.getShowAttemptCount(
+    TOSS_INTERSTITIAL_TEST_AD_GROUP_ID,
+  );
+
+  nowMs += 31_000;
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 150);
+  });
+
+  const showCallCountAfterIdleWait = bridge.getShowAttemptCount(
+    TOSS_INTERSTITIAL_TEST_AD_GROUP_ID,
+  );
+
+  const shownAfterCooldownWithNewTrigger = await manager.showInstant(
+    INTERSTITIAL_PLACEMENT_KEYS.TRADE_SAVE,
+  );
+
+  return {
+    firstShow,
+    blockedWithinCooldown,
+    showCallCountBeforeIdleWait,
+    showCallCountAfterIdleWait,
+    shownAfterCooldownWithNewTrigger,
     finalSnapshots: manager.getSnapshots(),
   };
 }

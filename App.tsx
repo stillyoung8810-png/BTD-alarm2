@@ -36,8 +36,6 @@ import {
 import { restorePendingIapOrders } from './services/payment/tossIapService';
 import { TossAppProvider } from './contexts/TossAppContext';
 import { buildDailyExecutionSummary } from './utils/dailyExecutionSummary';
-import { MembershipConfig } from './constants/membership';
-import { formatPriceKRW } from './utils/currency';
 import { TdsAlertDialog } from './components/tds-adapter/TdsAlertDialog';
 import { TdsConfirmDialog } from './components/tds-adapter/TdsConfirmDialog';
 import { useAsyncTdsConfirm } from './components/tds-adapter/useAsyncTdsConfirm';
@@ -75,6 +73,7 @@ const PortfolioDetailsModal = React.lazy(() => import('./components/PortfolioDet
 const AIImageInputModal = React.lazy(() => import('./components/AIImageInputModal'));
 
 const BOOTSTRAP_AD_USER_TIER: UserTier = 'free';
+const INTERSTITIAL_GLOBAL_COOLDOWN_MS = 60_000;
 const SILENT_AD_AUDIO_MANAGER: AppAudioManager = {
   pauseAllSounds: () => {},
   resumeAllSounds: () => {},
@@ -84,6 +83,7 @@ const GLOBAL_INTERSTITIAL_AD_MANAGER = new GlobalAdManager(
   getInterstitialPlacementDefinitions(),
   {
     audioManager: SILENT_AD_AUDIO_MANAGER,
+    globalCooldownMs: INTERSTITIAL_GLOBAL_COOLDOWN_MS,
     initialTier: BOOTSTRAP_AD_USER_TIER,
   },
 );
@@ -1330,24 +1330,12 @@ const App: React.FC = () => {
             isOpen={!!checkoutPlan}
             onClose={() => setCheckoutPlan(null)}
             lang={lang}
-            plan={(() => {
-              const cfg = MembershipConfig.byType[checkoutPlan];
-              const lk = lang === 'ko' ? 'ko' : 'en';
-              return {
-                id: cfg.type,
-                label: cfg.displayName,
-                subtitle: cfg.subtitle[lk],
-                price: cfg.rawAmount,
-                priceFormatted: formatPriceKRW(cfg.rawAmount),
-                features: cfg.features[lk],
-              };
-            })()}
-          customerEmail={user?.email}
-          customerId={user?.id}
-          onPaymentSuccess={() => {
-            setCheckoutPlan(null);
-            if (user?.id) fetchUserProfile(user.id);
-          }}
+            customerEmail={user?.email}
+            customerId={user?.id}
+            onPaymentSuccess={() => {
+              setCheckoutPlan(null);
+              if (user?.id) fetchUserProfile(user.id);
+            }}
           />
         </React.Suspense>
       )}

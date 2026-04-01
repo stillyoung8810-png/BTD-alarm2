@@ -213,6 +213,83 @@ export const getMaxAlarms = (
 };
 
 /**
+ * 티어별 일일/월간 사용량 한도 (AI·백테스트 사용량 RPC와 연동)
+ */
+export interface UsageLimits {
+  aiDaily: number;
+  aiMonthly?: number;
+  backtestDaily: number;
+}
+
+// ---------------------------------------------------------------------------
+// Rule 8 & 5: 정책 상수·티어 테이블 (docs2/increment-usage-usage-result-type-refactor-plan.md)
+// ---------------------------------------------------------------------------
+// 서버가 무제한을 처리하지 못해 보내는 실질적 상한값 (월 한도 미설정 티어의 p_max_monthly 등에 사용).
+export const UNLIMITED_USAGE_QUOTA = 999;
+
+// premium / pro / free 만 명시. enterprise 등 미등록 티어는 getUsageLimits에서 free로 폴백.
+const TIER_USAGE_LIMITS: Record<string, UsageLimits> = {
+  premium: { aiDaily: UNLIMITED_USAGE_QUOTA, backtestDaily: 10 },
+  pro: {
+    aiDaily: UNLIMITED_USAGE_QUOTA,
+    aiMonthly: 50,
+    backtestDaily: 5,
+  },
+  free: { aiDaily: 1, backtestDaily: 2 },
+};
+
+/**
+ * 티어별 일일/월간 사용량 한도 가져오기
+ */
+export const getUsageLimits = (tier: string): UsageLimits => {
+  const normalizedTier = tier?.toLowerCase() || "free";
+  // enterprise 등 테이블에 없는 티어 → free와 동일. 추후 enterprise 행만 추가하면 됨.
+  return TIER_USAGE_LIMITS[normalizedTier] ?? TIER_USAGE_LIMITS.free;
+};
+
+/**
+ * `check_and_increment_usage` RPC는 한도 초과 시 사람이 읽기 쉬운 영문 문장을 반환한다.
+ * AI 모달·백테스트 등 클라이언트 분기는 `DAILY_LIMIT_REACHED` / `MONTHLY_LIMIT_REACHED` 코드를 기대하므로 여기서 정규화한다.
+ */
+function normalizeRpcUsageLimitMessage(error: unknown): string | undefined {
+  if (typeof error !== "string") {
+    return undefined;
+  }
+  const trimmed = error.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  const lower = trimmed.toLowerCase();
+  if (lower === "daily limit reached") {
+    return "DAILY_LIMIT_REACHED";
+  }
+  if (lower === "monthly limit reached") {
+    return "MONTHLY_LIMIT_REACHED";
+  }
+  return trimmed;
+}
+
+/** `incrementUsage` 성공 시에만 의미 있는 사용량 스냅샷. */
+export interface UsageIncrementCurrentUsage {
+  daily: number;
+  monthly?: number | null;
+}
+
+export interface UsageResult {
+  success: boolean;
+  message?: string;
+  currentUsage?: UsageIncrementCurrentUsage;
+}
+
+/** Supabase `check_and_increment_usage` RPC가 반환하는 JSON 구조 */
+interface CheckAndIncrementUsageRpcRow {
+  success: boolean;
+  error?: string;
+  current_daily?: number;
+  current_monthly?: number | null;
+}
+
+/**
  * 사용량 확인 및 증가 (서버 RPC 호출)
  * @param usageType 'ai' 또는 'backtest'
  * @param tier 현재 사용자 티어
@@ -221,10 +298,11 @@ export const getMaxAlarms = (
 export const incrementUsage = async (
   usageType: "ai" | "backtest",
   tier: string,
-): Promise<{ success: boolean; message?: string; currentUsage?: any }> => {
+): Promise<UsageResult> => {
   const limits = getUsageLimits(tier);
   const maxDaily = usageType === "ai" ? limits.aiDaily : limits.backtestDaily;
-  const maxMonthly = usageType === "ai" ? (limits.aiMonthly || 999) : undefined;
+  const maxMonthly =
+    usageType === "ai" ? limits.aiMonthly ?? UNLIMITED_USAGE_QUOTA : undefined;
 
   try {
     const { data, error } = await supabase.rpc("check_and_increment_usage", {
@@ -238,26 +316,24 @@ export const incrementUsage = async (
       return { success: false, message: error.message };
     }
 
-    const result = data as {
-      success: boolean;
-      error?: string;
-      daily_usage?: number;
-      monthly_usage?: number;
-    };
+    const result = data as CheckAndIncrementUsageRpcRow;
 
     if (!result.success) {
-      return { success: false, message: result.error };
+      return {
+        success: false,
+        message: normalizeRpcUsageLimitMessage(result.error) ?? result.error,
+      };
     }
 
     return {
       success: true,
       currentUsage: {
-        daily: result.daily_usage,
-        monthly: result.monthly_usage,
+        daily: result.current_daily ?? 0,
+        monthly: result.current_monthly,
       },
     };
   } catch (err) {
-    console.error(`[Usage] Unexpected error for ${usageType}:`, err);
+    console.error(`[Usage] Unexpected error during ${usageType} usage:`, err);
     return { success: false, message: "Unexpected server error" };
   }
 };
@@ -311,29 +387,6 @@ export const getStatusDisplayName = (
   };
 
   return statusMap[status]?.[lang] || status;
-};
-/**
- * 티어별 일일/월간 사용량 한도 가져오기
- */
-export interface UsageLimits {
-  aiDaily: number;
-  aiMonthly?: number;
-  backtestDaily: number;
-}
-
-export const getUsageLimits = (tier: string): UsageLimits => {
-  const normalizedTier = tier?.toLowerCase() || "free";
-
-  if (normalizedTier === "premium") {
-    return { aiDaily: 999, backtestDaily: 10 };
-  }
-
-  if (normalizedTier === "pro") {
-    return { aiDaily: 999, aiMonthly: 50, backtestDaily: 5 };
-  }
-
-  // Free
-  return { aiDaily: 1, backtestDaily: 2 };
 };
 
 /**

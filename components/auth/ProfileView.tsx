@@ -39,7 +39,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   setShowDeleteConfirm,
   deleteConfirmText,
   setDeleteConfirmText,
-  cancelSubscription,
   onConnectTelegram,
   onDeleteAccount,
   isInTossApp,
@@ -60,22 +59,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({
       setError(msg);
     } finally {
       setTelegramLinkLoading(false);
-    }
-  };
-
-  const handleProcessWebRefund = async () => {
-    setError(null);
-    setInfo(null);
-
-    const result = await Promise.resolve(cancelSubscription());
-    if (result.success) {
-      setInfo(result.message ?? '');
-      return;
-    }
-
-    setInfo(result.message ?? '');
-    if (result.error) {
-      setError(result.error);
     }
   };
 
@@ -252,9 +235,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
           <div className="pt-4 border-t border-slate-200 dark:border-white/5">
             <RefundGuideController
               lang={lang}
-              isInTossApp={Boolean(isInTossApp)}
               isDisabled={loading}
-              onProcessWebRefund={handleProcessWebRefund}
             />
           </div>
         )}

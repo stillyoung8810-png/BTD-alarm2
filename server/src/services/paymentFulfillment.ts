@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const PLAN_DAYS_PER_UNIT = 30;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const USER_PROFILE_SELECT_COLUMNS =
+  "id, subscription_tier, subscription_status, subscription_expires_at, pending_plan, pending_plan_effective_at, max_portfolios, max_alarms";
 
 export type PaidPlanId = "pro" | "premium";
 export type SubscriptionTier = "free" | "pro" | "premium" | "enterprise";
@@ -54,7 +56,7 @@ export interface SubscriptionUpdateResult {
 }
 
 export interface FulfillPaidOrderParams {
-  adminClient: SupabaseClient;
+  adminClient: PaymentAdminClient;
   paymentId: string;
   userId: string;
   planId: PaidPlanId;
@@ -80,6 +82,24 @@ export interface FulfillPaidOrderResult {
   fulfillment?: SubscriptionUpdateResult;
 }
 
+interface SupabaseErrorLike {
+  message: string;
+}
+
+interface RpcResult {
+  data: unknown;
+  error: SupabaseErrorLike | null;
+}
+
+interface SingleRowResult<Row> {
+  data: Row | null;
+  error: SupabaseErrorLike | null;
+}
+
+interface MutationResult {
+  error: SupabaseErrorLike | null;
+}
+
 interface ClaimOrderResult {
   success: boolean;
   claimed?: boolean;
@@ -92,6 +112,81 @@ interface ClaimOrderResult {
 
 interface OrderProfileRow extends SubscriptionProfileSnapshot {
   id: string;
+}
+
+interface OrderStatusUpdate {
+  status: "pending" | "paid";
+  metadata: Record<string, unknown>;
+  paid_at?: string | null;
+  pg_tx_id?: string | null;
+}
+
+interface OrderProfileUpdate {
+  subscription_tier: SubscriptionTier;
+  subscription_status: Exclude<SubscriptionStatus, "cancelled" | "refunded">;
+  subscription_expires_at: string;
+  pending_plan: PaidPlanId | null;
+  pending_plan_effective_at: string | null;
+  max_portfolios: number;
+  max_alarms: number;
+  updated_at: string;
+}
+
+export interface PaymentAdminClient {
+  rpc(fn: string, args: Record<string, unknown>): PromiseLike<RpcResult>;
+  loadUserProfile(userId: string): PromiseLike<SingleRowResult<OrderProfileRow>>;
+  updateUserProfile(userId: string, payload: OrderProfileUpdate): PromiseLike<MutationResult>;
+  updateOrderByPaymentId(paymentId: string, payload: OrderStatusUpdate): PromiseLike<MutationResult>;
+}
+
+export function createPaymentAdminClient(
+  adminClient: SupabaseClient,
+): PaymentAdminClient {
+  return {
+    rpc: (fn, args) => adminClient.rpc(fn, args),
+    loadUserProfile: (userId) =>
+      adminClient
+        .from("user_profiles")
+        .select(USER_PROFILE_SELECT_COLUMNS)
+        .eq("id", userId)
+        .single(),
+    updateUserProfile: (userId, payload) =>
+      adminClient
+        .from("user_profiles")
+        .update(payload)
+        .eq("id", userId),
+    updateOrderByPaymentId: (paymentId, payload) =>
+      adminClient
+        .from("orders")
+        .update(payload)
+        .eq("payment_id", paymentId),
+  };
+}
+
+function toClaimOrderResult(raw: unknown): ClaimOrderResult {
+  if (typeof raw !== "object" || raw === null) {
+    return { success: false, error: "Response is not an object" };
+  }
+
+  const data = raw as Record<string, unknown>;
+  const isSuccess = typeof data.success === "boolean" ? data.success : false;
+
+  if (!isSuccess) {
+    return {
+      success: false,
+      error: typeof data.error === "string" ? data.error : "Invalid RPC response",
+    };
+  }
+
+  return {
+    success: true,
+    claimed: data.claimed === true,
+    already_processed: data.already_processed === true,
+    in_progress: data.in_progress === true,
+    order_id: typeof data.order_id === "string" ? data.order_id : undefined,
+    status: typeof data.status === "string" ? data.status : undefined,
+    error: typeof data.error === "string" ? data.error : undefined,
+  };
 }
 
 function normalizeTier(value?: string | null): SubscriptionTier {
@@ -228,11 +323,13 @@ export function getNormalizedProfileUpdate(
     };
   }
 
+  const rawPendingEffectiveMs = parseIsoMs(rawPendingEffectiveAt);
+
   if (
     rawPendingPlan &&
     rawPendingEffectiveAt &&
-    parseIsoMs(rawPendingEffectiveAt) != null &&
-    parseIsoMs(rawPendingEffectiveAt)! <= nowMs
+    rawPendingEffectiveMs != null &&
+    rawPendingEffectiveMs <= nowMs
   ) {
     return {
       subscription_tier: effective.tier,
@@ -358,7 +455,7 @@ export function computeSubscriptionUpdate(input: {
 }
 
 async function claimOrderForProcessing(
-  adminClient: SupabaseClient,
+  adminClient: PaymentAdminClient,
   params: FulfillPaidOrderParams,
 ): Promise<ClaimOrderResult> {
   const { data, error } = await adminClient.rpc("claim_order_processing", {
@@ -382,31 +479,21 @@ async function claimOrderForProcessing(
     throw new Error(`[claim_order_processing] ${error.message}`);
   }
 
-  return (data ?? {}) as ClaimOrderResult;
+  return toClaimOrderResult(data);
 }
 
 async function markOrderStatus(
-  adminClient: SupabaseClient,
+  adminClient: PaymentAdminClient,
   paymentId: string,
-  status: "pending" | "paid",
-  metadata: Record<string, unknown>,
-  paidAt?: string | null,
-  pgTxId?: string | null,
+  updatePayload: OrderStatusUpdate,
 ): Promise<void> {
-  const updatePayload: Record<string, unknown> = {
-    status,
-    metadata,
-  };
-  if (paidAt) updatePayload.paid_at = paidAt;
-  if (pgTxId !== undefined) updatePayload.pg_tx_id = pgTxId;
-
-  const { error } = await adminClient
-    .from("orders")
-    .update(updatePayload)
-    .eq("payment_id", paymentId);
+  const { error } = await adminClient.updateOrderByPaymentId(
+    paymentId,
+    updatePayload,
+  );
 
   if (error) {
-    throw new Error(`[orders:${status}] ${error.message}`);
+    throw new Error(`[orders:${updatePayload.status}] ${error.message}`);
   }
 }
 
@@ -436,32 +523,33 @@ export async function fulfillPaidOrder(
     };
   }
 
-  const { data: profile, error: profileError } = await params.adminClient
-    .from("user_profiles")
-    .select("id, subscription_tier, subscription_status, subscription_expires_at, pending_plan, pending_plan_effective_at, max_portfolios, max_alarms")
-    .eq("id", params.userId)
-    .single();
+  const {
+    data: profile,
+    error: profileError,
+  } = await params.adminClient.loadUserProfile(params.userId);
 
   if (profileError || !profile) {
     await markOrderStatus(
       params.adminClient,
       params.paymentId,
-      "pending",
       {
-        quantity: params.quantity,
-        ...(params.metadata ?? {}),
-        fulfillment_error: profileError?.message ?? "user profile not found",
+        status: "pending",
+        metadata: {
+          quantity: params.quantity,
+          ...(params.metadata ?? {}),
+          fulfillment_error: profileError?.message ?? "user profile not found",
+        },
+        paid_at: params.paidAt,
+        pg_tx_id: params.pgTxId,
       },
-      params.paidAt,
-      params.pgTxId,
     );
     throw new Error(profileError?.message ?? "user profile not found");
   }
 
-  const normalizedPatch = getNormalizedProfileUpdate(profile as OrderProfileRow, nowIso);
+  const normalizedPatch = getNormalizedProfileUpdate(profile, nowIso);
   const normalizedProfile = normalizedPatch
-    ? { ...(profile as OrderProfileRow), ...normalizedPatch }
-    : (profile as OrderProfileRow);
+    ? { ...profile, ...normalizedPatch }
+    : profile;
 
   const fulfillment = computeSubscriptionUpdate({
     currentProfile: normalizedProfile,
@@ -471,7 +559,7 @@ export async function fulfillPaidOrder(
     nowIso,
   });
 
-  const profileUpdate: Record<string, unknown> = {
+  const profileUpdate: OrderProfileUpdate = {
     subscription_tier: fulfillment.nextTier,
     subscription_status: fulfillment.nextStatus,
     subscription_expires_at: fulfillment.nextExpiresAt,
@@ -483,23 +571,25 @@ export async function fulfillPaidOrder(
   };
 
   const previousEffective = getEffectiveSubscriptionState(normalizedProfile, nowIso);
-  const { error: updateError } = await params.adminClient
-    .from("user_profiles")
-    .update(profileUpdate)
-    .eq("id", params.userId);
+  const { error: updateError } = await params.adminClient.updateUserProfile(
+    params.userId,
+    profileUpdate,
+  );
 
   if (updateError) {
     await markOrderStatus(
       params.adminClient,
       params.paymentId,
-      "pending",
       {
-        quantity: params.quantity,
-        ...(params.metadata ?? {}),
-        fulfillment_error: updateError.message,
+        status: "pending",
+        metadata: {
+          quantity: params.quantity,
+          ...(params.metadata ?? {}),
+          fulfillment_error: updateError.message,
+        },
+        paid_at: params.paidAt,
+        pg_tx_id: params.pgTxId,
       },
-      params.paidAt,
-      params.pgTxId,
     );
     throw new Error(updateError.message);
   }
@@ -522,10 +612,12 @@ export async function fulfillPaidOrder(
   await markOrderStatus(
     params.adminClient,
     params.paymentId,
-    "paid",
-    finalMetadata,
-    params.paidAt ?? nowIso,
-    params.pgTxId,
+    {
+      status: "paid",
+      metadata: finalMetadata,
+      paid_at: params.paidAt ?? nowIso,
+      pg_tx_id: params.pgTxId,
+    },
   );
 
   const finalState = getEffectiveSubscriptionState(

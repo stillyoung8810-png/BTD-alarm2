@@ -195,6 +195,24 @@ export const VR_CREATOR_LABELS: Record<
   },
 };
 
+/** VR 주기별 입·출금(`deltaCash`) 입력 검증 — `constants/vrConstants` 상한과 정합 */
+export const VR_DELTA_CASH_VALIDATION_MESSAGES: Record<
+  AppLang,
+  Record<'non_finite' | 'negative' | 'exceeds_max', string>
+> = {
+  ko: {
+    non_finite: '주기별 입·출금 금액은 유효한 숫자여야 합니다.',
+    negative: '금액은 0 이상만 입력할 수 있습니다. 음수는 입력할 수 없습니다.',
+    exceeds_max:
+      '주기별 입·출금 금액은 $1,000,000 이하여야 합니다.',
+  },
+  en: {
+    non_finite: 'Periodic cash amount must be a valid number.',
+    negative: 'Amount must be zero or greater. Negative values are not allowed.',
+    exceeds_max: 'Periodic cash amount must be $1,000,000 or less.',
+  },
+} as const;
+
 /** 대시보드 VR 전략 안내 힌트 (단일 소스) */
 export const VR_DASHBOARD_HINT: Record<
   AppLang,

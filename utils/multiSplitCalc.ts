@@ -7,6 +7,16 @@
  * 모든 함수는 **순수 함수**입니다 (side effect 없음, 입력만으로 출력 결정).
  */
 
+import {
+  areFiniteNonNegativeScalars,
+  areStrictPositiveFiniteScalars,
+} from './financialScalarGuards';
+import {
+  ceilToTwoDecimals,
+  floorToNonNegativeInt,
+  roundMoney,
+} from './financialMath';
+
 // ---------------------------------------------------------------------------
 // 상수
 // ---------------------------------------------------------------------------
@@ -146,7 +156,7 @@ export function calcHoldings(trades: TradeInput[]): HoldingsResult[] {
     quantity: data.quantity,
     totalCost: data.totalCost,
     avgPrice: data.quantity > HOLDINGS_QTY_EPSILON ? data.totalCost / data.quantity : 0,
-    realizedPnL: Number(data.realizedPnL.toFixed(2)),
+    realizedPnL: roundMoney(data.realizedPnL),
   }));
 }
 
@@ -159,10 +169,17 @@ export function calcHoldings(trades: TradeInput[]): HoldingsResult[] {
  * T = ceil(총 보유 투자금 / 1회 매수금 * 100) / 100
  */
 export function calcT(trades: TradeInput[], dailyBuyAmount: number): number {
-  if (dailyBuyAmount === 0) return 0;
+  if (!areStrictPositiveFiniteScalars(dailyBuyAmount)) {
+    return 0;
+  }
+
   const holdings = calcHoldings(trades);
   const totalInvested = holdings.reduce((sum, h) => sum + h.totalCost, 0);
-  return Math.ceil((totalInvested / dailyBuyAmount) * 100) / 100;
+  if (!areStrictPositiveFiniteScalars(totalInvested)) {
+    return 0;
+  }
+
+  return ceilToTwoDecimals(totalInvested / dailyBuyAmount);
 }
 
 // ---------------------------------------------------------------------------
@@ -216,7 +233,7 @@ export function checkRecentMOCSell(
  * sinceDate 이후 매수(물타기)가 있으면 변경된 평단가가 반영됩니다.
  *
  * - 사전 정렬: date 오름차순, 동일일 시 buy → sell 순 (calcHoldings 순서 민감도 대비).
- * - 부동소수점 방어: 반환 직전 Number((...).toFixed(2)) 적용.
+ * - 부동소수점 방어: 반환 직전 `roundMoney(...)` 적용.
  * 음수(손실)도 포함됩니다.
  */
 export function calcIntermediateProfit(
@@ -238,7 +255,7 @@ export function calcIntermediateProfit(
   const totalRealized = holdingsFull.reduce((sum, h) => sum + (h.realizedPnL ?? 0), 0);
   const realizedUpTo = holdingsUpTo.reduce((sum, h) => sum + (h.realizedPnL ?? 0), 0);
 
-  return Number((totalRealized - realizedUpTo).toFixed(2));
+  return roundMoney(totalRealized - realizedUpTo);
 }
 
 // ---------------------------------------------------------------------------
@@ -263,7 +280,9 @@ export function calcNewOneTimeAmount(
   totalSplitCount: number,
   _mocDate: string,
 ): number {
-  if (dailyBuyAmount <= 0 || totalSplitCount <= 0) return 0;
+  if (!areStrictPositiveFiniteScalars(dailyBuyAmount, totalSplitCount)) {
+    return 0;
+  }
 
   const C_init = dailyBuyAmount * totalSplitCount;
 
@@ -281,7 +300,7 @@ export function calcNewOneTimeAmount(
 
   const cashBeforeMOC = C_init - sumEbuy + sumEsellNonMOC;
   const newOneTimeAmount = (cashBeforeMOC + mocSellAmount) / QUARTER_SPLIT_COUNT;
-  return Math.max(0, newOneTimeAmount);
+  return roundMoney(Math.max(0, newOneTimeAmount));
 }
 
 // ---------------------------------------------------------------------------
@@ -296,8 +315,9 @@ export function calcSellSplitQuantities(totalQty: number): {
   locSellQty: number;
   limitSellQty: number;
 } {
-  const locSellQty = Math.floor(totalQty * LOC_SELL_RATIO);
-  const limitSellQty = totalQty - locSellQty;
+  const safeTotalQty = floorToNonNegativeInt(totalQty);
+  const locSellQty = floorToNonNegativeInt(safeTotalQty * LOC_SELL_RATIO);
+  const limitSellQty = safeTotalQty - locSellQty;
   return { locSellQty, limitSellQty };
 }
 
@@ -310,10 +330,16 @@ export function calcSellSplitQuantities(totalQty: number): {
  * 가격이 0 이하이거나 정수화한 수량이 0 이하이면 null을 반환합니다.
  */
 export function safeOrder(price: number, qty: number): OrderEntry | null {
-  if (isNaN(price) || isNaN(qty) || price <= 0) return null;
-  const finalQty = Math.max(0, Math.floor(qty));
-  if (finalQty <= 0) return null;
-  return { price: Number(price.toFixed(2)), quantity: finalQty };
+  if (!areStrictPositiveFiniteScalars(price, qty)) {
+    return null;
+  }
+
+  const finalQty = floorToNonNegativeInt(qty);
+  if (finalQty <= 0) {
+    return null;
+  }
+
+  return { price: roundMoney(price), quantity: finalQty };
 }
 
 /**
@@ -321,9 +347,12 @@ export function safeOrder(price: number, qty: number): OrderEntry | null {
  * (LOC 매수: 수량 0이어도 가격 표시, LOC 매도: 보유 1~3주일 때 가격 표시·수량 0)
  */
 function orderEntryForDisplay(price: number, qty: number): OrderEntry | null {
-  if (isNaN(price) || price <= 0) return null;
-  const finalQty = Math.max(0, Math.floor(qty));
-  return { price: Number(price.toFixed(2)), quantity: finalQty };
+  if (!areStrictPositiveFiniteScalars(price)) {
+    return null;
+  }
+
+  const finalQty = floorToNonNegativeInt(qty);
+  return { price: roundMoney(price), quantity: finalQty };
 }
 
 // ---------------------------------------------------------------------------
@@ -356,12 +385,15 @@ export function calcQuarterStopLossOrders(params: {
     const mocQuantity = currentQuantity * LOC_SELL_RATIO;
     return {
       hasMOC: false,
-      mocQuantity: Math.round(mocQuantity * 100) / 100,
+      mocQuantity: roundMoney(mocQuantity),
     };
   }
 
   // MOC 기록 있음
-  if (!mocCheck.mocDate || avgPrice <= 0 || currentQuantity <= 0) {
+  if (
+    !mocCheck.mocDate ||
+    !areStrictPositiveFiniteScalars(avgPrice, currentQuantity)
+  ) {
     return null;
   }
 
@@ -377,7 +409,9 @@ export function calcQuarterStopLossOrders(params: {
   const locBuyPrice = Math.max(MIN_PRICE, avgPrice * QUARTER_LOC_PRICE_FACTOR - LOC_PRICE_OFFSET);
   const locBuyQty =
     newOneTimeAmount > 0 && locBuyPrice > 0
-      ? Math.floor(newOneTimeAmount / (locBuyPrice * (1 + feeRate / 100)))
+      ? floorToNonNegativeInt(
+          newOneTimeAmount / (locBuyPrice * (1 + feeRate / 100)),
+        )
       : 0;
 
   // LOC 매도 / 지정가 매도: 25% 먼저 → 잔량
@@ -417,7 +451,11 @@ export function calcMultiSplitOrders(params: {
   const { phase, A, a, T, basePrice, currentQuantity, oneTimeAmount, feeRate } = params;
 
   // 유효성 검사: 핵심 파라미터가 유효하지 않으면 빈 결과 반환
-  if (A <= 0 || a <= 0 || T <= 0 || basePrice <= 0) {
+  if (!areStrictPositiveFiniteScalars(A, a, T, basePrice)) {
+    return { phase };
+  }
+
+  if (!areFiniteNonNegativeScalars(currentQuantity, oneTimeAmount, feeRate)) {
     return { phase };
   }
 
@@ -446,11 +484,14 @@ export function calcMultiSplitOrders(params: {
         : 0;
     // 0.5회분으로는 1주 미만이지만 1회분이면 1주 이상 가능한 경우 → LOC 매수1 수량 1로 표시
     const locBuy1Qty =
-      Math.floor(qtyWithHalf) < 1 && Math.floor(qtyWithFull) >= 1 ? 1 : qtyWithHalf;
+      floorToNonNegativeInt(qtyWithHalf) < 1 &&
+      floorToNonNegativeInt(qtyWithFull) >= 1
+        ? 1
+        : qtyWithHalf;
     result.locBuy1 = orderEntryForDisplay(locBuy1Price, locBuy1Qty) ?? undefined;
 
     // LOC 매수2: (1회 매수 금액) - (LOC 매수1 주문 금액) 으로 남은 금액 기준 수량 계산
-    const finalLocBuy1Qty = Math.max(0, Math.floor(locBuy1Qty));
+    const finalLocBuy1Qty = floorToNonNegativeInt(locBuy1Qty);
     const locBuy1OrderAmount = locBuy1Price * finalLocBuy1Qty * (1 + feeRate / 100);
     const remainingForLoc2 = Math.max(0, oneTimeAmount - locBuy1OrderAmount);
     const locBuy2Qty =

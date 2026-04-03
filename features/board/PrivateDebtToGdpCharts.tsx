@@ -49,6 +49,98 @@ const usData = [
 
 const formatPct = (v: number) => `${v}%`;
 
+type DebtDatum = (typeof japanData)[number];
+
+function isDebtDatum(value: unknown): value is DebtDatum {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.year === 'number' &&
+    typeof candidate.value === 'number'
+  );
+}
+
+function toChartNumber(value: number | string | undefined): number {
+  return typeof value === 'number' ? value : 0;
+}
+
+function renderDebtTopLabel(props: {
+  x?: number | string;
+  y?: number | string;
+  value?: number | string;
+  width?: number | string;
+  payload?: unknown;
+}): React.ReactElement | null {
+  const { x, y, value, width, payload } = props;
+
+  if (!isDebtDatum(payload) || payload.year !== 2024 || typeof value !== 'number') {
+    return null;
+  }
+
+  return (
+    <text
+      x={toChartNumber(x) + toChartNumber(width) / 2}
+      y={toChartNumber(y) - 6}
+      textAnchor="middle"
+      className="fill-rose-600 dark:fill-rose-400 text-xs font-medium"
+    >
+      {formatPct(value)}
+    </text>
+  );
+}
+
+function renderDebtCalloutLabel(props: {
+  x?: number | string;
+  y?: number | string;
+  value?: number | string;
+  width?: number | string;
+  payload?: unknown;
+}): React.ReactElement | null {
+  const { x, y, value, width, payload } = props;
+
+  if (!isDebtDatum(payload) || payload.year !== 2024 || typeof value !== 'number') {
+    return null;
+  }
+
+  const centerX = toChartNumber(x) + toChartNumber(width) / 2;
+  const topY = toChartNumber(y);
+
+  return (
+    <g>
+      <rect
+        x={centerX - 28}
+        y={topY - 32}
+        width={56}
+        height={28}
+        fill="white"
+        stroke="currentColor"
+        strokeWidth={1}
+        className="stroke-slate-300 dark:stroke-slate-600"
+        rx={4}
+      />
+      <text
+        x={centerX}
+        y={topY - 24}
+        textAnchor="middle"
+        className="text-slate-700 dark:text-slate-300 text-[10px]"
+      >
+        2024
+      </text>
+      <text
+        x={centerX}
+        y={topY - 12}
+        textAnchor="middle"
+        className="text-slate-900 dark:text-slate-100 text-xs font-medium"
+      >
+        {formatPct(value)}
+      </text>
+    </g>
+  );
+}
+
 export const PrivateDebtToGdpCharts: React.FC = () => {
   return (
     <div className="mt-10 space-y-8">
@@ -89,23 +181,7 @@ export const PrivateDebtToGdpCharts: React.FC = () => {
             <Bar dataKey="value" fill="#2563eb" radius={[2, 2, 0, 0]} barSize={20}>
               <LabelList
                 position="top"
-                formatter={(v: number, name: string, props: { payload: { year: number } }) =>
-                  props.payload.year === 2024 ? formatPct(v) : ''
-                }
-                content={(props) => {
-                  const { x, y, value, width, payload } = props;
-                  if (payload?.year !== 2024 || value == null) return null;
-                  return (
-                    <text
-                      x={(x ?? 0) + (width ?? 0) / 2}
-                      y={(y ?? 0) - 6}
-                      textAnchor="middle"
-                      className="fill-rose-600 dark:fill-rose-400 text-xs font-medium"
-                    >
-                      {formatPct(value)}
-                    </text>
-                  );
-                }}
+                content={renderDebtTopLabel}
               />
             </Bar>
           </BarChart>
@@ -145,41 +221,7 @@ export const PrivateDebtToGdpCharts: React.FC = () => {
             <Bar dataKey="value" fill="#2563eb" radius={[2, 2, 0, 0]} barSize={20}>
               <LabelList
                 position="top"
-                content={(props) => {
-                  const { x, y, value, width, payload } = props;
-                  if (payload?.year !== 2024 || value == null) return null;
-                  return (
-                    <g>
-                      <rect
-                        x={(x ?? 0) + (width ?? 0) / 2 - 28}
-                        y={(y ?? 0) - 32}
-                        width={56}
-                        height={28}
-                        fill="white"
-                        stroke="currentColor"
-                        strokeWidth={1}
-                        className="stroke-slate-300 dark:stroke-slate-600"
-                        rx={4}
-                      />
-                      <text
-                        x={(x ?? 0) + (width ?? 0) / 2}
-                        y={(y ?? 0) - 24}
-                        textAnchor="middle"
-                        className="text-slate-700 dark:text-slate-300 text-[10px]"
-                      >
-                        2024
-                      </text>
-                      <text
-                        x={(x ?? 0) + (width ?? 0) / 2}
-                        y={(y ?? 0) - 12}
-                        textAnchor="middle"
-                        className="text-slate-900 dark:text-slate-100 text-xs font-medium"
-                      >
-                        {formatPct(value)}
-                      </text>
-                    </g>
-                  );
-                }}
+                content={renderDebtCalloutLabel}
               />
             </Bar>
           </BarChart>

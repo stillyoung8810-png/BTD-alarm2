@@ -4,7 +4,7 @@ import { getSkuByPlanId } from '../iap/iapConstants';
 import { supabase } from '../supabase';
 import { TOSS_IAP_FIXED_PLAN_ID } from './types';
 
-const BFF_URL = import.meta.env.VITE_RAILWAY_BFF_URL as string | undefined;
+const BFF_URL = import.meta.env.VITE_RAILWAY_BFF_URL;
 
 export interface IapResult {
   success: boolean;

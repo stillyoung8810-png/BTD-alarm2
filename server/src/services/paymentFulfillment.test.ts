@@ -4,6 +4,7 @@ import {
   fulfillPaidOrder,
   getEffectiveSubscriptionState,
   PLAN_DAYS_PER_UNIT,
+  type PaymentAdminClient,
 } from "./paymentFulfillment";
 
 const PLAN_AMOUNTS = {
@@ -11,9 +12,20 @@ const PLAN_AMOUNTS = {
   premium: 9900,
 } as const;
 
+interface MockProfile {
+  id: string;
+  subscription_tier?: string | null;
+  subscription_status?: string | null;
+  subscription_expires_at?: string | null;
+  pending_plan?: string | null;
+  pending_plan_effective_at?: string | null;
+  max_portfolios?: number | null;
+  max_alarms?: number | null;
+}
+
 function createAdminClientMock(options?: {
   claimResponses?: Array<Record<string, unknown>>;
-  profile?: Record<string, unknown>;
+  profile?: Partial<MockProfile>;
 }) {
   const state = {
     claimResponses: [...(options?.claimResponses ?? [{ success: true, claimed: true }])],
@@ -27,46 +39,25 @@ function createAdminClientMock(options?: {
       max_portfolios: 2,
       max_alarms: 2,
       ...(options?.profile ?? {}),
-    },
-    orderUpdates: [] as Array<Record<string, unknown>>,
-    profileUpdates: [] as Array<Record<string, unknown>>,
+    } satisfies MockProfile,
+    orderUpdates: [] as Array<unknown>,
+    profileUpdates: [] as Array<unknown>,
   };
 
-  const client = {
+  const client: PaymentAdminClient = {
     rpc: async () => ({
       data: state.claimResponses.shift() ?? { success: true, already_processed: true },
       error: null,
     }),
-    from: (table: string) => {
-      if (table === "user_profiles") {
-        return {
-          select: () => ({
-            eq: () => ({
-              single: async () => ({ data: state.profile, error: null }),
-            }),
-          }),
-          update: (payload: Record<string, unknown>) => ({
-            eq: async () => {
-              state.profile = { ...state.profile, ...payload };
-              state.profileUpdates.push(payload);
-              return { error: null };
-            },
-          }),
-        };
-      }
-
-      if (table === "orders") {
-        return {
-          update: (payload: Record<string, unknown>) => ({
-            eq: async () => {
-              state.orderUpdates.push(payload);
-              return { error: null };
-            },
-          }),
-        };
-      }
-
-      throw new Error(`Unexpected table: ${table}`);
+    loadUserProfile: async () => ({ data: state.profile, error: null }),
+    updateUserProfile: async (_userId, payload) => {
+      state.profile = { ...state.profile, ...payload };
+      state.profileUpdates.push(payload);
+      return { error: null };
+    },
+    updateOrderByPaymentId: async (_paymentId, payload) => {
+      state.orderUpdates.push(payload);
+      return { error: null };
     },
   };
 
@@ -204,7 +195,7 @@ describe("fulfillPaidOrder", () => {
     });
 
     const first = await fulfillPaidOrder({
-      adminClient: client as any,
+      adminClient: client,
       paymentId: "pay-1",
       userId: "user-1",
       planId: "pro",
@@ -219,7 +210,7 @@ describe("fulfillPaidOrder", () => {
     });
 
     const second = await fulfillPaidOrder({
-      adminClient: client as any,
+      adminClient: client,
       paymentId: "pay-1",
       userId: "user-1",
       planId: "pro",

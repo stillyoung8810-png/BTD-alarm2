@@ -2,8 +2,16 @@
  * 전략 백테스트 페이지: 전략 선택 → 파라미터 설정 → 결과 (UI 전용, 연산 엔진 연동 전)
  */
 
-import React, { useState, Suspense, lazy } from 'react';
+import React, { useCallback, useState, Suspense, lazy } from 'react';
 import { I18N, ALL_STOCKS } from '../constants';
+import { BACKTEST_DEFAULTS } from '../constants/domain/backtestDefaults';
+import {
+  BACKTEST_MESSAGES,
+  type BacktestMessageSet,
+} from '../constants/messages/backtestMessages';
+import { COMMON_MESSAGES } from '../constants/messages/commonMessages';
+import { useMutexAction } from '../hooks/useMutexAction';
+import { getDictionaryCopy } from '../utils/getDictionaryCopy';
 import { TrendingUp, Layers, Zap, ChevronLeft, Calendar, DollarSign, Percent, Crown, Info } from 'lucide-react';
 import CustomDropdown from './CustomDropdown';
 import Toggle from './Toggle';
@@ -74,45 +82,58 @@ export interface BacktestResult {
   drawdownSeries: { date: string; drawdown: number }[];
 }
 
+type RemoteBacktestStrategyId = 'multi_split' | 'no_stop_multi_split';
+
+interface RemoteBacktestRequest {
+  url: string | undefined;
+  payload: Record<string, unknown>;
+}
+
+type RemoteBacktestResponse =
+  | { kind: 'success'; result: BacktestResult }
+  | { kind: 'error'; message: string };
+
 const DEFAULT_PARAMS_MA: BacktestParamsMa = {
-  baseStock: 'QQQ',
+  baseStock: BACKTEST_DEFAULTS.MA.BASE_STOCK,
   rsiEnabled: false,
-  rsiThreshold: 30,
+  rsiThreshold: BACKTEST_DEFAULTS.MA.RSI_THRESHOLD,
   alignmentEnabled: false,
-  maAPeriod: 20,
-  maAStock: 'TQQQ',
+  maAPeriod: BACKTEST_DEFAULTS.MA.SHORT_PERIOD_DAYS,
+  maAStock: BACKTEST_DEFAULTS.MA.SHORT_PERIOD_STOCK,
   maATakeProfit: false,
-  maATakeProfitPct: 10,
-  maBPeriod: 60,
-  maBStock: 'QLD',
+  maATakeProfitPct: BACKTEST_DEFAULTS.MA.SHORT_PERIOD_TAKE_PROFIT_PERCENT,
+  maBPeriod: BACKTEST_DEFAULTS.MA.LONG_PERIOD_DAYS,
+  maBStock: BACKTEST_DEFAULTS.MA.LONG_PERIOD_STOCK,
   maBTakeProfit: false,
-  maBTakeProfitPct: 10,
-  ma3Stock: 'QQQ',
+  maBTakeProfitPct: BACKTEST_DEFAULTS.MA.LONG_PERIOD_TAKE_PROFIT_PERCENT,
+  ma3Stock: BACKTEST_DEFAULTS.MA.BELOW_MA_STOCK,
   ma3TakeProfit: false,
-  ma3TakeProfitPct: 10,
-  dailyBuyAmount: 1000,
-  months: 24,
-  feeRate: 0.25,
+  ma3TakeProfitPct: BACKTEST_DEFAULTS.MA.BELOW_MA_TAKE_PROFIT_PERCENT,
+  dailyBuyAmount: BACKTEST_DEFAULTS.MA.DAILY_BUY_AMOUNT_USD,
+  months: BACKTEST_DEFAULTS.COMMON.MONTHS,
+  feeRate: BACKTEST_DEFAULTS.COMMON.FEE_RATE_PERCENT,
 };
 
 const DEFAULT_PARAMS_MULTI: BacktestParamsMultiSplit = {
-  stock: 'TQQQ',
-  targetReturnRate: 10,
-  totalSplitCount: 40,
-  oneTimeAmount: 1000,
-  months: 24,
-  feeRate: 0.25,
+  stock: BACKTEST_DEFAULTS.MULTI_SPLIT.STOCK,
+  targetReturnRate: BACKTEST_DEFAULTS.COMMON.TARGET_RETURN_RATE_PERCENT,
+  totalSplitCount: BACKTEST_DEFAULTS.COMMON.TOTAL_SPLIT_COUNT,
+  oneTimeAmount: BACKTEST_DEFAULTS.COMMON.ONE_TIME_AMOUNT_USD,
+  months: BACKTEST_DEFAULTS.COMMON.MONTHS,
+  feeRate: BACKTEST_DEFAULTS.COMMON.FEE_RATE_PERCENT,
 };
 
 const DEFAULT_PARAMS_NO_STOP_MULTI: BacktestParamsNoStopMultiSplit = {
-  stock: 'TQQQ',
-  totalSplitCount: 40,
-  lowLocBudgetRatio: 50,
-  highLocPremiumPct: 15,
-  takeProfitPct: 10,
-  oneTimeAmount: 1000,
-  months: 24,
-  feeRate: 0.25,
+  stock: BACKTEST_DEFAULTS.NO_STOP_MULTI_SPLIT.STOCK,
+  totalSplitCount: BACKTEST_DEFAULTS.COMMON.TOTAL_SPLIT_COUNT,
+  lowLocBudgetRatio:
+    BACKTEST_DEFAULTS.NO_STOP_MULTI_SPLIT.LOW_LOC_BUDGET_RATIO_PERCENT,
+  highLocPremiumPct:
+    BACKTEST_DEFAULTS.NO_STOP_MULTI_SPLIT.HIGH_LOC_PREMIUM_PERCENT,
+  takeProfitPct: BACKTEST_DEFAULTS.NO_STOP_MULTI_SPLIT.TAKE_PROFIT_PERCENT,
+  oneTimeAmount: BACKTEST_DEFAULTS.COMMON.ONE_TIME_AMOUNT_USD,
+  months: BACKTEST_DEFAULTS.COMMON.MONTHS,
+  feeRate: BACKTEST_DEFAULTS.COMMON.FEE_RATE_PERCENT,
 };
 
 // 목업 결과 데이터
@@ -121,7 +142,7 @@ function buildMockResult(): BacktestResult {
   const dd: { date: string; drawdown: number }[] = [];
   let v = 100;
   const start = new Date();
-  start.setMonth(start.getMonth() - 24);
+  start.setMonth(start.getMonth() - BACKTEST_DEFAULTS.COMMON.MONTHS);
   for (let i = 0; i < 120; i++) {
     const d = new Date(start);
     d.setDate(d.getDate() + Math.floor((i * 365) / 5));
@@ -144,6 +165,153 @@ function buildMockResult(): BacktestResult {
 
 const stockOptions = ALL_STOCKS.map((s) => ({ value: s, label: s, disabled: false }));
 
+function getUsageFailureMessage(
+  copy: BacktestMessageSet,
+  rawMessage: string | undefined,
+): string {
+  if (rawMessage === 'DAILY_LIMIT_REACHED') {
+    return copy.dailyLimitReached;
+  }
+
+  return rawMessage?.trim() || copy.usageVerificationFailed;
+}
+
+function toRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== 'object' || value === null) {
+    return null;
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function toRemoteBody(value: unknown): Record<string, unknown> | null {
+  const record = toRecord(value);
+  if (record == null) {
+    return null;
+  }
+
+  if (typeof record.body === 'string') {
+    try {
+      return toRecord(JSON.parse(record.body));
+    } catch {
+      return null;
+    }
+  }
+
+  return record;
+}
+
+function toBacktestResult(body: Record<string, unknown>): BacktestResult | null {
+  if (!Array.isArray(body.equityCurve)) {
+    return null;
+  }
+
+  return {
+    totalReturnPct: Number(body.totalReturnPct ?? 0),
+    cagrPct: Number(body.cagrPct ?? 0),
+    mddPct: Number(body.mddPct ?? 0),
+    winRatePct: Number(body.winRatePct ?? 0),
+    sharpeRatio: Number(body.sharpeRatio ?? 0),
+    avgHoldingDays: Number(body.avgHoldingDays ?? 0),
+    equityCurve: body.equityCurve as BacktestResult['equityCurve'],
+    drawdownSeries: Array.isArray(body.drawdownSeries)
+      ? (body.drawdownSeries as BacktestResult['drawdownSeries'])
+      : [],
+  };
+}
+
+function getRemoteBacktestRequest(
+  strategyId: RemoteBacktestStrategyId,
+  paramsMulti: BacktestParamsMultiSplit,
+  paramsNoStopMulti: BacktestParamsNoStopMultiSplit,
+): RemoteBacktestRequest {
+  switch (strategyId) {
+    case 'multi_split':
+      return {
+        url: import.meta.env.VITE_BACKTEST_MULTI_URL,
+        payload: {
+          stock: paramsMulti.stock,
+          targetReturnRate: paramsMulti.targetReturnRate,
+          totalSplitCount: paramsMulti.totalSplitCount,
+          oneTimeAmount: paramsMulti.oneTimeAmount,
+          months: paramsMulti.months,
+          feeRate: paramsMulti.feeRate,
+        },
+      };
+    case 'no_stop_multi_split':
+      return {
+        url: import.meta.env.VITE_BACKTEST_NO_STOP_MULTI_URL,
+        payload: {
+          stock: paramsNoStopMulti.stock,
+          totalSplitCount: paramsNoStopMulti.totalSplitCount,
+          lowLocBudgetRatio: paramsNoStopMulti.lowLocBudgetRatio,
+          highLocPremiumPct: paramsNoStopMulti.highLocPremiumPct,
+          takeProfitPct: paramsNoStopMulti.takeProfitPct,
+          oneTimeAmount: paramsNoStopMulti.oneTimeAmount,
+          months: paramsNoStopMulti.months,
+          feeRate: paramsNoStopMulti.feeRate,
+        },
+      };
+    default: {
+      const exhaustiveCheck: never = strategyId;
+      return exhaustiveCheck;
+    }
+  }
+}
+
+async function requestRemoteBacktestResult(
+  strategyId: RemoteBacktestStrategyId,
+  paramsMulti: BacktestParamsMultiSplit,
+  paramsNoStopMulti: BacktestParamsNoStopMultiSplit,
+): Promise<RemoteBacktestResponse | null> {
+  const request = getRemoteBacktestRequest(
+    strategyId,
+    paramsMulti,
+    paramsNoStopMulti,
+  );
+
+  if (request.url == null || request.url.trim() === '') {
+    return null;
+  }
+
+  try {
+    const response = await fetch(request.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request.payload),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data: unknown = await response.json();
+    const body = toRemoteBody(data);
+    if (body == null) {
+      return null;
+    }
+
+    if (body.error != null) {
+      return {
+        kind: 'error',
+        message: String(body.error),
+      };
+    }
+
+    const result = toBacktestResult(body);
+    if (result == null) {
+      return null;
+    }
+
+    return {
+      kind: 'success',
+      result,
+    };
+  } catch {
+    return null;
+  }
+}
+
 interface BacktestProps {
   lang: 'ko' | 'en';
   currentTier: string;
@@ -151,6 +319,12 @@ interface BacktestProps {
 
 const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
   const t = I18N[lang];
+  const commonCopy = getDictionaryCopy(COMMON_MESSAGES, lang, 'COMMON_MESSAGES');
+  const backtestCopy = getDictionaryCopy(
+    BACKTEST_MESSAGES,
+    lang,
+    'BACKTEST_MESSAGES',
+  );
   const [step, setStep] = useState<Step>('strategy');
   const [strategyId, setStrategyId] = useState<BacktestStrategyId | null>(null);
   const [paramsMa, setParamsMa] = useState<BacktestParamsMa>(DEFAULT_PARAMS_MA);
@@ -164,119 +338,48 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
     setStep('params');
   };
 
-  const handleRunBacktest = async () => {
-    // 1. 사용량 체크 및 증가 호출
+  const executeBacktest = useCallback(async () => {
+    if (strategyId == null) {
+      return;
+    }
+
     const usageResult = await incrementUsage('backtest', currentTier);
     if (!usageResult.success) {
-      setBacktestError(
-        lang === 'ko' 
-          ? usageResult.message === 'DAILY_LIMIT_REACHED' 
-            ? '일일 백테스트 한도에 도달했습니다. 내일 다시 시도하거나 멤버십을 업그레이드하세요.'
-            : usageResult.message || '사용량 확인 중 오류가 발생했습니다.'
-          : usageResult.message || 'Usage limit reached or verification failed.'
-      );
+      setBacktestError(getUsageFailureMessage(backtestCopy, usageResult.message));
       setResult(null);
       setStep('results');
       return;
     }
 
-    if (strategyId === 'multi_split') {
-      const apiUrl = (import.meta as any).env?.VITE_BACKTEST_MULTI_URL;
-      if (apiUrl) {
-        try {
-          const res = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              stock: paramsMulti.stock,
-              targetReturnRate: paramsMulti.targetReturnRate,
-              totalSplitCount: paramsMulti.totalSplitCount,
-              oneTimeAmount: paramsMulti.oneTimeAmount,
-              months: paramsMulti.months,
-              feeRate: paramsMulti.feeRate,
-            }),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            const body = typeof data.body === 'string' ? JSON.parse(data.body) : data;
-            if (body.error) {
-              setBacktestError(body.error);
-              setResult(null);
-              setStep('results');
-              return;
-            }
-            if (body.equityCurve) {
-              setBacktestError(null);
-              setResult({
-                totalReturnPct: body.totalReturnPct ?? 0,
-                cagrPct: body.cagrPct ?? 0,
-                mddPct: body.mddPct ?? 0,
-                winRatePct: body.winRatePct ?? 0,
-                sharpeRatio: body.sharpeRatio ?? 0,
-                avgHoldingDays: body.avgHoldingDays ?? 0,
-                equityCurve: body.equityCurve,
-                drawdownSeries: body.drawdownSeries ?? [],
-              });
-              setStep('results');
-              return;
-            }
-          }
-        } catch (_e) {
-          // fallback to mock
-        }
+    if (strategyId === 'multi_split' || strategyId === 'no_stop_multi_split') {
+      const remoteResponse = await requestRemoteBacktestResult(
+        strategyId,
+        paramsMulti,
+        paramsNoStopMulti,
+      );
+
+      if (remoteResponse?.kind === 'error') {
+        setBacktestError(remoteResponse.message);
+        setResult(null);
+        setStep('results');
+        return;
       }
-    } else if (strategyId === 'no_stop_multi_split') {
-      const apiUrl = (import.meta as any).env?.VITE_BACKTEST_NO_STOP_MULTI_URL;
-      if (apiUrl) {
-        try {
-          const res = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              stock: paramsNoStopMulti.stock,
-              totalSplitCount: paramsNoStopMulti.totalSplitCount,
-              lowLocBudgetRatio: paramsNoStopMulti.lowLocBudgetRatio,
-              highLocPremiumPct: paramsNoStopMulti.highLocPremiumPct,
-              takeProfitPct: paramsNoStopMulti.takeProfitPct,
-              oneTimeAmount: paramsNoStopMulti.oneTimeAmount,
-              months: paramsNoStopMulti.months,
-              feeRate: paramsNoStopMulti.feeRate,
-            }),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            const body = typeof data.body === 'string' ? JSON.parse(data.body) : data;
-            if (body.error) {
-              setBacktestError(body.error);
-              setResult(null);
-              setStep('results');
-              return;
-            }
-            if (body.equityCurve) {
-              setBacktestError(null);
-              setResult({
-                totalReturnPct: body.totalReturnPct ?? 0,
-                cagrPct: body.cagrPct ?? 0,
-                mddPct: body.mddPct ?? 0,
-                winRatePct: body.winRatePct ?? 0,
-                sharpeRatio: body.sharpeRatio ?? 0,
-                avgHoldingDays: body.avgHoldingDays ?? 0,
-                equityCurve: body.equityCurve,
-                drawdownSeries: body.drawdownSeries ?? [],
-              });
-              setStep('results');
-              return;
-            }
-          }
-        } catch (_e) {
-          // fallback to mock
-        }
+
+      if (remoteResponse?.kind === 'success') {
+        setBacktestError(null);
+        setResult(remoteResponse.result);
+        setStep('results');
+        return;
       }
     }
+
     setBacktestError(null);
     setResult(buildMockResult());
     setStep('results');
-  };
+  }, [backtestCopy, currentTier, paramsMulti, paramsNoStopMulti, strategyId]);
+
+  const { run: handleRunBacktest, isExecuting } =
+    useMutexAction(executeBacktest);
 
   const handleNewSettings = () => {
     setStep('strategy');
@@ -352,7 +455,7 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
       {step === 'params' && strategyId && (
         <div className="bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-3xl p-6 md:p-8 shadow-xl">
           <button type="button" onClick={() => { setStep('strategy'); setStrategyId(null); }} className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-sm font-bold mb-4 transition-colors">
-            <ChevronLeft size={18} /> {lang === 'ko' ? '전략 선택으로' : 'Back to strategy'}
+            <ChevronLeft size={18} /> {backtestCopy.backToStrategy}
           </button>
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white">
@@ -379,7 +482,7 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
                     value={paramsMa.baseStock}
                     options={stockOptions}
                     onChange={(v) => setParamsMa((p) => ({ ...p, baseStock: v }))}
-                    header={lang === 'ko' ? '종목 선택' : 'Select Stock'}
+                    header={backtestCopy.stockSelectionHeader}
                   />
                 </div>
                 <div>
@@ -447,7 +550,14 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
                       onChange={(e) =>
                         setParamsMa((p) => ({
                           ...p,
-                          rsiThreshold: Math.min(60, Math.max(10, Number(e.target.value) || 30)),
+                          rsiThreshold: Math.min(
+                            60,
+                            Math.max(
+                              10,
+                              Number(e.target.value) ||
+                                BACKTEST_DEFAULTS.MA.RSI_THRESHOLD,
+                            ),
+                          ),
                         }))
                       }
                       className="w-20 p-2 rounded-lg border border-slate-200 dark:border-white/10 text-xs font-bold"
@@ -481,7 +591,9 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
                       onChange={(e) =>
                         setParamsMa((p) => ({
                           ...p,
-                          maAPeriod: Number(e.target.value) || 20,
+                          maAPeriod:
+                            Number(e.target.value) ||
+                            BACKTEST_DEFAULTS.MA.SHORT_PERIOD_DAYS,
                         }))
                       }
                       className="w-full p-3 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50 text-sm font-bold"
@@ -517,7 +629,9 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
                       onChange={(e) =>
                         setParamsMa((p) => ({
                           ...p,
-                          maATakeProfitPct: Number(e.target.value) || 10,
+                          maATakeProfitPct:
+                            Number(e.target.value) ||
+                            BACKTEST_DEFAULTS.MA.SHORT_PERIOD_TAKE_PROFIT_PERCENT,
                         }))
                       }
                       className="w-20 p-2 rounded-lg border border-slate-200 dark:border-white/10 text-sm font-bold"
@@ -541,7 +655,9 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
                       onChange={(e) =>
                         setParamsMa((p) => ({
                           ...p,
-                          maBPeriod: Number(e.target.value) || 60,
+                          maBPeriod:
+                            Number(e.target.value) ||
+                            BACKTEST_DEFAULTS.MA.LONG_PERIOD_DAYS,
                         }))
                       }
                       className="w-full p-3 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50 text-sm font-bold"
@@ -577,7 +693,9 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
                       onChange={(e) =>
                         setParamsMa((p) => ({
                           ...p,
-                          maBTakeProfitPct: Number(e.target.value) || 10,
+                          maBTakeProfitPct:
+                            Number(e.target.value) ||
+                            BACKTEST_DEFAULTS.MA.LONG_PERIOD_TAKE_PROFIT_PERCENT,
                         }))
                       }
                       className="w-20 p-2 rounded-lg border border-slate-200 dark:border-white/10 text-sm font-bold"
@@ -600,7 +718,7 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
                     <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">{t.takeProfit}</span>
                   </label>
                   {paramsMa.ma3TakeProfit && (
-                    <input type="number" min={1} max={100} value={paramsMa.ma3TakeProfitPct} onChange={(e) => setParamsMa((p) => ({ ...p, ma3TakeProfitPct: Number(e.target.value) || 10 }))} className="w-20 p-2 rounded-lg border border-slate-200 dark:border-white/10 text-sm font-bold" />
+                    <input type="number" min={1} max={100} value={paramsMa.ma3TakeProfitPct} onChange={(e) => setParamsMa((p) => ({ ...p, ma3TakeProfitPct: Number(e.target.value) || BACKTEST_DEFAULTS.MA.BELOW_MA_TAKE_PROFIT_PERCENT }))} className="w-20 p-2 rounded-lg border border-slate-200 dark:border-white/10 text-sm font-bold" />
                   )}
                 </div>
               </div>
@@ -612,8 +730,8 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
                 <button type="button" onClick={() => { setStep('strategy'); setStrategyId(null); }} className="px-5 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">
                   {t.cancel}
                 </button>
-                <button type="button" onClick={handleRunBacktest} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black shadow-lg shadow-blue-500/30 hover:scale-[1.02] active:scale-[0.98] transition-transform">
-                  <Zap size={18} /> {t.backtestRun}
+                <button type="button" onClick={handleRunBacktest} disabled={isExecuting} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black shadow-lg shadow-blue-500/30 hover:scale-[1.02] active:scale-[0.98] transition-transform disabled:opacity-60 disabled:cursor-not-allowed">
+                  <Zap size={18} /> {isExecuting ? commonCopy.processing : backtestCopy.startRun}
                 </button>
               </div>
             </div>
@@ -637,17 +755,17 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">{t.targetReturnRate} (%)</label>
-                  <input type="number" min={1} max={50} value={paramsMulti.targetReturnRate} onChange={(e) => setParamsMulti((p) => ({ ...p, targetReturnRate: Number(e.target.value) || 10 }))} className="w-full p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-white font-bold" />
+                  <input type="number" min={1} max={50} value={paramsMulti.targetReturnRate} onChange={(e) => setParamsMulti((p) => ({ ...p, targetReturnRate: Number(e.target.value) || BACKTEST_DEFAULTS.COMMON.TARGET_RETURN_RATE_PERCENT }))} className="w-full p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-white font-bold" />
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">{t.totalSplitCount}</label>
-                  <input type="number" min={5} max={80} value={paramsMulti.totalSplitCount} onChange={(e) => setParamsMulti((p) => ({ ...p, totalSplitCount: Number(e.target.value) || 40 }))} className="w-full p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-white font-bold" />
+                  <input type="number" min={5} max={80} value={paramsMulti.totalSplitCount} onChange={(e) => setParamsMulti((p) => ({ ...p, totalSplitCount: Number(e.target.value) || BACKTEST_DEFAULTS.COMMON.TOTAL_SPLIT_COUNT }))} className="w-full p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-white font-bold" />
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">$ {t.oneTimeAmount}</label>
-                  <input type="number" value={paramsMulti.oneTimeAmount} onChange={(e) => setParamsMulti((p) => ({ ...p, oneTimeAmount: Number(e.target.value) || 1000 }))} className="w-full p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-white font-bold" />
+                  <input type="number" value={paramsMulti.oneTimeAmount} onChange={(e) => setParamsMulti((p) => ({ ...p, oneTimeAmount: Number(e.target.value) || BACKTEST_DEFAULTS.COMMON.ONE_TIME_AMOUNT_USD }))} className="w-full p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-white font-bold" />
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">{t.feeRate} (%)</label>
@@ -660,8 +778,8 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
               </div>
               <div className="flex gap-3 pt-4">
                 <button type="button" onClick={() => { setStep('strategy'); setStrategyId(null); }} className="px-5 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">{t.cancel}</button>
-                <button type="button" onClick={handleRunBacktest} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black shadow-lg shadow-emerald-500/30 hover:scale-[1.02] active:scale-[0.98] transition-transform">
-                  <Zap size={18} /> {t.backtestRun}
+                <button type="button" onClick={handleRunBacktest} disabled={isExecuting} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black shadow-lg shadow-emerald-500/30 hover:scale-[1.02] active:scale-[0.98] transition-transform disabled:opacity-60 disabled:cursor-not-allowed">
+                  <Zap size={18} /> {isExecuting ? commonCopy.processing : backtestCopy.startRun}
                 </button>
               </div>
             </div>
@@ -711,14 +829,14 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">
-                    {lang === 'ko' ? '저가(평단가) LOC 예산 비율 (%)' : 'Low LOC Budget Ratio (%)'}
+                    {backtestCopy.lowLocBudgetRatioLabel}
                   </label>
                   <input
                     type="number"
                     min={1}
                     max={99}
                     value={paramsNoStopMulti.lowLocBudgetRatio}
-                    onChange={(e) => setParamsNoStopMulti((p) => ({ ...p, lowLocBudgetRatio: Number(e.target.value) || 50 }))}
+                    onChange={(e) => setParamsNoStopMulti((p) => ({ ...p, lowLocBudgetRatio: Number(e.target.value) || BACKTEST_DEFAULTS.NO_STOP_MULTI_SPLIT.LOW_LOC_BUDGET_RATIO_PERCENT }))}
                     className="w-full p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-white font-bold"
                   />
                 </div>
@@ -726,36 +844,34 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">
-                    {lang === 'ko' ? '고가 LOC 프리미엄 (%)' : 'High LOC Premium (%)'}
+                    {backtestCopy.highLocPremiumLabel}
                   </label>
                   <input
                     type="number"
                     min={1}
                     max={100}
                     value={paramsNoStopMulti.highLocPremiumPct}
-                    onChange={(e) => setParamsNoStopMulti((p) => ({ ...p, highLocPremiumPct: Number(e.target.value) || 15 }))}
+                    onChange={(e) => setParamsNoStopMulti((p) => ({ ...p, highLocPremiumPct: Number(e.target.value) || BACKTEST_DEFAULTS.NO_STOP_MULTI_SPLIT.HIGH_LOC_PREMIUM_PERCENT }))}
                     className="w-full p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-white font-bold"
                   />
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-                    {lang === 'ko' ? '현재가 대비 +X% 가격에 LOC 주문을 겁니다. (매일 체결 보장용)' : 'Places LOC at current price +X% (for daily fill).'}
+                    {backtestCopy.highLocPremiumHint}
                   </p>
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">
-                    {lang === 'ko' ? '익절 목표 수익률 (%)' : 'Take Profit (%)'}
+                    {backtestCopy.takeProfitLabel}
                   </label>
                   <input
                     type="number"
                     min={5}
                     max={100}
                     value={paramsNoStopMulti.takeProfitPct}
-                    onChange={(e) => setParamsNoStopMulti((p) => ({ ...p, takeProfitPct: Number(e.target.value) || 10 }))}
+                    onChange={(e) => setParamsNoStopMulti((p) => ({ ...p, takeProfitPct: Number(e.target.value) || BACKTEST_DEFAULTS.NO_STOP_MULTI_SPLIT.TAKE_PROFIT_PERCENT }))}
                     className="w-full p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-white font-bold"
                   />
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-                    {lang === 'ko'
-                      ? '평단 대비 +Y%에서 전량 지정가 매도합니다.'
-                      : 'Sell full position at avg price +Y%.'}
+                    {backtestCopy.takeProfitHint}
                   </p>
                 </div>
               </div>
@@ -767,7 +883,7 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
                   <input
                     type="number"
                     value={paramsNoStopMulti.oneTimeAmount}
-                    onChange={(e) => setParamsNoStopMulti((p) => ({ ...p, oneTimeAmount: Number(e.target.value) || 1000 }))}
+                    onChange={(e) => setParamsNoStopMulti((p) => ({ ...p, oneTimeAmount: Number(e.target.value) || BACKTEST_DEFAULTS.COMMON.ONE_TIME_AMOUNT_USD }))}
                     className="w-full p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-white font-bold"
                   />
                 </div>
@@ -801,9 +917,10 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
                 <button
                   type="button"
                   onClick={handleRunBacktest}
-                  className="flex-1 md:flex-none flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black shadow-lg shadow-emerald-500/30 hover:scale-[1.02] active:scale-[0.98] transition-transform"
+                  disabled={isExecuting}
+                  className="flex-1 md:flex-none flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black shadow-lg shadow-emerald-500/30 hover:scale-[1.02] active:scale-[0.98] transition-transform disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <Zap size={18} /> {t.backtestRun}
+                  <Zap size={18} /> {isExecuting ? commonCopy.processing : backtestCopy.startRun}
                 </button>
               </div>
             </div>
@@ -816,7 +933,7 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
         <div className="space-y-6">
           <div className="rounded-2xl p-6 bg-red-50 dark:bg-red-900/20 border-2 border-red-200 dark:border-red-500/40">
             <p className="text-sm font-bold text-red-700 dark:text-red-300 mb-2">
-              {lang === 'ko' ? '백테스트 실행 불가' : 'Backtest could not run'}
+              {backtestCopy.backtestUnavailableTitle}
             </p>
             <p className="text-slate-700 dark:text-slate-300 font-medium">{backtestError}</p>
           </div>

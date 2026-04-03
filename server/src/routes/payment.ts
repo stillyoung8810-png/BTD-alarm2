@@ -1,14 +1,20 @@
 import { FastifyInstance } from "fastify";
-import { handleTossError, tossClient } from "../tossClient";
+import { tossClient } from "../tossClient";
 import { supabaseAdmin } from "../supabaseClient";
 import { IAP_PRODUCTS } from "../services/iapConstants";
 import {
+    createPaymentAdminClient,
     fulfillPaidOrder,
     PLAN_DAYS_PER_UNIT,
     type PaidPlanId,
 } from "../services/paymentFulfillment";
 
+const PAID_PLAN_IDS = ["pro", "premium"] as const;
 const QUANTITY_MAX = 12;
+const DEFAULT_PAYMENT_QUANTITY = 1;
+const PAYMENT_GATEWAY_ERROR_STATUS = 502;
+const PAYMENT_GATEWAY_ERROR_MESSAGE = "Failed to communicate with payment gateway";
+const BASIC_AUTH_SUFFIX = ":";
 
 const IAP_ORDER_STATUS_URL = "https://api-partner.toss.im/api-partner/v1/apps-in-toss/order/get-order-status";
 
@@ -16,14 +22,15 @@ const IAP_ORDER_STATUS_URL = "https://api-partner.toss.im/api-partner/v1/apps-in
 // 프론트엔드(constants/membership.ts)와 이 서버 환경변수가 반드시 일치해야 합니다.
 // 기본값(fallback): PRO = 5907, PREMIUM = 9900
 // 변경 시 프론트(.env VITE_PLAN_AMOUNT_*) + 백엔드(PLAN_AMOUNT_*) 모두 갱신 필수.
-const PLAN_AMOUNTS: Record<string, number> = {
+const PLAN_AMOUNTS: Record<PaidPlanId, number> = {
     pro: Number(process.env.PLAN_AMOUNT_PRO ?? 5907),
     premium: Number(process.env.PLAN_AMOUNT_PREMIUM ?? 9900),
 };
+const paymentAdminClient = createPaymentAdminClient(supabaseAdmin);
 
 interface VerifyBody {
     paymentId: string;
-    planId: string;
+    planId: PaidPlanId;
     quantity?: number;
 }
 
@@ -31,23 +38,84 @@ interface IapVerifyBody {
     orderId: string;
 }
 
+interface TossConfirmResponse {
+    status?: string;
+    totalAmount?: number | string;
+}
+
 function deriveQuantityFromAmount(actualAmount: number, unitPrice: number): number | null {
-    if (unitPrice <= 0 || actualAmount < unitPrice || actualAmount % unitPrice !== 0) return null;
-    const q = actualAmount / unitPrice;
-    return q >= 1 && q <= QUANTITY_MAX ? q : null;
+    const safeAmount = Math.round(actualAmount);
+
+    if (unitPrice <= 0 || safeAmount < unitPrice) return null;
+
+    const q = safeAmount / unitPrice;
+    const roundedQ = Math.round(q);
+    if (Math.abs(roundedQ - q) > Number.EPSILON) return null;
+
+    return roundedQ >= 1 && roundedQ <= QUANTITY_MAX ? roundedQ : null;
+}
+
+function isPaidPlanId(value: unknown): value is PaidPlanId {
+    return typeof value === "string" && (PAID_PLAN_IDS as readonly string[]).includes(value);
+}
+
+function parseVerifyBody(raw: unknown): VerifyBody | null {
+    if (typeof raw !== "object" || raw === null) {
+        return null;
+    }
+
+    const body = raw as Record<string, unknown>;
+    if (typeof body.paymentId !== "string" || body.paymentId.trim() === "") {
+        return null;
+    }
+    if (!isPaidPlanId(body.planId)) {
+        return null;
+    }
+    if (
+        body.quantity !== undefined &&
+        (
+            typeof body.quantity !== "number" ||
+            !Number.isInteger(body.quantity) ||
+            body.quantity < 1 ||
+            body.quantity > QUANTITY_MAX
+        )
+    ) {
+        return null;
+    }
+
+    if (typeof body.quantity === "number") {
+        return { paymentId: body.paymentId, planId: body.planId, quantity: body.quantity };
+    }
+
+    return { paymentId: body.paymentId, planId: body.planId };
+}
+
+function parseTossConfirmResponse(raw: unknown): TossConfirmResponse {
+    if (typeof raw !== "object" || raw === null) {
+        return {};
+    }
+
+    const data = raw as Record<string, unknown>;
+    return {
+        status: typeof data.status === "string" ? data.status : undefined,
+        totalAmount:
+            typeof data.totalAmount === "number" || typeof data.totalAmount === "string"
+                ? data.totalAmount
+                : undefined,
+    };
 }
 
 export async function paymentRoutes(fastify: FastifyInstance) {
-    fastify.post<{ Body: VerifyBody }>(
+    fastify.post(
         "/payment/toss/verify",
         async (request, reply) => {
-            const { paymentId, planId, quantity: reqQuantity } = request.body;
+            const parsedBody = parseVerifyBody(request.body);
             const authHeader = request.headers.authorization;
 
-            if (!paymentId || !planId) {
+            if (!parsedBody) {
                 return reply.code(400).send({
                     success: false,
-                    error: "Missing paymentId or planId",
+                    error: "Invalid payment verification payload",
                 });
             }
 
@@ -58,16 +126,13 @@ export async function paymentRoutes(fastify: FastifyInstance) {
                 });
             }
 
+            const { paymentId, planId, quantity: reqQuantity } = parsedBody;
             const unitPrice = PLAN_AMOUNTS[planId];
-            if (unitPrice == null || unitPrice <= 0) {
-                return reply.code(400).send({
-                    success: false,
-                    error: `Invalid planId: ${planId}`,
-                });
-            }
+            const safeQuantity = typeof reqQuantity === "number" ? reqQuantity : DEFAULT_PAYMENT_QUANTITY;
+            const expectedAmount = unitPrice * safeQuantity;
 
             try {
-                const token = authHeader.replace("Bearer ", "");
+                const token = authHeader.replace(/^\s*Bearer\s+/i, "");
                 const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
 
                 if (authError || !user) {
@@ -77,25 +142,32 @@ export async function paymentRoutes(fastify: FastifyInstance) {
                     });
                 }
 
-                const expectedAmount = unitPrice * (typeof reqQuantity === "number" && reqQuantity >= 1 && reqQuantity <= QUANTITY_MAX ? reqQuantity : 1);
+                let confirmResponse;
+                try {
+                    confirmResponse = await tossClient.post<TossConfirmResponse>(
+                        "/v1/payments/confirm",
+                        {
+                            paymentKey: paymentId,
+                            orderId: paymentId,
+                            amount: expectedAmount,
+                        },
+                        {
+                            headers: process.env.TOSS_PAYMENTS_SECRET_KEY
+                                ? {
+                                    Authorization: `Basic ${Buffer.from(process.env.TOSS_PAYMENTS_SECRET_KEY + BASIC_AUTH_SUFFIX, "utf8").toString("base64")}`,
+                                }
+                                : {},
+                        },
+                    );
+                } catch (error) {
+                    request.log.error({ err: error, paymentId }, "[Payment] Toss confirm API failed");
+                    return reply.code(PAYMENT_GATEWAY_ERROR_STATUS).send({
+                        success: false,
+                        message: PAYMENT_GATEWAY_ERROR_MESSAGE,
+                    });
+                }
 
-                const confirmResponse = await tossClient.post(
-                    "/v1/payments/confirm",
-                    {
-                        paymentKey: paymentId,
-                        orderId: paymentId,
-                        amount: expectedAmount,
-                    },
-                    {
-                        headers: process.env.TOSS_PAYMENTS_SECRET_KEY
-                            ? {
-                                Authorization: `Basic ${Buffer.from(process.env.TOSS_PAYMENTS_SECRET_KEY + ":", "utf8").toString("base64")}`,
-                            }
-                            : {},
-                    },
-                );
-
-                const paymentData = confirmResponse.data as { status?: string; totalAmount?: number };
+                const paymentData = parseTossConfirmResponse(confirmResponse.data);
                 if (paymentData.status !== "DONE") {
                     return reply.send({
                         success: false,
@@ -113,10 +185,10 @@ export async function paymentRoutes(fastify: FastifyInstance) {
                 }
 
                 const fulfillment = await fulfillPaidOrder({
-                    adminClient: supabaseAdmin,
+                    adminClient: paymentAdminClient,
                     paymentId,
                     userId: user.id,
-                    planId: planId as PaidPlanId,
+                    planId,
                     quantity,
                     amount: actualAmount,
                     currency: "KRW",
@@ -125,7 +197,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
                     pgTxId: paymentId,
                     paidAt: new Date().toISOString(),
                     orderName: `${planId.toUpperCase()} Plan (${quantity * PLAN_DAYS_PER_UNIT}일)`,
-                    planAmounts: PLAN_AMOUNTS as { pro: number; premium: number },
+                    planAmounts: PLAN_AMOUNTS,
                     metadata: {
                         source: "toss-payments-verify",
                     },
@@ -138,7 +210,10 @@ export async function paymentRoutes(fastify: FastifyInstance) {
                     });
                 }
 
-                console.log("[Payment] Verification & DB Update Successful");
+                request.log.info(
+                    { paymentId, userId: user.id, planId, quantity },
+                    "[Payment] Verification & DB update success",
+                );
 
                 return reply.send({
                     success: true,
@@ -152,8 +227,8 @@ export async function paymentRoutes(fastify: FastifyInstance) {
                     },
                 });
             } catch (error) {
-                const err = handleTossError(error, "Payment Verify");
-                return reply.code(400).send({ success: false, ...err });
+                request.log.error({ err: error, paymentId }, "[Payment] Verification failed");
+                return reply.code(500).send({ success: false, error: "Internal server error" });
             }
         },
     );
@@ -217,24 +292,24 @@ export async function paymentRoutes(fastify: FastifyInstance) {
 
                 // 4. SKU 무조건 검증 (Zero-Trust: 클라이언트 값 무시)
                 const sku = successPayload?.product?.id ?? successPayload?.sku ?? successPayload?.productId;
-                let finalPlanId = "";
-                let amountToRecord = PLAN_AMOUNTS.pro;
+                let finalPlanId: PaidPlanId | null = null;
 
                 if (sku === IAP_PRODUCTS.PRO) {
                     finalPlanId = "pro";
-                    amountToRecord = PLAN_AMOUNTS.pro;
                 } else {
                     request.log.warn({ orderId, sku }, "[IAP Verify] Unknown or manipulated SKU");
                     return reply.code(400).send({ success: false, error: "Invalid product SKU" });
                 }
 
+                const amountToRecord = PLAN_AMOUNTS[finalPlanId];
+
                 // 5. 공통 Fulfillment 실행
                 // 토스 IAP 소모품 특성상 수량은 무조건 1단위(30일)로 강제 고정합니다.
                 const fulfillment = await fulfillPaidOrder({
-                    adminClient: supabaseAdmin,
+                    adminClient: paymentAdminClient,
                     paymentId: orderId,
                     userId: user.id,
-                    planId: finalPlanId as PaidPlanId,
+                    planId: finalPlanId,
                     quantity: 1,
                     amount: amountToRecord,
                     currency: "KRW",
@@ -243,7 +318,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
                     pgTxId: orderId,
                     paidAt: new Date().toISOString(),
                     orderName: `${finalPlanId.toUpperCase()} Plan (${PLAN_DAYS_PER_UNIT}일)`,
-                    planAmounts: PLAN_AMOUNTS as { pro: number; premium: number },
+                    planAmounts: PLAN_AMOUNTS,
                     metadata: {
                         source: "toss-iap-verify",
                         sku,

@@ -3,6 +3,13 @@
  * — 현재는 KRW 전용. 다통화 확장 시 이 파일만 수정.
  */
 
+import {
+  areFiniteNonNegativeScalars,
+  areStrictPositiveFiniteScalars,
+  isStrictPositiveFiniteNumber,
+} from './financialScalarGuards';
+import { floorToNonNegativeInt } from './financialMath';
+
 const krwFormatter = new Intl.NumberFormat('ko-KR', {
   style: 'currency',
   currency: 'KRW',
@@ -10,7 +17,7 @@ const krwFormatter = new Intl.NumberFormat('ko-KR', {
 });
 
 export function formatPriceKRW(amount: number): string {
-  if (!Number.isFinite(amount) || amount < 0) {
+  if (!areFiniteNonNegativeScalars(amount)) {
     if (typeof import.meta !== 'undefined' && import.meta.env?.MODE !== 'production') {
       console.error('[formatPriceKRW] Invalid amount:', amount);
     }
@@ -30,7 +37,7 @@ const usdMembershipFormatter = new Intl.NumberFormat('en-US', {
 });
 
 export function formatPriceUSDForDisplay(amountKrw: number): string {
-  if (!Number.isFinite(amountKrw) || amountKrw < 0) {
+  if (!areFiniteNonNegativeScalars(amountKrw)) {
     if (typeof import.meta !== 'undefined' && import.meta.env?.MODE !== 'production') {
       console.error('[formatPriceUSDForDisplay] Invalid amountKrw:', amountKrw);
     }
@@ -45,11 +52,13 @@ export function calculateSafeTotalAmountKRW(
   price: number | undefined,
   quantity: number,
 ): number {
-  if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0) {
+  if (!isStrictPositiveFiniteNumber(price)) {
     return 0;
   }
-  if (!Number.isFinite(quantity) || quantity <= 0) {
+
+  if (!areStrictPositiveFiniteScalars(quantity)) {
     return 0;
   }
-  return Math.floor(price * quantity + Number.EPSILON);
+
+  return floorToNonNegativeInt(price * quantity);
 }

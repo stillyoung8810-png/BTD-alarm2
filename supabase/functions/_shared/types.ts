@@ -1,11 +1,22 @@
 /** 앱 전역 언어. 모든 컴포넌트의 lang props는 이 타입을 사용한다. */
 export type AppLang = 'ko' | 'en';
 
-export enum StrategySection {
-  MA1 = 'MA1',
-  MA2 = 'MA2',
-  MA3 = 'MA3'
-}
+/**
+ * Strategy 객체와 1:1인 전략 데이터 슬라이스 키 SSOT.
+ * Edge Function과 프런트가 동일 집합을 공유해야 전략 슬라이스 드리프트가 생기지 않습니다.
+ */
+export const STRATEGY_SLICE_KEY_VALUES = [
+  'ma0',
+  'ma1',
+  'ma2',
+  'ma3',
+  'multiSplit',
+  'noStopMultiSplit',
+  'vrBand',
+] as const;
+
+export type StrategySliceKey =
+  (typeof STRATEGY_SLICE_KEY_VALUES)[number];
 
 export interface AlarmConfig {
   enabled: boolean;
@@ -177,8 +188,8 @@ export interface Portfolio {
   vrSnapshot?: VrSnapshot;
 }
 
-/** DB(Supabase)에서 가져온 snake_case 행(매핑 전). Record 확장으로 추가 컬럼도 허용. */
-export interface PortfolioRow extends Record<string, unknown> {
+/** DB(Supabase)에서 가져온 snake_case 행(매핑 전). 필요한 레거시 필드만 명시합니다. */
+export interface PortfolioRow {
   id?: string | null;
   user_id?: string | null;
   name?: string | null;
@@ -192,11 +203,29 @@ export interface PortfolioRow extends Record<string, unknown> {
   strategy?: Strategy;
   trades?: Trade[] | null;
   alarm_config?: AlarmConfig | null;
+  /** 일부 Edge/레거시 매핑용 camelCase */
+  alarmconfig?: AlarmConfig | null;
   is_quarter_mode?: boolean | null;
   is_closed?: boolean | null;
   closed_at?: string | null;
   final_sell_amount?: number | null;
   vr_snapshot?: VrSnapshot | null;
+  /** 일부 Edge/레거시 매핑용 camelCase */
+  vrSnapshot?: VrSnapshot | null;
+}
+
+export interface UserProfileRow {
+  id?: string | null;
+  subscription_tier?: string | null;
+  subscription_status?: string | null;
+  subscription_expires_at?: string | null;
+  pending_plan?: string | null;
+  pending_plan_effective_at?: string | null;
+  telegram_enabled?: boolean | null;
+  telegram_chat_id?: string | null;
+  preferred_language?: string | null;
+  toss_user_key?: string | null;
+  telegram_last_error?: string | null;
 }
 
 export interface StockData {

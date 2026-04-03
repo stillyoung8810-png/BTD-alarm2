@@ -18,7 +18,7 @@ export interface TierDisplay {
 export function useTierDisplay(tier: TierValue): TierDisplay {
   return useMemo(() => {
     const normalized = (typeof tier === 'string' ? tier : 'free').toLowerCase();
-    const isPremium = normalized === 'premium';
+    const isPremium = normalized === 'premium' || normalized === 'enterprise';
     const isPro = normalized === 'pro';
 
     return {

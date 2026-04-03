@@ -5,7 +5,7 @@ import { normalizePortfolioData } from '../utils/portfolioNormalize';
 import { calculateHoldings, calculateTotalInvested, getTotalSellProceeds } from '../utils/portfolioCalculations';
 import { calculatePoolDelta, computeVrSnapshotAfterTrade } from '../utils/vrBandStrategy';
 import { getEffectiveSubscription } from '../utils/subscriptionUtils';
-import type { Portfolio, Trade } from '../types';
+import type { Portfolio, Trade, VrBandStrategyParams } from '../types';
 import type { AppUserProfile } from '../types/appUserProfile';
 import {
   createPortfolioMutationError,
@@ -48,6 +48,23 @@ export interface UsePortfoliosReturn {
   deletePortfolioById: (id: string) => Promise<void>;
   handleDeleteHistory: (portfolioId: string) => Promise<void>;
   handleClearHistory: () => Promise<void>;
+}
+
+type LegacyVrStrategyShape = Portfolio['strategy'] & {
+  vr_band?: VrBandStrategyParams;
+  vrBandStrategy?: VrBandStrategyParams;
+};
+
+function getVrStrategyParams(
+  strategy: Portfolio['strategy'],
+): VrBandStrategyParams | null {
+  const legacyStrategy = strategy as LegacyVrStrategyShape;
+  return (
+    strategy.vrBand ??
+    legacyStrategy.vr_band ??
+    legacyStrategy.vrBandStrategy ??
+    null
+  );
 }
 
 export function usePortfolios({
@@ -164,36 +181,6 @@ export function usePortfolios({
         vrSnapshot,
         ...rest
       } = newP;
-      if (!rest.name?.trim()) {
-        throw createPortfolioMutationError(
-          PORTFOLIO_MUTATION_ERROR_CODES.nameRequired,
-        );
-      }
-      if (rest.name.length > 100) {
-        throw createPortfolioMutationError(
-          PORTFOLIO_MUTATION_ERROR_CODES.nameTooLong,
-        );
-      }
-      if (typeof dailyBuyAmount !== 'number' || !isFinite(dailyBuyAmount) || dailyBuyAmount <= 0) {
-        throw createPortfolioMutationError(
-          PORTFOLIO_MUTATION_ERROR_CODES.dailyBuyAmountInvalid,
-        );
-      }
-      if (dailyBuyAmount > 1_000_000) {
-        throw createPortfolioMutationError(
-          PORTFOLIO_MUTATION_ERROR_CODES.dailyBuyAmountTooLarge,
-        );
-      }
-      if (typeof feeRate !== 'number' || !isFinite(feeRate) || feeRate < 0 || feeRate > 10) {
-        throw createPortfolioMutationError(
-          PORTFOLIO_MUTATION_ERROR_CODES.feeRateInvalid,
-        );
-      }
-      if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
-        throw createPortfolioMutationError(
-          PORTFOLIO_MUTATION_ERROR_CODES.startDateInvalid,
-        );
-      }
       const payload = {
         ...rest,
         id: crypto.randomUUID(),
@@ -336,31 +323,6 @@ export function usePortfolios({
 
   const handleUpdatePortfolio = useCallback(
     async (updated: Portfolio) => {
-      if (!updated.name?.trim() || updated.name.length > 100) {
-        throw createPortfolioMutationError(
-          PORTFOLIO_MUTATION_ERROR_CODES.updateNameInvalid,
-        );
-      }
-      if (
-        typeof updated.dailyBuyAmount !== 'number' ||
-        !isFinite(updated.dailyBuyAmount) ||
-        updated.dailyBuyAmount <= 0 ||
-        updated.dailyBuyAmount > 1_000_000
-      ) {
-        throw createPortfolioMutationError(
-          PORTFOLIO_MUTATION_ERROR_CODES.updateDailyBuyAmountInvalid,
-        );
-      }
-      if (
-        typeof updated.feeRate !== 'number' ||
-        !isFinite(updated.feeRate) ||
-        updated.feeRate < 0 ||
-        updated.feeRate > 10
-      ) {
-        throw createPortfolioMutationError(
-          PORTFOLIO_MUTATION_ERROR_CODES.updateFeeRateInvalid,
-        );
-      }
       const { error } = await supabase
         .from('portfolios')
         .update({
@@ -406,10 +368,7 @@ export function usePortfolios({
         fee: trade.fee !== undefined ? Number(trade.fee) : trade.fee,
       };
 
-      const vrParams =
-        target.strategy.vrBand ||
-        (target.strategy as any).vr_band ||
-        (target.strategy as any).vrBandStrategy;
+      const vrParams = getVrStrategyParams(target.strategy);
       const isVrStrategy = !!vrParams;
 
       let vrSnapshot = target.vrSnapshot ?? null;

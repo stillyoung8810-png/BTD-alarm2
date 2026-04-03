@@ -39,9 +39,12 @@ const ltmData = [
   { period: "Mar '25", search: 203, cloud: 46, subs: 44, yt: 37, network: 28 },
   { period: "Jun '25", search: 208, cloud: 49, subs: 46, yt: 38, network: 29 },
   { period: "Sep '25", search: 215, cloud: 53, subs: 49, yt: 39, network: 28 },
-];
+].map((entry) => ({
+  ...entry,
+  total: entry.search + entry.cloud + entry.subs + entry.yt + entry.network,
+}));
 
-const ltmTotals = ltmData.map((d) => d.search + d.cloud + d.subs + d.yt + d.network);
+const ltmTotals = ltmData.map((d) => d.total);
 
 // Google Services Revenues (Q3'24, Q3'25) in $MM. Stack: Search, Subscriptions, Network, YouTube
 const servicesRevenueData = [
@@ -101,13 +104,11 @@ export const AlphabetCharts: React.FC = () => {
             <Bar dataKey="yt" stackId="ltm" fill="#dc2626" name="yt" />
             <Bar dataKey="network" stackId="ltm" fill="#16a34a" name="network">
               <LabelList
-                dataKey="network"
+                dataKey="total"
                 position="top"
-                formatter={(_: number, __: string, props: { payload: (typeof ltmData)[0] }) => {
-                  const p = props.payload;
-                  const t = (p?.search ?? 0) + (p?.cloud ?? 0) + (p?.subs ?? 0) + (p?.yt ?? 0) + (p?.network ?? 0);
-                  return t ? `${t}` : '';
-                }}
+                formatter={(value) =>
+                  typeof value === 'number' ? `${value}` : ''
+                }
                 className="fill-slate-700 dark:fill-slate-300 text-[10px]"
               />
             </Bar>

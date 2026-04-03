@@ -3,16 +3,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { DateTime } from "npm:luxon";
-
-interface PortfolioRow {
-  user_id: string | null;
-  alarm_config: {
-    enabled?: boolean;
-    selectedHours?: string[];
-    timezone?: string;
-  } | null;
-  is_closed?: boolean | null;
-}
+import type { PortfolioRow } from "../_shared/types.ts";
 
 interface SendAlarmPayload {
   user_id: string;

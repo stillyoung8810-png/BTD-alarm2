@@ -10,24 +10,13 @@ import {
   type TossSmartMessageContext,
 } from "../../../server/src/toss/smartMessage.ts";
 import { getCorsHeaders, getJsonCorsHeaders } from "../_shared/cors.ts";
+import type { UserProfileRow } from "../_shared/types.ts";
 
 interface AlarmRequest {
   user_id: string;
   title: string;
   body: string;
   data?: Record<string, string>;
-}
-
-interface UserProfileRow {
-  subscription_tier?: string | null;
-  subscription_status?: string | null;
-  subscription_expires_at?: string | null;
-  pending_plan?: string | null;
-  pending_plan_effective_at?: string | null;
-  telegram_enabled?: boolean | null;
-  telegram_chat_id?: string | null;
-  preferred_language?: string | null;
-  toss_user_key?: string | null;
 }
 
 /** 유료 구독 + 텔레그램 연결 시에만 텔레그램 발송 */

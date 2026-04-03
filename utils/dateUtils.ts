@@ -1,3 +1,6 @@
+import { areFiniteNonNegativeScalars } from './financialScalarGuards';
+import { floorToNonNegativeInt } from './financialMath';
+
 /**
  * 디바이스 타임존 (IANA), 실패 시 Asia/Seoul
  */
@@ -23,6 +26,10 @@ export function getCurrentKSTDateString(): string {
 }
 
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+const formatServicePeriodParts = (year: number, month: number, day: number) => ({
+  ymd: `${year}.${String(month + 1).padStart(2, '0')}.${String(day).padStart(2, '0')}`,
+  mdy: `${String(month + 1).padStart(2, '0')}/${String(day).padStart(2, '0')}/${year}`,
+});
 
 /**
  * 날짜에 N일을 더한 Date 반환 (말일·윤년 자동 처리)
@@ -52,6 +59,14 @@ function addCalendarDays(year: number, month: number, day: number, days: number)
   return { year: d.getUTCFullYear(), month: d.getUTCMonth(), day: d.getUTCDate() };
 }
 
+function sanitizeCalendarDays(totalDays: number): number {
+  if (!areFiniteNonNegativeScalars(totalDays)) {
+    return 0;
+  }
+
+  return floorToNonNegativeInt(totalDays);
+}
+
 /**
  * 이용 기간 표시용 문자열 (결제 확인 모달). 시작일 = 오늘(KST), 종료일 = 시작 + totalDays.
  * @param totalDays 총 이용 일수 (예: 30 * quantity)
@@ -59,13 +74,10 @@ function addCalendarDays(year: number, month: number, day: number, days: number)
  * @returns "YYYY.MM.DD ~ YYYY.MM.DD" (ko) / "MM/DD/YYYY - MM/DD/YYYY" (en)
  */
 export function getServicePeriodDisplay(totalDays: number, lang: 'ko' | 'en'): string {
+  const safeTotalDays = sanitizeCalendarDays(totalDays);
   const start = getKSTTodayParts();
-  const end = addCalendarDays(start.year, start.month, start.day, totalDays);
-  const fmt = (y: number, m: number, d: number) => ({
-    ymd: `${y}.${String(m + 1).padStart(2, '0')}.${String(d).padStart(2, '0')}`,
-    mdy: `${String(m + 1).padStart(2, '0')}/${String(d).padStart(2, '0')}/${y}`,
-  });
-  const s = fmt(start.year, start.month, start.day);
-  const e = fmt(end.year, end.month, end.day);
+  const end = addCalendarDays(start.year, start.month, start.day, safeTotalDays);
+  const s = formatServicePeriodParts(start.year, start.month, start.day);
+  const e = formatServicePeriodParts(end.year, end.month, end.day);
   return lang === 'ko' ? `${s.ymd} ~ ${e.ymd}` : `${s.mdy} - ${e.mdy}`;
 }

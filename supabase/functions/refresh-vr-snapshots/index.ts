@@ -6,7 +6,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-import type { AlarmConfig, Portfolio, PortfolioRow, VrSnapshot } from '../_shared/types.ts';
+import type { Portfolio, PortfolioRow, VrSnapshot } from '../_shared/types.ts';
 import { LEGACY_FEE_RATE_PCT } from '../_shared/vrConstants.ts';
 import {
   calculateBands,
@@ -17,12 +17,29 @@ import {
   sanitizeVrCycleWeeks,
 } from '../_shared/vrBandStrategy.ts';
 
-/**
- * Supabase JS + 생성된 Database 타입 없이 Edge에서 사용 — PostgREST 체인만 호출.
- * (향후 `Database` 제네릭 연동 시 `any` 제거)
- */
-// deno-lint-ignore-file no-explicit-any
-type EdgeSupabase = any;
+interface EdgeMutationResult {
+  error: unknown;
+}
+
+interface EdgeSelectResult<Row> {
+  data: Row[] | null;
+  error: unknown;
+}
+
+interface EdgePortfoliosGateway {
+  select(columns: string): {
+    eq(column: 'is_closed', value: boolean): {
+      range(from: number, to: number): Promise<EdgeSelectResult<PortfolioRow>>;
+    };
+  };
+  update(payload: { vr_snapshot: VrSnapshot }): {
+    eq(column: 'id', value: string): Promise<EdgeMutationResult>;
+  };
+}
+
+interface EdgeSupabase {
+  from(table: 'portfolios'): EdgePortfoliosGateway;
+}
 
 function mapPortfolioRow(row: PortfolioRow): Portfolio | null {
   if (!row?.strategy) return null;
@@ -30,7 +47,7 @@ function mapPortfolioRow(row: PortfolioRow): Portfolio | null {
   const rawTrades = row.trades;
   const trades = Array.isArray(rawTrades) ? rawTrades : [];
 
-  const rawSnap = row.vr_snapshot ?? row['vrSnapshot'];
+  const rawSnap = row.vr_snapshot ?? row.vrSnapshot;
 
   return {
     id: row.id == null ? '' : String(row.id),
@@ -44,10 +61,9 @@ function mapPortfolioRow(row: PortfolioRow): Portfolio | null {
     closedAt: row.closed_at == null ? undefined : String(row.closed_at),
     finalSellAmount:
       row.final_sell_amount == null ? undefined : Number(row.final_sell_amount),
-    alarmconfig: (row.alarm_config ?? row.alarmconfig) as AlarmConfig | undefined,
+    alarmconfig: row.alarm_config ?? row.alarmconfig ?? undefined,
     isQuarterMode: Boolean(row.is_quarter_mode ?? false),
-    vrSnapshot:
-      rawSnap === null || rawSnap === undefined ? undefined : (rawSnap as VrSnapshot),
+    vrSnapshot: rawSnap ?? undefined,
   };
 }
 

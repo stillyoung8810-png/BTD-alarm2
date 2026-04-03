@@ -1,11 +1,22 @@
 /** 앱 전역 언어. 모든 컴포넌트의 lang props는 이 타입을 사용한다. */
 export type AppLang = 'ko' | 'en';
 
-export enum StrategySection {
-  MA1 = 'MA1',
-  MA2 = 'MA2',
-  MA3 = 'MA3'
-}
+/**
+ * Strategy 객체와 1:1인 전략 데이터 슬라이스 키 SSOT.
+ * UI 탭 ID가 아니라 `Strategy` 내부 필드 식별 전용이며, 새 전략 필드가 추가되면 이 배열만 갱신합니다.
+ */
+export const STRATEGY_SLICE_KEY_VALUES = [
+  'ma0',
+  'ma1',
+  'ma2',
+  'ma3',
+  'multiSplit',
+  'noStopMultiSplit',
+  'vrBand',
+] as const;
+
+export type StrategySliceKey =
+  (typeof STRATEGY_SLICE_KEY_VALUES)[number];
 
 export interface AlarmConfig {
   enabled: boolean;

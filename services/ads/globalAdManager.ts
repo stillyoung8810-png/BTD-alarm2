@@ -299,7 +299,8 @@ export function createTossIntegratedFullScreenAdBridge(
     },
 
     async load(adGroupId: string): Promise<void> {
-      if (!hasSupportedLoadMethod(api.loadFullScreenAd)) {
+      const loadFullScreenAd = api.loadFullScreenAd;
+      if (!hasSupportedLoadMethod(loadFullScreenAd)) {
         throw new Error('unsupported');
       }
 
@@ -310,7 +311,7 @@ export function createTossIntegratedFullScreenAdBridge(
               safeCleanup();
             });
 
-            return api.loadFullScreenAd({
+            return loadFullScreenAd({
               options: { adGroupId },
               onEvent: (event) => {
                 if (event.type !== 'loaded') {
@@ -335,7 +336,8 @@ export function createTossIntegratedFullScreenAdBridge(
     },
 
     async show(adGroupId: string): Promise<void> {
-      if (!hasSupportedShowMethod(api.showFullScreenAd)) {
+      const showFullScreenAd = api.showFullScreenAd;
+      if (!hasSupportedShowMethod(showFullScreenAd)) {
         throw new Error('unsupported');
       }
 
@@ -346,7 +348,7 @@ export function createTossIntegratedFullScreenAdBridge(
               safeCleanup();
             });
 
-            return api.showFullScreenAd({
+            return showFullScreenAd({
               options: { adGroupId },
               onEvent: (event) => {
                 switch (event.type) {

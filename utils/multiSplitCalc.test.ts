@@ -292,6 +292,13 @@ describe('safeOrder', () => {
     expect(safeOrder(NaN, 10)).toBeNull();
     expect(safeOrder(100, NaN)).toBeNull();
   });
+
+  it('수량이 정수 경계 바로 아래면 floor(+EPSILON)로 1주 누락을 막는다', () => {
+    expect(safeOrder(100, 1.9999999999999998)).toEqual({
+      price: 100,
+      quantity: 2,
+    });
+  });
 });
 
 // ===========================================================================

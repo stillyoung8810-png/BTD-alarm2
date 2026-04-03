@@ -1,32 +1,66 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  AlertTriangle,
+  BarChart2,
+  Calendar,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Info,
+  Layers,
+  Lock,
+  Orbit,
+  Percent,
+  Settings2,
+  Sparkles,
+  Target,
+  TrendingUp,
+  Wallet,
+  X,
+  Zap,
+} from 'lucide-react';
 import { Portfolio, Strategy, VrBandStrategyParams, VrSnapshot } from '../types';
 import {
-  createInitialVrSnapshot,
-  sanitizeVrCycleWeeks,
-} from '../utils/vrBandStrategy';
-import { AVAILABLE_STOCKS, ALL_STOCKS, PAID_STOCKS, I18N } from '../constants';
-import { X, ChevronRight, ChevronLeft, Info, Sparkles, Target, Zap, Settings2, Calendar, Wallet, Percent, AlertTriangle, ChevronDown, Lock, TrendingUp, Layers, BarChart2, Orbit } from 'lucide-react';
+  AVAILABLE_STOCKS,
+  ALL_STOCKS,
+  PAID_STOCKS,
+  I18N,
+} from '../constants';
+import { COMMON_MESSAGES } from '../constants/messages/commonMessages';
+import {
+  roundMoney,
+  STRATEGY_DEFAULTS,
+  validatePortfolioSetupInput,
+} from '../constants/domain/financeRules';
 import { useTossApp } from '../contexts/TossAppContext';
-import CustomDropdown from './CustomDropdown';
-import HoverTip from './HoverTip';
-import InfoModal from './InfoModal';
-import { useTDSMenu } from './tds';
-import { LAOER_CREDIT_LABELS, VR_CREATOR_LABELS } from '../constants/vrMessages';
+import { useMutexAction } from '../hooks/useMutexAction';
+import { getDictionaryCopy } from '../utils/getDictionaryCopy';
 import {
   DEFAULT_FEE_RATE,
+  getVrDeltaCashInputValidationReason,
   LEGACY_FEE_RATE_PCT,
   RATE_PRECISION_MULTIPLIER,
   VR_CYCLE,
   VR_LIMITS,
 } from '../constants/vrConstants';
+import { LAOER_CREDIT_LABELS, VR_CREATOR_LABELS } from '../constants/vrMessages';
+import { getLocalTodayString } from '../utils/dateHelpers';
+import {
+  createInitialVrSnapshot,
+  sanitizeVrCycleWeeks,
+} from '../utils/vrBandStrategy';
+import CustomDropdown from './CustomDropdown';
+import HoverTip from './HoverTip';
+import InfoModal from './InfoModal';
+import LaoerCreditBanner from './strategies/LaoerCreditBanner';
+import VrBandStrategyForm from './strategies/VrBandStrategyForm';
+import { useTDSMenu } from './tds';
 
 /** 퍼센트 입력(예: 5.1 = 5.1%) → 소수 비율(0.051) — RATE_PRECISION_MULTIPLIER SSOT */
 const toDecimalRate = (pct: number): number =>
-  Math.round((pct / 100 + Number.EPSILON) * RATE_PRECISION_MULTIPLIER) / RATE_PRECISION_MULTIPLIER;
-import LaoerCreditBanner from './strategies/LaoerCreditBanner';
-import VrBandStrategyForm from './strategies/VrBandStrategyForm';
-import { getLocalTodayString } from '../utils/dateHelpers';
+  Math.round((pct / 100 + Number.EPSILON) * RATE_PRECISION_MULTIPLIER) /
+  RATE_PRECISION_MULTIPLIER;
 
 // 전략 타입 정의 (확장 가능)
 export type StrategyType = 'rsi_ma_interval' | 'multi_split' | 'no_stop_multi_split' | 'vr_band';
@@ -43,8 +77,14 @@ interface StrategyDefinition {
   isLaoerOriginal?: boolean;
 }
 
+type StrategyMessageSet = typeof I18N.ko;
+type VrCreatorMessageSet = typeof VR_CREATOR_LABELS.ko;
+
 // 전략 정의 목록 (추가 전략은 여기에만 추가하면 됨)
-const getStrategyDefinitions = (t: any, vrT: any): StrategyDefinition[] => [
+const getStrategyDefinitions = (
+  t: StrategyMessageSet,
+  vrT: VrCreatorMessageSet,
+): StrategyDefinition[] => [
   {
     id: 'rsi_ma_interval',
     title: t.strategyMaTitle,
@@ -146,8 +186,12 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
   
   // Step 1: Section 0 (기준 주식 + 단기/장기 이평선 기간)
   const [ma0Stock, setMa0Stock] = useState('QQQ');
-  const [maAPeriod, setMaAPeriod] = useState(20);
-  const [maBPeriod, setMaBPeriod] = useState(60);
+  const [maAPeriod, setMaAPeriod] = useState<number>(
+    STRATEGY_DEFAULTS.MA_SHORT_PERIOD,
+  );
+  const [maBPeriod, setMaBPeriod] = useState<number>(
+    STRATEGY_DEFAULTS.MA_LONG_PERIOD,
+  );
   const [rsiEnabled, setRsiEnabled] = useState(false);
   const [alignmentEnabled, setAlignmentEnabled] = useState(false);
   const [ma0MenuOpen, setMa0MenuOpen] = useState(false);
@@ -197,17 +241,25 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
   const [vrG, setVrG] = useState(10);
   const [vrPoolUsagePct, setVrPoolUsagePct] = useState(50);
   const [vrDeltaCash, setVrDeltaCash] = useState(0);
-  const [vrCycleWeeks, setVrCycleWeeks] = useState(VR_CYCLE.DEFAULT_WEEKS);
+  const [vrCycleWeeks, setVrCycleWeeks] = useState<number>(
+    VR_CYCLE.DEFAULT_WEEKS,
+  );
   const [vrShowErrors, setVrShowErrors] = useState(false);
 
   // Step 3: Meta
   const [name, setName] = useState('');
-  const [dailyBuy, setDailyBuy] = useState(1000);
+  const [dailyBuy, setDailyBuy] = useState<number>(
+    STRATEGY_DEFAULTS.DAILY_BUY_AMOUNT_USD,
+  );
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [feeRate, setFeeRate] = useState(0.25);
+  const [feeRate, setFeeRate] = useState<number>(
+    STRATEGY_DEFAULTS.FEE_RATE_PERCENT,
+  );
+  const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
 
   const t = I18N[lang];
   const vrT = VR_CREATOR_LABELS[lang];
+  const commonCopy = getDictionaryCopy(COMMON_MESSAGES, lang, 'COMMON_MESSAGES');
 
   const strategyDefinitions = React.useMemo(() => getStrategyDefinitions(t, vrT), [t, vrT]);
 
@@ -286,48 +338,123 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
     return num;
   };
 
-  const handleSave = async () => {
-    if (!selectedStrategy) return;
-
-    if (currentPortfolioCount >= maxPortfolios) {
-      alert(lang === 'ko' 
-        ? `포트폴리오 생성 한도(${maxPortfolios}개)에 도달했습니다. 더 많은 포트폴리오를 만들려면 업그레이드를 고려해 보세요.` 
-        : `Portfolio limit (${maxPortfolios}) reached. Please upgrade to create more.`);
+  const saveAction = useCallback(async (): Promise<void> => {
+    if (!selectedStrategy) {
       return;
     }
 
-    // 전략별로 다른 strategy 객체 생성
+    if (currentPortfolioCount >= maxPortfolios) {
+      alert(
+        lang === 'ko'
+          ? `포트폴리오 생성 한도(${maxPortfolios}개)에 도달했습니다. 더 많은 포트폴리오를 만들려면 업그레이드를 고려해 보세요.`
+          : `Portfolio limit (${maxPortfolios}) reached. Please upgrade to create more.`,
+      );
+      return;
+    }
+
+    const trimmedName = name.trim();
+    const normalizedDailyBuyAmount = roundMoney(dailyBuy);
+    const normalizedFeeRatePercent = roundMoney(feeRate);
+    const normalizedWithdrawalAmount =
+      selectedStrategy === 'vr_band' && vrMode !== 'lump_sum'
+        ? roundMoney(vrDeltaCash)
+        : 0;
+
+    const validationMessage = validatePortfolioSetupInput(
+      {
+        name: trimmedName,
+        dailyBuyAmount: normalizedDailyBuyAmount,
+        feeRatePercent: normalizedFeeRatePercent,
+        maShortPeriod: maAPeriod,
+        maLongPeriod: maBPeriod,
+        withdrawalAmount: normalizedWithdrawalAmount,
+      },
+      commonCopy,
+    );
+
+    if (validationMessage != null) {
+      setSaveErrorMessage(validationMessage);
+      return;
+    }
+
     let strategy: Strategy;
     let initialVrSnapshot: VrSnapshot | null = null;
-    
+
     if (selectedStrategy === 'rsi_ma_interval') {
-      if (ma1Stock === ma2Stock || ma2Stock === ma3Stock || ma1Stock === ma3Stock) {
-        const msg = lang === 'ko' ? '구간 1, 2, 3에서 서로 다른 종목을 선택해 주세요.' : 'Please select different stocks for sections 1, 2, and 3.';
-        alert(msg);
+      if (
+        ma1Stock === ma2Stock ||
+        ma2Stock === ma3Stock ||
+        ma1Stock === ma3Stock
+      ) {
+        const message =
+          lang === 'ko'
+            ? '구간 1, 2, 3에서 서로 다른 종목을 선택해 주세요.'
+            : 'Please select different stocks for sections 1, 2, and 3.';
+        alert(message);
         return;
       }
+
       strategy = {
-        ma0: { stock: ma0Stock, rsiEnabled, alignmentEnabled, maAPeriod, maBPeriod },
-        ma1: { stock: ma1Stock, rsiThreshold: rsiEnabled ? ma1Rsi : undefined, takePartialProfit: ma1TakePartialProfit, partialProfitTargetPct: ma1TakePartialProfit ? ma1PartialProfitPct : undefined },
-        ma2: { stock: ma2Stock, splitCount: 1, rsiThreshold: rsiEnabled ? ma2Rsi : undefined, takePartialProfit: ma2TakePartialProfit, partialProfitTargetPct: ma2TakePartialProfit ? ma2PartialProfitPct : undefined },
-        ma3: { stock: ma3Stock, rsiThreshold: rsiEnabled ? ma3Rsi : undefined, takePartialProfit: ma3TakePartialProfit, partialProfitTargetPct: ma3TakePartialProfit ? ma3PartialProfitPct : undefined }
+        ma0: {
+          stock: ma0Stock,
+          rsiEnabled,
+          alignmentEnabled,
+          maAPeriod,
+          maBPeriod,
+        },
+        ma1: {
+          stock: ma1Stock,
+          rsiThreshold: rsiEnabled ? ma1Rsi : undefined,
+          takePartialProfit: ma1TakePartialProfit,
+          partialProfitTargetPct: ma1TakePartialProfit
+            ? ma1PartialProfitPct
+            : undefined,
+        },
+        ma2: {
+          stock: ma2Stock,
+          splitCount: 1,
+          rsiThreshold: rsiEnabled ? ma2Rsi : undefined,
+          takePartialProfit: ma2TakePartialProfit,
+          partialProfitTargetPct: ma2TakePartialProfit
+            ? ma2PartialProfitPct
+            : undefined,
+        },
+        ma3: {
+          stock: ma3Stock,
+          rsiThreshold: rsiEnabled ? ma3Rsi : undefined,
+          takePartialProfit: ma3TakePartialProfit,
+          partialProfitTargetPct: ma3TakePartialProfit
+            ? ma3PartialProfitPct
+            : undefined,
+        },
       };
     } else if (selectedStrategy === 'multi_split') {
-      // 다분할 매매법 전략 - targetStock을 ma0에도 설정 (정배열/RSI는 사용 안 함)
       strategy = {
-        ma0: { stock: multiSplitStock, rsiEnabled: false, alignmentEnabled: false, maAPeriod: 20, maBPeriod: 60 },
+        ma0: {
+          stock: multiSplitStock,
+          rsiEnabled: false,
+          alignmentEnabled: false,
+          maAPeriod: STRATEGY_DEFAULTS.MA_SHORT_PERIOD,
+          maBPeriod: STRATEGY_DEFAULTS.MA_LONG_PERIOD,
+        },
         ma1: { stock: multiSplitStock },
         ma2: { stock: multiSplitStock, splitCount: 1 },
         ma3: { stock: multiSplitStock },
         multiSplit: {
           targetStock: multiSplitStock,
-          targetReturnRate: targetReturnRate,
-          totalSplitCount: totalSplitCount,
-        }
+          targetReturnRate,
+          totalSplitCount,
+        },
       };
     } else if (selectedStrategy === 'no_stop_multi_split') {
       strategy = {
-        ma0: { stock: noStopMultiSplitStock, rsiEnabled: false, alignmentEnabled: false, maAPeriod: 20, maBPeriod: 60 },
+        ma0: {
+          stock: noStopMultiSplitStock,
+          rsiEnabled: false,
+          alignmentEnabled: false,
+          maAPeriod: STRATEGY_DEFAULTS.MA_SHORT_PERIOD,
+          maBPeriod: STRATEGY_DEFAULTS.MA_LONG_PERIOD,
+        },
         ma1: { stock: noStopMultiSplitStock },
         ma2: { stock: noStopMultiSplitStock, splitCount: 1 },
         ma3: { stock: noStopMultiSplitStock },
@@ -337,21 +464,40 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
           highLocPremiumPct,
           takeProfitPct,
           totalSplitCount: noStopTotalSplitCount,
-        }
+        },
       };
     } else if (selectedStrategy === 'vr_band') {
-      const bandUpper = Number.isFinite(vrBandUpperPct) ? toDecimalRate(vrBandUpperPct) : 0;
-      const bandLower = Number.isFinite(vrBandLowerPct) ? toDecimalRate(vrBandLowerPct) : 0;
-      const poolUsageRateBuy = Number.isFinite(vrPoolUsagePct) ? toDecimalRate(vrPoolUsagePct) : 0;
-      const normalizedFeeRate = Number.isFinite(feeRate) ? toDecimalRate(feeRate) : DEFAULT_FEE_RATE;
+      const bandUpper = Number.isFinite(vrBandUpperPct)
+        ? toDecimalRate(vrBandUpperPct)
+        : 0;
+      const bandLower = Number.isFinite(vrBandLowerPct)
+        ? toDecimalRate(vrBandLowerPct)
+        : 0;
+      const poolUsageRateBuy = Number.isFinite(vrPoolUsagePct)
+        ? toDecimalRate(vrPoolUsagePct)
+        : 0;
+      const normalizedFeeRate = Number.isFinite(normalizedFeeRatePercent)
+        ? toDecimalRate(normalizedFeeRatePercent)
+        : DEFAULT_FEE_RATE;
 
-      if (!vrInitialCapital || vrInitialCapital <= 0 || !vrInitialV || vrInitialV <= 0 || !vrMinOrderQty || vrMinOrderQty <= 0) {
+      if (
+        vrInitialCapital <= 0 ||
+        vrInitialV <= 0 ||
+        vrMinOrderQty <= 0
+      ) {
         setVrShowErrors(true);
         return;
       }
 
-      const vrParams: VrBandStrategyParams = {
-        vrMode,
+      if (
+        vrMode !== 'lump_sum' &&
+        getVrDeltaCashInputValidationReason(vrDeltaCash) != null
+      ) {
+        setVrShowErrors(true);
+        return;
+      }
+
+      const vrBaseParams = {
         initialCapital: vrInitialCapital,
         initialV: vrInitialV,
         minOrderQty: vrMinOrderQty,
@@ -361,12 +507,45 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
         G: vrG,
         poolUsageRateBuy,
         cycleWeeks: sanitizeVrCycleWeeks(vrCycleWeeks),
-        deltaCash: vrMode === 'lump_sum' ? 0 : vrDeltaCash,
       };
 
-      // 🚨 [Strict TS] 'as' 캐스팅 완전 삭제. 누락된 필드가 있다면 여기서 빨간줄이 떠야 정상입니다.
+      let vrParams: VrBandStrategyParams;
+      switch (vrMode) {
+        case 'accumulate':
+          vrParams = {
+            ...vrBaseParams,
+            vrMode: 'accumulate',
+            deltaCash: Math.abs(vrDeltaCash),
+          };
+          break;
+        case 'withdraw':
+          vrParams = {
+            ...vrBaseParams,
+            vrMode: 'withdraw',
+            deltaCash: Math.abs(vrDeltaCash),
+          };
+          break;
+        case 'lump_sum':
+          vrParams = {
+            ...vrBaseParams,
+            vrMode: 'lump_sum',
+            deltaCash: 0,
+          };
+          break;
+        default: {
+          const exhaustiveCheck: never = vrMode;
+          return exhaustiveCheck;
+        }
+      }
+
       strategy = {
-        ma0: { stock: 'TQQQ', rsiEnabled: false, alignmentEnabled: false, maAPeriod: 20, maBPeriod: 60 },
+        ma0: {
+          stock: 'TQQQ',
+          rsiEnabled: false,
+          alignmentEnabled: false,
+          maAPeriod: STRATEGY_DEFAULTS.MA_SHORT_PERIOD,
+          maBPeriod: STRATEGY_DEFAULTS.MA_LONG_PERIOD,
+        },
         ma1: { stock: 'TQQQ' },
         ma2: { stock: 'TQQQ', splitCount: 1 },
         ma3: { stock: 'TQQQ' },
@@ -375,40 +554,89 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
 
       initialVrSnapshot = createInitialVrSnapshot(vrParams);
     } else {
-      // 기본값
-      strategy = {
-        ma0: { stock: 'QQQ', rsiEnabled: false, alignmentEnabled: false, maAPeriod: 20, maBPeriod: 60 },
-        ma1: { stock: 'TQQQ' },
-        ma2: { stock: 'QLD', splitCount: 1 },
-        ma3: { stock: 'QQQ' }
-      };
+      return;
     }
 
-    const newP: Omit<Portfolio, 'id'> = {
-      name: name || (lang === 'ko' ? '커스텀 전략' : 'Custom Strategy'),
-      dailyBuyAmount: dailyBuy,
-      startDate: startDate,
-      feeRate: Number.isFinite(feeRate) ? feeRate : LEGACY_FEE_RATE_PCT,
+    const newPortfolio: Omit<Portfolio, 'id'> = {
+      name: trimmedName,
+      dailyBuyAmount: normalizedDailyBuyAmount,
+      startDate,
+      feeRate: Number.isFinite(normalizedFeeRatePercent)
+        ? normalizedFeeRatePercent
+        : LEGACY_FEE_RATE_PCT,
       isClosed: false,
       trades: [],
       strategy,
       ...(initialVrSnapshot ? { vrSnapshot: initialVrSnapshot } : {}),
     };
-    console.log('부모 함수 호출 시작');
-    await onSave(newP);
-    console.log('부모 함수 호출 완료');
-  };
 
-  const handleSaveRef = React.useRef(handleSave);
-  handleSaveRef.current = handleSave;
+    setSaveErrorMessage(null);
 
-  const handleFooterAction = React.useCallback(() => {
+    try {
+      await onSave(newPortfolio);
+    } catch (error: unknown) {
+      setSaveErrorMessage(commonCopy.saveFailed);
+      console.error('[StrategyCreator] save failed:', error);
+    }
+  }, [
+    alignmentEnabled,
+    commonCopy,
+    currentPortfolioCount,
+    dailyBuy,
+    feeRate,
+    highLocPremiumPct,
+    lang,
+    lowLocBudgetRatio,
+    ma0Stock,
+    ma1PartialProfitPct,
+    ma1Rsi,
+    ma1Stock,
+    ma1TakePartialProfit,
+    ma2PartialProfitPct,
+    ma2Rsi,
+    ma2Stock,
+    ma2TakePartialProfit,
+    ma3PartialProfitPct,
+    ma3Rsi,
+    ma3Stock,
+    ma3TakePartialProfit,
+    maAPeriod,
+    maBPeriod,
+    maxPortfolios,
+    multiSplitStock,
+    name,
+    noStopMultiSplitStock,
+    noStopTotalSplitCount,
+    onSave,
+    rsiEnabled,
+    selectedStrategy,
+    startDate,
+    takeProfitPct,
+    targetReturnRate,
+    totalSplitCount,
+    vrBandLowerPct,
+    vrBandUpperPct,
+    vrCycleWeeks,
+    vrDeltaCash,
+    vrG,
+    vrInitialCapital,
+    vrInitialV,
+    vrMinOrderQty,
+    vrMode,
+    vrPoolUsagePct,
+  ]);
+
+  const { run: runSaveAction, isExecuting: isSaving } = useMutexAction(
+    saveAction,
+  );
+
+  const handleFooterAction = useCallback(() => {
     if (!selectedStrategy) return;
     if (isTwoStepWizardStrategy(selectedStrategy)) {
       if (step < WIZARD_LAST_STEP_TWO_FLOW) {
         setStep((s) => s + 1);
       } else {
-        void handleSaveRef.current();
+        void runSaveAction();
       }
       return;
     }
@@ -416,10 +644,10 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
       if (step < WIZARD_LAST_STEP_RSI) {
         setStep((s) => s + 1);
       } else {
-        void handleSaveRef.current();
+        void runSaveAction();
       }
     }
-  }, [selectedStrategy, step]);
+  }, [runSaveAction, selectedStrategy, step]);
 
   // 전략 선택 화면 렌더링
   const renderStrategySelection = () => {
@@ -2046,6 +2274,14 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
           {step === 1 && isSelectedStrategyLaoer && <LaoerCreditBanner lang={lang} />}
         </div>
 
+        {saveErrorMessage != null && (
+          <div className="px-6 pt-5 md:px-8">
+            <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-600">
+              {saveErrorMessage}
+            </p>
+          </div>
+        )}
+
         {/* Footer - 하단 고정 */}
         <div className="p-6 md:p-8 border-t border-slate-100 dark:border-white/5 flex gap-4 bg-white dark:bg-slate-900/80 shrink-0">
           {step === 0 ? (
@@ -2075,10 +2311,12 @@ const StrategyCreator: React.FC<StrategyCreatorProps> = ({
               <button
                 type="button"
                 onClick={handleFooterAction}
-                disabled={!selectedStrategy}
+                disabled={!selectedStrategy || isSaving}
                 className="flex-1 py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-2 shadow-[0_12px_40px_rgba(37,99,235,0.6)] hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {getFooterPrimaryCtaLabel(selectedStrategy, step, lang)}
+                {isSaving
+                  ? commonCopy.processing
+                  : getFooterPrimaryCtaLabel(selectedStrategy, step, lang)}
                 {shouldShowFooterNextChevron(selectedStrategy, step) && (
                   <ChevronRight size={18} strokeWidth={3} />
                 )}

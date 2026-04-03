@@ -5,6 +5,13 @@
  * side effect 없음 — 입력만으로 출력이 결정됩니다.
  */
 
+import {
+  areAllFiniteNumbers,
+  areFiniteScalars,
+  isStrictPositiveInteger,
+} from './financialScalarGuards';
+import { roundMoney } from './financialMath';
+
 // ---------------------------------------------------------------------------
 // 이동평균선 (MA)
 // ---------------------------------------------------------------------------
@@ -16,9 +23,17 @@
  * @returns 이동평균값 (데이터 부족 시 0)
  */
 export const calculateMA = (prices: number[], period: number): number => {
-  if (prices.length < period) return 0;
+  if (!isStrictPositiveInteger(period)) {
+    return 0;
+  }
+
+  if (!areAllFiniteNumbers(prices) || prices.length < period) {
+    return 0;
+  }
+
   const recentPrices = prices.slice(-period);
-  return recentPrices.reduce((sum, price) => sum + price, 0) / period;
+  const sum = recentPrices.reduce((acc, price) => acc + price, 0);
+  return roundMoney(sum / period);
 };
 
 // ---------------------------------------------------------------------------
@@ -41,43 +56,59 @@ export const calculateMA = (prices: number[], period: number): number => {
  * @returns RSI 값 (0-100), 데이터 부족 시 50 (중립)
  */
 export const calculateRSI = (prices: number[], period: number = 14): number => {
-  if (prices.length < period + 1) {
-    return 50;
+  const DEFAULT_RSI = 50;
+  const MAX_RSI = 100;
+
+  if (!isStrictPositiveInteger(period)) {
+    return DEFAULT_RSI;
+  }
+
+  if (!areAllFiniteNumbers(prices) || prices.length < period + 1) {
+    return DEFAULT_RSI;
   }
 
   const changes: number[] = [];
-  for (let i = 1; i < prices.length; i++) {
+  for (let i = 1; i < prices.length; i += 1) {
     changes.push(prices[i] - prices[i - 1]);
   }
 
   let avgGain = 0;
   let avgLoss = 0;
 
-  for (let i = 0; i < period; i++) {
-    if (changes[i] > 0) {
-      avgGain += changes[i];
-    } else {
-      avgLoss += Math.abs(changes[i]);
+  for (let i = 0; i < period; i += 1) {
+    const change = changes[i];
+    if (change > 0) {
+      avgGain += change;
+      continue;
     }
+
+    avgLoss += Math.abs(change);
   }
 
   avgGain /= period;
   avgLoss /= period;
 
-  for (let i = period; i < changes.length; i++) {
-    const currentGain = changes[i] > 0 ? changes[i] : 0;
-    const currentLoss = changes[i] < 0 ? Math.abs(changes[i]) : 0;
+  for (let i = period; i < changes.length; i += 1) {
+    const change = changes[i];
+    const currentGain = change > 0 ? change : 0;
+    const currentLoss = change < 0 ? Math.abs(change) : 0;
 
     avgGain = (avgGain * (period - 1) + currentGain) / period;
     avgLoss = (avgLoss * (period - 1) + currentLoss) / period;
   }
 
-  if (avgLoss === 0) return 100;
+  if (avgLoss <= 0) {
+    return MAX_RSI;
+  }
 
   const rs = avgGain / avgLoss;
-  const rsi = 100 - (100 / (1 + rs));
+  const rsi = 100 - 100 / (1 + rs);
 
-  return Math.max(0, Math.min(100, rsi));
+  if (!areFiniteScalars(rsi)) {
+    return DEFAULT_RSI;
+  }
+
+  return Math.max(0, Math.min(MAX_RSI, roundMoney(rsi)));
 };
 
 // ---------------------------------------------------------------------------

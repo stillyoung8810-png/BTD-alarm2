@@ -1,16 +1,20 @@
-import { useCallback, useEffect, useState } from 'react';
-// 🚨 주의: 에러를 내던 타입 임포트를 지우고 TossAds 본체만 가져옵니다!
-import { TossAds } from '@apps-in-toss/web-framework';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { TossAds as importedTossAds } from '@apps-in-toss/web-framework';
 
-// 우리가 직접 안전하게 정의하는 타입들
+export interface TossAdsBannerCallbackPayload {
+  reason?: string;
+  message?: string;
+}
+
 export interface TossAdsAttachBannerOptions {
   theme?: 'auto' | 'light' | 'dark';
   tone?: 'blackAndWhite' | 'grey';
   variant?: 'card' | 'expanded';
   callbacks?: {
-    onNoFill?: (payload?: any) => void;
-    onAdFailedToRender?: (payload?: any) => void;
-    [key: string]: any;
+    onNoFill?: (payload?: TossAdsBannerCallbackPayload) => void;
+    onAdFailedToRender?: (
+      payload?: TossAdsBannerCallbackPayload,
+    ) => void;
   };
 }
 
@@ -28,25 +32,118 @@ export interface UseTossBannerResult {
   ) => TossAdsAttachBannerResult | undefined;
 }
 
+interface TossAdsInitializeParams {
+  callbacks: {
+    onInitialized: () => void;
+    onInitializationFailed: (error: unknown) => void;
+  };
+}
+
+interface TossAdsInitializeMethod {
+  (params: TossAdsInitializeParams): void;
+  isSupported?: () => boolean;
+}
+
+interface TossAdsAttachBannerMethod {
+  (
+    adGroupId: string,
+    element: HTMLElement,
+    options?: TossAdsAttachBannerOptions,
+  ): TossAdsAttachBannerResult;
+  isSupported?: () => boolean;
+}
+
+interface TossAdsBridge {
+  initialize: TossAdsInitializeMethod;
+  attachBanner?: TossAdsAttachBannerMethod;
+}
+
+type GlobalWithOptionalTossAds = typeof globalThis & {
+  TossAds?: unknown;
+};
+
+type WindowWithOptionalTossAds = Window & {
+  TossAds?: unknown;
+};
+
 let isTossAdsInitialized = false;
 let isTossAdsInitializing = false;
 
+function resolveTossAdsBridge(candidate: unknown): TossAdsBridge | null {
+  const candidateType = typeof candidate;
+  if (
+    candidate == null ||
+    (candidateType !== 'object' && candidateType !== 'function')
+  ) {
+    return null;
+  }
+
+  const bridge = candidate as Partial<TossAdsBridge>;
+  if (typeof bridge.initialize !== 'function') {
+    return null;
+  }
+
+  if (
+    bridge.attachBanner != null &&
+    typeof bridge.attachBanner !== 'function'
+  ) {
+    return null;
+  }
+
+  return bridge as TossAdsBridge;
+}
+
+function getWindowTossAdsCandidate(): unknown {
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+
+  const windowObject = window as WindowWithOptionalTossAds;
+  return windowObject.TossAds;
+}
+
+function getGlobalTossAdsCandidate(): unknown {
+  if (typeof globalThis === 'undefined') {
+    return undefined;
+  }
+
+  return (globalThis as GlobalWithOptionalTossAds).TossAds;
+}
+
+function getTossAdsBridgeCandidate(): TossAdsBridge | null {
+  const candidates: readonly unknown[] = [
+    importedTossAds as unknown,
+    getWindowTossAdsCandidate(),
+    getGlobalTossAdsCandidate(),
+  ];
+
+  for (const candidate of candidates) {
+    const bridge = resolveTossAdsBridge(candidate);
+    if (bridge != null) {
+      return bridge;
+    }
+  }
+
+  return null;
+}
+
 export function useTossBanner(): UseTossBannerResult {
-  const [isSupported] = useState<boolean>(() => {
+  const tossAdsBridge = useMemo(() => getTossAdsBridgeCandidate(), []);
+
+  const isSupported = useMemo(() => {
     try {
-      const tossAdsAny = TossAds as any;
-      return typeof tossAdsAny !== 'undefined' && typeof tossAdsAny.initialize?.isSupported === 'function' 
-        ? tossAdsAny.initialize.isSupported() 
-        : false;
+      return tossAdsBridge?.initialize.isSupported?.() ?? false;
     } catch {
       return false;
     }
-  });
+  }, [tossAdsBridge]);
 
-  const [isInitialized, setIsInitialized] = useState<boolean>(isTossAdsInitialized);
+  const [isInitialized, setIsInitialized] = useState<boolean>(
+    isTossAdsInitialized,
+  );
 
   useEffect(() => {
-    if (!isSupported) return;
+    if (!isSupported || tossAdsBridge == null) return;
     if (isTossAdsInitialized) {
       if (!isInitialized) setIsInitialized(true);
       return;
@@ -57,7 +154,7 @@ export function useTossBanner(): UseTossBannerResult {
     isTossAdsInitializing = true;
 
     try {
-      TossAds.initialize({
+      tossAdsBridge.initialize({
         callbacks: {
           onInitialized: () => {
             isTossAdsInitialized = true;
@@ -80,7 +177,7 @@ export function useTossBanner(): UseTossBannerResult {
     return () => {
       cancelled = true;
     };
-  }, [isSupported, isInitialized]);
+  }, [isSupported, isInitialized, tossAdsBridge]);
 
   const attachBanner = useCallback(
     (
@@ -88,23 +185,35 @@ export function useTossBanner(): UseTossBannerResult {
       element: HTMLElement,
       options?: TossAdsAttachBannerOptions,
     ): TossAdsAttachBannerResult | undefined => {
-      if (!isSupported || !isTossAdsInitialized || !isInitialized || !element) return undefined;
+      if (
+        !isSupported ||
+        !isTossAdsInitialized ||
+        !isInitialized ||
+        !element ||
+        tossAdsBridge == null
+      ) {
+        return undefined;
+      }
 
-      const tossAdsAny = TossAds as any;
       try {
-        if (typeof tossAdsAny.attachBanner?.isSupported === 'function' && !tossAdsAny.attachBanner.isSupported()) {
+        if (typeof tossAdsBridge.attachBanner !== 'function') {
           return undefined;
         }
-        if (typeof tossAdsAny.attachBanner !== 'function') {
+
+        if (
+          typeof tossAdsBridge.attachBanner.isSupported === 'function' &&
+          !tossAdsBridge.attachBanner.isSupported()
+        ) {
           return undefined;
         }
-        return tossAdsAny.attachBanner(adGroupId, element, options);
+
+        return tossAdsBridge.attachBanner(adGroupId, element, options);
       } catch (error) {
         console.error('Toss Ads attachBanner failed:', error);
         return undefined;
       }
     },
-    [isSupported, isInitialized],
+    [isSupported, isInitialized, tossAdsBridge],
   );
 
   return { isSupported, isInitialized, attachBanner };

@@ -358,6 +358,12 @@ export function showErrorToast(message: string): void {
 
 로딩·`try` / `catch` / `finally`·성공 시 닫기·`actionRef` 보관을 **한 곳**에 둔다. **`lang`은 필수 인자** — `catch`에서 토스트 문구를 **오직 `TDS_DIALOG_MESSAGES[lang].common.refundActionFailed`** 로만 조회한다(주석·재량 금지).
 
+### React Core Principles · **Rule 2** 정합 (렌더 페이즈 vs 본 훅)
+
+- **금지(앱 전역 Mutex 등):** 함수 컴포넌트 **렌더 본문**에서 `actionRef.current = latestCallback` 처럼 **매 렌더마다** ref를 갱신하는 패턴. 최신 콜백을 ref에 싣는 경우에는 **`useLayoutEffect(() => { … }, [callback])`** 만 사용한다(`docs2/PHASE_A_CONSTANTS_SIMULATION.md` §3.5.1, `docs2/PRE_RELEASE_CODE_OPTIMIZATION_MASTER_PLAN.md` Phase A **Mutex** 행).
+- **본 훅(`useAsyncTdsConfirm`)과 구분:** 아래 스니펫의 `actionRef.current = action` 은 **`open(params)`가 호출될 때만** 실행된다 — **코디네이터가 다이얼로그를 연 명령 경로**(렌더 루프와 무관). `close`에서 `null` 로 비우는 것도 **`close` / `runConfirm` 성공 후** 같은 **비렌더 경로**다. 스니펫을 복사할 때 **렌더 본문으로 올려 붙이지 말 것.**
+- **토스트:** `showErrorToast`는 **`catch`·가드·이벤트 핸들러** 등 **렌더 밖**에서 호출한다. 렌더 중(예: 사전 폴백) 알림이 필요하면 **`Promise.resolve().then(() => showErrorToast(...))`** 로 **커밋 이후**로 미룬다(동일 Rule 2).
+
 ```ts
 import { useCallback, useRef, useState } from 'react';
 import type { AppLang } from '../../types';
@@ -379,7 +385,7 @@ export type AsyncTdsConfirmOpenParams = {
   action: () => Promise<void> | void;
 };
 
-/** 닫힘 시에도 마지막으로 연 문구를 유지한다 — `isOpen`만 끄고 title/body를 비우지 않는다(Rule 2·퇴장 애니메이션). */
+/** 닫힘 시에도 마지막으로 연 문구를 유지한다 — `isOpen`만 끄고 title/body를 비우지 않는다(퇴장 애니메이션 스냅샷 규칙). */
 export interface ConfirmDialogSnapshot {
   isOpen: boolean;
   title: string;
@@ -432,6 +438,7 @@ export function useAsyncTdsConfirm(
 
   const open = useCallback((params: AsyncTdsConfirmOpenParams) => {
     const { action, title, body, confirmLabel, tone } = params;
+    // Rule 2: 렌더 본문이 아님 — `open()` 호출(명령 경로) 시에만 ref 갱신. Mutex 훅의 "매 렌더 ref 대입" 안티패턴과 혼동 금지.
     actionRef.current = action;
     setSnapshot({
       isOpen: true,
@@ -464,7 +471,7 @@ export function useAsyncTdsConfirm(
     }
   }, [close, lang]);
 
-  // [Rule 2 준수] Blind useMemo 제거: Consumer가 `{...dialogProps}`로 전개하므로
+  // [블라인드 useMemo 금지 — Core Principles] Consumer가 `{...dialogProps}`로 전개하므로
   // 래퍼 객체의 참조 동일성은 하위 리렌더 방지에 거의 기여하지 않고, deps 추적·오버헤드만 남는다.
   const dialogProps: AsyncTdsConfirmDialogProps = {
     isOpen: snapshot.isOpen,
@@ -499,8 +506,8 @@ export function useAsyncTdsConfirm(
 - **환불 안내 등「확인 시 비동기 작업」이 필요하면 `TdsConfirmDialog` + 본 훅**을 쓴다. **단일 확인 버튼만 기획되면 `shouldHideCancel={true}`** 를 쓴다. `TdsAlertDialog`는 **문구 확인 후 즉시 `onClose`만** 호출하는 정적 안내에 한정한다(SRP·오용 방지).
 - **`open` / `close` / `runConfirm`은 `useCallback`으로 안정화**한다. 소비 컴포넌트의 `useCallback` 의존성에는 **`exitDialog` 전체가 아니라 `exitDialog.open` 등 개별 함수**를 넣어 불필요한 재생성을 피한다. `runConfirm`을 deps에 넣을 때는 **`lang`이 바뀌면 갱신되는 것이 정상**이다.
 - **`dialog.open({ title, body, … })`를 호출하는 `useCallback`:** `TDS_DIALOG_MESSAGES[lang]`의 **하위 필드를 의존성 배열에 늘어놓지 않는다**. 콜백 **내부**에서 `const messages = TDS_DIALOG_MESSAGES[lang].…`로 조회하고, 의존성은 **`lang`·`…Dialog.open`·`action`에 쓰는 props 콜백** 위주로 압축한다.
-- **`dialogProps`·퇴장 애니메이션 (Rule 2):** `close()`(및 성공 시 `runConfirm` → `close`) 호출 직후 **`isOpen: false`만 반영**하고, **`title`·`body`·`confirmLabel`·`tone`은 직전 스냅샷을 유지**한다. 그렇지 않고 닫힘 분기에서 문자열을 즉시 `''`로 덮으면, `TDSModal` 등이 퇴장 트랜지션(~수백 ms)을 재생하는 동안 **본문·버튼 라벨이 먼저 증발**하는 UX가 난다. 스냅샷 타입은 **유니온 `{ isOpen: false } | { isOpen: true, … }` 대신 단일 객체**로 평탄화해, 닫힘 중에도 마지막 문구가 그대로 투영되게 한다.
-- **`dialogProps` (Rule 2 — Blind `useMemo` 금지):** 필드 매핑은 훅이 **한 곳에서 평탄한 객체**로 조립해 Consumer가 **`<TdsConfirmDialog {...dialog.dialogProps} labels={…} />`** 만 쓰면 되게 한다(DRY). 다만 **`useMemo`로 `dialogProps` 래퍼 참조를 고정하지 않는다** — Spread 전개 시 **자식이 받는 props 묶음은 매 렌더 새로 구성**되므로, 래퍼 참조 안정성은 **메모된 자식의 리렌더 억제에 실질적 도움이 되지 않고**, deps·실행 비용만 남는다.
+- **`dialogProps`·퇴장 애니메이션 (스냅샷 SSOT):** `close()`(및 성공 시 `runConfirm` → `close`) 호출 직후 **`isOpen: false`만 반영**하고, **`title`·`body`·`confirmLabel`·`tone`은 직전 스냅샷을 유지**한다. 그렇지 않고 닫힘 분기에서 문자열을 즉시 `''`로 덮으면, `TDSModal` 등이 퇴장 트랜지션(~수백 ms)을 재생하는 동안 **본문·버튼 라벨이 먼저 증발**하는 UX가 난다. 스냅샷 타입은 **유니온 `{ isOpen: false } | { isOpen: true, … }` 대신 단일 객체**로 평탄화해, 닫힘 중에도 마지막 문구가 그대로 투영되게 한다.
+- **`dialogProps` (블라인드 `useMemo` 금지):** 필드 매핑은 훅이 **한 곳에서 평탄한 객체**로 조립해 Consumer가 **`<TdsConfirmDialog {...dialog.dialogProps} labels={…} />`** 만 쓰면 되게 한다(DRY). 다만 **`useMemo`로 `dialogProps` 래퍼 참조를 고정하지 않는다** — Spread 전개 시 **자식이 받는 props 묶음은 매 렌더 새로 구성**되므로, 래퍼 참조 안정성은 **메모된 자식의 리렌더 억제에 실질적 도움이 되지 않고**, deps·실행 비용만 남는다.
 
 ## Phase 0-3. `TdsDialogShell.tsx`
 
@@ -1407,12 +1414,15 @@ interface RefundGuideControllerProps {
 
 ## 상태/런타임 방어 규칙
 
-## 1. Render phase에서 state mutation 금지
+## 1. Render phase에서 state mutation·UI 부수효과 금지 (Core Principles **Rule 2**)
 
 - `setState`는 클릭/확인/닫기 핸들러 안에서만 호출합니다.
 - JSX 안에서 `setState(...)`를 직접 실행하지 않습니다.
-- **렌더 본문에서 `ref.current`에 대입하지 않습니다.** 최신 props/state를 ref에 미러링할 때는 **`useEffect` 안에서만** 갱신합니다(Concurrent 렌더·워크스페이스 규칙과 정합).
-- **`useAsyncTdsConfirm`의 `runConfirm` / `action` ref** 를 렌더 본문에서 직접 호출하지 않습니다(이벤트 핸들러·훅 내부만).
+- **렌더 본문에서 `ref.current`에 대입하지 않습니다.**  
+  - **props·콜백을 ref에 미러링**하는 패턴(예: `hooks/useMutexAction`의 `actionRef`)은 **`useLayoutEffect`** 에서만 갱신합니다 — Concurrent 렌더 tearing을 피하고, 페인트 직전에 최신 핸들러가 잡히게 합니다(`docs2/PHASE_A_CONSTANTS_SIMULATION.md` §3.5.1).  
+  - **`useAsyncTdsConfirm`의 `open` / `close` 내부**에서 `actionRef`를 세팅하는 것은 **렌더가 아니라 `useCallback`으로 싸인 명령형 API 경로**이므로 위 규칙과 **충돌하지 않습니다**(Phase 0-2b 상단 "Rule 2 정합" 참고). 스니펫을 **렌더 본문으로 잘못 옮기지 말 것.**
+- **렌더 경로에서 `showErrorToast` 등 전역 UI를 동기 호출하지 않습니다.** 사전 폴백 알림이 필요하면 **`Promise.resolve().then(() => …)`** 로 **커밋 이후**로 미룹니다(`docs2/PHASE_A_CONSTANTS_SIMULATION.md` §3.5).
+- **`useAsyncTdsConfirm`의 `runConfirm`** 을 렌더 본문에서 직접 호출하지 않습니다(이벤트 핸들러·훅 내부만).
 
 ## 2. 중첩 모달 최소화
 

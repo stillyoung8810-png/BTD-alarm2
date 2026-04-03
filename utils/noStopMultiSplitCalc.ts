@@ -1,4 +1,9 @@
 import { calcHoldings, type TradeInput } from './multiSplitCalc';
+import {
+  areFiniteNonNegativeScalars,
+  areStrictPositiveFiniteScalars,
+} from './financialScalarGuards';
+import { floorToNonNegativeInt, roundMoney } from './financialMath';
 
 export interface NoStopMultiSplitParams {
   targetStock: string;
@@ -23,24 +28,37 @@ export interface NoStopMultiSplitExecutionData {
 }
 
 function floorSafe(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.floor(value));
+  if (!areFiniteNonNegativeScalars(value)) {
+    return 0;
+  }
+
+  return floorToNonNegativeInt(value);
 }
 
 function order(price: number, quantity: number): NoStopOrderEntry | undefined {
   const finalQty = floorSafe(quantity);
-  if (!Number.isFinite(price) || price <= 0 || finalQty < 1) return undefined;
+  if (!areStrictPositiveFiniteScalars(price) || finalQty < 1) {
+    return undefined;
+  }
+
   return {
-    price: Number(price.toFixed(2)),
+    price: roundMoney(price),
     quantity: finalQty,
   };
 }
 
 export function calcNoStopCurrentRound(trades: TradeInput[], oneTimeAmount: number): number {
-  if (oneTimeAmount <= 0) return 0;
+  if (!areStrictPositiveFiniteScalars(oneTimeAmount)) {
+    return 0;
+  }
+
   const holdings = calcHoldings(trades);
   const totalInvested = holdings.reduce((sum, holding) => sum + holding.totalCost, 0);
-  return totalInvested / oneTimeAmount;
+  if (!areStrictPositiveFiniteScalars(totalInvested)) {
+    return 0;
+  }
+
+  return roundMoney(totalInvested / oneTimeAmount);
 }
 
 export function calcNoStopMultiSplitOrders(params: {
@@ -51,6 +69,24 @@ export function calcNoStopMultiSplitOrders(params: {
   strategy: NoStopMultiSplitParams;
 }): NoStopMultiSplitExecutionData {
   const { trades, oneTimeAmount, feeRate, currentPrice, strategy } = params;
+  if (
+    !areFiniteNonNegativeScalars(
+      oneTimeAmount,
+      feeRate,
+      currentPrice,
+      strategy.lowLocBudgetRatio,
+      strategy.highLocPremiumPct,
+      strategy.takeProfitPct,
+      strategy.totalSplitCount,
+    )
+  ) {
+    return {
+      currentRound: 0,
+      isFirstBuy: true,
+      isSplitComplete: false,
+    };
+  }
+
   const holdings = calcHoldings(trades);
   const targetHolding =
     holdings.find((holding) => holding.stock === strategy.targetStock) ??
@@ -60,7 +96,7 @@ export function calcNoStopMultiSplitOrders(params: {
   const avgPrice = targetHolding?.avgPrice ?? 0;
   const currentQuantity = targetHolding?.quantity ?? 0;
   const currentRound = calcNoStopCurrentRound(trades, oneTimeAmount);
-  const isFirstBuy = currentQuantity <= 0 || avgPrice <= 0;
+  const isFirstBuy = !areStrictPositiveFiniteScalars(currentQuantity, avgPrice);
   const isSplitComplete = currentRound >= strategy.totalSplitCount;
 
   const result: NoStopMultiSplitExecutionData = {
@@ -76,7 +112,7 @@ export function calcNoStopMultiSplitOrders(params: {
   const takeProfitPrice = avgPrice * (1 + strategy.takeProfitPct / 100);
   result.takeProfit = order(takeProfitPrice, currentQuantity);
 
-  if (isSplitComplete || currentPrice <= 0 || oneTimeAmount <= 0) {
+  if (isSplitComplete || !areStrictPositiveFiniteScalars(currentPrice, oneTimeAmount)) {
     return result;
   }
 

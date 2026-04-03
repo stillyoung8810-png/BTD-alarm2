@@ -2,111 +2,15 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getEffectiveSubscriptionState } from "../../../server/src/services/paymentFulfillment.ts";
+import type {
+  Portfolio,
+  PortfolioRow,
+  Strategy,
+  UserProfileRow,
+  VrBandStrategyParams,
+} from "../_shared/types.ts";
 
 type Lang = "ko" | "en";
-
-interface AlarmConfig {
-  enabled?: boolean;
-  selectedHours?: string[];
-  timezone?: string;
-}
-
-interface Strategy {
-  ma0: {
-    stock: string;
-    rsiEnabled: boolean;
-    alignmentEnabled?: boolean;
-    maAPeriod?: number;
-    maBPeriod?: number;
-  };
-  ma1: {
-    stock: string;
-    rsiThreshold?: number;
-    takePartialProfit?: boolean;
-    partialProfitTargetPct?: number;
-  };
-  ma2: {
-    stock: string;
-    splitCount: number;
-    rsiThreshold?: number;
-    takePartialProfit?: boolean;
-    partialProfitTargetPct?: number;
-  };
-  ma3: {
-    stock: string;
-    rsiThreshold?: number;
-    takePartialProfit?: boolean;
-    partialProfitTargetPct?: number;
-  };
-  multiSplit?: {
-    targetStock: string;
-    targetReturnRate: number;
-    totalSplitCount: number;
-  };
-  noStopMultiSplit?: {
-    targetStock: string;
-    lowLocBudgetRatio: number;
-    highLocPremiumPct: number;
-    takeProfitPct: number;
-    totalSplitCount: number;
-  };
-  vrBand?: any;
-}
-
-interface Trade {
-  type: "buy" | "sell";
-  stock: string;
-  date: string;
-  price: number;
-  quantity: number;
-  fee: number;
-  isMOC?: boolean;
-}
-
-interface Portfolio {
-  id: string;
-  name: string;
-  dailyBuyAmount: number;
-  feeRate: number;
-  strategy: Strategy;
-  trades: Trade[];
-  isClosed: boolean;
-  alarmconfig?: AlarmConfig | null;
-  isQuarterMode?: boolean;
-  vrSnapshot?: {
-    currentV: number;
-    pool: number;
-    bandLow: number;
-    bandHigh: number;
-    buyOrders?: { step: number; isBuffer?: boolean }[];
-  } | null;
-}
-
-interface PortfolioRow {
-  id: string;
-  user_id: string;
-  name: string | null;
-  daily_buy_amount: number | null;
-  fee_rate: number | null;
-  strategy: Strategy | null;
-  trades: Trade[] | null;
-  alarm_config: AlarmConfig | null;
-  is_quarter_mode: boolean | null;
-  is_closed: boolean | null;
-  vr_snapshot: Portfolio["vrSnapshot"] | null;
-}
-
-interface UserProfileRow {
-  id: string;
-  subscription_tier?: string | null;
-  subscription_status?: string | null;
-  subscription_expires_at?: string | null;
-  pending_plan?: string | null;
-  pending_plan_effective_at?: string | null;
-  telegram_enabled?: boolean | null;
-  telegram_chat_id?: string | null;
-  preferred_language?: string | null;
-}
 
 interface Holdings {
   stock: string;
@@ -127,6 +31,16 @@ interface StockSnapshot {
   ma60: number;
   ma120: number;
 }
+
+interface StockPriceRow {
+  close: number | string | null;
+  trade_date: string | null;
+}
+
+type PartialProfitStrategyConfig =
+  | Strategy["ma1"]
+  | Strategy["ma2"]
+  | Strategy["ma3"];
 
 interface MultiSplitExecutionData {
   phase: "first" | "second" | "quarter" | null;
@@ -192,19 +106,41 @@ function shouldSendTelegram(profile: UserProfileRow | null): boolean {
   return true;
 }
 
+function toStockPriceRows(raw: unknown): StockPriceRow[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw.reduce<StockPriceRow[]>((acc, row) => {
+    if (typeof row === "object" && row !== null) {
+      const data = row as Record<string, unknown>;
+      acc.push({
+        close:
+          typeof data.close === "number" || typeof data.close === "string"
+            ? data.close
+            : null,
+        trade_date:
+          typeof data.trade_date === "string" ? String(data.trade_date) : null,
+      });
+    }
+    return acc;
+  }, []);
+}
+
 function mapPortfolioRow(row: PortfolioRow): Portfolio | null {
   if (!row || !row.strategy) return null;
   return {
-    id: row.id,
+    id: typeof row.id === "string" ? row.id : "",
     name: row.name ?? "",
     dailyBuyAmount: row.daily_buy_amount ?? 0,
+    startDate: row.start_date ?? row.startDate ?? "",
     feeRate: row.fee_rate ?? 0,
     strategy: row.strategy,
     trades: Array.isArray(row.trades) ? row.trades : [],
     isClosed: row.is_closed ?? false,
-    alarmconfig: row.alarm_config ?? null,
+    alarmconfig: row.alarm_config ?? row.alarmconfig ?? undefined,
     isQuarterMode: row.is_quarter_mode ?? false,
-    vrSnapshot: row.vr_snapshot ?? null,
+    vrSnapshot: row.vr_snapshot ?? row.vrSnapshot ?? undefined,
   };
 }
 
@@ -301,9 +237,13 @@ async function getStockHistory(
     return empty;
   }
 
-  const rows = [...data].reverse();
-  const prices = rows.map((row: any) => Number(row.close ?? 0)).filter((p) => p > 0);
-  const dates = rows.map((row: any) => String(row.trade_date || "")).filter(Boolean);
+  const rows = toStockPriceRows([...data].reverse());
+  const prices = rows
+    .map((row) => Number(row.close ?? 0))
+    .filter((price) => price > 0);
+  const dates = rows
+    .map((row) => String(row.trade_date ?? ""))
+    .filter(Boolean);
   const history = { prices, dates };
   cache.set(key, history);
   return history;
@@ -732,6 +672,40 @@ function formatCurrency(value: number | null | undefined): string {
   })}`;
 }
 
+function getVrModeLabel(
+  vrMode: VrBandStrategyParams["vrMode"],
+  lang: Lang,
+): string {
+  switch (vrMode) {
+    case "lump_sum":
+      return lang === "ko" ? "거치식" : "Lump-sum";
+    case "accumulate":
+      return lang === "ko" ? "적립식" : "Accumulate";
+    case "withdraw":
+      return lang === "ko" ? "인출식" : "Withdraw";
+    default: {
+      const exhaustiveCheck: never = vrMode;
+      return exhaustiveCheck;
+    }
+  }
+}
+
+function getStrategyLabel(
+  portfolio: Portfolio,
+  strings: Record<keyof typeof STRINGS["ko"], string>,
+): string {
+  if (portfolio.strategy.vrBand) {
+    return strings.strategyVrBand;
+  }
+  if (portfolio.strategy.multiSplit) {
+    return strings.strategyMultiSplit;
+  }
+  if (portfolio.strategy.noStopMultiSplit) {
+    return strings.strategyNoStopMultiSplit;
+  }
+  return strings.strategyMa;
+}
+
 function formatVrBandBlock(
   portfolio: Portfolio,
   lang: Lang,
@@ -749,26 +723,10 @@ function formatVrBandBlock(
   }
 
   const lines: string[] = [];
-  const vrMode = (portfolio.strategy as any).vrBand?.vrMode as
-    | "lump_sum"
-    | "accumulate"
-    | "withdraw"
-    | undefined;
+  const vrMode = portfolio.strategy.vrBand?.vrMode;
 
   if (vrMode) {
-    const modeLabel =
-      vrMode === "lump_sum"
-        ? lang === "ko"
-          ? "거치식"
-          : "Lump-sum"
-        : vrMode === "accumulate"
-        ? lang === "ko"
-          ? "적립식"
-          : "Accumulate"
-        : lang === "ko"
-        ? "인출식"
-        : "Withdraw";
-    lines.push(`[${modeLabel}]`);
+    lines.push(`[${getVrModeLabel(vrMode, lang)}]`);
   }
 
   const { currentV, pool, bandLow, bandHigh } = snapshot;
@@ -917,20 +875,12 @@ function formatPortfolioDailyExecutionBlock(
   const hours = (portfolio.alarmconfig?.selectedHours ?? []).join(", ");
   const lines: string[] = [];
   const portfolioName = portfolio?.name ?? "";
-  const isVrBand = !!(portfolio.strategy as any).vrBand;
+  const isVrBand = Boolean(portfolio.strategy.vrBand);
   const isMultiSplit = !!portfolio.strategy.multiSplit;
   const isNoStopMultiSplit = !!portfolio.strategy.noStopMultiSplit;
 
   lines.push(`📌 ${portfolioName}`);
-  lines.push(
-    isVrBand
-      ? `- ${s.strategyVrBand}`
-      : isMultiSplit
-        ? `- ${s.strategyMultiSplit}`
-        : isNoStopMultiSplit
-          ? `- ${s.strategyNoStopMultiSplit}`
-          : `- ${s.strategyMa}`,
-  );
+  lines.push(`- ${getStrategyLabel(portfolio, s)}`);
   const tzLabel = portfolio.alarmconfig?.timezone || "Asia/Seoul";
   lines.push(`- ${s.alarmTimes} (${tzLabel}): ${hours || "-"}`);
 
@@ -1115,7 +1065,7 @@ async function buildPortfolioBlock(
   if (!alarm?.enabled) return null;
   if (!Array.isArray(alarm.selectedHours) || alarm.selectedHours.length === 0) return null;
 
-  if ((portfolio.strategy as any).vrBand) {
+  if (portfolio.strategy.vrBand) {
     const snapshot = portfolio.vrSnapshot;
     let vrMaxBuyStep = 0;
     if (snapshot?.buyOrders && Array.isArray(snapshot.buyOrders)) {
@@ -1223,16 +1173,19 @@ async function buildPortfolioBlock(
 
     const holdings = calculateHoldings(portfolio);
     const lines: { section: 1 | 2 | 3; stock: string; quantity: number }[] = [];
-    const checkPartial = async (sec: 1 | 2 | 3, config: any) => {
-      if (!config?.takePartialProfit || config?.partialProfitTargetPct == null || config?.partialProfitTargetPct <= 0) return;
-      const h = holdings.find((x) => x.stock === config.stock);
-      if (!h || h.quantity <= 0 || h.avgPrice <= 0) return;
+    const checkPartial = async (
+      sec: 1 | 2 | 3,
+      config: PartialProfitStrategyConfig | undefined,
+    ) => {
+      if (!config?.takePartialProfit || config.partialProfitTargetPct == null || config.partialProfitTargetPct <= 0) return;
+      const holding = holdings.find((item) => item.stock === config.stock);
+      if (!holding || holding.quantity <= 0 || holding.avgPrice <= 0) return;
       const snapshot = await getStockSnapshot(supabase, historyCache, snapshotCache, config.stock);
       const currentPrice = snapshot.price ?? 0;
       if (currentPrice <= 0) return;
-      const yieldPct = ((currentPrice - h.avgPrice) / h.avgPrice) * 100;
+      const yieldPct = ((currentPrice - holding.avgPrice) / holding.avgPrice) * 100;
       if (yieldPct >= config.partialProfitTargetPct) {
-        lines.push({ section: sec, stock: config.stock, quantity: h.quantity });
+        lines.push({ section: sec, stock: config.stock, quantity: holding.quantity });
       }
     };
 
@@ -1313,7 +1266,12 @@ serve(async (_req) => {
       });
     }
 
-    const eligibleProfiles = (profiles ?? []).filter((p: UserProfileRow) => shouldSendTelegram(p));
+    const eligibleProfiles = (profiles ?? []).filter(
+      (profile): profile is UserProfileRow & { id: string } =>
+        shouldSendTelegram(profile) &&
+        typeof profile.id === "string" &&
+        profile.id.trim() !== "",
+    );
     if (eligibleProfiles.length === 0) {
       return new Response(JSON.stringify({ success: true, users: 0, upserted: 0 }), {
         status: 200,
@@ -1326,12 +1284,17 @@ serve(async (_req) => {
 
     const portfoliosByUser = new Map<string, Portfolio[]>();
     for (const row of portfolioRows) {
+      if (typeof row.user_id !== "string" || row.user_id.trim() === "") {
+        continue;
+      }
+
       const portfolio = mapPortfolioRow(row);
       if (!portfolio) continue;
-      if (!portfoliosByUser.has(row.user_id)) {
-        portfoliosByUser.set(row.user_id, []);
+      const userId = row.user_id;
+      if (!portfoliosByUser.has(userId)) {
+        portfoliosByUser.set(userId, []);
       }
-      portfoliosByUser.get(row.user_id)?.push(portfolio);
+      portfoliosByUser.get(userId)?.push(portfolio);
     }
 
     const historyCache = new Map<string, StockHistory>();

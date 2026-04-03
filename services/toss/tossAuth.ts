@@ -7,7 +7,7 @@ import { appLogin } from '@apps-in-toss/web-framework';
 import { supabase } from '../supabase';
 import { isTossApp } from './tossBridge';
 
-const BFF_URL = import.meta.env.VITE_RAILWAY_BFF_URL as string | undefined;
+const BFF_URL = import.meta.env.VITE_RAILWAY_BFF_URL;
 
 export interface TossAuthResult {
   success: boolean;

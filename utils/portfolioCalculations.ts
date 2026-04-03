@@ -1,11 +1,18 @@
 import { Portfolio, Trade } from '../types';
 import { fetchStockPrices, fetchStockPriceHistory } from '../services/stockService';
 import { calculateMA } from './technicalIndicators';
+import {
+  areFiniteNonNegativeScalars,
+  areStrictPositiveFiniteScalars,
+  isFiniteNumber,
+  isStrictPositiveInteger,
+} from './financialScalarGuards';
+import { roundMoney } from './financialMath';
 
 /** Trade.metadata.pool_after 접근 표준화. VR 체결 직후 Pool 기록용. 유효하지 않으면 undefined. */
 export function getTradePoolAfter(trade: Trade): number | undefined {
   const v = trade.metadata?.pool_after;
-  if (typeof v !== 'number' || !Number.isFinite(v)) return undefined;
+  if (!isFiniteNumber(v)) return undefined;
   return v;
 }
 
@@ -66,7 +73,7 @@ export const calculateHoldings = (portfolio: Portfolio): Holdings[] => {
     quantity: data.quantity,
     totalCost: data.totalCost,
     avgPrice: data.quantity > HOLDINGS_QTY_EPSILON ? data.totalCost / data.quantity : 0,
-    realizedPnL: Number(data.realizedPnL.toFixed(2)),
+    realizedPnL: roundMoney(data.realizedPnL),
   }));
 };
 
@@ -117,15 +124,33 @@ export const calculateCurrentValuation = async (portfolio: Portfolio): Promise<n
   return totalValuation;
 };
 
+export function calculateYieldPercent(
+  currentValuation: number,
+  investedAmount: number,
+): number {
+  if (!areFiniteNonNegativeScalars(currentValuation)) {
+    return 0;
+  }
+
+  if (!areStrictPositiveFiniteScalars(investedAmount)) {
+    return 0;
+  }
+
+  const rawYield = (currentValuation / investedAmount - 1) * 100;
+  return roundMoney(rawYield);
+}
+
 /**
  * 포트폴리오의 수익률을 계산합니다
  */
 export const calculateYield = async (portfolio: Portfolio): Promise<number> => {
   const investedAmount = calculateInvestedAmount(portfolio);
-  if (investedAmount === 0) return 0;
+  if (!areStrictPositiveFiniteScalars(investedAmount)) {
+    return 0;
+  }
 
   const currentValuation = await calculateCurrentValuation(portfolio);
-  return ((currentValuation / investedAmount) - 1) * 100;
+  return calculateYieldPercent(currentValuation, investedAmount);
 };
 
 /** 캐시(StockData)에 있는 표준 이평선 기간. 이 기간은 fetchStockPrices 결과의 ma20/ma60/ma120를 그대로 사용 */
@@ -150,7 +175,7 @@ function computeMAFromHistory(
   history: Array<{ price: number }>,
   period: number
 ): number {
-  if (!history.length || period < 1) return 0;
+  if (!history.length || !isStrictPositiveInteger(period)) return 0;
   const prices = history.map((h) => h.price);
   const lastN = prices.slice(-period);
   return calculateMA(lastN, period);
@@ -224,7 +249,7 @@ export const determineActiveSection = async (portfolio: Portfolio): Promise<1 | 
     const baseData = stockPrices[ma0Stock];
     const ma0Price = baseData?.price;
 
-    if (!ma0Price) return null;
+    if (!areStrictPositiveFiniteScalars(ma0Price)) return null;
 
     const { maAPeriod, maBPeriod } = getMaPeriods(portfolio);
 
@@ -244,7 +269,7 @@ export const determineActiveSection = async (portfolio: Portfolio): Promise<1 | 
     const hi = Math.max(maA, maB);
     const lo = Math.min(maA, maB);
 
-    if (hi <= 0 || lo <= 0) return null;
+    if (!areStrictPositiveFiniteScalars(hi, lo)) return null;
 
     if (ma0Price > hi) return 1;
     if (ma0Price < lo) return 3;

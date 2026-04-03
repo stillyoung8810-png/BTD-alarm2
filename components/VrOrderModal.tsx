@@ -47,7 +47,7 @@ type LabelsLang = (typeof VR_MODAL_LABELS)[AppLang];
 const TABLE_COLUMNS: Array<{
   id: OrderTableColumnId;
   labelKey: keyof (typeof VR_MODAL_LABELS)['ko'];
-  align: 'left' | 'right';
+  align: 'left' | 'center' | 'right';
   format?: 'integer' | 'decimal';
   headerClass?: string;
   cellClass?: string;

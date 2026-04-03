@@ -1,8 +1,16 @@
 import React from 'react';
 import { VrBandStrategyParams } from '../../types';
 import { Orbit, Wallet, Target, Percent } from 'lucide-react';
-import { VR_CREATOR_LABELS, VR_MODE_KEYS } from '../../constants/vrMessages';
-import { VR_CYCLE, VR_LIMITS } from '../../constants/vrConstants';
+import {
+  VR_CREATOR_LABELS,
+  VR_DELTA_CASH_VALIDATION_MESSAGES,
+  VR_MODE_KEYS,
+} from '../../constants/vrMessages';
+import {
+  VR_CYCLE,
+  VR_LIMITS,
+  getVrDeltaCashInputValidationReason,
+} from '../../constants/vrConstants';
 
 export interface VrBandStrategyFormProps {
   lang: 'ko' | 'en';
@@ -54,6 +62,8 @@ const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({
   onVrCycleWeeksChange,
 }) => {
   const vrT = VR_CREATOR_LABELS[lang];
+  const deltaCashValidationCopy = VR_DELTA_CASH_VALIDATION_MESSAGES[lang];
+  const deltaCashFailure = getVrDeltaCashInputValidationReason(vrDeltaCash);
 
   const cycleWeekOptions = React.useMemo(
     () =>
@@ -265,12 +275,18 @@ const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({
                 <Wallet className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                 <input
                   type="number"
+                  min={0}
                   step="1"
                   value={vrDeltaCash}
                   onChange={(e) => onVrDeltaCashChange(Number(e.target.value))}
                   className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
                 />
               </div>
+              {showErrors && deltaCashFailure != null && (
+                <p className="text-[10px] text-red-500 font-medium">
+                  {deltaCashValidationCopy[deltaCashFailure]}
+                </p>
+              )}
             </div>
           )}
         </div>

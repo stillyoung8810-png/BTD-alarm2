@@ -129,7 +129,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   const valuationValueStyle = tossValueStyle ? { ...tossValueStyle, color: undefined } : undefined;
   const changeValueStyle = tossValueStyle && (totalValuationChange !== 0)
     ? { ...tossValueStyle, color: isPositiveChange ? (tossChangePositiveColor ?? undefined) : (tossChangeNegativeColor ?? undefined) }
-    : tossValueStyle;
+    : tossValueStyle ?? undefined;
 
   return (
     <div className="space-y-12 animate-in fade-in duration-700">

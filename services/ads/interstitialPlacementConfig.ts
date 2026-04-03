@@ -10,6 +10,7 @@
 
 import type { UserTier } from '@/types/userTier';
 import { INTERSTITIAL_LIVE_AD_GROUP_ID } from './adPlacements';
+import { parseViteBooleanEnvFlag } from '@/utils/envViteFlags';
 
 /** @see https://developers-apps-in-toss.toss.im/ads/develop.html — 테스트하기 */
 export const TOSS_INTERSTITIAL_TEST_AD_GROUP_ID = 'ait-ad-test-interstitial-id';
@@ -67,9 +68,9 @@ const INTERSTITIAL_PLACEMENT_DEFINITION_BASES: readonly InterstitialPlacementDef
  * 매 호출마다 `import.meta.env`를 읽는다.
  */
 export function getResolvedInterstitialAdGroupId(): string {
-  const useTest =
-    import.meta.env.VITE_TOSS_INTERSTITIAL_USE_TEST === 'true' ||
-    import.meta.env.VITE_TOSS_INTERSTITIAL_USE_TEST === '1';
+  const useTest = parseViteBooleanEnvFlag(
+    import.meta.env.VITE_TOSS_INTERSTITIAL_USE_TEST,
+  );
   if (useTest) {
     return TOSS_INTERSTITIAL_TEST_AD_GROUP_ID;
   }

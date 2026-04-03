@@ -1,31 +1,42 @@
 /// <reference types="vite/client" />
 
-interface ImportMetaEnv {
-  readonly VITE_SUPABASE_URL: string
-  readonly VITE_SUPABASE_ANON_KEY: string
-  readonly VITE_SITE_URL?: string
-  /** AI 매매 인식: 무료 티어용 Gemini API 키 (구글 AI 스튜디오 등에서 발급) */
-  readonly VITE_GEMINI_API_KEY_FREE?: string
-  /** AI 매매 인식: 유료 회원용 Gemini API 키 */
-  readonly VITE_GEMINI_API_KEY_PAID?: string
-  /** AI 공통 키 (무료/유료 미구분 시 둘 다 이 키 사용) */
-  readonly VITE_GEMINI_API_KEY?: string
-  readonly VITE_FIREBASE_API_KEY?: string
-  readonly VITE_FIREBASE_AUTH_DOMAIN?: string
-  readonly VITE_FIREBASE_PROJECT_ID?: string
-  readonly VITE_FIREBASE_STORAGE_BUCKET?: string
-  readonly VITE_FIREBASE_MESSAGING_SENDER_ID?: string
-  readonly VITE_FIREBASE_APP_ID?: string
-  readonly VITE_FIREBASE_VAPID_KEY?: string
-  /** Railway BFF base URL (토스 mTLS·인증·결제 검증용). 예: https://your-app.railway.app */
-  readonly VITE_RAILWAY_BFF_URL?: string
-  /**
-   * `true`/`1`이면 전면 프리로드 config가 운영 ID 대신 토스 테스트 전면 ID를 씁니다.
-   * @see services/ads/interstitialPlacementConfig.ts
-   */
-  readonly VITE_TOSS_INTERSTITIAL_USE_TEST?: string
-}
+import type {
+  BooleanEnvFlag,
+  NumericEnvString,
+} from './types/viteEnvContract';
 
-interface ImportMeta {
-  readonly env: ImportMetaEnv
+declare global {
+  interface ImportMetaEnv {
+    readonly VITE_SUPABASE_URL: string;
+    readonly VITE_SUPABASE_ANON_KEY: string;
+    readonly VITE_SITE_URL?: string;
+
+    readonly VITE_GEMINI_API_KEY_FREE?: string;
+    readonly VITE_GEMINI_API_KEY_PAID?: string;
+    readonly VITE_GEMINI_API_KEY?: string;
+    readonly VITE_GEMINI_EDGE_URL?: string;
+
+    readonly VITE_FIREBASE_API_KEY?: string;
+    readonly VITE_FIREBASE_AUTH_DOMAIN?: string;
+    readonly VITE_FIREBASE_PROJECT_ID?: string;
+    readonly VITE_FIREBASE_STORAGE_BUCKET?: string;
+    readonly VITE_FIREBASE_MESSAGING_SENDER_ID?: string;
+    readonly VITE_FIREBASE_APP_ID?: string;
+    readonly VITE_FIREBASE_VAPID_KEY?: string;
+
+    readonly VITE_TELEGRAM_BOT_USERNAME?: string;
+    readonly VITE_RAILWAY_BFF_URL?: string;
+
+    readonly VITE_PLAN_AMOUNT_PRO?: NumericEnvString;
+    readonly VITE_PLAN_AMOUNT_PREMIUM?: NumericEnvString;
+
+    readonly VITE_BACKTEST_MULTI_URL?: string;
+    readonly VITE_BACKTEST_NO_STOP_MULTI_URL?: string;
+
+    readonly VITE_TOSS_INTERSTITIAL_USE_TEST?: BooleanEnvFlag;
+  }
+
+  interface ImportMeta {
+    readonly env: ImportMetaEnv;
+  }
 }

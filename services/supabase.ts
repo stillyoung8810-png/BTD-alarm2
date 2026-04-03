@@ -3,16 +3,29 @@ import {
   createSupabaseAuthStorage,
   clearSupabaseAuthStorage,
 } from '../utils/supabaseAuthStorage';
+import { getViteImportMetaEnv } from '../utils/viteImportMetaEnv';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const authStorage = createSupabaseAuthStorage();
+type RequiredClientEnvKey =
+  | 'VITE_SUPABASE_URL'
+  | 'VITE_SUPABASE_ANON_KEY';
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Supabase 환경 변수가 설정되지 않았습니다.');
+function getRequiredClientEnv(key: RequiredClientEnvKey): string {
+  const env = getViteImportMetaEnv();
+  const raw = env?.[key];
+  const value = typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : null;
+
+  if (value != null) {
+    return value;
+  }
+
+  throw new Error(`[Supabase] Missing required env: ${key}`);
 }
 
-export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
+const authStorage = createSupabaseAuthStorage();
+const supabaseUrl = getRequiredClientEnv('VITE_SUPABASE_URL');
+const supabaseAnonKey = getRequiredClientEnv('VITE_SUPABASE_ANON_KEY');
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
@@ -28,10 +41,19 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
   },
 });
 
-// 디버깅 및 콘솔 테스트용: 브라우저 환경에서만 window.supabase로 노출
-if (typeof window !== 'undefined') {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (window as any).supabase = supabase;
+declare global {
+  interface Window {
+    __BTD_DEBUG__?: {
+      supabase?: typeof supabase;
+    };
+  }
+}
+
+if (getViteImportMetaEnv()?.DEV === true && typeof window !== 'undefined') {
+  window.__BTD_DEBUG__ = {
+    ...(window.__BTD_DEBUG__ ?? {}),
+    supabase,
+  };
 }
 
 /**

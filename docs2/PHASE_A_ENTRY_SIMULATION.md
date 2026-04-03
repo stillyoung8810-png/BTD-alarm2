@@ -73,6 +73,16 @@
 | 1 | 일일 요약 effect 의 `setTimeout` 콜백 안에서 `user.id` → 비동기 클로저에서 **TS2531** | **동의** | §3.5 After 에 **`const currentUserId = user?.id`** 캡처 후 **`userId: currentUserId`** 만 사용. |
 | 2 | Mutation 마다 동일 mutex 보일러플레이트 복붙 → DRY·유지보수성 저하 | **동의** | **`hooks/useMutexAction.ts`** 신설(§3.3.2) + §3.3 파일 B 에서 **`useMutexAction(useCallback(...))`** 로 통일(§0.5 표 1행은 후속 §0.7으로 대체·보강). |
 
+### 0.8 A3 포트폴리오 폼·훅 계약 (팀 확정 — Option B)
+
+진입점(`App.tsx`)은 `StrategyCreator`의 `onSave` → `handleAddPortfolio` 등 **포트폴리오 뮤테이션**을 연결한다. 아래는 **`docs2/PHASE_A_CONSTANTS_SIMULATION.md` §0.1** 및 **`docs2/PRE_RELEASE_CODE_OPTIMIZATION_MASTER_PLAN.md`** 의 **「확정(비가역) — A3 포트폴리오 설정 폼 검증 파이프라인 (Option B·Rule 1·6·SRP)」** 과 **동일한 팀 합의**를 본 문서에도 명시한다.
+
+1. **Option B (데이터 구조):** UI(`StrategyCreator`, 향후 `PortfolioEditModal` 등)에서 **`trim`·`roundMoney` 등 선제 정제** → **평면 DTO** → **`validatePortfolioSetupInput(dto, copy)`** → 통과 시 **동일 필드로만** `Portfolio` 객체를 조립 → **`usePortfolios`** 로 전달. **`hooks/usePortfolios.ts` 내부의 폼형 인라인 검증**(이름·일매수·수수료·시작일 등)은 **제거**하고, 훅은 **통신·세션·한도** 중심(SRP)만 담당한다.
+2. **에러 반환 (폼 검증 표준):** **`validatePortfolioSetupInput`** 은 **`string | null`만 반환**하고, 주입된 **`copy`**(`CommonMessageSet` 등)로만 사용자 문구를 고른다 — **폼 검증 경로에서 `throw` 금지**. DB·네트워크·권한 실패는 **`createPortfolioMutationError` + `getPortfolioMutationNotice`** 등 **뮤테이션 레이어**에서 기존 패턴을 유지한다.
+3. **Rule 1 & Rule 6 (페이로드 무결 일치):** 검증기에 넣은 **`trimmedName`**, **`normalizedFeeRate`** 등 **정제 완료 값**은 DB에 쓰이는 값과 **100% 동일**해야 한다. 검증 후 **재-trim·재-round·암묵적 보정**으로 저장 값이 달라지는 경로를 금지한다. 생성·수정·모달 등 **데이터가 들어오는 모든 입구**는 동일 파이프라인을 따른다.
+
+**스니펫·상수·마이그레이션 순서 SSOT:** `docs2/PHASE_A_CONSTANTS_SIMULATION.md` §2.1·§2.1.1·§3.3·§3.6. **진입점 관점:** `App.tsx`는 정제/검증 로직을 불필요하게 늘리지 않고, 자식이 **이미 무결한 계약**으로 넘긴 `Portfolio`를 훅에 **배선**하는 역할을 유지한다(검증 책임은 **폼 컴포넌트 + 도메인 순수 함수**).
+
 ## 1. 진입점 분석 (Analysis)
 
 ### 1.1 `App.tsx`
@@ -170,6 +180,7 @@
    - tooltip 표시 시간
    - tooltip 최소 폭
 3. 라우트 path와 hash도 상수화
+4. **포트폴리오 생성·수정 파이프라인:** `StrategyCreator` → `onSave` → `handleAddPortfolio` / `handleUpdatePortfolio` 경로는 **§0.8 Option B** 계약을 따른다(정제·평면 DTO·`validatePortfolioSetupInput`·페이로드 일치·훅은 통신만). 상세 스니펫·체크리스트·`usePortfolios` 검증 제거 순서는 **`docs2/PHASE_A_CONSTANTS_SIMULATION.md` §0.1·§2.1.1·§4** 를 SSOT로 한다.
 
 ### A4. UI / A11y 안티패턴 제거
 
@@ -883,7 +894,7 @@ const handleOpenQuickInput = useCallback(
   [setQuickInputTargetId, setQuickInputActiveSection],
 );
 
-const handleUpdatePortfolioForDashboard = useMutexAction(
+const { run: handleUpdatePortfolioForDashboard } = useMutexAction(
   useCallback(
     async (portfolio: Portfolio) => {
       try {
@@ -896,7 +907,7 @@ const handleUpdatePortfolioForDashboard = useMutexAction(
   ),
 );
 
-const handleDeletePortfolio = useMutexAction(
+const { run: handleDeletePortfolio } = useMutexAction(
   useCallback(
     async (id: string) => {
       const shellCopy = APP_SHELL_MESSAGES[lang];
@@ -912,7 +923,7 @@ const handleDeletePortfolio = useMutexAction(
   ),
 );
 
-const handleSafeDeleteHistory = useMutexAction(
+const { run: handleSafeDeleteHistory } = useMutexAction(
   useCallback(
     async (portfolioId: string) => {
       const shellCopy = APP_SHELL_MESSAGES[lang];
@@ -928,7 +939,7 @@ const handleSafeDeleteHistory = useMutexAction(
   ),
 );
 
-const handleSafeClearHistory = useMutexAction(
+const { run: handleSafeClearHistory } = useMutexAction(
   useCallback(
     async () => {
       const shellCopy = APP_SHELL_MESSAGES[lang];
@@ -996,36 +1007,59 @@ return (
 **[⚠️ 중요: `React.memo` 성능]**  
 `TabContent`에 넘기는 **`activePortfolios`**, **`closedPortfolios`** 는 반드시 **`useMemo`로 참조 고정**합니다(위 스니펫과 동일). `portfolios` 원본은 상태 소스로 그대로 전달합니다.
 
-**[Rule 11 — Mutation / 브릿지]** 진입점에서 `TabContent`로 내려보내는 **비동기 상태 변이**는 스니펫 단계에서 **끝까지** 정한다. **Mutex(1-tick 중복 차단)** 는 **`hooks/useMutexAction.ts`의 `useMutexAction`** 으로 DRY·SRP 유지(§3.3.2). 래핑된 액션 내부에서는 업데이트 경로에 **`await Promise.resolve(handleUpdatePortfolio(...))`** 를 유지하고, 훅 본체는 **`await Promise.resolve(action(...args))`** 로 동기·비동기 혼합 호출을 수렴한다. 파괴적 Mutation(`deletePortfolioById` 등)도 동일 패턴으로 감싼다. 실패 시 사용자 피드백은 **`showErrorToast` + `APP_SHELL_MESSAGES` 키**(§3.6)만 사용한다(§0.5·§0.7·계획서 Phase A 표).
+**[Rule 11 — Mutation / 브릿지]** 진입점에서 `TabContent`로 내려보내는 **비동기 상태 변이**는 스니펫 단계에서 **끝까지** 정한다. **Mutex(1-tick 중복 차단)** 는 **`hooks/useMutexAction.ts`의 `useMutexAction`** 으로 DRY·SRP 유지(§3.3.2). 훅은 **`{ run, isExecuting }`** 를 반환하도록 확장하는 것을 계획서에 반영했고, 구현은 **Rule 2 준수를 위해 `actionRef.current` 갱신을 `useLayoutEffect`로만 수행**하고, **`run` 참조는 고정(`useCallback` 빈 deps)** + **`useMemo` 반환 객체**로 Stale closure를 방지한다(`PRE_RELEASE_CODE_OPTIMIZATION_MASTER_PLAN.md` Phase A **Mutex** 행, `docs2/PHASE_A_CONSTANTS_SIMULATION.md` §3.5.1). 진입점에서는 보통 **`const { run: handleX } = useMutexAction(...)`** 만 쓰면 되고, 버튼·로딩 UI가 필요한 화면에서는 **`isExecuting`** 을 함께 구조 분해한다. 래핑된 액션 내부에서는 업데이트 경로에 **`await Promise.resolve(handleUpdatePortfolio(...))`** 를 유지하고, 훅 본체는 **`await Promise.resolve(actionRef.current(...args))`** 에 상응하게 최신 액션을 호출한다. 파괴적 Mutation(`deletePortfolioById` 등)도 동일 패턴으로 감싼다. 실패 시 사용자 피드백은 **`showErrorToast` + `APP_SHELL_MESSAGES` 키**(§3.6)만 사용한다(§0.5·§0.7·계획서 Phase A 표).
 
 **요약:** 탭 영역은 `<TabContent ... />` 한 번으로 두고, 부모는 **파생 배열 `useMemo` + `useMutexAction` 기반 Mutation 래핑**까지 스니펫 수준에서 확정합니다.
 
-#### 3.3.2 `hooks/useMutexAction.ts` (신규 — Mutex DRY)
+#### 3.3.2 `hooks/useMutexAction.ts` (확장 — Mutex DRY + `isExecuting`)
 
-> **통합 시:** `App.tsx` 등에서 **`@/hooks/useMutexAction`** 으로 import. 동일 뮤텍스 패턴을 **여러 `useRef(false)` 복붙**하지 않는다(§0.7).
+> **통합 시:** `App.tsx` 등에서 **`@/hooks/useMutexAction`** 으로 import. 동일 뮤텍스 패턴을 **여러 `useRef(false)` 복붙**하지 않는다(§0.7).  
+> **반환값:** **`{ run, isExecuting }`**. 기존 스니펫 `const fn = useMutexAction(...)` 는 **`const { run: fn } = useMutexAction(...)`** 로 일괄 치환한다. 상세 계약은 `docs2/PHASE_A_CONSTANTS_SIMULATION.md` §3.5.1 과 동일.
 
 ```ts
-import { useCallback, useRef } from 'react';
+import {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
+export interface UseMutexActionResult<Args extends unknown[]> {
+  run: (...args: Args) => Promise<void>;
+  isExecuting: boolean;
+}
 
 export function useMutexAction<Args extends unknown[]>(
   action: (...args: Args) => void | Promise<void>,
-): (...args: Args) => Promise<void> {
+): UseMutexActionResult<Args> {
   const isExecutingRef = useRef(false);
+  const [isExecuting, setIsExecuting] = useState(false);
 
-  return useCallback(
-    async (...args: Args) => {
-      if (isExecutingRef.current) {
-        return;
-      }
+  const actionRef = useRef(action);
 
-      try {
-        isExecutingRef.current = true;
-        await Promise.resolve(action(...args));
-      } finally {
-        isExecutingRef.current = false;
-      }
-    },
-    [action],
+  useLayoutEffect(() => {
+    actionRef.current = action;
+  }, [action]);
+
+  const run = useCallback(async (...args: Args) => {
+    if (isExecutingRef.current) {
+      return;
+    }
+
+    try {
+      isExecutingRef.current = true;
+      setIsExecuting(true);
+      await Promise.resolve(actionRef.current(...args));
+    } finally {
+      isExecutingRef.current = false;
+      setIsExecuting(false);
+    }
+  }, []);
+
+  return useMemo(
+    () => ({ run, isExecuting }),
+    [run, isExecuting],
   );
 }
 ```
@@ -1521,7 +1555,7 @@ export function assertNever(value: never): never {
 - [ ] 일일 요약 저장 등 **사용자 영향 실패**에 `showErrorToast` + `appShellMessages` 를 적용했다(silent `console.warn` 만 금지). **`summaryToSave`가 `null`/`undefined`일 수 있으면** `.trim()` 전에 **falsy 방어**했다(§0.4·§3.5).
 - [ ] `handlePricingUpgrade` 등 **`useCallback` deps에 객체 전체 대신 원시값**(`user?.id`)을 썼다. **`handleOpenQuickInput`·`handleBackToDashboard` 등** 팀 규칙에 맞게 **setter·`setActiveTab`·`replaceHashIfMatched` 등 린트가 잡는 참조를 전부 의존 배열에 명시**했고, **`eslint-disable`로 `exhaustive-deps`를 우회하지 않았다**(§0.4·§3.3 파일 B 인용 블록).
 - [ ] `index.tsx` 진입에서 **`import.meta.env?.DEV ?? false`** 를 적용했고, **`import.meta?.env` 형태는 쓰지 않았다**(§0.6·§3.1).
-- [ ] `handleUpdatePortfolioForDashboard` 및 **`onDeletePortfolio` / `onDeleteHistory` / `onClearHistory`** 진입점 래퍼에 **`useMutexAction`**(§3.3.2)·액션 내부 **`Promise.resolve`**·실패 시 **`showErrorToast` + `APP_SHELL_MESSAGES`**(§3.3 파일 B·§3.6·§0.5·§0.7)를 적용했다. *「나중에 검토」* 로 미루지 않았다.
+- [ ] `handleUpdatePortfolioForDashboard` 및 **`onDeletePortfolio` / `onDeleteHistory` / `onClearHistory`** 진입점 래퍼에 **`useMutexAction`**(§3.3.2)·**`const { run: … } = useMutexAction(...)`** 구조 분해·액션 내부 **`Promise.resolve`**·실패 시 **`showErrorToast` + `APP_SHELL_MESSAGES`**(§3.3 파일 B·§3.6·§0.5·§0.7)를 적용했다. *「나중에 검토」* 로 미루지 않았다.
 - [ ] 일일 요약 디바운스는 **`window.setTimeout` / `window.clearTimeout`** 과 **`useRef<number | null>`** 로 §3.4 `NavIcon` 과 API·타입 스타일을 맞췄다(§3.5). **`setTimeout` 콜백 안에서는 `user.id` 대신 `currentUserId` 원시 캡처**로 **TS2531** 을 막았다(§0.7·§3.5).
 
 ## 5. 권장 적용 순서
@@ -1554,5 +1588,6 @@ export function assertNever(value: never): never {
 - **§0.5:** 진입점 **파괴적 Mutation**(포트폴리오 삭제·히스토리 삭제·히스토리 비우기) **mutex + `Promise.resolve` + 토스트 SSOT** 확정; 일일 요약 **`window` 타이머 API** 통일.
 - **§0.6:** **`import.meta.env?.DEV`** 로 TS1303 회피; 훅 deps에 **`setAuthModal`·`setActiveTab`·`setIsTooltipVisible`** 등 setter 일관 명시; **`lang: 'ko'|'en'` 맥락에서 `APP_SHELL_MESSAGES[lang] ?? …` 제거**.
 - **§0.7:** 일일 요약 **`currentUserId` 캡처(TS2531)**; **`hooks/useMutexAction`** 로 Mutex DRY.
+- **§0.8:** A3 **Option B** 포트폴리오 폼 파이프라인 — UI 정제·`validatePortfolioSetupInput`(`string | null`·throw 금지)·페이로드 일치·**`usePortfolios` 폼 검증 제거(SRP)** — `PHASE_A_CONSTANTS_SIMULATION` §0.1·`PRE_RELEASE` 확정 절과 동일 문장.
 
 **위 기준으로 `PHASE_A_ENTRY_SIMULATION.md` 및 `PRE_RELEASE_CODE_OPTIMIZATION_MASTER_PLAN.md` (Phase A 보강) 반영을 완료했습니다.**

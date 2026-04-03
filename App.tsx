@@ -1,21 +1,18 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Portfolio, Trade } from './types';
+import { AppLang, Portfolio, Trade } from './types';
 import { I18N } from './constants';
 import Footer from './components/Footer';
-import Privacy from './components/Privacy';
-import Terms from './components/Terms';
 import TradeExecutionModal from './components/TradeExecutionModal';
 import { TerminationInput, Result as SettlementResult } from './components/SettlementModals';
-import Landing from './components/Landing';
-import Pricing from './components/Pricing';
 import { supabase, clearAuthStorage } from './services/supabase';
-import { calculateTotalInvested, calculateHoldings } from './utils/portfolioCalculations';
+import { calculateHoldings } from './utils/portfolioCalculations';
 import { fetchStockPricesWithPrev, loadInitialStockData, loadPaidStockData } from './services/stockService';
 import { getUSSelectionHolidays } from './utils/marketUtils';
 import { getCurrentKSTDateString, getDeviceTimeZone } from './utils/dateUtils';
 import { useFCMToken } from './hooks/useFCMToken';
 import { useAuth } from './hooks/useAuth';
 import { usePortfolios } from './hooks/usePortfolios';
+import { useMutexAction } from './hooks/useMutexAction';
 import { isTossApp } from './services/tossAppBridge';
 import {
   AdPreloadProvider,
@@ -33,15 +30,18 @@ import {
   type AdRouteKey,
   type InterstitialPlacementKey,
 } from './services/ads/interstitialPlacementConfig';
+import { closeView } from '@apps-in-toss/web-bridge';
 import { restorePendingIapOrders } from './services/payment/tossIapService';
 import { TossAppProvider } from './contexts/TossAppContext';
 import { buildDailyExecutionSummary } from './utils/dailyExecutionSummary';
 import { TdsAlertDialog } from './components/tds-adapter/TdsAlertDialog';
 import { TdsConfirmDialog } from './components/tds-adapter/TdsConfirmDialog';
+import { showErrorToast } from './components/tds-adapter/showErrorToast';
 import { useAsyncTdsConfirm } from './components/tds-adapter/useAsyncTdsConfirm';
 import { TDS_DIALOG_MESSAGES } from './constants/tdsDialogMessages';
 import SessionExpiredAlertGate from './components/auth/SessionExpiredAlertGate';
 import { getPortfolioMutationNotice } from './constants/portfolioMutationErrors';
+import { APP_SHELL_MESSAGES } from './constants/appShellMessages';
 import { 
   LayoutDashboard, 
   BarChart3, 
@@ -58,13 +58,11 @@ import {
   getMaxAlarms, 
   getEffectiveSubscription,
 } from './utils/subscriptionUtils';
-import type { UserTier } from '@/types/userTier';
+import { toAdUserTier, type UserTier } from '@/types/userTier';
 import { useTierDisplay } from './hooks/useTierDisplay';
 import AuthModalCoordinator from './components/auth/AuthModalCoordinator';
-const Backtest = React.lazy(() => import('./components/Backtest'));
-const Dashboard = React.lazy(() => import('./components/Dashboard'));
-const Markets = React.lazy(() => import('./components/Markets'));
-const History = React.lazy(() => import('./components/History'));
+import { replaceHashIfMatched } from './utils/appEntryHelpers';
+import { TabContent, type ActiveTab } from './components/TabContent';
 const QuickInputModal = React.lazy(() => import('./components/QuickInputModal'));
 const CheckoutModal = React.lazy(() => import('./components/CheckoutModal'));
 const StrategyCreator = React.lazy(() => import('./components/StrategyCreator'));
@@ -96,8 +94,14 @@ const LAZY_MODAL_FALLBACK = (
 /** 동일 openId 닫기: setTimeout 기반 물리적 더블 입력 디듀프 */
 const UI_DOUBLE_CLICK_PREVENTION_MS = 300;
 const NON_BLOCKING_AD_TRIGGER_DELAY_MS = 0;
+const TIER_ICON_SIZE_PX = 11;
+const DAILY_EXECUTION_DEBOUNCE_MS = 3000;
+const DAILY_EXECUTION_ON_CONFLICT = 'user_id,summary_date';
 
-type ActiveTab = 'dashboard' | 'markets' | 'history' | 'backtest' | 'pricing' | 'privacy' | 'terms';
+const PRO_TIER_ICON_PROPS = {
+  fill: 'currentColor',
+  stroke: 'currentColor',
+} as const;
 
 interface FinishSignedInFlowOptions {
   shouldShowWelcome: boolean;
@@ -137,8 +141,103 @@ const AdPreloadBridge: React.FC<AdPreloadBridgeProps> = ({
   return null;
 };
 
+interface HeaderBrandButtonProps {
+  currentTier: string;
+  lang: 'ko' | 'en';
+  tierClassName: string;
+  tierIconClassName: string;
+  tierLabel: string;
+  TierIcon: React.ComponentType<{
+    size?: number;
+    className?: string;
+    fill?: string;
+    stroke?: string;
+  }>;
+  onNavigateDashboard: () => void;
+}
+
+function HeaderBrandButton({
+  currentTier,
+  lang,
+  tierClassName,
+  tierIconClassName,
+  tierLabel,
+  TierIcon,
+  onNavigateDashboard,
+}: HeaderBrandButtonProps): React.ReactElement {
+  const copy = APP_SHELL_MESSAGES[lang];
+  const tierIconProps =
+    currentTier === 'pro' ? PRO_TIER_ICON_PROPS : undefined;
+
+  return (
+    <button
+      type="button"
+      onClick={onNavigateDashboard}
+      aria-label={copy.entryGoToDashboardAria}
+      className="flex items-center gap-4 group"
+    >
+      <div className="w-11 h-11 relative flex items-center justify-center group-hover:scale-110 transition-all duration-300">
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-700 via-indigo-600 to-purple-500 rounded-xl shadow-lg shadow-blue-500/20 transform -rotate-3 group-hover:rotate-0 transition-transform" />
+        <div className="relative z-10 text-white font-black text-xl flex items-baseline select-none">
+          <span className="tracking-tighter">B</span>
+          <span className="text-blue-300 -ml-1.5 opacity-90 translate-y-0.5">
+            D
+          </span>
+        </div>
+      </div>
+      <div className="hidden sm:block text-left">
+        <h1 className="text-lg font-black tracking-tight dark:text-white uppercase leading-none mb-1">
+          {copy.entryAppName}
+        </h1>
+        <div className="mt-[2px]">
+          <span className={tierClassName}>
+            <TierIcon
+              size={TIER_ICON_SIZE_PX}
+              className={tierIconClassName}
+              {...tierIconProps}
+            />
+            {tierLabel}
+          </span>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+interface DailyExecutionSummaryUpsertRow {
+  user_id: string;
+  summary_date: string;
+  summary_text: string;
+  lang: 'ko' | 'en';
+}
+
+async function saveDailyExecutionSummary(params: {
+  userId: string;
+  summary: string;
+  lang: 'ko' | 'en';
+}): Promise<{ summaryDate: string; errorMessage: string | null }> {
+  const summaryDate = getCurrentKSTDateString();
+  const payload: DailyExecutionSummaryUpsertRow = {
+    user_id: params.userId,
+    summary_date: summaryDate,
+    summary_text: params.summary,
+    lang: params.lang,
+  };
+
+  const { error } = await supabase
+    .from('daily_execution_summaries')
+    .upsert(payload, {
+      onConflict: DAILY_EXECUTION_ON_CONFLICT,
+    });
+
+  return {
+    summaryDate,
+    errorMessage: error?.message ?? null,
+  };
+}
+
 const App: React.FC = () => {
-  const [lang, setLang] = useState<'ko' | 'en'>('ko');
+  const [lang, setLang] = useState<AppLang>('ko');
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [isCreatorOpen, setIsCreatorOpen] = useState(false);
@@ -206,7 +305,7 @@ const App: React.FC = () => {
     return base && base.trim().length > 0 ? base : '';
   }, [portfolios, lang, dailyExecutionSummaryFromDashboard]);
 
-  const dailyExecutionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dailyExecutionDebounceRef = useRef<number | null>(null);
   const lastSavedSummaryRef = useRef<string | null>(null);
 
   const { saveFCMToken } = useFCMToken();
@@ -252,29 +351,24 @@ const App: React.FC = () => {
   );
 
   // 현재 유저의 실효 구독 티어 (pending_plan / 만료 반영)
-  const currentTier = effectiveSubscription.tier.toLowerCase();
-
-  const adsUserTier = useMemo((): UserTier => {
-    if (currentTier === 'pro' || currentTier === 'premium') {
-      return currentTier;
-    }
-    return 'free';
-  }, [currentTier]);
+  const currentTier = effectiveSubscription.tier;
+  const paidTier = useMemo(() => toAdUserTier(currentTier), [currentTier]);
+  const adsUserTier = paidTier;
 
   const canAccessPaidStocks = useMemo(() => {
-    const tierOk = currentTier === 'pro' || currentTier === 'premium';
+    const tierOk = currentTier !== 'free';
     return tierOk && effectiveSubscription.isActive && !effectiveSubscription.isExpired;
   }, [currentTier, effectiveSubscription.isActive, effectiveSubscription.isExpired]);
 
-  const { tierLabel, tierClassName, TierIcon, tierIconClassName } = useTierDisplay(currentTier);
+  const { tierLabel, tierClassName, TierIcon, tierIconClassName } = useTierDisplay(
+    paidTier,
+  );
 
   const geminiApiKey = useMemo(() => {
-    const isPaid = currentTier === 'pro' || currentTier === 'premium';
+    const isPaid = currentTier !== 'free';
     const paid = import.meta.env.VITE_GEMINI_API_KEY_PAID;
     const free = import.meta.env.VITE_GEMINI_API_KEY_FREE;
-    const fallback =
-      import.meta.env.VITE_GEMINI_API_KEY ||
-      (process as { env?: { API_KEY?: string } }).env?.API_KEY;
+    const fallback = import.meta.env.VITE_GEMINI_API_KEY;
     return (isPaid ? paid : free) || fallback || undefined;
   }, [currentTier]);
 
@@ -290,6 +384,7 @@ const App: React.FC = () => {
   } | null>(null);
 
   const t = I18N[lang];
+  const shellCopy = APP_SHELL_MESSAGES[lang];
   const isInTossApp = isTossApp();
   const primeableAdRouteKey = useMemo(
     () => getPrimeableAdRouteKey(activeTab),
@@ -316,51 +411,54 @@ const App: React.FC = () => {
   }, [detailsTargetId]);
 
   useEffect(() => {
-    if (!user?.id) return;
-    if (!summaryToSave || summaryToSave.trim().length === 0) return;
+    const currentUserId = user?.id;
 
-    if (dailyExecutionDebounceRef.current) {
-      clearTimeout(dailyExecutionDebounceRef.current);
+    if (currentUserId == null) {
+      return;
     }
 
-    dailyExecutionDebounceRef.current = setTimeout(async () => {
+    if (!summaryToSave || summaryToSave.trim().length === 0) {
+      return;
+    }
+
+    if (dailyExecutionDebounceRef.current != null) {
+      window.clearTimeout(dailyExecutionDebounceRef.current);
+    }
+
+    dailyExecutionDebounceRef.current = window.setTimeout(async () => {
       try {
         if (lastSavedSummaryRef.current === summaryToSave) {
           return;
         }
 
-        const summaryDate = getCurrentKSTDateString();
+        const result = await saveDailyExecutionSummary({
+          userId: currentUserId,
+          summary: summaryToSave,
+          lang,
+        });
 
-        const { error } = await supabase
-          .from('daily_execution_summaries')
-          .upsert(
-            {
-              user_id: user.id,
-              summary_date: summaryDate,
-              summary_text: summaryToSave,
-              lang,
-            },
-            {
-              onConflict: 'user_id,summary_date',
-            } as any,
+        if (result.errorMessage != null) {
+          showErrorToast(
+            `${shellCopy.dailySummarySaveErrorPrefix}${result.errorMessage}`,
           );
-
-        if (error) {
-          console.warn('[DailyExecution] upsert error:', error.message);
-        } else {
-          lastSavedSummaryRef.current = summaryToSave;
-          console.log('[DailyExecution] summary upserted for', summaryDate);
+          return;
         }
-      } catch (err) {
-        console.warn('[DailyExecution] upsert failed:', err);
+
+        lastSavedSummaryRef.current = summaryToSave;
+        console.log('[DailyExecution] summary upserted for', result.summaryDate);
+      } catch (error: unknown) {
+        showErrorToast(shellCopy.dailySummaryNetworkError);
+        console.error('[DailyExecution] upsert failed:', error);
       }
-    }, 3000);
+    }, DAILY_EXECUTION_DEBOUNCE_MS);
 
     return () => {
-      if (dailyExecutionDebounceRef.current) {
-        clearTimeout(dailyExecutionDebounceRef.current);
-        dailyExecutionDebounceRef.current = null;
+      if (dailyExecutionDebounceRef.current == null) {
+        return;
       }
+
+      window.clearTimeout(dailyExecutionDebounceRef.current);
+      dailyExecutionDebounceRef.current = null;
     };
   }, [user?.id, summaryToSave, lang]);
 
@@ -553,7 +651,7 @@ const App: React.FC = () => {
   }, [aggregateHoldings]);
 
   const settlementDetailsCloseUiDedupeOpenIdRef = useRef<string | null>(null);
-  const settlementDetailsCloseUiDedupeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const settlementDetailsCloseUiDedupeTimerRef = useRef<number | null>(null);
   const navigationExitDialog = useAsyncTdsConfirm(lang);
   const [portfolioMutationNotice, setPortfolioMutationNotice] = useState<{
     title: string;
@@ -694,12 +792,7 @@ const App: React.FC = () => {
 
   const handleRequestMiniAppExit = useCallback(async (): Promise<void> => {
     try {
-      const bridge = await import('@apps-in-toss/web-bridge');
-      if (typeof bridge.closeView !== 'function') {
-        throw new Error('closeView is not available on the loaded bridge module');
-      }
-
-      await Promise.resolve(bridge.closeView());
+      await Promise.resolve(closeView());
     } catch (error: unknown) {
       console.error('Failed to execute Toss closeView:', error);
       throw error;
@@ -758,8 +851,7 @@ const App: React.FC = () => {
       }
 
       const exitMessage = TDS_DIALOG_MESSAGES[lang]?.exit?.back_navigation;
-      const labels = TDS_DIALOG_MESSAGES[lang]?.actions;
-      if (exitMessage == null || labels == null) {
+      if (exitMessage == null) {
         onLeave();
         return;
       }
@@ -797,170 +889,110 @@ const App: React.FC = () => {
     setPortfolioLimitNoticeMax(null);
   }, []);
 
-  const tabContentNode = useMemo((): React.ReactNode => {
-    const dashboardFallback = <div className="flex items-center justify-center min-h-[50vh] text-slate-500 dark:text-slate-400 font-bold">{lang === 'ko' ? '대시보드 로딩 중…' : 'Loading dashboard…'}</div>;
-    const genericFallback = <div className="flex items-center justify-center min-h-[50vh] text-slate-500 dark:text-slate-400 font-bold">{lang === 'ko' ? '로딩 중…' : 'Loading…'}</div>;
-    switch (activeTab) {
-      case 'dashboard':
-        return user ? (
-          <React.Suspense fallback={dashboardFallback}>
-            <Dashboard
-              lang={lang}
-              portfolios={activePortfolios}
-              onClosePortfolio={(id) => setTerminateTargetId(id)}
-              onDeletePortfolio={deletePortfolioById}
-              onUpdatePortfolio={(updated) => {
-                void handleUpdatePortfolio(updated).catch((error: unknown) => {
-                  openPortfolioMutationNotice(error);
-                });
-              }}
-              onOpenCreator={handleRequestOpenCreator}
-              onOpenAlarm={(id) => setAlarmTargetId(id)}
-              onOpenDetails={(id) => setDetailsTargetId(id)}
-              onOpenQuickInput={(id, activeSection) => {
-                setQuickInputTargetId(id);
-                setQuickInputActiveSection(activeSection);
-              }}
-              onOpenExecution={(id) => setExecutionTargetId(id)}
-              onOpenAIImage={(id) => setAiImageTargetId(id)}
-              totalValuation={totalValuation}
-              totalValuationChange={totalValuationChange}
-              totalValuationChangePct={totalValuationChangePct}
-              onDailyExecutionSummaryChange={onDailyExecutionSummaryChange}
-            />
-          </React.Suspense>
-        ) : (
-          <Landing
-            lang={lang}
-            onOpenSignup={() => setAuthModal('signup')}
-            onOpenLogin={() => setAuthModal('login')}
-          />
-        );
-      case 'markets':
-        return (
-          <React.Suspense fallback={genericFallback}>
-            <Markets
-              lang={lang}
-              portfolios={portfolios}
-              canAccessPaidStocks={canAccessPaidStocks}
-              currentTier={currentTier === 'premium' || currentTier === 'pro' ? (currentTier as 'pro' | 'premium') : 'free'}
-            />
-          </React.Suspense>
-        );
-      case 'backtest':
-        return (
-          <React.Suspense fallback={<div className="flex items-center justify-center min-h-[50vh] text-slate-500 dark:text-slate-400 font-bold">백테스트 로딩 중…</div>}>
-            <Backtest lang={lang} currentTier={currentTier === 'premium' || currentTier === 'pro' ? currentTier : 'free'} />
-          </React.Suspense>
-        );
-      case 'pricing':
-        return (
-          <Pricing
-            lang={lang}
-            currentTier={currentTier === 'premium' || currentTier === 'pro' ? currentTier : 'free'}
-            onUpgrade={(planId) => {
-              if (!user) {
-                setAuthModal('login');
-                return;
-              }
-              setCheckoutPlan(planId);
-            }}
-          />
-        );
-      case 'history':
-        return (
-          <React.Suspense fallback={genericFallback}>
-            <History
-              lang={lang}
-              portfolios={closedPortfolios}
-              onOpenDetails={setDetailsTargetId}
-              onDeleteHistory={handleDeleteHistory}
-              onClearHistory={handleClearHistory}
-            />
-          </React.Suspense>
-        );
-      case 'privacy':
-        return (
-          <Privacy
-            lang={lang}
-            onBack={() => {
-              handleRequestBackNavigation(() => {
-                setActiveTab('dashboard');
-                const u = window.location;
-                if (u.hash === '#privacy') window.history.replaceState(null, '', u.pathname + u.search);
-              });
-            }}
-          />
-        );
-      case 'terms':
-        return (
-          <Terms
-            lang={lang}
-            onBack={() => {
-              handleRequestBackNavigation(() => {
-                setActiveTab('dashboard');
-                const u = window.location;
-                if (u.hash === '#terms') window.history.replaceState(null, '', u.pathname + u.search);
-              });
-            }}
-          />
-        );
-      default:
-        return null;
-    }
-  }, [
-    activeTab,
-    lang,
-    user,
-    activePortfolios,
-    portfolios,
-    closedPortfolios,
-    userProfile,
-    currentTier,
-    totalValuation,
-    totalValuationChange,
-    totalValuationChangePct,
-    onDailyExecutionSummaryChange,
-    canAccessPaidStocks,
-    deletePortfolioById,
-    handleClearHistory,
-    handleDeleteHistory,
-    handleRequestBackNavigation,
-    handleRequestOpenCreator,
-    handleUpdatePortfolio,
-    openPortfolioMutationNotice,
-  ]);
+  const handleNavigateDashboard = useCallback(() => {
+    setActiveTab('dashboard');
+  }, [setActiveTab]);
+
+  const handleOpenLogin = useCallback(() => {
+    setAuthModal('login');
+  }, [setAuthModal]);
+
+  const handleOpenSignup = useCallback(() => {
+    setAuthModal('signup');
+  }, [setAuthModal]);
+
+  const handleOpenQuickInput = useCallback(
+    (id: string, activeSection: 1 | 2 | 3 | undefined) => {
+      setQuickInputTargetId(id);
+      setQuickInputActiveSection(activeSection);
+    },
+    [setQuickInputTargetId, setQuickInputActiveSection],
+  );
+
+  const { run: handleUpdatePortfolioForDashboard } = useMutexAction(
+    useCallback(
+      async (portfolio: Portfolio) => {
+        try {
+          await Promise.resolve(handleUpdatePortfolio(portfolio));
+        } catch (error: unknown) {
+          openPortfolioMutationNotice(error);
+        }
+      },
+      [handleUpdatePortfolio, openPortfolioMutationNotice],
+    ),
+  );
+
+  const { run: handleDeletePortfolio } = useMutexAction(
+    useCallback(
+      async (id: string) => {
+        const shellCopy = APP_SHELL_MESSAGES[lang];
+
+        try {
+          await deletePortfolioById(id);
+        } catch (error: unknown) {
+          showErrorToast(shellCopy.portfolioDeleteFailed);
+          console.error('[Portfolio] delete failed:', error);
+        }
+      },
+      [deletePortfolioById, lang],
+    ),
+  );
+
+  const { run: handleSafeDeleteHistory } = useMutexAction(
+    useCallback(
+      async (portfolioId: string) => {
+        const shellCopy = APP_SHELL_MESSAGES[lang];
+
+        try {
+          await handleDeleteHistory(portfolioId);
+        } catch (error: unknown) {
+          showErrorToast(shellCopy.historyEntryDeleteFailed);
+          console.error('[History] delete failed:', error);
+        }
+      },
+      [handleDeleteHistory, lang],
+    ),
+  );
+
+  const { run: handleSafeClearHistory } = useMutexAction(
+    useCallback(
+      async () => {
+        const shellCopy = APP_SHELL_MESSAGES[lang];
+
+        try {
+          await handleClearHistory();
+        } catch (error: unknown) {
+          showErrorToast(shellCopy.historyClearFailed);
+          console.error('[History] clear failed:', error);
+        }
+      },
+      [handleClearHistory, lang],
+    ),
+  );
+
+  const handleBackToDashboard = useCallback(
+    (hash: string) => {
+      handleRequestBackNavigation(() => {
+        setActiveTab('dashboard');
+        replaceHashIfMatched(hash);
+      });
+    },
+    [handleRequestBackNavigation, setActiveTab, replaceHashIfMatched],
+  );
 
   const MainContent = () => (
-    <div className={`min-h-screen transition-colors duration-500 bg-slate-50 dark:bg-slate-950 dark:text-slate-200`}>
+    <div className="min-h-screen transition-colors duration-500 bg-slate-50 dark:bg-slate-950 dark:text-slate-200">
       <div className="pb-32">
         <header className="sticky top-0 z-40 w-full glass glass-header px-6 md:px-12 py-5 flex items-center justify-between border-b border-slate-200/50 dark:border-white/10">
-          <div className="flex items-center gap-4 cursor-pointer group" onClick={() => setActiveTab('dashboard')}>
-            <div className="w-11 h-11 relative flex items-center justify-center group-hover:scale-110 transition-all duration-300">
-               <div className="absolute inset-0 bg-gradient-to-br from-blue-700 via-indigo-600 to-purple-500 rounded-xl shadow-lg shadow-blue-500/20 transform -rotate-3 group-hover:rotate-0 transition-transform"></div>
-               <div className="relative z-10 text-white font-black text-xl flex items-baseline select-none">
-                 <span className="tracking-tighter">B</span>
-                 <span className="text-blue-300 -ml-1.5 opacity-90 transform translate-y-0.5">D</span>
-               </div>
-            </div>
-            <div className="hidden sm:block">
-              <h1 className="text-lg font-black tracking-tight dark:text-white uppercase leading-none mb-1">
-                BUY THE DIP
-              </h1>
-              <div style={{ marginTop: 2 }}>
-                <span className={tierClassName}>
-                  <TierIcon
-                    size={11}
-                    className={tierIconClassName}
-                    {...(currentTier === 'pro'
-                      ? { fill: 'currentColor', stroke: 'currentColor' }
-                      : {})}
-                  />
-                  {tierLabel}
-                </span>
-              </div>
-            </div>
-          </div>
+          <HeaderBrandButton
+            currentTier={paidTier}
+            lang={lang}
+            tierClassName={tierClassName}
+            tierIconClassName={tierIconClassName}
+            tierLabel={tierLabel}
+            TierIcon={TierIcon}
+            onNavigateDashboard={handleNavigateDashboard}
+          />
           
           <div className="flex items-center gap-2 md:gap-8">
             <button 
@@ -1012,7 +1044,35 @@ const App: React.FC = () => {
         </header>
 
         <main className="max-w-7xl mx-auto px-6 md:px-16 py-10">
-          {tabContentNode}
+          <TabContent
+            activeTab={activeTab}
+            lang={lang}
+            user={user}
+            activePortfolios={activePortfolios}
+            portfolios={portfolios}
+            closedPortfolios={closedPortfolios}
+            canAccessPaidStocks={canAccessPaidStocks}
+            currentTier={currentTier}
+            totalValuation={totalValuation}
+            totalValuationChange={totalValuationChange}
+            totalValuationChangePct={totalValuationChangePct}
+            onDailyExecutionSummaryChange={onDailyExecutionSummaryChange}
+            onOpenLogin={handleOpenLogin}
+            onOpenSignup={handleOpenSignup}
+            onRequestOpenCreator={handleRequestOpenCreator}
+            onOpenAlarm={setAlarmTargetId}
+            onOpenDetails={setDetailsTargetId}
+            onOpenQuickInput={handleOpenQuickInput}
+            onOpenExecution={setExecutionTargetId}
+            onOpenAIImage={setAiImageTargetId}
+            onClosePortfolio={setTerminateTargetId}
+            onDeletePortfolio={handleDeletePortfolio}
+            onUpdatePortfolio={handleUpdatePortfolioForDashboard}
+            onDeleteHistory={handleSafeDeleteHistory}
+            onClearHistory={handleSafeClearHistory}
+            onSelectCheckoutPlan={setCheckoutPlan}
+            onBackToDashboard={handleBackToDashboard}
+          />
         </main>
 
         <div className="floating-nav w-[calc(100%-3rem)] md:w-auto">
@@ -1020,31 +1080,27 @@ const App: React.FC = () => {
             <NavIcon active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutDashboard size={22} />} label={t.dashboard} />
             <NavIcon active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<HistoryIcon size={22} />} label={t.history} />
             <NavIcon active={activeTab === 'markets'} onClick={() => setActiveTab('markets')} icon={<BarChart3 size={22} />} label={t.markets} />
-            <NavIcon active={activeTab === 'pricing'} onClick={() => setActiveTab('pricing')} icon={<Crown size={22} />} label={t.membership ?? (lang === 'ko' ? '멤버십' : 'Membership')} />
+            <NavIcon active={activeTab === 'pricing'} onClick={() => setActiveTab('pricing')} icon={<Crown size={22} />} label={t.membership} />
             <NavIcon
               active={false}
               onClick={() => {}}
               icon={<LineChart size={22} />}
               label={t.backtest}
               disabled
-              tooltip={
-                lang === 'ko'
-                  ? '더 나은 백테스트 경험을 위해\n다듬는 중이니 조금만 기다려 주세요.'
-                  : 'Polishing for a better backtest experience.\nPlease wait a bit.'
-              }
+              tooltip={shellCopy.backtestPreparingTooltip}
               tooltipIcon={<Hammer size={16} className="text-indigo-400" />}
             />
             {!isInTossApp && (
               <a
                 href="/posts"
                 className="flex flex-col items-center gap-1 transition-all px-2 md:px-4 text-slate-500 hover:text-slate-300 hover:bg-white/5 rounded-xl"
-                aria-label="게시판"
+                aria-label={shellCopy.communityBoardAria}
               >
                 <div className="p-2.5 rounded-xl transition-all duration-300 text-slate-500 hover:text-slate-300 hover:bg-white/5">
                   <FileText size={22} aria-hidden />
                 </div>
                 <span className="text-[9px] font-black uppercase tracking-tighter hidden md:block text-slate-500">
-                  게시판
+                  {shellCopy.communityBoardLabel}
                 </span>
               </a>
             )}
@@ -1147,8 +1203,8 @@ const App: React.FC = () => {
               lang={lang}
               portfolio={currentAIImagePortfolio}
               geminiApiKey={geminiApiKey}
-              isPaidUser={currentTier === 'pro' || currentTier === 'premium'}
-              currentTier={currentTier === 'premium' || currentTier === 'pro' ? currentTier : 'free'}
+              isPaidUser={currentTier !== 'free'}
+              currentTier={paidTier}
               onClose={() => setAiImageTargetId(null)}
               onSave={async (trades, _skipAd) => {
                 try {
@@ -1239,7 +1295,7 @@ const App: React.FC = () => {
               }
             }}
             currentUserEmail={user?.email}
-            currentTier={currentTier === 'premium' || currentTier === 'pro' ? currentTier : 'free'}
+            currentTier={paidTier}
             currentUserId={user?.id ?? undefined}
             onUpgradePlan={(planId) => {
               if (!user) {
@@ -1389,44 +1445,102 @@ interface NavIconProps {
   tooltipIcon?: React.ReactNode;
 }
 
-const NavIcon: React.FC<NavIconProps> = ({ active, onClick, icon, label, disabled, tooltip, tooltipIcon }) => {
-  const [showTooltip, setShowTooltip] = React.useState(false);
-  const hideTimeoutRef = React.useRef<number | null>(null);
+const NAV_ICON_TOOLTIP_HIDE_MS = 3000;
+const NAV_ICON_TOOLTIP_MIN_WIDTH_PX = 220;
 
-  const handleClick = () => {
-    if (disabled) {
-      if (tooltip) {
-        if (hideTimeoutRef.current) {
-          window.clearTimeout(hideTimeoutRef.current);
-        }
-        setShowTooltip(true);
-        hideTimeoutRef.current = window.setTimeout(() => {
-          setShowTooltip(false);
-        }, 3000);
-      }
+function getNavIconButtonClassName(): string {
+  return 'flex flex-col items-center gap-1 transition-all px-2 md:px-4';
+}
+
+function getNavIconSurfaceClassName(
+  isActive: boolean,
+  isDisabled: boolean,
+): string {
+  if (isActive) {
+    return 'p-2.5 rounded-xl transition-all duration-300 bg-blue-600 text-white shadow-lg';
+  }
+
+  if (isDisabled) {
+    return 'p-2.5 rounded-xl transition-all duration-300 text-slate-500/60 bg-white/0 cursor-not-allowed';
+  }
+
+  return 'p-2.5 rounded-xl transition-all duration-300 text-slate-500 hover:text-slate-300 hover:bg-white/5';
+}
+
+function getNavIconLabelClassName(
+  isActive: boolean,
+  isDisabled: boolean,
+): string {
+  if (isActive) {
+    return 'text-[9px] font-black uppercase tracking-tighter hidden md:block transition-colors text-blue-500';
+  }
+
+  if (isDisabled) {
+    return 'text-[9px] font-black uppercase tracking-tighter hidden md:block transition-colors text-slate-500/60';
+  }
+
+  return 'text-[9px] font-black uppercase tracking-tighter hidden md:block transition-colors text-slate-500';
+}
+
+const NavIcon: React.FC<NavIconProps> = ({ active, onClick, icon, label, disabled, tooltip, tooltipIcon }) => {
+  const [isTooltipVisible, setIsTooltipVisible] = React.useState(false);
+  const hideTimeoutRef = React.useRef<number | null>(null);
+  const tooltipId = React.useId();
+  const isActive = !disabled && active;
+
+  const clearTooltipTimer = React.useCallback(() => {
+    if (hideTimeoutRef.current == null) {
       return;
     }
-    onClick();
-  };
 
-  const isActive = !disabled && active;
+    window.clearTimeout(hideTimeoutRef.current);
+    hideTimeoutRef.current = null;
+  }, []);
+
+  const showDisabledTooltip = React.useCallback(() => {
+    if (!tooltip) {
+      return;
+    }
+
+    clearTooltipTimer();
+    setIsTooltipVisible(true);
+    hideTimeoutRef.current = window.setTimeout(() => {
+      setIsTooltipVisible(false);
+      hideTimeoutRef.current = null;
+    }, NAV_ICON_TOOLTIP_HIDE_MS);
+  }, [clearTooltipTimer, tooltip, setIsTooltipVisible]);
+
+  const handleClick = React.useCallback(() => {
+    if (disabled) {
+      showDisabledTooltip();
+      return;
+    }
+
+    onClick();
+  }, [disabled, onClick, showDisabledTooltip]);
+
+  React.useEffect(() => {
+    return () => {
+      clearTooltipTimer();
+    };
+  }, [clearTooltipTimer]);
 
   return (
     <div className="relative flex flex-col items-center group">
       {tooltip && (
         <div
+          id={tooltipId}
+          role="tooltip"
           className={`pointer-events-none absolute -top-16 z-50 flex items-center gap-3 rounded-2xl bg-[#0F172A] px-4 py-3 shadow-2xl border border-white/10 transition-all duration-300 ${
-            showTooltip 
+            isTooltipVisible
               ? 'opacity-100 translate-y-0 scale-100' 
               : 'opacity-0 translate-y-2 scale-95 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100'
           }`}
-          style={{ width: 'max-content', minWidth: '220px' }}
+          style={{ width: 'max-content', minWidth: `${NAV_ICON_TOOLTIP_MIN_WIDTH_PX}px` }}
         >
           {tooltipIcon && (
             <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30">
-              <div className="animate-pulse">
-                {tooltipIcon}
-              </div>
+              <div className="animate-pulse">{tooltipIcon}</div>
             </div>
           )}
           <div className="text-[11px] font-bold leading-tight text-slate-100 whitespace-pre-line">
@@ -1438,25 +1552,16 @@ const NavIcon: React.FC<NavIconProps> = ({ active, onClick, icon, label, disable
       <button
         type="button"
         onClick={handleClick}
-        className="flex flex-col items-center gap-1 transition-all px-2 md:px-4"
+        className={getNavIconButtonClassName()}
         aria-disabled={disabled ? 'true' : 'false'}
+        aria-current={isActive ? 'page' : undefined}
+        aria-label={label}
+        aria-describedby={tooltip ? tooltipId : undefined}
       >
-        <div
-          className={`p-2.5 rounded-xl transition-all duration-300 ${
-            isActive
-              ? 'bg-blue-600 text-white shadow-lg'
-              : disabled
-              ? 'text-slate-500/60 bg-white/0 cursor-not-allowed'
-              : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
-          }`}
-        >
+        <div className={getNavIconSurfaceClassName(isActive, disabled ?? false)}>
           {icon}
         </div>
-        <span
-          className={`text-[9px] font-black uppercase tracking-tighter hidden md:block transition-colors ${
-            isActive ? 'text-blue-500' : disabled ? 'text-slate-500/60' : 'text-slate-500'
-          }`}
-        >
+        <span className={getNavIconLabelClassName(isActive, disabled ?? false)}>
           {label}
         </span>
       </button>

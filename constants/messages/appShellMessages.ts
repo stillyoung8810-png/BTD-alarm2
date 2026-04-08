@@ -55,3 +55,16 @@ export const APP_SHELL_MESSAGES: Record<AppLang, AppShellMessageSet> = {
       'Polishing for a better backtest experience.\nPlease wait a bit.',
   },
 };
+
+const APP_SHELL_MESSAGE_CACHE = new Map<AppLang, AppShellMessageSet>();
+
+export function getAppShellMessages(lang: AppLang): AppShellMessageSet {
+  const cached = APP_SHELL_MESSAGE_CACHE.get(lang);
+  if (cached != null) {
+    return cached;
+  }
+
+  const messages = APP_SHELL_MESSAGES[lang];
+  APP_SHELL_MESSAGE_CACHE.set(lang, messages);
+  return messages;
+}

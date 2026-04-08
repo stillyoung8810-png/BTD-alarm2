@@ -2,9 +2,17 @@ import * as WebFramework from '@apps-in-toss/web-framework';
 import type { TossIapErrorCode } from '../../constants/paymentCheckoutMessages';
 import { getSkuByPlanId } from '../iap/iapConstants';
 import { supabase } from '../supabase';
+import {
+  fetchJsonWithTimeout,
+  isRecord,
+  normalizeErrorMessage,
+  readString,
+  wrapBridgeCall,
+} from '../serviceUtils';
+import { readTrimmedViteEnv } from '../../utils/viteImportMetaEnv';
 import { TOSS_IAP_FIXED_PLAN_ID } from './types';
 
-const BFF_URL = import.meta.env.VITE_RAILWAY_BFF_URL;
+const BFF_URL = readTrimmedViteEnv('VITE_RAILWAY_BFF_URL');
 
 export interface IapResult {
   success: boolean;
@@ -62,12 +70,13 @@ interface TossIapBridge {
 }
 
 function isTossIapSdkError(value: unknown): value is TossIapSdkError {
-  if (typeof value !== 'object' || value === null) {
+  if (!isRecord(value)) {
     return false;
   }
-  const candidate = value as Record<string, unknown>;
-  const errorCodeOk = candidate.errorCode === undefined || typeof candidate.errorCode === 'string';
-  const messageOk = candidate.message === undefined || typeof candidate.message === 'string';
+  const errorCodeOk =
+    value.errorCode === undefined || typeof value.errorCode === 'string';
+  const messageOk =
+    value.message === undefined || typeof value.message === 'string';
   return errorCodeOk && messageOk;
 }
 
@@ -131,7 +140,7 @@ async function verifyAndGrantProductOnServer(
   planId: string,
   quantity: number,
 ): Promise<boolean> {
-  if (!BFF_URL) {
+  if (BFF_URL.length === 0) {
     return false;
   }
   try {
@@ -143,15 +152,20 @@ async function verifyAndGrantProductOnServer(
     }
 
     const base = BFF_URL.replace(/\/+$/, '');
-    const res = await fetch(`${base}/payment/toss/iap-verify`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${session.access_token}`,
+    const verifyResult = await fetchJsonWithTimeout<null>(
+      `${base}/payment/toss/iap-verify`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ orderId, planId, quantity }),
       },
-      body: JSON.stringify({ orderId, planId, quantity }),
-    });
-    return res.ok;
+      null,
+      { context: { action: 'iap_verify', orderId, planId } },
+    );
+    return verifyResult.ok;
   } catch (err) {
     console.error('[IAP Server Verify Error]', err);
     return false;
@@ -199,14 +213,23 @@ export async function requestTossIAP(planId: string, quantity: number = 1): Prom
             return false;
           }
 
-          try {
-            await iap.completeProductGrant({ orderId });
-          } catch (completeErr) {
-            console.error('[IAP] completeProductGrant 실패:', completeErr);
+          const completeResult = await wrapBridgeCall<unknown>(
+            () => iap.completeProductGrant({ orderId }),
+            null,
+            { action: 'completeProductGrant', orderId },
+          );
+          if (!completeResult.ok) {
+            console.error(
+              '[IAP] completeProductGrant 실패:',
+              completeResult.error.cause,
+            );
             settle({
               success: false,
               errorCode: 'PRODUCT_NOT_GRANTED_BY_PARTNER',
-              rawMessage: completeErr instanceof Error ? completeErr.message : undefined,
+              rawMessage: normalizeErrorMessage(
+                completeResult.error.cause,
+                'complete_product_grant_failed',
+              ),
             });
             return false;
           }
@@ -235,15 +258,25 @@ export async function requestTossIAP(planId: string, quantity: number = 1): Prom
 }
 
 function getPendingOrderList(
-  response: TossPendingOrder[] | { orders: TossPendingOrder[] } | undefined,
+  response: unknown,
 ): TossPendingOrder[] {
-  if (!response) {
+  if (response == null) {
     return [];
   }
+
   if (Array.isArray(response)) {
-    return response;
+    return response
+      .map((item) => decodePendingOrder(item))
+      .filter((item): item is TossPendingOrder => item !== null);
   }
-  return Array.isArray(response.orders) ? response.orders : [];
+
+  if (!isRecord(response) || !Array.isArray(response.orders)) {
+    return [];
+  }
+
+  return response.orders
+    .map((item) => decodePendingOrder(item))
+    .filter((item): item is TossPendingOrder => item !== null);
 }
 
 export async function restorePendingIapOrders(): Promise<void> {
@@ -253,8 +286,23 @@ export async function restorePendingIapOrders(): Promise<void> {
   }
 
   try {
-    const pendingResponse = await iap.getPendingOrders();
-    const pendingOrders = getPendingOrderList(pendingResponse);
+    const pendingOrdersResult = await wrapBridgeCall<unknown>(
+      () => iap.getPendingOrders(),
+      null,
+      { action: 'getPendingOrders' },
+    );
+    if (!pendingOrdersResult.ok) {
+      console.error(
+        '[IAP] 미결 주문 조회 실패:',
+        normalizeErrorMessage(
+          pendingOrdersResult.error.cause,
+          'get_pending_orders_failed',
+        ),
+      );
+      return;
+    }
+
+    const pendingOrders = getPendingOrderList(pendingOrdersResult.data);
 
     for (const order of pendingOrders) {
       if (!order?.orderId) {
@@ -267,10 +315,44 @@ export async function restorePendingIapOrders(): Promise<void> {
         1,
       );
       if (isGranted) {
-        await iap.completeProductGrant({ orderId: order.orderId });
+        const completeResult = await wrapBridgeCall<unknown>(
+          () => iap.completeProductGrant({ orderId: order.orderId }),
+          null,
+          { action: 'completeProductGrant', orderId: order.orderId },
+        );
+        if (!completeResult.ok) {
+          console.error(
+            '[IAP] 미결 주문 completeProductGrant 실패:',
+            normalizeErrorMessage(
+              completeResult.error.cause,
+              'complete_product_grant_failed',
+            ),
+          );
+        }
       }
     }
   } catch (error) {
     console.error('[IAP] 미결 주문 복원 실패:', error);
   }
+}
+
+function decodePendingOrder(value: unknown): TossPendingOrder | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const orderId = readString(value, 'orderId');
+  if (orderId == null) {
+    return null;
+  }
+
+  const sku = readString(value, 'sku') ?? undefined;
+  const paymentCompletedDate =
+    readString(value, 'paymentCompletedDate') ?? undefined;
+
+  return {
+    orderId,
+    sku,
+    paymentCompletedDate,
+  };
 }

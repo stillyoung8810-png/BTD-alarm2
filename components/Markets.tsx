@@ -19,6 +19,12 @@ import StockLogo from './StockLogo';
 import HoverTip from './HoverTip';
 import InfoModal from './InfoModal';
 import { useTossApp } from '../contexts/TossAppContext';
+import { getCommonMessages } from '../constants/messages/commonMessages';
+import { getDashboardMessages } from '../constants/messages/dashboardMessages';
+import {
+  getMarketMessages,
+  type MarketMessageSet,
+} from '../constants/messages/marketMessages';
 
 // 🚀 1. 스마트 배너 컴포넌트 임포트
 import { TossInlineBanner } from './TossInlineBanner';
@@ -44,6 +50,40 @@ const ONE_X_STOCKS: readonly string[] = [
   'SPY', 'QQQ', 'SOXX', 'USD', 'STRC', 'BIL', 'ICSH', 'SGOV',
   'TSLA', 'NVDA', 'GOOGL', 'PLTR', 'COIN', 'MSTR', 'BMNR',
 ] as const;
+
+const LOOP_COPY_COUNT = 3;
+
+interface LoopedStockItem {
+  id: string;
+  ticker: string;
+}
+
+function buildLoopedStockItems(
+  defaultTickers: readonly string[],
+): readonly LoopedStockItem[] {
+  if (defaultTickers.length < 2) {
+    return defaultTickers.map((ticker, slotIdx) => ({
+      id: `${ticker}-slot-${slotIdx}`,
+      ticker,
+    }));
+  }
+
+  return Array.from({ length: LOOP_COPY_COUNT }, (_, loopIdx) =>
+    defaultTickers.map((ticker, slotIdx) => ({
+      id: `${ticker}-loop-${loopIdx}-slot-${slotIdx}`,
+      ticker,
+    })),
+  ).flat();
+}
+
+function buildSingleStockRowItems(
+  tickers: readonly string[],
+): readonly LoopedStockItem[] {
+  return tickers.map((ticker, slotIdx) => ({
+    id: `${ticker}-slot-${slotIdx}`,
+    ticker,
+  }));
+}
 
 // ---------------------------------------------------------------------------
 // Recharts Tooltip Payload 타입
@@ -152,17 +192,27 @@ interface StockCardProps {
   isSelected: boolean;
   isLocked: boolean;
   isPaidOnly: boolean;
-  lang: 'ko' | 'en';
+  marketCopy: MarketMessageSet;
+  cardAriaLabel: string;
   lockedTooltip: string;
   isTouch: boolean;
   onSelect: (ticker: string) => void;
   onLockedTouch: () => void;
 }
 
-const StockCard: React.FC<StockCardProps> = ({
-  ticker, data, isSelected, isLocked, isPaidOnly, lang,
-  lockedTooltip, isTouch, onSelect, onLockedTouch,
-}) => {
+const StockCard = React.memo(function StockCard({
+  ticker,
+  data,
+  isSelected,
+  isLocked,
+  isPaidOnly,
+  marketCopy,
+  cardAriaLabel,
+  lockedTooltip,
+  isTouch,
+  onSelect,
+  onLockedTouch,
+}: StockCardProps): React.ReactElement {
   const rsiValue = data?.rsi || 50;
   const rsiBarValue = isLocked ? 0 : rsiValue;
   const price = data?.price || 0;
@@ -171,15 +221,31 @@ const StockCard: React.FC<StockCardProps> = ({
   const isBondEtf = (BOND_ETFS as readonly string[]).includes(ticker);
   const paidAccent = isPaidOnly && !isLocked;
 
-  const baseRsiColor =
-    rsiValue > 70 ? 'text-rose-500' : rsiValue < 30 ? 'text-emerald-500' : 'text-blue-400';
+  let baseRsiColor = 'text-blue-400';
+  if (rsiValue > 70) {
+    baseRsiColor = 'text-rose-500';
+  } else if (rsiValue < 30) {
+    baseRsiColor = 'text-emerald-500';
+  }
   const rsiColor = isBondEtf ? 'text-slate-400' : baseRsiColor;
-  const baseRsiBg =
-    rsiValue > 70 ? 'bg-rose-500' : rsiValue < 30 ? 'bg-emerald-500' : 'bg-blue-500';
-  const rsiBg = isLocked ? 'bg-slate-500/30' : isBondEtf ? 'bg-slate-500/50' : baseRsiBg;
+  let baseRsiBg = 'bg-blue-500';
+  if (rsiValue > 70) {
+    baseRsiBg = 'bg-rose-500';
+  } else if (rsiValue < 30) {
+    baseRsiBg = 'bg-emerald-500';
+  }
+
+  let rsiBg = baseRsiBg;
+  if (isLocked) {
+    rsiBg = 'bg-slate-500/30';
+  } else if (isBondEtf) {
+    rsiBg = 'bg-slate-500/50';
+  }
 
   return (
     <button
+      type="button"
+      aria-label={cardAriaLabel}
       onClick={() => {
         if (isLocked) { if (isTouch) onLockedTouch(); return; }
         onSelect(ticker);
@@ -216,16 +282,23 @@ const StockCard: React.FC<StockCardProps> = ({
           </span>
           {isLocked && (
             <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-600">
-              <Lock size={12} /> PRO/PREMIUM 전용
+              <Lock size={12} /> {marketCopy.paidOnlyLabel}
             </span>
           )}
         </div>
+        {isSelected && !isLocked ? (
+          <span className="text-[9px] font-black text-blue-500" aria-hidden>
+            {marketCopy.selectedLabel}
+          </span>
+        ) : null}
       </div>
 
       {/* 가격 */}
       <div className="space-y-4">
         <div>
-          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Price</span>
+          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">
+            {marketCopy.priceLabel}
+          </span>
           {isLocked ? (
             <p className="text-lg font-black text-slate-400 dark:text-slate-600 tracking-tighter">—</p>
           ) : (
@@ -243,16 +316,13 @@ const StockCard: React.FC<StockCardProps> = ({
         <div className="pt-3 border-t border-slate-100 dark:border-white/5">
           <div className="flex justify-between items-center mb-1.5">
             <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">
-              <span>RSI (14)</span>
+              <span>{marketCopy.rsiLabel}</span>
               {isBondEtf && (
                 <span
                   className="inline-flex items-center justify-center rounded-full bg-amber-500/10 border border-amber-400/40 px-1.5 py-0.5 text-[8px] font-bold text-amber-400"
-                  title={lang === 'ko'
-                    ? '해당 종목은 초단기/채권형 ETF로, 가격 변동폭이 작아 RSI 지표의 신뢰도가 낮을 수 있습니다.'
-                    : 'This is a short-duration/bond ETF; very small price moves can make RSI less reliable.'
-                  }
+                  title={marketCopy.bondNoticeTitle}
                 >
-                  ⚠︎ {lang === 'ko' ? '주의' : 'Info'}
+                  ⚠︎ {marketCopy.bondNoticeBadge}
                 </span>
               )}
             </span>
@@ -264,7 +334,7 @@ const StockCard: React.FC<StockCardProps> = ({
               )}
               {isBondEtf && (
                 <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">
-                  {lang === 'ko' ? '참고용' : 'Info Only'}
+                  {marketCopy.bondInfoOnly}
                 </span>
               )}
             </div>
@@ -279,7 +349,9 @@ const StockCard: React.FC<StockCardProps> = ({
       </div>
     </button>
   );
-};
+});
+
+StockCard.displayName = 'StockCard';
 
 interface MarketsProps {
   lang: 'ko' | 'en';
@@ -303,11 +375,13 @@ const Markets: React.FC<MarketsProps> = ({
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollRafRef = useRef<number | null>(null);
   const t = I18N[lang];
+  const commonCopy = getCommonMessages(lang);
+  const dashboardCopy = getDashboardMessages(lang);
+  const marketCopy = getMarketMessages(lang);
   const [proInfoOpen, setProInfoOpen] = useState(false);
   const { isInTossApp } = useTossApp();
 
-  const lockedTooltip =
-    lang === 'ko' ? 'PRO/PREMIUM 전용 종목입니다.' : 'This ticker is PRO/PREMIUM only.';
+  const lockedTooltip = dashboardCopy.paidTickerLockedTooltip;
 
   const isTouch = useMemo(() => {
     if (typeof window === 'undefined') return false;
@@ -346,9 +420,11 @@ const Markets: React.FC<MarketsProps> = ({
   }, [showHoldingsOnly, show1xOnly, holdingsSet]);
 
   const loopEnabled = filteredStocks.length >= 2 && !showHoldingsOnly;
-  const loopedStocks = useMemo(() => {
-    if (!loopEnabled) return filteredStocks;
-    return [...filteredStocks, ...filteredStocks, ...filteredStocks];
+  const loopedItems = useMemo(() => {
+    if (!loopEnabled) {
+      return buildSingleStockRowItems(filteredStocks);
+    }
+    return buildLoopedStockItems(filteredStocks);
   }, [filteredStocks, loopEnabled]);
 
   const getCardStep = (): { step: number; startOffset: number } => {
@@ -586,11 +662,12 @@ const Markets: React.FC<MarketsProps> = ({
                 )}
               </ComposedChart>
             ) : (
-              <div className="flex items-center justify-center h-full text-slate-500 text-sm font-bold">
-                {/* 🚀 번역 키 에러(I18N) 해결 부분 */}
-                {isLoading 
-                  ? (lang === 'ko' ? '차트 데이터 로딩 중...' : 'Loading chart data...') 
-                  : (lang === 'ko' ? '차트 데이터 없음' : 'No chart data')}
+              <div
+                className="flex items-center justify-center h-full text-slate-500 text-sm font-bold"
+                aria-live="polite"
+                aria-label={commonCopy.notice}
+              >
+                {isLoading ? marketCopy.chartLoading : marketCopy.chartEmpty}
               </div>
             )}
           </ResponsiveContainer>
@@ -600,39 +677,40 @@ const Markets: React.FC<MarketsProps> = ({
       {/* 🚀 2. 구형 광고 부착 로직(useEffect)은 삭제하고, 완벽한 스마트 배너 1줄로 교체! */}
       <TossInlineBanner currentTier={currentTier} isInTossApp={isInTossApp} variant="card" />
 
-      <section className="space-y-6">
+      <section className="space-y-6" aria-label={marketCopy.sectionTitle}>
         <div className="flex items-center justify-between px-2">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <BarChart2 className="text-slate-500" size={16} />
-              {/* 🚀 번역 키 에러(I18N) 해결 부분 */}
               <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest">
-                {lang === 'ko' ? '종목 정보' : 'Stock Info'}
+                {marketCopy.stockInfoHeader}
               </h3>
             </div>
             <ToggleSwitch
-              label={lang === 'ko' ? '보유 종목만 보기' : 'Holdings Only'}
+              label={marketCopy.holdingsOnlyToggle}
               checked={showHoldingsOnly}
               onChange={() => setShowHoldingsOnly(!showHoldingsOnly)}
             />
             <ToggleSwitch
-              label={lang === 'ko' ? '1배수만 보기' : '1x Only'}
+              label={marketCopy.oneXOnlyToggle}
               checked={show1xOnly}
               onChange={() => setShow1xOnly(!show1xOnly)}
             />
           </div>
           <div className="flex items-center gap-2.5">
-            <button 
+            <button
+              type="button"
               onClick={() => scroll('left')}
               className="w-10 h-10 rounded-full glass border border-white/5 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-all active:scale-95"
-              aria-label={lang === 'ko' ? '왼쪽으로 스크롤' : 'Scroll left'}
+              aria-label={marketCopy.scrollLeftAria}
             >
               <ChevronLeft size={20} />
             </button>
-            <button 
+            <button
+              type="button"
               onClick={() => scroll('right')}
               className="w-10 h-10 rounded-full glass border border-white/5 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-all active:scale-95"
-              aria-label={lang === 'ko' ? '오른쪽으로 스크롤' : 'Scroll right'}
+              aria-label={marketCopy.scrollRightAria}
             >
               <ChevronRight size={20} />
             </button>
@@ -647,21 +725,22 @@ const Markets: React.FC<MarketsProps> = ({
           >
             {filteredStocks.length === 0 ? (
               <div className="flex items-center justify-center w-full py-12 text-slate-400 text-sm font-bold">
-                {/* 🚀 번역 키 에러(I18N) 해결 부분 */}
-                {lang === 'ko' ? '보유 중인 종목이 없습니다.' : 'No holdings available.'}
+                {marketCopy.holdingsEmpty}
               </div>
             ) : (
-              loopedStocks.map((ticker, idx) => {
+              loopedItems.map((item) => {
+                const ticker = item.ticker;
                 const isPaidOnly = PAID_STOCKS.includes(ticker);
                 return (
                   <StockCard
-                    key={`${ticker}-${idx}`}
+                    key={item.id}
                     ticker={ticker}
                     data={stockData[ticker]}
                     isSelected={selectedStock === ticker}
                     isLocked={isPaidOnly && !canAccessPaidStocks}
                     isPaidOnly={isPaidOnly}
-                    lang={lang}
+                    marketCopy={marketCopy}
+                    cardAriaLabel={`${item.ticker} ${marketCopy.priceLabel}`}
                     lockedTooltip={lockedTooltip}
                     isTouch={isTouch}
                     onSelect={setSelectedStock}
@@ -676,8 +755,11 @@ const Markets: React.FC<MarketsProps> = ({
 
       <InfoModal
         open={proInfoOpen}
-        title="PRO/PREMIUM 전용"
+        badgeLabel={commonCopy.notice}
+        title={dashboardCopy.paidTickerNoticeTitle}
         message={lockedTooltip}
+        closeAriaLabel={commonCopy.closeDialog}
+        confirmLabel={commonCopy.acknowledge}
         onClose={() => setProInfoOpen(false)}
       />
     </div>

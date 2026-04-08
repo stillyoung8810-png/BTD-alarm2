@@ -44,6 +44,8 @@ export interface TdsDialogMessageSet {
     sessionExpiredTitle: string;
     sessionExpiredBody: string;
     sessionExpiredAcknowledge: string;
+    /** Toast when auth dialog copy cannot be resolved (Rule 11 + i18n SSOT). */
+    authCopyMissingFallback: string;
     passwordChangedTitle: string;
     passwordChangedBody: string;
     passwordChangedReloginTitle: string;
@@ -129,6 +131,8 @@ export const TDS_DIALOG_MESSAGES: Record<AppLang, TdsDialogMessageSet> = {
       sessionExpiredTitle: '세션 만료',
       sessionExpiredBody: '세션이 만료되었습니다. 다시 로그인해 주세요.',
       sessionExpiredAcknowledge: '확인',
+      authCopyMissingFallback:
+        '안내 문구를 불러오지 못했습니다. 다시 로그인해 주세요.',
       passwordChangedTitle: '비밀번호 변경',
       passwordChangedBody: '비밀번호가 성공적으로 변경되었습니다.',
       passwordChangedReloginTitle: '비밀번호 변경',
@@ -217,6 +221,8 @@ export const TDS_DIALOG_MESSAGES: Record<AppLang, TdsDialogMessageSet> = {
       sessionExpiredTitle: 'Session expired',
       sessionExpiredBody: 'Your session expired. Please sign in again.',
       sessionExpiredAcknowledge: 'OK',
+      authCopyMissingFallback:
+        'We could not load the dialog text. Please sign in again.',
       passwordChangedTitle: 'Password updated',
       passwordChangedBody: 'Your password was updated successfully.',
       passwordChangedReloginTitle: 'Password updated',

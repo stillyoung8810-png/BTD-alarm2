@@ -36,6 +36,8 @@
     "vite-env.d.ts",
     "components/**/*.ts",
     "components/**/*.tsx",
+    "src/**/*.ts",
+    "src/**/*.tsx",
     "constants/**/*.ts",
     "contexts/**/*.ts",
     "contexts/**/*.tsx",

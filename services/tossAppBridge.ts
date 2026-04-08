@@ -10,6 +10,13 @@
  *  - SafeAreaInsets  : 안전 영역(노치/홈바) 여백 값 조회·구독
  */
 
+import {
+  isRecord,
+  normalizeErrorMessage,
+  wrapBridgeCall,
+} from './serviceUtils';
+import { isViteDevBuild } from '../utils/viteImportMetaEnv';
+
 // ---------------------------------------------------------------------------
 // 타입 정의
 // ---------------------------------------------------------------------------
@@ -44,6 +51,11 @@ interface WebFrameworkModule {
   /** 외부 URL 열기 (WebView에서는 브라우저 탭으로 열림) — @apps-in-toss 문서 권장 */
   openURL?: (url: string) => Promise<unknown>;
 }
+
+type WebFrameworkPartnerModule = NonNullable<WebFrameworkModule["partner"]>;
+type WebFrameworkTdsEventModule = NonNullable<WebFrameworkModule["tdsEvent"]>;
+type WebFrameworkSafeAreaModule = NonNullable<WebFrameworkModule["SafeAreaInsets"]>;
+type WebFrameworkOpenUrl = NonNullable<WebFrameworkModule["openURL"]>;
 
 let _cachedModule: WebFrameworkModule | null = null;
 
@@ -98,9 +110,7 @@ export const getTossAppDebugSnapshot = (): TossAppDebugSnapshot | null => {
   const ua = navigator.userAgent;
   const uaMatch = /TossApp|TossIt/i.test(ua);
 
-  const isDev =
-    typeof import.meta !== 'undefined' &&
-    (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV === true;
+  const isDev = isViteDevBuild();
   const queryEnabled =
     typeof window !== 'undefined' &&
     typeof window.location?.search === 'string' &&
@@ -155,11 +165,14 @@ export const loadWebFramework = async (): Promise<WebFrameworkModule | null> => 
   if (!isTossApp()) return null;
 
   try {
-    const mod = await import('@apps-in-toss/web-framework');
-    _cachedModule = mod as WebFrameworkModule;
+    const mod = await Promise.resolve(import('@apps-in-toss/web-framework'));
+    _cachedModule = decodeWebFrameworkModule(mod);
     return _cachedModule;
   } catch (error) {
-    console.warn('[TossApp] web-framework 로드 실패:', (error as Error).message);
+    console.warn(
+      '[TossApp] web-framework 로드 실패:',
+      normalizeErrorMessage(error, 'unknown_error'),
+    );
     return null;
   }
 };
@@ -217,7 +230,10 @@ export const addNavigationAccessoryButton = async (
   try {
     mod.partner.addAccessoryButton(option);
   } catch (error) {
-    console.warn('[TossApp] 액세서리 버튼 추가 실패:', (error as Error).message);
+    console.warn(
+      '[TossApp] 액세서리 버튼 추가 실패:',
+      normalizeErrorMessage(error, 'unknown_error'),
+    );
   }
 };
 
@@ -252,20 +268,31 @@ export const onNavigationAccessoryClick = async (
  * 토스가 아닌 환경에서는 window.open으로 폴백합니다.
  */
 export const openExternalUrl = async (url: string): Promise<void> => {
-  if (!url) return;
+  const trimmedUrl = url.trim();
+  if (trimmedUrl.length === 0) {
+    return;
+  }
+
   if (isTossApp()) {
     const mod = await loadWebFramework();
     if (typeof mod?.openURL === 'function') {
-      try {
-        await mod.openURL(url);
+      const openResult = await wrapBridgeCall<unknown>(
+        () => mod.openURL?.(trimmedUrl),
+        null,
+        { action: 'openURL' },
+      );
+      if (openResult.ok) {
         return;
-      } catch (e) {
-        console.warn('[TossApp] openURL 실패, window.open 폴백:', (e as Error).message);
       }
+
+      console.warn(
+        '[TossApp] openURL 실패, window.open 폴백:',
+        normalizeErrorMessage(openResult.error.cause, 'unknown_error'),
+      );
     }
   }
   if (typeof window !== 'undefined') {
-    window.open(url, '_blank', 'noopener,noreferrer');
+    window.open(trimmedUrl, '_blank', 'noopener,noreferrer');
   }
 };
 
@@ -304,3 +331,56 @@ export const initializeTossBridge = async (
 
   return { isInTossApp: true, safeAreaInsets: insets, cleanups };
 };
+
+function decodeWebFrameworkModule(value: unknown): WebFrameworkModule | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const partner = isRecord(value.partner) &&
+    typeof value.partner.addAccessoryButton === 'function'
+    ? {
+        addAccessoryButton:
+          value.partner.addAccessoryButton as WebFrameworkPartnerModule["addAccessoryButton"],
+      }
+    : undefined;
+
+  const tdsEvent = isRecord(value.tdsEvent) &&
+    typeof value.tdsEvent.addEventListener === 'function'
+    ? {
+        addEventListener:
+          value.tdsEvent.addEventListener as WebFrameworkTdsEventModule["addEventListener"],
+      }
+    : undefined;
+
+  const safeAreaInsets = isRecord(value.SafeAreaInsets) &&
+    typeof value.SafeAreaInsets.get === 'function' &&
+    typeof value.SafeAreaInsets.subscribe === 'function'
+    ? {
+        get: value.SafeAreaInsets.get as WebFrameworkSafeAreaModule["get"],
+        subscribe:
+          value.SafeAreaInsets.subscribe as WebFrameworkSafeAreaModule["subscribe"],
+      }
+    : undefined;
+
+  const openURL =
+    typeof value.openURL === 'function'
+      ? value.openURL as WebFrameworkOpenUrl
+      : undefined;
+
+  if (
+    partner == null &&
+    tdsEvent == null &&
+    safeAreaInsets == null &&
+    openURL == null
+  ) {
+    return null;
+  }
+
+  return {
+    partner,
+    tdsEvent,
+    SafeAreaInsets: safeAreaInsets,
+    openURL,
+  };
+}

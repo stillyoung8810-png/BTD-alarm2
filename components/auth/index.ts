@@ -1,23 +1,15 @@
-/**
- * Auth 모달 서브뷰 (Phase 0.3)
- * AUTH_VIEW_MAP으로 type → 컴포넌트 매핑, Cognitive Complexity 감소
- */
+export type {
+  AuthModalType,
+  SignedInUser,
+  LoginViewProps,
+  SignupViewProps,
+  ResetPasswordViewProps,
+  ChangePasswordViewProps,
+  ProfileViewProps,
+} from './authViewTypes';
 
-import React from 'react';
-import type { AuthModalType } from './authViewTypes';
-import LoginView from './LoginView';
-import SignupView from './SignupView';
-import ResetPasswordView from './ResetPasswordView';
-import ChangePasswordView from './ChangePasswordView';
-import ProfileView from './ProfileView';
-
-export type { AuthModalType, AuthEmailFormProps, ResetPasswordViewProps, ChangePasswordViewProps, ProfileViewProps } from './authViewTypes';
-export { LoginView, SignupView, ResetPasswordView, ChangePasswordView, ProfileView };
-
-export const AUTH_VIEW_MAP: Record<AuthModalType, React.FC<any>> = {
-  login: LoginView,
-  signup: SignupView,
-  'reset-password': ResetPasswordView,
-  'change-password': ChangePasswordView,
-  profile: ProfileView,
-};
+export { default as LoginView } from './LoginView';
+export { default as SignupView } from './SignupView';
+export { default as ResetPasswordView } from './ResetPasswordView';
+export { default as ChangePasswordView } from './ChangePasswordView';
+export { default as ProfileView } from './ProfileView';

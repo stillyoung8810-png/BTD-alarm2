@@ -1,25 +1,13 @@
-/**
- * 프로필 뷰 (계정 정보, 텔레그램, 비밀번호 변경, 로그아웃, 환불, 탈퇴)
- * Phase 0.3 — AuthModals 서브뷰 분리
- * Phase 3 — 토스에서 TDSButton 사용
- */
-
 import React from 'react';
 import { UserCheck, Key, LogOut, Send, Sparkles } from 'lucide-react';
-import { I18N } from '../../constants';
-import { COMMON_MESSAGES } from '../../constants/messages/commonMessages';
+import type { AppLang } from '../../types';
 import {
-  PROFILE_MESSAGES,
-  getAccountDeletionFailedMessage,
-  getDeleteConfirmInstruction,
-  getDeleteConfirmValue,
   getMembershipMemberBadge,
   getTelegramBotSearchMessage,
 } from '../../constants/messages/profileMessages';
 import Toggle from '../Toggle';
 import HoverTip from '../HoverTip';
 import { TDSButton } from '../tds';
-import { getDictionaryCopy } from '../../utils/getDictionaryCopy';
 import { resolvePaidTier, type PaidTier } from '../../utils/appEntryHelpers';
 import type { ProfileViewProps } from './authViewTypes';
 import RefundGuideController from './RefundGuideController';
@@ -39,8 +27,31 @@ function getTierChipClassName(paidTier: PaidTier): string {
   }
 }
 
-const ProfileView: React.FC<ProfileViewProps> = ({
+const PROFILE_DATE_LOCALE: Record<AppLang, string> = {
+  ko: 'ko-KR',
+  en: 'en-US',
+};
+
+function getProfileErrorMessage(
+  prefix: string,
+  error: unknown,
+): string {
+  if (
+    error != null &&
+    typeof error === 'object' &&
+    'message' in error &&
+    typeof error.message === 'string' &&
+    error.message.trim() !== ''
+  ) {
+    return `${prefix}: ${error.message}`;
+  }
+
+  return prefix;
+}
+
+function ProfileView({
   lang,
+  copy,
   onSwitchType,
   onLogout,
   onUpgradePlan,
@@ -66,17 +77,10 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   onConnectTelegram,
   onDeleteAccount,
   isInTossApp,
-}) => {
-  const t = I18N[lang];
-  const commonCopy = getDictionaryCopy(COMMON_MESSAGES, lang, 'COMMON_MESSAGES');
-  const profileCopy = getDictionaryCopy(
-    PROFILE_MESSAGES,
-    lang,
-    'PROFILE_MESSAGES',
-  );
+}: ProfileViewProps): React.ReactElement {
   const paidTier = resolvePaidTier(currentTier);
   const membershipBadge = getMembershipMemberBadge(paidTier, lang);
-  const deleteConfirmValue = getDeleteConfirmValue(lang);
+  const deleteConfirmValue = copy.field.deleteConfirmPlaceholder;
   const telegramBotUsername = import.meta.env.VITE_TELEGRAM_BOT_USERNAME?.trim();
   const telegramBotSearchMessage = getTelegramBotSearchMessage(
     lang,
@@ -101,7 +105,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
       const msg =
         e && typeof e === 'object' && 'message' in e
           ? String((e as { message: unknown }).message)
-          : profileCopy.telegramTokenCreateFailed;
+          : copy.profile.telegramTokenCreateFailed;
       setError(msg);
     } finally {
       setTelegramLinkLoading(false);
@@ -114,11 +118,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
     try {
       await onDeleteAccount();
     } catch (err: unknown) {
-      const msg =
-        err && typeof err === 'object' && 'message' in err
-          ? String((err as { message: unknown }).message)
-          : profileCopy.unknownError;
-      setError(getAccountDeletionFailedMessage(lang, msg));
+      setError(getProfileErrorMessage(copy.profile.deleteAccountFailed, err));
     } finally {
       setLoading(false);
     }
@@ -130,7 +130,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
       await onLogout();
     } catch (err: unknown) {
       console.error('[ProfileView] Logout failed:', err);
-      setError(profileCopy.logoutFailed);
+      setError(copy.profile.logoutFailed);
     } finally {
       setLoading(false);
     }
@@ -160,10 +160,10 @@ const ProfileView: React.FC<ProfileViewProps> = ({
           )}
         </div>
         <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.25em] mb-1">
-          {profileCopy.accountConnected}
+          {copy.profile.accountConnected}
         </p>
         <p className="text-slate-900 dark:text-white font-black text-lg mb-1">
-          {currentUserEmail ?? profileCopy.unknownEmail}
+          {currentUserEmail ?? copy.profile.unknownEmail}
         </p>
         <p className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-slate-900/80 text-slate-100 border border-white/10">
           {membershipBadge}
@@ -175,26 +175,32 @@ const ProfileView: React.FC<ProfileViewProps> = ({
 
       <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-2xl border border-slate-200 dark:border-white/5 space-y-3">
         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-          {profileCopy.telegramSectionTitle}
+          {copy.profile.telegramSectionTitle}
         </p>
         {paidTier !== 'free' ? (
           <>
             {telegramConnectedAt ? (
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-bold text-emerald-500 dark:text-emerald-400">
-                  {profileCopy.telegramConnected}
-                  <span className="text-slate-500 dark:text-slate-400 font-normal ml-1">({new Date(telegramConnectedAt).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-US')})</span>
+                  {copy.profile.telegramConnected}
+                  <span className="text-slate-500 dark:text-slate-400 font-normal ml-1">
+                    (
+                    {new Date(telegramConnectedAt).toLocaleDateString(
+                      PROFILE_DATE_LOCALE[lang],
+                    )}
+                    )
+                  </span>
                 </p>
                 <Toggle
                   checked={telegramAlertsEnabled}
                   onChange={(v) => onTelegramAlertsEnabledChange?.(v)}
-                  aria-label={profileCopy.telegramAlertsAriaLabel}
+                  aria-label={copy.profile.telegramAlertsAriaLabel}
                 />
               </div>
             ) : telegramLinkToken ? (
               <div className="space-y-2 text-left">
                 <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                  {profileCopy.telegramLinkInstruction}
+                  {copy.profile.telegramLinkInstruction}
                 </p>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
                   {telegramBotSearchMessage}
@@ -202,34 +208,34 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                 <p className="font-mono text-sm font-black bg-slate-800 text-emerald-400 px-3 py-2 rounded-xl break-all">/start {telegramLinkToken}</p>
                 {telegramBotUsername ? (
                   <a href={`https://t.me/${telegramBotUsername}?start=${telegramLinkToken}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 bg-[#0088cc] text-white rounded-xl text-sm font-bold hover:opacity-90">
-                    <Send size={16} /> {profileCopy.openInTelegram}
+                    <Send size={16} /> {copy.action.openInTelegram}
                   </a>
                 ) : null}
                 <p className="text-[10px] text-slate-500">
-                  {profileCopy.reopenProfileHint}
+                  {copy.profile.reopenProfileHint}
                 </p>
               </div>
             ) : isInTossApp ? (
               <TDSButton variant="tertiary" fullWidth disabled={!currentUserId || telegramLinkLoading} loading={telegramLinkLoading} onClick={handleConnectTelegramClick} className="flex items-center justify-center gap-2 text-[#0088cc] border-[#0088cc]/30">
                 <Send size={18} />
                 {telegramLinkLoading
-                  ? commonCopy.processing
-                  : profileCopy.connectTelegram}
+                  ? copy.action.processing
+                  : copy.action.connectTelegram}
               </TDSButton>
             ) : (
               <button type="button" disabled={!currentUserId || telegramLinkLoading} onClick={handleConnectTelegramClick} className="w-full py-4 bg-[#0088cc]/10 text-[#0088cc] dark:text-[#54a9eb] rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 border border-[#0088cc]/30 hover:bg-[#0088cc]/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
                 <Send size={18} />
                 {telegramLinkLoading
-                  ? commonCopy.processing
-                  : profileCopy.connectTelegram}
+                  ? copy.action.processing
+                  : copy.action.connectTelegram}
               </button>
             )}
           </>
         ) : (
-          <HoverTip text={profileCopy.paidOnly}>
+          <HoverTip text={copy.profile.paidOnly}>
             <span className="inline-block w-full">
               <button type="button" disabled className="w-full py-4 bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 border border-slate-300 dark:border-slate-600 cursor-not-allowed opacity-80">
-                <Send size={18} /> {profileCopy.connectTelegram}
+                <Send size={18} /> {copy.action.connectTelegram}
               </button>
             </span>
           </HoverTip>
@@ -246,7 +252,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
               disabled={loading}
               className="flex items-center justify-center gap-3"
             >
-              {profileCopy.upgradeMembership}
+              {copy.action.upgradeMembership}
             </TDSButton>
           ) : (
             <button
@@ -255,7 +261,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
               disabled={loading}
               className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-md hover:shadow-lg hover:brightness-110 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              {profileCopy.upgradeMembership}
+              {copy.action.upgradeMembership}
             </button>
           )}
         </div>
@@ -270,7 +276,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
             disabled={loading}
             className="w-full py-5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-white rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 border border-slate-200 dark:border-white/5 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <Key size={18} /> {t.changePassword}
+            <Key size={18} /> {copy.action.changePassword}
           </button>
         )}
 
@@ -283,7 +289,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
             disabled={loading}
             className="flex items-center justify-center gap-3 text-rose-500 border border-rose-500/20"
           >
-            <LogOut size={18} /> {t.logout}
+            <LogOut size={18} /> {copy.action.logout}
           </TDSButton>
         ) : (
           <button
@@ -292,7 +298,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
             disabled={loading}
             className="w-full py-5 bg-rose-600/10 text-rose-500 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 border border-rose-500/20 hover:bg-rose-500 hover:text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <LogOut size={18} /> {t.logout}
+            <LogOut size={18} /> {copy.action.logout}
           </button>
         )}
 
@@ -315,15 +321,15 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                 disabled={loading}
                 className="w-full py-3 text-[11px] font-bold text-slate-400 hover:text-rose-500 transition-colors uppercase tracking-widest underline-offset-4 disabled:opacity-60"
               >
-                {profileCopy.deleteAccount}
+                {copy.action.deleteAccount}
               </button>
             ) : (
               <div className="space-y-3 p-4 bg-rose-50 dark:bg-rose-950/30 rounded-2xl border border-rose-200 dark:border-rose-800/50">
                 <p className="text-xs font-bold text-rose-600 dark:text-rose-400">
-                  {profileCopy.deleteWarning}
+                  {copy.profile.deleteWarning}
                 </p>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  {getDeleteConfirmInstruction(lang)}
+                  {copy.profile.deleteInstruction}
                 </p>
                 <input
                   type="text"
@@ -341,7 +347,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                     }}
                     className="flex-1 py-3 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl font-bold text-xs uppercase tracking-widest"
                   >
-                    {profileCopy.cancelDelete}
+                    {copy.action.cancelDelete}
                   </button>
                   <button
                     type="button"
@@ -349,7 +355,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                     onClick={handleDeleteAccountClick}
                     className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed hover:bg-rose-700 transition-colors"
                   >
-                    {loading ? commonCopy.processing : profileCopy.deleteForever}
+                    {loading ? copy.action.processing : copy.action.deleteForever}
                   </button>
                 </div>
               </div>
@@ -359,6 +365,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({
       </div>
     </div>
   );
-};
+}
 
 export default ProfileView;

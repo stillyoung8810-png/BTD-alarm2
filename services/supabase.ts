@@ -3,29 +3,50 @@ import {
   createSupabaseAuthStorage,
   clearSupabaseAuthStorage,
 } from '../utils/supabaseAuthStorage';
-import { getViteImportMetaEnv } from '../utils/viteImportMetaEnv';
+import {
+  getViteImportMetaEnv,
+  isViteDevBuild,
+  readTrimmedViteEnv,
+} from '../utils/viteImportMetaEnv';
 
-type RequiredClientEnvKey =
-  | 'VITE_SUPABASE_URL'
-  | 'VITE_SUPABASE_ANON_KEY';
+const FALLBACK_SUPABASE_URL = 'https://invalid.supabase.local';
+const FALLBACK_SUPABASE_ANON_KEY = 'missing-supabase-anon-key';
 
-function getRequiredClientEnv(key: RequiredClientEnvKey): string {
-  const env = getViteImportMetaEnv();
-  const raw = env?.[key];
-  const value = typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : null;
+interface ResolvedSupabaseEnv {
+  url: string;
+  anonKey: string;
+  isConfigured: boolean;
+}
 
-  if (value != null) {
-    return value;
+function readSupabaseClientEnv(): ResolvedSupabaseEnv {
+  const url = readTrimmedViteEnv('VITE_SUPABASE_URL');
+  const anonKey = readTrimmedViteEnv('VITE_SUPABASE_ANON_KEY');
+
+  if (url.length > 0 && anonKey.length > 0) {
+    return {
+      url,
+      anonKey,
+      isConfigured: true,
+    };
   }
 
-  throw new Error(`[Supabase] Missing required env: ${key}`);
+  console.warn(
+    '[Supabase] Required env is missing. Creating inert client config to avoid import-time crash.',
+  );
+
+  return {
+    url: FALLBACK_SUPABASE_URL,
+    anonKey: FALLBACK_SUPABASE_ANON_KEY,
+    isConfigured: false,
+  };
 }
 
 const authStorage = createSupabaseAuthStorage();
-const supabaseUrl = getRequiredClientEnv('VITE_SUPABASE_URL');
-const supabaseAnonKey = getRequiredClientEnv('VITE_SUPABASE_ANON_KEY');
+const supabaseEnv = readSupabaseClientEnv();
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+export const isSupabaseConfigured = supabaseEnv.isConfigured;
+
+export const supabase = createClient(supabaseEnv.url, supabaseEnv.anonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
@@ -49,7 +70,7 @@ declare global {
   }
 }
 
-if (getViteImportMetaEnv()?.DEV === true && typeof window !== 'undefined') {
+if (isViteDevBuild() && typeof window !== 'undefined') {
   window.__BTD_DEBUG__ = {
     ...(window.__BTD_DEBUG__ ?? {}),
     supabase,

@@ -1,39 +1,68 @@
 /**
- * 구독 티어 표시 로직 단일 책임 훅 (DRY)
- * App.tsx 및 프로필 등에서 tierLabel, tierClassName, TierIcon, tierIconClassName 통일
+ * 구독 티어 표시용 view-model: 번역 키 + 스타일 메타데이터만 반환 (표시 문자열은 View/I18N).
  */
 
-import { useMemo } from 'react';
 import { Crown, Star, Zap } from 'lucide-react';
+import {
+  TIER_NAME_TRANSLATION_KEY,
+  type TierNameTranslationKey,
+} from '../constants/tierNameTranslationKeys';
 
 export type TierValue = 'free' | 'pro' | 'premium' | string;
 
+export type { TierNameTranslationKey };
+
 export interface TierDisplay {
-  tierLabel: string;
+  translationKey: TierNameTranslationKey;
   tierClassName: string;
   TierIcon: typeof Crown;
   tierIconClassName: string;
 }
 
-export function useTierDisplay(tier: TierValue): TierDisplay {
-  return useMemo(() => {
-    const normalized = (typeof tier === 'string' ? tier : 'free').toLowerCase();
-    const isPremium = normalized === 'premium' || normalized === 'enterprise';
-    const isPro = normalized === 'pro';
+type TierDisplayKey = 'free' | 'pro' | 'premium';
 
-    return {
-      tierLabel: isPremium ? 'PREMIUM' : isPro ? 'PRO' : 'FREE',
-      tierClassName: isPremium
-        ? 'shimmer-text-premium'
-        : isPro
-        ? 'shimmer-text-pro'
-        : 'text-free-matte',
-      TierIcon: isPremium ? Crown : isPro ? Star : Zap,
-      tierIconClassName: isPremium
-        ? 'premium-icon-breath'
-        : isPro
-        ? 'pro-icon-twinkle'
-        : 'free-icon-zap',
-    };
-  }, [tier]);
+function normalizeTierKey(tier: TierValue): TierDisplayKey {
+  const normalized = (typeof tier === 'string' ? tier : 'free').toLowerCase();
+
+  if (normalized === 'premium' || normalized === 'enterprise') {
+    return 'premium';
+  }
+
+  if (normalized === 'pro') {
+    return 'pro';
+  }
+
+  return 'free';
+}
+
+export function useTierDisplay(tier: TierValue): TierDisplay {
+  const tierKey = normalizeTierKey(tier);
+
+  switch (tierKey) {
+    case 'premium':
+      return {
+        translationKey: TIER_NAME_TRANSLATION_KEY.PREMIUM,
+        tierClassName: 'shimmer-text-premium',
+        TierIcon: Crown,
+        tierIconClassName: 'premium-icon-breath',
+      };
+    case 'pro':
+      return {
+        translationKey: TIER_NAME_TRANSLATION_KEY.PRO,
+        tierClassName: 'shimmer-text-pro',
+        TierIcon: Star,
+        tierIconClassName: 'pro-icon-twinkle',
+      };
+    case 'free':
+      return {
+        translationKey: TIER_NAME_TRANSLATION_KEY.FREE,
+        tierClassName: 'text-free-matte',
+        TierIcon: Zap,
+        tierIconClassName: 'free-icon-zap',
+      };
+    default: {
+      const exhaustiveCheck: never = tierKey;
+      return exhaustiveCheck;
+    }
+  }
 }

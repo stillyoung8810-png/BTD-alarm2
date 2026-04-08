@@ -14,6 +14,16 @@ import {
 import { AVAILABLE_STOCKS, PAID_STOCKS } from "../constants";
 import { calculateMA, calculateRSI, calculateRollingIndicators } from "../utils/technicalIndicators";
 import { LATEST_TRADE_DATE_KEY } from "../utils/marketUtils";
+import {
+  createServiceError,
+  failResult,
+  isRecord,
+  normalizeErrorMessage,
+  okResult,
+  readFiniteNumber,
+  readString,
+  type ServiceResult,
+} from "./serviceUtils";
 
 /** Supabase stock_prices 테이블 행 타입 */
 interface SupabaseStockRow {
@@ -24,12 +34,184 @@ interface SupabaseStockRow {
 
 // 주가/지표 관련 디버그 로그 토글 (필요할 때만 true로 변경)
 const DEBUG_STOCK_LOG = false;
+const DEFAULT_RSI = 50;
+const DEFAULT_MA = 0;
+const STOCK_SNAPSHOT_FETCH_LIMIT = 2;
+const STOCK_FULL_LOAD_LIMIT = 240;
+const MIN_INDICATOR_HISTORY = 120;
+const INDICATOR_DB_READ_LIMIT = 200;
 
 /** 글로벌 기준 거래일을 결정하는 대표 종목 */
 const REFERENCE_SYMBOL = "QQQ";
 
 // 중복 요청 방지를 위한 inflight 요청 캐시
 const inflightStockRequests = new Map<string, Promise<StockData>>();
+
+function createStockQueryServiceError(
+  error: unknown,
+  fallbackMessage: string,
+  symbol: string,
+) {
+  const isAbortError =
+    error instanceof DOMException
+      ? error.name === 'AbortError'
+      : error instanceof Error
+        ? error.name === 'AbortError' ||
+          error.message.toLowerCase().includes('aborted')
+        : false;
+
+  return createServiceError(
+    isAbortError ? 'TIMEOUT' : 'NETWORK',
+    normalizeErrorMessage(error, fallbackMessage),
+    {
+      retryable: !isAbortError,
+      cause: error,
+      context: { symbol },
+    },
+  );
+}
+
+function createEmptyStockData(symbol: string): StockData {
+  return {
+    symbol,
+    price: 0,
+    change: 0,
+    changePercent: 0,
+    rsi: DEFAULT_RSI,
+    ma20: DEFAULT_MA,
+    ma60: DEFAULT_MA,
+    ma120: DEFAULT_MA,
+  };
+}
+
+function roundPercentWithSign(value: number): number {
+  if (value === 0) {
+    return 0;
+  }
+
+  return Math.round(
+    (value + Math.sign(value) * Number.EPSILON) * 100,
+  ) / 100;
+}
+
+function decodeSupabaseStockRow(value: unknown): SupabaseStockRow | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const tradeDate = readString(value, "trade_date");
+  const close = readFiniteNumber(value, "close");
+  const symbol = readString(value, "symbol") ?? undefined;
+  if (tradeDate == null || close == null || close <= 0) {
+    return null;
+  }
+
+  return {
+    symbol,
+    trade_date: tradeDate,
+    close,
+  };
+}
+
+function decodeSupabaseStockRows(value: unknown): SupabaseStockRow[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const rows = value
+    .map((item) => decodeSupabaseStockRow(item))
+    .filter((item): item is SupabaseStockRow => item !== null);
+
+  return rows.length > 0 ? rows : null;
+}
+
+function mapRowsToStockData(
+  symbol: string,
+  rows: SupabaseStockRow[],
+): StockData {
+  const currentRow = rows[0];
+  const previousRow = rows[1] ?? currentRow;
+  const currentPrice = currentRow.close ?? 0;
+  const previousPrice = previousRow.close ?? currentPrice;
+  const rawChangePercent =
+    previousPrice > 0
+      ? ((currentPrice - previousPrice) / previousPrice) * 100
+      : 0;
+
+  return {
+    symbol,
+    price: currentPrice,
+    change: currentPrice - previousPrice,
+    changePercent: roundPercentWithSign(rawChangePercent),
+    rsi: DEFAULT_RSI,
+    ma20: DEFAULT_MA,
+    ma60: DEFAULT_MA,
+    ma120: DEFAULT_MA,
+  };
+}
+
+function mapDbRecordsToStockData(
+  symbol: string,
+  records: StockPriceRecord[],
+): StockData {
+  if (records.length === 0) {
+    return createEmptyStockData(symbol);
+  }
+
+  const latestRecord = records[records.length - 1];
+  const previousRecord = records.length > 1
+    ? records[records.length - 2]
+    : latestRecord;
+  const rawChangePercent =
+    previousRecord.close > 0
+      ? ((latestRecord.close - previousRecord.close) / previousRecord.close) * 100
+      : 0;
+
+  return {
+    symbol,
+    price: latestRecord.close,
+    change: latestRecord.close - previousRecord.close,
+    changePercent: roundPercentWithSign(rawChangePercent),
+    rsi: latestRecord.rsi ?? DEFAULT_RSI,
+    ma20: latestRecord.ma20 ?? DEFAULT_MA,
+    ma60: latestRecord.ma60 ?? DEFAULT_MA,
+    ma120: latestRecord.ma120 ?? DEFAULT_MA,
+  };
+}
+
+function toStockPriceRecords(
+  symbol: string,
+  rows: SupabaseStockRow[],
+): StockPriceRecord[] {
+  const updatedAt = Date.now();
+
+  return rows.map((row) => ({
+    symbol,
+    date: row.trade_date ?? "",
+    close: row.close ?? 0,
+    updatedAt,
+  }));
+}
+
+function readStoredMovingAverage(
+  record: StockPriceRecord | undefined,
+  period: number,
+): number | null {
+  if (record == null) {
+    return null;
+  }
+
+  switch (period) {
+    case 20:
+      return record.ma20 ?? null;
+    case 60:
+      return record.ma60 ?? null;
+    case 120:
+      return record.ma120 ?? null;
+    default:
+      return null;
+  }
+}
 
 /**
  * 주가 데이터를 가져옵니다 (IndexedDB 우선 사용)
@@ -69,28 +251,10 @@ export const fetchStockPrices = async (
         try {
           await initDatabase();
           // IndexedDB에서 최신 데이터 가져오기
-          const dbRecords = await getStockPrices(symbol, 2);
+          const dbRecords = await getStockPrices(symbol, STOCK_SNAPSHOT_FETCH_LIMIT);
 
           if (dbRecords.length > 0) {
-            const latestRecord = dbRecords[dbRecords.length - 1];
-            const prevRecord = dbRecords.length > 1
-              ? dbRecords[dbRecords.length - 2]
-              : latestRecord;
-            const currentPrice = latestRecord.close;
-            const previousPrice = prevRecord.close;
-
-            return {
-              symbol,
-              price: currentPrice,
-              change: currentPrice - previousPrice,
-              changePercent: previousPrice > 0
-                ? ((currentPrice - previousPrice) / previousPrice) * 100
-                : 0,
-              rsi: latestRecord.rsi || 50,
-              ma20: latestRecord.ma20 || 0,
-              ma60: latestRecord.ma60 || 0,
-              ma120: latestRecord.ma120 || 0,
-            };
+            return mapDbRecordsToStockData(symbol, dbRecords);
           } else {
             // Supabase fallback
             const { data, error } = await supabase
@@ -98,60 +262,27 @@ export const fetchStockPrices = async (
               .select("symbol, close, trade_date")
               .eq("symbol", symbol)
               .order("trade_date", { ascending: false })
-              .limit(2);
+              .limit(STOCK_SNAPSHOT_FETCH_LIMIT);
 
-            if (error || !data || data.length === 0) {
-              return {
-                symbol,
-                price: 0,
-                change: 0,
-                changePercent: 0,
-                rsi: 50,
-                ma20: 0,
-                ma60: 0,
-                ma120: 0,
-              };
+            const decodedRows = decodeSupabaseStockRows(data);
+            if (error || decodedRows == null) {
+              return createEmptyStockData(symbol);
             }
 
-            const currentRow = data[0] as SupabaseStockRow;
-            const previousRow = (data[1] || data[0]) as SupabaseStockRow;
-            const currentPrice = currentRow.close ?? 0;
-            const previousPrice = previousRow.close ?? 0;
-
-            const baseData: StockData = {
-              symbol,
-              price: currentPrice,
-              change: currentPrice - previousPrice,
-              changePercent: previousPrice > 0
-                ? ((currentPrice - previousPrice) / previousPrice) * 100
-                : 0,
-              rsi: 50,
-              ma20: 0,
-              ma60: 0,
-              ma120: 0,
-            };
+            const baseData = mapRowsToStockData(symbol, decodedRows);
 
             const indicators = await calculateTechnicalIndicators(symbol);
             if (indicators) {
               baseData.rsi = indicators.rsi;
-              baseData.ma20 = indicators.ma[20] || 0;
-              baseData.ma60 = indicators.ma[60] || 0;
-              baseData.ma120 = indicators.ma[120] || 0;
+              baseData.ma20 = indicators.ma[20] ?? DEFAULT_MA;
+              baseData.ma60 = indicators.ma[60] ?? DEFAULT_MA;
+              baseData.ma120 = indicators.ma[120] ?? DEFAULT_MA;
             }
             return baseData;
           }
         } catch (err) {
           console.warn(`[fetchStockPrices] ${symbol} 실패:`, err);
-          return {
-            symbol,
-            price: 0,
-            change: 0,
-            changePercent: 0,
-            rsi: 50,
-            ma20: 0,
-            ma60: 0,
-            ma120: 0,
-          };
+          return createEmptyStockData(symbol);
         } finally {
           // 요청 완료 후 제거
           inflightStockRequests.delete(symbol);
@@ -163,7 +294,9 @@ export const fetchStockPrices = async (
   }
 
   // 3. 모든 요청 (신규 + 기존 진행중) 완료 대기
-  const allPromises = validSymbols.map((s) => inflightStockRequests.get(s)!);
+  const allPromises = validSymbols.map((symbol) =>
+    inflightStockRequests.get(symbol) ?? Promise.resolve(createEmptyStockData(symbol))
+  );
   const fetchedDataArray = await Promise.all(allPromises);
 
   fetchedDataArray.forEach((data) => {
@@ -208,8 +341,9 @@ export const fetchStockPricesWithPrev = async (
 
     const map: Record<string, { current: number; previous: number }> = {};
 
-    if (data) {
-      for (const row of data as SupabaseStockRow[]) {
+    const decodedRows = decodeSupabaseStockRows(data);
+    if (decodedRows) {
+      for (const row of decodedRows) {
         const sym = row.symbol;
         if (!sym) continue;
         const symbol = sym;
@@ -241,6 +375,46 @@ export const fetchStockPrice = async (
   const prices = await fetchStockPrices([symbol]);
   return prices[symbol] || null;
 };
+
+export async function fetchLatestStockSnapshot(
+  symbol: string,
+): Promise<ServiceResult<StockData>> {
+  const trimmedSymbol = symbol.trim();
+  if (trimmedSymbol.length === 0) {
+    return failResult(
+      createEmptyStockData(trimmedSymbol),
+      createServiceError('INVALID_INPUT', 'stock_symbol_required', {
+        context: { symbol: trimmedSymbol },
+      }),
+      { symbol: trimmedSymbol },
+    );
+  }
+
+  try {
+    const snapshot = await fetchStockPrice(trimmedSymbol);
+    if (snapshot == null) {
+      return failResult(
+        createEmptyStockData(trimmedSymbol),
+        createServiceError('NOT_FOUND', 'stock_snapshot_not_found', {
+          context: { symbol: trimmedSymbol },
+        }),
+        { symbol: trimmedSymbol },
+      );
+    }
+
+    return okResult(snapshot, { symbol: trimmedSymbol });
+  } catch (error: unknown) {
+    return failResult(
+      createEmptyStockData(trimmedSymbol),
+      createStockQueryServiceError(
+        error,
+        'stock_snapshot_fetch_failed',
+        trimmedSymbol,
+      ),
+      { symbol: trimmedSymbol },
+    );
+  }
+}
 
 /**
  * IndexedDB에서 해당 종목의 최신 거래일(YYYY-MM-DD)을 반환합니다.
@@ -286,6 +460,47 @@ export const getRecentTradingDaysFromDb = async (
     return [];
   }
 };
+
+export async function getRecentTradingDaysFromDbSafe(
+  symbol: string,
+  days: number,
+): Promise<ServiceResult<string[]>> {
+  const trimmedSymbol = symbol.trim();
+  if (trimmedSymbol.length === 0 || days <= 0) {
+    return failResult(
+      [],
+      createServiceError('INVALID_INPUT', 'recent_trading_days_invalid_input', {
+        context: { symbol: trimmedSymbol, days },
+      }),
+      { symbol: trimmedSymbol, days },
+    );
+  }
+
+  try {
+    const recentTradingDays = await getRecentTradingDaysFromDb(trimmedSymbol, days);
+    if (recentTradingDays.length === 0) {
+      return failResult(
+        [],
+        createServiceError('NOT_FOUND', 'recent_trading_days_not_found', {
+          context: { symbol: trimmedSymbol, days },
+        }),
+        { symbol: trimmedSymbol, days },
+      );
+    }
+
+    return okResult(recentTradingDays, { symbol: trimmedSymbol, days });
+  } catch (error: unknown) {
+    return failResult(
+      [],
+      createStockQueryServiceError(
+        error,
+        'recent_trading_days_fetch_failed',
+        trimmedSymbol,
+      ),
+      { symbol: trimmedSymbol, days },
+    );
+  }
+}
 
 // calculateMA, calculateRSI, calculateRollingIndicators → utils/technicalIndicators.ts에서 import
 // 하위 호환성을 위해 re-export
@@ -415,21 +630,16 @@ const loadStockDataForSymbols = async (
             .select("close, trade_date")
             .eq("symbol", symbol)
             .order("trade_date", { ascending: true })
-            .limit(240);
+            .limit(STOCK_FULL_LOAD_LIMIT);
 
-          if (error || !data || data.length === 0) {
+          const decodedRows = decodeSupabaseStockRows(data);
+          if (error || decodedRows == null) {
             console.warn(`[${logTag}] ${symbol}: 데이터 없음`, error);
             return;
           }
 
-          const records: StockPriceRecord[] = (data as SupabaseStockRow[])
-            .map((row) => ({
-              symbol,
-              date: row.trade_date || "",
-              close: row.close ?? 0,
-              updatedAt: Date.now(),
-            }))
-            .filter((r) => r.date && r.close > 0);
+          const records = toStockPriceRecords(symbol, decodedRows)
+            .filter((record) => record.date.length > 0 && record.close > 0);
 
           if (records.length === 0) return;
 
@@ -523,13 +733,18 @@ export const updateLatestStockData = async (symbol: string): Promise<void> => {
       .order("trade_date", { ascending: false })
       .limit(1);
 
-    if (error || !data || data.length === 0) {
+    const decodedRows = decodeSupabaseStockRows(data);
+    if (error || decodedRows == null) {
       console.warn(`[updateLatestStockData] ${symbol}: 최신 데이터 없음`);
       return;
     }
 
-    const latestRow = data[0];
-    const latestDate = latestRow.trade_date;
+    const latestRow = decodedRows[0];
+    const latestDate = latestRow.trade_date ?? '';
+    if (latestDate.length === 0 || (latestRow.close ?? 0) <= 0) {
+      console.warn(`[updateLatestStockData] ${symbol}: 최신 데이터 형식 오류`);
+      return;
+    }
 
     // 이미 해당 날짜 데이터가 있는지 확인
     const existingData = await getStockPrices(symbol, 1);
@@ -590,9 +805,9 @@ export const calculateTechnicalIndicators = async (
 
   try {
     // IndexedDB에서 데이터 가져오기
-    const dbRecords = await getStockPrices(trimmedSymbol, 200);
+    const dbRecords = await getStockPrices(trimmedSymbol, INDICATOR_DB_READ_LIMIT);
 
-    if (dbRecords.length >= 120) {
+    if (dbRecords.length >= MIN_INDICATOR_HISTORY) {
       // IndexedDB에 충분한 데이터가 있으면 사용
       const latestRecord = dbRecords[dbRecords.length - 1];
 
@@ -615,15 +830,15 @@ export const calculateTechnicalIndicators = async (
       await calculateAndSaveIndicators(trimmedSymbol, dbRecords);
 
       // 저장된 최신 레코드에서 결과 반환
-      const savedRecords = await getStockPrices(trimmedSymbol, 200);
+      const savedRecords = await getStockPrices(trimmedSymbol, INDICATOR_DB_READ_LIMIT);
       const latest = savedRecords[savedRecords.length - 1];
       const prices = savedRecords.map((r) => r.close);
       const ma: Record<number, number> = {};
       for (const period of maPeriods) {
-        ma[period] = latest?.[`ma${period}` as keyof typeof latest] as number || calculateMA(prices, period);
+        ma[period] = readStoredMovingAverage(latest, period) ?? calculateMA(prices, period);
       }
 
-      return { ma, rsi: latest?.rsi || calculateRSI(prices) };
+      return { ma, rsi: latest?.rsi ?? calculateRSI(prices) };
     }
 
     // IndexedDB에 데이터가 부족하면 Supabase에서 가져오기
@@ -636,22 +851,16 @@ export const calculateTechnicalIndicators = async (
       .select("close, trade_date")
       .eq("symbol", trimmedSymbol)
       .order("trade_date", { ascending: true })
-      .limit(240);
+      .limit(STOCK_FULL_LOAD_LIMIT);
 
-    if (error || !data || data.length === 0) {
+    const decodedRows = decodeSupabaseStockRows(data);
+    if (error || decodedRows == null) {
       console.error("Error fetching price history for", symbol, error);
       return null;
     }
 
-    // 기본 레코드 생성 (지표 없이)
-    const records: StockPriceRecord[] = (data as SupabaseStockRow[])
-      .map((row) => ({
-        symbol: trimmedSymbol,
-        date: row.trade_date || "",
-        close: row.close ?? 0,
-        updatedAt: Date.now(),
-      }))
-      .filter((r) => r.date && r.close > 0);
+    const records = toStockPriceRecords(trimmedSymbol, decodedRows)
+      .filter((record) => record.date.length > 0 && record.close > 0);
 
     if (records.length === 0) return null;
 
@@ -717,19 +926,13 @@ export const fetchStockPriceHistory = async (
       .order("trade_date", { ascending: false })
       .limit(days);
 
-    if (error || !data || data.length === 0) {
+    const decodedRows = decodeSupabaseStockRows(data);
+    if (error || decodedRows == null) {
       console.error("Error fetching price history for chart:", symbol, error);
       return [];
     }
 
-    // 날짜 오름차순으로 정렬된 레코드 생성
-    const records: StockPriceRecord[] = (data as SupabaseStockRow[])
-      .map((row) => ({
-        symbol: trimmedSymbol,
-        date: row.trade_date || "",
-        close: row.close ?? 0,
-        updatedAt: Date.now(),
-      }))
+    const records = toStockPriceRecords(trimmedSymbol, decodedRows)
       .filter((r) => r.date && r.close > 0)
       .sort((a, b) => a.date.localeCompare(b.date));
 

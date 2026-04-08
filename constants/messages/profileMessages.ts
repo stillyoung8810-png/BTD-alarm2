@@ -69,6 +69,19 @@ export const PROFILE_MESSAGES: Record<AppLang, ProfileMessageSet> = {
   },
 };
 
+const PROFILE_MESSAGE_CACHE = new Map<AppLang, ProfileMessageSet>();
+
+export function getProfileMessages(lang: AppLang): ProfileMessageSet {
+  const cached = PROFILE_MESSAGE_CACHE.get(lang);
+  if (cached != null) {
+    return cached;
+  }
+
+  const messages = PROFILE_MESSAGES[lang];
+  PROFILE_MESSAGE_CACHE.set(lang, messages);
+  return messages;
+}
+
 const MEMBERSHIP_MEMBER_BADGES: Record<PaidTier, Record<AppLang, string>> = {
   free: {
     ko: 'FREE 회원',

@@ -1,19 +1,27 @@
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { getMessaging, getToken, Messaging, onMessage, MessagePayload } from 'firebase/messaging';
 import { isSupported } from 'firebase/messaging';
+import { readTrimmedViteEnv } from '../utils/viteImportMetaEnv';
 
 // Firebase 설정 - 환경변수에서 가져오기
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: readTrimmedViteEnv('VITE_FIREBASE_API_KEY'),
+  authDomain: readTrimmedViteEnv('VITE_FIREBASE_AUTH_DOMAIN'),
+  projectId: readTrimmedViteEnv('VITE_FIREBASE_PROJECT_ID'),
+  storageBucket: readTrimmedViteEnv('VITE_FIREBASE_STORAGE_BUCKET'),
+  messagingSenderId: readTrimmedViteEnv('VITE_FIREBASE_MESSAGING_SENDER_ID'),
+  appId: readTrimmedViteEnv('VITE_FIREBASE_APP_ID'),
 };
 
 // VAPID 키 - 환경변수에서 가져오기 (없으면 상수로 관리 가능)
-const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY || '';
+const VAPID_KEY = readTrimmedViteEnv('VITE_FIREBASE_VAPID_KEY');
+const hasFirebaseCoreConfig =
+  firebaseConfig.apiKey.length > 0 &&
+  firebaseConfig.authDomain.length > 0 &&
+  firebaseConfig.projectId.length > 0 &&
+  firebaseConfig.storageBucket.length > 0 &&
+  firebaseConfig.messagingSenderId.length > 0 &&
+  firebaseConfig.appId.length > 0;
 
 // Firebase 앱 초기화
 let app: FirebaseApp | null = null;
@@ -22,8 +30,12 @@ let messaging: Messaging | null = null;
 // Firebase 앱이 이미 초기화되어 있지 않으면 초기화
 if (typeof window !== 'undefined' && getApps().length === 0) {
   try {
-    app = initializeApp(firebaseConfig);
-    console.log('Firebase initialized successfully');
+    if (!hasFirebaseCoreConfig) {
+      console.warn('Firebase env is incomplete. Skipping app initialization.');
+    } else {
+      app = initializeApp(firebaseConfig);
+      console.log('Firebase initialized successfully');
+    }
   } catch (error) {
     console.error('Firebase initialization error:', error);
   }

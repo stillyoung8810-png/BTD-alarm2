@@ -15,3 +15,18 @@ export function getViteImportMetaEnv(): ImportMetaEnv | undefined {
 
   return env;
 }
+
+export function readTrimmedViteEnv(
+  key: keyof ImportMetaEnv,
+): string {
+  const rawValue = getViteImportMetaEnv()?.[key];
+  return typeof rawValue === 'string' ? rawValue.trim() : '';
+}
+
+export function isViteDevBuild(): boolean {
+  return getViteImportMetaEnv()?.DEV === true;
+}
+
+export function isViteProdBuild(): boolean {
+  return getViteImportMetaEnv()?.PROD === true;
+}

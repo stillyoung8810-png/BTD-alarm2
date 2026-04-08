@@ -2,16 +2,16 @@
  * 전략 백테스트 페이지: 전략 선택 → 파라미터 설정 → 결과 (UI 전용, 연산 엔진 연동 전)
  */
 
-import React, { useCallback, useState, Suspense, lazy } from 'react';
+import React, { useCallback, useMemo, useState, Suspense, lazy } from 'react';
 import { I18N, ALL_STOCKS } from '../constants';
 import { BACKTEST_DEFAULTS } from '../constants/domain/backtestDefaults';
 import {
-  BACKTEST_MESSAGES,
+  getBacktestMessages,
   type BacktestMessageSet,
 } from '../constants/messages/backtestMessages';
-import { COMMON_MESSAGES } from '../constants/messages/commonMessages';
+import { getCommonMessages } from '../constants/messages/commonMessages';
 import { useMutexAction } from '../hooks/useMutexAction';
-import { getDictionaryCopy } from '../utils/getDictionaryCopy';
+import { showErrorToast } from './tds-adapter/showErrorToast';
 import { TrendingUp, Layers, Zap, ChevronLeft, Calendar, DollarSign, Percent, Crown, Info } from 'lucide-react';
 import CustomDropdown from './CustomDropdown';
 import Toggle from './Toggle';
@@ -83,6 +83,39 @@ export interface BacktestResult {
 }
 
 type RemoteBacktestStrategyId = 'multi_split' | 'no_stop_multi_split';
+
+export interface BacktestController {
+  executeRemoteSimulation: (params: {
+    months: number;
+    amountUsd: number;
+  }) => Promise<void>;
+  notifyError: (message: string) => void;
+}
+
+const MIN_MONTHS = 6;
+const MAX_MONTHS = 24;
+
+function normalizeIntegerInput(
+  raw: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.max(min, Math.trunc(parsed)));
+}
+
+function normalizePositiveIntegerInput(raw: string, fallback: number): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0 || raw.trim() === '') {
+    return fallback;
+  }
+  return Math.trunc(parsed);
+}
 
 interface RemoteBacktestRequest {
   url: string | undefined;
@@ -315,16 +348,33 @@ async function requestRemoteBacktestResult(
 interface BacktestProps {
   lang: 'ko' | 'en';
   currentTier: string;
+  controller?: BacktestController;
+  onRequestUpgrade?: () => void;
 }
 
-const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
+const Backtest: React.FC<BacktestProps> = ({
+  lang,
+  currentTier,
+  controller: controllerProp,
+  onRequestUpgrade,
+}) => {
   const t = I18N[lang];
-  const commonCopy = getDictionaryCopy(COMMON_MESSAGES, lang, 'COMMON_MESSAGES');
-  const backtestCopy = getDictionaryCopy(
-    BACKTEST_MESSAGES,
-    lang,
-    'BACKTEST_MESSAGES',
+  const commonCopy = getCommonMessages(lang);
+  const backtestCopy = getBacktestMessages(lang);
+
+  const notifyErrorFallback = useCallback((message: string) => {
+    showErrorToast(message);
+  }, []);
+
+  const defaultController = useMemo<BacktestController>(
+    () => ({
+      executeRemoteSimulation: async () => {},
+      notifyError: notifyErrorFallback,
+    }),
+    [notifyErrorFallback],
   );
+
+  const resolvedController = controllerProp ?? defaultController;
   const [step, setStep] = useState<Step>('strategy');
   const [strategyId, setStrategyId] = useState<BacktestStrategyId | null>(null);
   const [paramsMa, setParamsMa] = useState<BacktestParamsMa>(DEFAULT_PARAMS_MA);
@@ -352,22 +402,66 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
     }
 
     if (strategyId === 'multi_split' || strategyId === 'no_stop_multi_split') {
-      const remoteResponse = await requestRemoteBacktestResult(
-        strategyId,
-        paramsMulti,
-        paramsNoStopMulti,
-      );
+      const sanitizedMulti: BacktestParamsMultiSplit = {
+        ...paramsMulti,
+        months: normalizeIntegerInput(
+          String(paramsMulti.months),
+          BACKTEST_DEFAULTS.COMMON.MONTHS,
+          MIN_MONTHS,
+          MAX_MONTHS,
+        ),
+        oneTimeAmount: normalizePositiveIntegerInput(
+          String(paramsMulti.oneTimeAmount),
+          BACKTEST_DEFAULTS.COMMON.ONE_TIME_AMOUNT_USD,
+        ),
+      };
+      const sanitizedNoStop: BacktestParamsNoStopMultiSplit = {
+        ...paramsNoStopMulti,
+        months: normalizeIntegerInput(
+          String(paramsNoStopMulti.months),
+          BACKTEST_DEFAULTS.COMMON.MONTHS,
+          MIN_MONTHS,
+          MAX_MONTHS,
+        ),
+        oneTimeAmount: normalizePositiveIntegerInput(
+          String(paramsNoStopMulti.oneTimeAmount),
+          BACKTEST_DEFAULTS.COMMON.ONE_TIME_AMOUNT_USD,
+        ),
+      };
 
-      if (remoteResponse?.kind === 'error') {
-        setBacktestError(remoteResponse.message);
+      try {
+        const remoteResponse = await requestRemoteBacktestResult(
+          strategyId,
+          sanitizedMulti,
+          sanitizedNoStop,
+        );
+
+        if (remoteResponse == null) {
+          resolvedController.notifyError(backtestCopy.errorRunFailed);
+          setBacktestError(backtestCopy.errorRunFailed);
+          setResult(null);
+          setStep('results');
+          return;
+        }
+
+        if (remoteResponse.kind === 'error') {
+          setBacktestError(remoteResponse.message);
+          setResult(null);
+          setStep('results');
+          return;
+        }
+
+        if (remoteResponse.kind === 'success') {
+          setBacktestError(null);
+          setResult(remoteResponse.result);
+          setStep('results');
+          return;
+        }
+      } catch (error) {
+        console.error('[Backtest] Simulation failed:', error);
+        resolvedController.notifyError(backtestCopy.errorRunFailed);
+        setBacktestError(backtestCopy.errorRunFailed);
         setResult(null);
-        setStep('results');
-        return;
-      }
-
-      if (remoteResponse?.kind === 'success') {
-        setBacktestError(null);
-        setResult(remoteResponse.result);
         setStep('results');
         return;
       }
@@ -376,7 +470,14 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
     setBacktestError(null);
     setResult(buildMockResult());
     setStep('results');
-  }, [backtestCopy, currentTier, paramsMulti, paramsNoStopMulti, strategyId]);
+  }, [
+    backtestCopy,
+    currentTier,
+    paramsMulti,
+    paramsNoStopMulti,
+    resolvedController,
+    strategyId,
+  ]);
 
   const { run: handleRunBacktest, isExecuting } =
     useMutexAction(executeBacktest);
@@ -483,6 +584,9 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
                     options={stockOptions}
                     onChange={(v) => setParamsMa((p) => ({ ...p, baseStock: v }))}
                     header={backtestCopy.stockSelectionHeader}
+                    infoModalBadgeLabel={commonCopy.notice}
+                    infoModalCloseAriaLabel={commonCopy.closeDialog}
+                    infoModalConfirmLabel={commonCopy.acknowledge}
                   />
                 </div>
                 <div>
@@ -492,11 +596,22 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
                   <div className="flex items-center gap-3">
                     <input
                       type="range"
-                      min={6}
-                      max={24}
+                      aria-label={backtestCopy.monthsInputAria}
+                      min={MIN_MONTHS}
+                      max={MAX_MONTHS}
                       step={1}
                       value={paramsMa.months}
-                      onChange={(e) => setParamsMa((p) => ({ ...p, months: Number(e.target.value) }))}
+                      onChange={(e) =>
+                        setParamsMa((p) => ({
+                          ...p,
+                          months: normalizeIntegerInput(
+                            e.target.value,
+                            BACKTEST_DEFAULTS.COMMON.MONTHS,
+                            MIN_MONTHS,
+                            MAX_MONTHS,
+                          ),
+                        }))
+                      }
                       className="flex-1 h-2 rounded-full bg-slate-200 dark:bg-white/10 accent-blue-600"
                     />
                     <span className="text-sm font-black text-slate-900 dark:text-white w-14">
@@ -512,6 +627,7 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
                   </label>
                   <input
                     type="number"
+                    aria-label={backtestCopy.amountInputAria}
                     value={paramsMa.dailyBuyAmount}
                     onChange={(e) => setParamsMa((p) => ({ ...p, dailyBuyAmount: Number(e.target.value) || 0 }))}
                     className="w-full p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-white font-bold"
@@ -606,6 +722,9 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
                       options={stockOptions}
                       onChange={(v) => setParamsMa((p) => ({ ...p, maAStock: v }))}
                       header={t.stock}
+                      infoModalBadgeLabel={commonCopy.notice}
+                      infoModalCloseAriaLabel={commonCopy.closeDialog}
+                      infoModalConfirmLabel={commonCopy.acknowledge}
                     />
                   </div>
                 </div>
@@ -670,6 +789,9 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
                       options={stockOptions}
                       onChange={(v) => setParamsMa((p) => ({ ...p, maBStock: v }))}
                       header={t.stock}
+                      infoModalBadgeLabel={commonCopy.notice}
+                      infoModalCloseAriaLabel={commonCopy.closeDialog}
+                      infoModalConfirmLabel={commonCopy.acknowledge}
                     />
                   </div>
                 </div>
@@ -709,7 +831,7 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <label className="text-[10px] text-slate-500 dark:text-slate-400 mb-1 block">{t.stock}</label>
-                    <CustomDropdown value={paramsMa.ma3Stock} options={stockOptions} onChange={(v) => setParamsMa((p) => ({ ...p, ma3Stock: v }))} header={t.stock} />
+                    <CustomDropdown value={paramsMa.ma3Stock} options={stockOptions} onChange={(v) => setParamsMa((p) => ({ ...p, ma3Stock: v }))} header={t.stock} infoModalBadgeLabel={commonCopy.notice} infoModalCloseAriaLabel={commonCopy.closeDialog} infoModalConfirmLabel={commonCopy.acknowledge} />
                   </div>
                 </div>
                 <div className="flex items-center gap-4 mt-3">
@@ -730,8 +852,8 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
                 <button type="button" onClick={() => { setStep('strategy'); setStrategyId(null); }} className="px-5 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">
                   {t.cancel}
                 </button>
-                <button type="button" onClick={handleRunBacktest} disabled={isExecuting} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black shadow-lg shadow-blue-500/30 hover:scale-[1.02] active:scale-[0.98] transition-transform disabled:opacity-60 disabled:cursor-not-allowed">
-                  <Zap size={18} /> {isExecuting ? commonCopy.processing : backtestCopy.startRun}
+                <button type="button" onClick={() => void handleRunBacktest()} disabled={isExecuting} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black shadow-lg shadow-blue-500/30 hover:scale-[1.02] active:scale-[0.98] transition-transform disabled:opacity-60 disabled:cursor-not-allowed">
+                  <Zap size={18} /> {isExecuting ? backtestCopy.processing : backtestCopy.startRun}
                 </button>
               </div>
             </div>
@@ -742,12 +864,31 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-2">{t.stock}</label>
-                  <CustomDropdown value={paramsMulti.stock} options={stockOptions} onChange={(v) => setParamsMulti((p) => ({ ...p, stock: v }))} header={t.stock} />
+                  <CustomDropdown value={paramsMulti.stock} options={stockOptions} onChange={(v) => setParamsMulti((p) => ({ ...p, stock: v }))} header={t.stock} infoModalBadgeLabel={commonCopy.notice} infoModalCloseAriaLabel={commonCopy.closeDialog} infoModalConfirmLabel={commonCopy.acknowledge} />
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5 mb-2">{t.backtestPeriod}</label>
                   <div className="flex items-center gap-3">
-                    <input type="range" min={6} max={24} step={1} value={paramsMulti.months} onChange={(e) => setParamsMulti((p) => ({ ...p, months: Number(e.target.value) }))} className="flex-1 h-2 rounded-full bg-slate-200 dark:bg-white/10 accent-emerald-600" />
+                    <input
+                      type="range"
+                      aria-label={backtestCopy.monthsInputAria}
+                      min={MIN_MONTHS}
+                      max={MAX_MONTHS}
+                      step={1}
+                      value={paramsMulti.months}
+                      onChange={(e) =>
+                        setParamsMulti((p) => ({
+                          ...p,
+                          months: normalizeIntegerInput(
+                            e.target.value,
+                            BACKTEST_DEFAULTS.COMMON.MONTHS,
+                            MIN_MONTHS,
+                            MAX_MONTHS,
+                          ),
+                        }))
+                      }
+                      className="flex-1 h-2 rounded-full bg-slate-200 dark:bg-white/10 accent-emerald-600"
+                    />
                     <span className="text-sm font-black text-slate-900 dark:text-white w-14">{paramsMulti.months}{t.months}</span>
                   </div>
                 </div>
@@ -765,7 +906,20 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">$ {t.oneTimeAmount}</label>
-                  <input type="number" value={paramsMulti.oneTimeAmount} onChange={(e) => setParamsMulti((p) => ({ ...p, oneTimeAmount: Number(e.target.value) || BACKTEST_DEFAULTS.COMMON.ONE_TIME_AMOUNT_USD }))} className="w-full p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-white font-bold" />
+                  <input
+                    type="number"
+                    aria-label={backtestCopy.amountInputAria}
+                    value={paramsMulti.oneTimeAmount}
+                    onChange={(e) =>
+                      setParamsMulti((p) => ({
+                        ...p,
+                        oneTimeAmount:
+                          Number(e.target.value) ||
+                          BACKTEST_DEFAULTS.COMMON.ONE_TIME_AMOUNT_USD,
+                      }))
+                    }
+                    className="w-full p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-white font-bold"
+                  />
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">{t.feeRate} (%)</label>
@@ -778,8 +932,8 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
               </div>
               <div className="flex gap-3 pt-4">
                 <button type="button" onClick={() => { setStep('strategy'); setStrategyId(null); }} className="px-5 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">{t.cancel}</button>
-                <button type="button" onClick={handleRunBacktest} disabled={isExecuting} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black shadow-lg shadow-emerald-500/30 hover:scale-[1.02] active:scale-[0.98] transition-transform disabled:opacity-60 disabled:cursor-not-allowed">
-                  <Zap size={18} /> {isExecuting ? commonCopy.processing : backtestCopy.startRun}
+                <button type="button" onClick={() => void handleRunBacktest()} disabled={isExecuting} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black shadow-lg shadow-emerald-500/30 hover:scale-[1.02] active:scale-[0.98] transition-transform disabled:opacity-60 disabled:cursor-not-allowed">
+                  <Zap size={18} /> {isExecuting ? backtestCopy.processing : backtestCopy.startRun}
                 </button>
               </div>
             </div>
@@ -795,6 +949,9 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
                     options={stockOptions}
                     onChange={(v) => setParamsNoStopMulti((p) => ({ ...p, stock: v }))}
                     header={t.stock}
+                    infoModalBadgeLabel={commonCopy.notice}
+                    infoModalCloseAriaLabel={commonCopy.closeDialog}
+                    infoModalConfirmLabel={commonCopy.acknowledge}
                   />
                 </div>
                 <div>
@@ -802,11 +959,22 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
                   <div className="flex items-center gap-3">
                     <input
                       type="range"
-                      min={6}
-                      max={24}
+                      aria-label={backtestCopy.monthsInputAria}
+                      min={MIN_MONTHS}
+                      max={MAX_MONTHS}
                       step={1}
                       value={paramsNoStopMulti.months}
-                      onChange={(e) => setParamsNoStopMulti((p) => ({ ...p, months: Number(e.target.value) }))}
+                      onChange={(e) =>
+                        setParamsNoStopMulti((p) => ({
+                          ...p,
+                          months: normalizeIntegerInput(
+                            e.target.value,
+                            BACKTEST_DEFAULTS.COMMON.MONTHS,
+                            MIN_MONTHS,
+                            MAX_MONTHS,
+                          ),
+                        }))
+                      }
                       className="flex-1 h-2 rounded-full bg-slate-200 dark:bg-white/10 accent-emerald-600"
                     />
                     <span className="text-sm font-black text-slate-900 dark:text-white w-14">
@@ -882,8 +1050,16 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
                   </label>
                   <input
                     type="number"
+                    aria-label={backtestCopy.amountInputAria}
                     value={paramsNoStopMulti.oneTimeAmount}
-                    onChange={(e) => setParamsNoStopMulti((p) => ({ ...p, oneTimeAmount: Number(e.target.value) || BACKTEST_DEFAULTS.COMMON.ONE_TIME_AMOUNT_USD }))}
+                    onChange={(e) =>
+                      setParamsNoStopMulti((p) => ({
+                        ...p,
+                        oneTimeAmount:
+                          Number(e.target.value) ||
+                          BACKTEST_DEFAULTS.COMMON.ONE_TIME_AMOUNT_USD,
+                      }))
+                    }
                     className="w-full p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-white font-bold"
                   />
                 </div>
@@ -916,11 +1092,11 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
                 </button>
                 <button
                   type="button"
-                  onClick={handleRunBacktest}
+                  onClick={() => void handleRunBacktest()}
                   disabled={isExecuting}
                   className="flex-1 md:flex-none flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black shadow-lg shadow-emerald-500/30 hover:scale-[1.02] active:scale-[0.98] transition-transform disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <Zap size={18} /> {isExecuting ? commonCopy.processing : backtestCopy.startRun}
+                  <Zap size={18} /> {isExecuting ? backtestCopy.processing : backtestCopy.startRun}
                 </button>
               </div>
             </div>
@@ -983,17 +1159,29 @@ const Backtest: React.FC<BacktestProps> = ({ lang, currentTier }) => {
               <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-white/80 dark:bg-slate-900/90 backdrop-blur-sm pointer-events-none">
                 <div className="pointer-events-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-2xl p-8 shadow-2xl max-w-sm text-center">
                   <Crown size={32} className="mx-auto text-amber-500 mb-3" />
-                  <h4 className="text-lg font-black text-slate-900 dark:text-white mb-2">{t.benchmarkCompare}</h4>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">{t.benchmarkCompareUpgrade}</p>
-                  <button 
-                    type="button" 
+                  <h4 className="text-lg font-black text-slate-900 dark:text-white mb-2">
+                    {backtestCopy.benchmarkCompare}
+                  </h4>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
+                    {backtestCopy.benchmarkCompareUpgrade}
+                  </p>
+                  <button
+                    type="button"
                     onClick={() => {
-                        const pricingTab = document.querySelector('[data-tab="pricing"]');
-                        if (pricingTab instanceof HTMLElement) pricingTab.click();
+                      if (onRequestUpgrade != null) {
+                        onRequestUpgrade();
+                        return;
+                      }
+                      const pricingTab = document.querySelector(
+                        '[data-tab="pricing"]',
+                      );
+                      if (pricingTab instanceof HTMLElement) {
+                        pricingTab.click();
+                      }
                     }}
                     className="w-full py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black shadow-lg hover:scale-[1.02] active:scale-95 transition-all"
                   >
-                    {t.upgradeNow}
+                    {backtestCopy.upgradeNow}
                   </button>
                 </div>
               </div>

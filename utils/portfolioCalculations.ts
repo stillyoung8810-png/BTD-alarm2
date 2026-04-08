@@ -32,13 +32,13 @@ export interface Holdings {
 }
 
 /**
- * 포트폴리오의 보유 내역을 계산합니다 (매수만 고려).
- * 매도 시 실현손익을 역산하여 종목별 realizedPnL에 누적합니다.
+ * 거래 목록만으로 현재 보유 내역을 계산합니다.
+ * [Option A] 훅 계층은 통객체 대신 이 함수만 직접 사용합니다.
  */
-export const calculateHoldings = (portfolio: Portfolio): Holdings[] => {
+export const calculateHoldingsFromTrades = (trades: Trade[]): Holdings[] => {
   const holdingsMap: Record<string, { quantity: number; totalCost: number; realizedPnL: number }> = {};
 
-  portfolio.trades.forEach(trade => {
+  trades.forEach(trade => {
     if (trade.type === 'buy') {
       if (!holdingsMap[trade.stock]) {
         holdingsMap[trade.stock] = { quantity: 0, totalCost: 0, realizedPnL: 0 };
@@ -75,6 +75,14 @@ export const calculateHoldings = (portfolio: Portfolio): Holdings[] => {
     avgPrice: data.quantity > HOLDINGS_QTY_EPSILON ? data.totalCost / data.quantity : 0,
     realizedPnL: roundMoney(data.realizedPnL),
   }));
+};
+
+/**
+ * 포트폴리오의 보유 내역을 계산합니다 (매수만 고려).
+ * 매도 시 실현손익을 역산하여 종목별 realizedPnL에 누적합니다.
+ */
+export const calculateHoldings = (portfolio: Portfolio): Holdings[] => {
+  return calculateHoldingsFromTrades(portfolio.trades);
 };
 
 /**

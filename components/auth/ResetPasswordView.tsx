@@ -1,18 +1,10 @@
-/**
- * 비밀번호 재설정 뷰 (이메일 링크 진입 후 새 비밀번호 입력)
- * Phase 0.3 — AuthModals 서브뷰 분리
- * Phase 3 — 토스에서 TDSTextField, TDSButton 사용
- */
-
 import React from 'react';
 import { Lock } from 'lucide-react';
 import { TDSTextField, TDSButton } from '../tds';
 import type { ResetPasswordViewProps } from './authViewTypes';
 
-const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
-  lang,
-  onClose,
-  onSwitchType,
+function ResetPasswordView({
+  copy,
   newPassword,
   setNewPassword,
   confirmPassword,
@@ -22,29 +14,29 @@ const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
   info,
   handleSubmit,
   isInTossApp,
-}) => {
-  const labelNew = lang === 'ko' ? '새 비밀번호' : 'New Password';
-  const labelConfirm = lang === 'ko' ? '비밀번호 확인' : 'Confirm Password';
-  const submitLabel = loading ? (lang === 'ko' ? '처리 중...' : 'Working...') : (lang === 'ko' ? '비밀번호 변경' : 'Update Password');
+}: ResetPasswordViewProps): React.ReactElement {
+  const submitLabel = loading
+    ? copy.action.processing
+    : copy.action.resetPassword;
 
   if (isInTossApp) {
     return (
       <form onSubmit={handleSubmit} className="space-y-6">
         <TDSTextField
-          label={labelNew}
+          label={copy.field.newPasswordLabel}
           type="password"
           value={newPassword}
           onChange={setNewPassword}
-          placeholder="••••••••"
+          placeholder={copy.field.passwordPlaceholder}
           required
           hasError={!!error}
         />
         <TDSTextField
-          label={labelConfirm}
+          label={copy.field.confirmPasswordLabel}
           type="password"
           value={confirmPassword}
           onChange={setConfirmPassword}
-          placeholder="••••••••"
+          placeholder={copy.field.passwordPlaceholder}
           required
           hasError={!!error}
         />
@@ -64,13 +56,15 @@ const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="space-y-2">
-        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">{labelNew}</label>
+        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+          {copy.field.newPasswordLabel}
+        </label>
         <div className="relative">
           <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
           <input
             type="password"
             required
-            placeholder="••••••••"
+            placeholder={copy.field.passwordPlaceholder}
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             className="w-full p-5 pl-14 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/50"
@@ -78,13 +72,15 @@ const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
         </div>
       </div>
       <div className="space-y-2">
-        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">{labelConfirm}</label>
+        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+          {copy.field.confirmPasswordLabel}
+        </label>
         <div className="relative">
           <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
           <input
             type="password"
             required
-            placeholder="••••••••"
+            placeholder={copy.field.passwordPlaceholder}
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             className="w-full p-5 pl-14 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/50"
@@ -106,6 +102,6 @@ const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
       </button>
     </form>
   );
-};
+}
 
 export default ResetPasswordView;

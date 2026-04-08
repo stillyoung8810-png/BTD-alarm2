@@ -249,6 +249,9 @@ export const I18N = {
     membershipPricingPremiumFeature5: "백테스트 (10회/일)",
     membershipPricingPremiumFeature6: "신규 전략 선공개",
     membershipPricingPremiumFeature7: "VIP 전용 고객 지원",
+    TIER_NAME_FREE: "베이직",
+    TIER_NAME_PRO: "프로",
+    TIER_NAME_PREMIUM: "프리미엄",
   },
   en: {
     dashboard: "Dashboard",
@@ -422,5 +425,8 @@ export const I18N = {
     membershipPricingPremiumFeature5: "Backtesting (10/day)",
     membershipPricingPremiumFeature6: "Early access to strategies",
     membershipPricingPremiumFeature7: "VIP priority support",
+    TIER_NAME_FREE: "FREE",
+    TIER_NAME_PRO: "PRO",
+    TIER_NAME_PREMIUM: "PREMIUM",
   }
 };

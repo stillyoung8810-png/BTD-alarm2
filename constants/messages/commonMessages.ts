@@ -4,6 +4,9 @@ export type CommonMessageKey =
   | 'save'
   | 'processing'
   | 'close'
+  | 'closeDialog'
+  | 'acknowledge'
+  | 'notice'
   | 'portfolioName'
   | 'dailyBuyAmount'
   | 'feeRatePercent'
@@ -28,6 +31,9 @@ export interface CommonMessageSet {
   save: string;
   processing: string;
   close: string;
+  closeDialog: string;
+  acknowledge: string;
+  notice: string;
   portfolioName: string;
   dailyBuyAmount: string;
   feeRatePercent: string;
@@ -54,6 +60,9 @@ export const COMMON_MESSAGES: Record<AppLang, CommonMessageSet> = {
     save: '저장하기',
     processing: '처리 중…',
     close: '닫기',
+    closeDialog: '대화상자 닫기',
+    acknowledge: '확인',
+    notice: '안내',
     portfolioName: '포트폴리오 이름',
     dailyBuyAmount: '일매수 금액',
     feeRatePercent: '수수료율(%)',
@@ -82,6 +91,9 @@ export const COMMON_MESSAGES: Record<AppLang, CommonMessageSet> = {
     save: 'Save',
     processing: 'Processing…',
     close: 'Close',
+    closeDialog: 'Close dialog',
+    acknowledge: 'OK',
+    notice: 'Notice',
     portfolioName: 'Portfolio Name',
     dailyBuyAmount: 'Daily Buy Amount',
     feeRatePercent: 'Fee Rate (%)',
@@ -110,6 +122,15 @@ export const COMMON_MESSAGES: Record<AppLang, CommonMessageSet> = {
   },
 };
 
+const COMMON_MESSAGE_CACHE = new Map<AppLang, CommonMessageSet>();
+
 export function getCommonMessages(lang: AppLang): CommonMessageSet {
-  return COMMON_MESSAGES[lang];
+  const cached = COMMON_MESSAGE_CACHE.get(lang);
+  if (cached != null) {
+    return cached;
+  }
+
+  const messages = COMMON_MESSAGES[lang];
+  COMMON_MESSAGE_CACHE.set(lang, messages);
+  return messages;
 }

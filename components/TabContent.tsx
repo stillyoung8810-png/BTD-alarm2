@@ -54,6 +54,7 @@ export interface TabContentProps {
   onClearHistory: () => Promise<void>;
   onSelectCheckoutPlan: (planId: 'pro' | 'premium') => void;
   onBackToDashboard: (hash: string) => void;
+  onOpenPricingTab: () => void;
 }
 
 const SuspenseFallback = React.memo(({ message }: { message: string }) => (
@@ -92,6 +93,7 @@ const TabContentComponent: React.FC<TabContentProps> = (props) => {
     onClearHistory,
     onSelectCheckoutPlan,
     onBackToDashboard,
+    onOpenPricingTab,
   } = props;
 
   const copy = APP_SHELL_MESSAGES[lang];
@@ -171,7 +173,11 @@ const TabContentComponent: React.FC<TabContentProps> = (props) => {
         <React.Suspense
           fallback={<SuspenseFallback message={copy.loadingBacktest} />}
         >
-          <Backtest lang={lang} currentTier={paidTier} />
+          <Backtest
+            lang={lang}
+            currentTier={paidTier}
+            onRequestUpgrade={onOpenPricingTab}
+          />
         </React.Suspense>
       );
 

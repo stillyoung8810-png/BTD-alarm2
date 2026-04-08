@@ -1,82 +1,78 @@
-import { useRef, useCallback } from 'react';
-import { supabase } from '../services/supabase';
-import { parseDeviceInfo } from '../utils/deviceInfo';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { saveUserFcmTokenSafe } from '../services/firebaseTokenService';
+import type { ServiceErrorCode } from '../services/serviceUtils';
 import { isTossApp } from '../services/tossAppBridge';
+import { parseDeviceInfo } from '../utils/deviceInfo';
+import { useMutexAction } from './useMutexAction';
 
-/**
- * FCM 토큰 저장 로직 훅.
- * user당 중복 호출 방지, 토스 앱 환경에서는 no-op.
- */
-export function useFCMToken() {
-  const saveFCMTokenInProgressRef = useRef<string | null>(null);
+export interface UseFCMTokenResult {
+  saveFCMToken: (userId: string) => Promise<void>;
+  lastErrorCode: ServiceErrorCode | null;
+  /** 실패 1회마다 증가 — 호출부가 토스트 등 1회 알림에만 사용 */
+  fcmSaveFailureTick: number;
+  isSaveFcmTokenExecuting: boolean;
+}
 
-  const saveFCMToken = useCallback(async (userId: string): Promise<void> => {
+export function useFCMToken(): UseFCMTokenResult {
+  const isMountedRef = useRef(true);
+  const [lastErrorCode, setLastErrorCode] = useState<ServiceErrorCode | null>(null);
+  const [fcmSaveFailureTick, setFcmSaveFailureTick] = useState(0);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const persistUserFcmTokenAction = useCallback(async (userId: string) => {
     if (typeof window === 'undefined') {
-      console.warn('[FCM] saveFCMToken called on non-browser environment. Skipping.');
       return;
     }
+
     if (isTossApp()) {
-      saveFCMTokenInProgressRef.current = null;
       return;
     }
-    if (saveFCMTokenInProgressRef.current === userId) {
-      console.log('[FCM] saveFCMToken already in progress.');
+
+    const trimmedUserId = userId.trim();
+    if (trimmedUserId.length === 0) {
+      if (isMountedRef.current) {
+        setLastErrorCode('INVALID_INPUT');
+        setFcmSaveFailureTick((tick) => tick + 1);
+      }
       return;
     }
-    saveFCMTokenInProgressRef.current = userId;
-    console.log('[FCM] saveFCMToken called.');
 
-    try {
-      const { getNotificationPermission, requestForToken } = await import('../services/firebase');
-      const permission = getNotificationPermission();
-      console.log('[FCM] Current Notification.permission:', permission);
+    if (isMountedRef.current) {
+      setLastErrorCode(null);
+    }
 
-      if (permission === 'denied') {
-        console.warn('[FCM] Notification permission was previously denied. Skipping FCM token request.');
-        return;
-      }
+    const result = await saveUserFcmTokenSafe(trimmedUserId, parseDeviceInfo());
 
-      console.log('[FCM] Requesting FCM token via requestForToken()...');
-      const token = await requestForToken();
-      console.log('[FCM] requestForToken() resolved. Token exists:', !!token);
+    if (!isMountedRef.current) {
+      return;
+    }
 
-      if (!token) {
-        console.warn('[FCM] Token is null/undefined. Aborting save.');
-        return;
-      }
-
-      const deviceInfo = parseDeviceInfo();
-      console.log('[FCM] Parsed device info:', deviceInfo);
-
-      console.log('[FCM] Upserting token into user_devices...');
-      const { error } = await supabase
-        .from('user_devices')
-        .upsert(
-          {
-            user_id: userId,
-            fcm_token: token,
-            device_type: deviceInfo.deviceType,
-            device_name: deviceInfo.deviceName,
-            user_agent: deviceInfo.userAgent,
-            is_active: true,
-          },
-          {
-            onConflict: 'user_id,fcm_token',
-            ignoreDuplicates: false,
-          }
-        );
-
-      if (error) {
-        console.error('[FCM] Failed to save FCM token:', error);
-      } else {
-        console.log('[FCM] FCM token saved successfully');
-      }
-    } catch (error) {
-      console.error('[FCM] Error saving FCM token:', error);
-    } finally {
-      saveFCMTokenInProgressRef.current = null;
+    if (!result.ok) {
+      setLastErrorCode(result.error.code);
+      setFcmSaveFailureTick((tick) => tick + 1);
     }
   }, []);
 
-  return { saveFCMToken };
+  const { run: runSaveFcmToken, isExecuting: isSaveFcmTokenExecuting } =
+    useMutexAction(persistUserFcmTokenAction);
+
+  const saveFCMToken = useCallback(
+    async (userId: string): Promise<void> => {
+      await runSaveFcmToken(userId);
+    },
+    [runSaveFcmToken],
+  );
+
+  return {
+    saveFCMToken,
+    lastErrorCode,
+    fcmSaveFailureTick,
+    isSaveFcmTokenExecuting,
+  };
 }

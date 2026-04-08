@@ -1,76 +1,154 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Portfolio } from '../types';
-import { fetchStockPrices } from '../services/stockService';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { showErrorToast } from '../components/tds-adapter/showErrorToast';
+import { APP_SHELL_MESSAGES } from '../constants/messages/appShellMessages';
+import type { AppLang, Portfolio } from '../types';
+import { fetchLatestStockSnapshot } from '../services/stockService';
 import {
   calcNoStopCurrentRound,
   calcNoStopMultiSplitOrders,
   type NoStopMultiSplitExecutionData,
+  type NoStopMultiSplitParams,
 } from '../utils/noStopMultiSplitCalc';
-import type { TradeInput } from '../utils/multiSplitCalc';
+import { areStrictPositiveFiniteScalars } from '../utils/financialScalarGuards';
+import {
+  DEFAULT_PORTFOLIO_FEE_RATE,
+  type NoStopMultiSplitNetworkSnapshot,
+  toTradeInputsForMultiSplit,
+} from './multiSplitExecutionShared';
 
 export interface NoStopMultiSplitHookResult {
   currentRound: number;
   executionData: NoStopMultiSplitExecutionData | null;
 }
 
-export function useNoStopMultiSplitExecution(portfolio: Portfolio): NoStopMultiSplitHookResult {
-  const isNoStopMultiSplit = !!portfolio.strategy.noStopMultiSplit;
+export function useNoStopMultiSplitExecution(
+  portfolio: Portfolio,
+  lang: AppLang,
+): NoStopMultiSplitHookResult {
+  const noStopStrategy = portfolio.strategy.noStopMultiSplit ?? null;
+  const isNoStopMultiSplit = noStopStrategy != null;
+  const targetStock = noStopStrategy?.targetStock ?? '';
+  const lowLocBudgetRatio = noStopStrategy?.lowLocBudgetRatio ?? 0;
+  const highLocPremiumPct = noStopStrategy?.highLocPremiumPct ?? 0;
+  const takeProfitPct = noStopStrategy?.takeProfitPct ?? 0;
+  const totalSplitCount = noStopStrategy?.totalSplitCount ?? 0;
+  const dailyBuyAmount = portfolio.dailyBuyAmount ?? 0;
+  const isDailyBuyAmountValid = areStrictPositiveFiniteScalars(dailyBuyAmount);
+  const tradeInputs = useMemo(
+    () => toTradeInputsForMultiSplit(portfolio.trades),
+    [portfolio.trades],
+  );
+  const currentRound =
+    !isNoStopMultiSplit || !isDailyBuyAmountValid
+      ? 0
+      : calcNoStopCurrentRound(tradeInputs, dailyBuyAmount);
+  const networkErrorMsg = APP_SHELL_MESSAGES[lang].dailySummaryNetworkError;
+  const networkErrorMsgRef = useRef(networkErrorMsg);
+  const requestIdRef = useRef(0);
+  const [networkSnapshot, setNetworkSnapshot] =
+    useState<NoStopMultiSplitNetworkSnapshot | null>(null);
 
-  const currentRound = useMemo(() => {
-    if (!isNoStopMultiSplit) return 0;
-    return calcNoStopCurrentRound(portfolio.trades as TradeInput[], portfolio.dailyBuyAmount);
-  }, [isNoStopMultiSplit, portfolio.trades, portfolio.dailyBuyAmount]);
-
-  const [executionData, setExecutionData] = useState<NoStopMultiSplitExecutionData | null>(null);
+  useLayoutEffect(() => {
+    networkErrorMsgRef.current = networkErrorMsg;
+  }, [networkErrorMsg]);
 
   useEffect(() => {
     if (!isNoStopMultiSplit) {
-      setExecutionData(null);
+      requestIdRef.current += 1;
+      setNetworkSnapshot((previous) => (previous !== null ? null : previous));
       return;
     }
 
-    let cancelled = false;
+    setNetworkSnapshot((previous) => (previous !== null ? null : previous));
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
 
-    const run = async () => {
-      const strategy = portfolio.strategy.noStopMultiSplit!;
-      let currentPrice = 0;
-
+    const runFetch = async () => {
       try {
-        const prices = await fetchStockPrices([strategy.targetStock]);
-        if (cancelled) return;
-        currentPrice = prices[strategy.targetStock]?.price ?? 0;
-      } catch (err) {
-        console.warn('[useNoStopMultiSplitExecution] fetchStockPrices 실패:', strategy.targetStock, err);
-        if (cancelled) return;
+        const quoteResult = await fetchLatestStockSnapshot(targetStock);
+        if (requestIdRef.current !== requestId) {
+          return;
+        }
+
+        const isQuoteInvalid =
+          quoteResult.ok &&
+          (!Number.isFinite(quoteResult.data.price) || quoteResult.data.price <= 0);
+
+        if (!quoteResult.ok || isQuoteInvalid) {
+          if (requestIdRef.current !== requestId) {
+            return;
+          }
+          setNetworkSnapshot((previous) => (previous !== null ? null : previous));
+          if (requestIdRef.current !== requestId) {
+            return;
+          }
+          showErrorToast(networkErrorMsgRef.current);
+          return;
+        }
+
+        if (requestIdRef.current !== requestId) {
+          return;
+        }
+
+        setNetworkSnapshot({
+          currentPrice: quoteResult.data.price,
+        });
+      } catch {
+        if (requestIdRef.current !== requestId) {
+          return;
+        }
+        setNetworkSnapshot((previous) => (previous !== null ? null : previous));
+        if (requestIdRef.current !== requestId) {
+          return;
+        }
+        showErrorToast(networkErrorMsgRef.current);
       }
-
-      const nextExecution = calcNoStopMultiSplitOrders({
-        trades: portfolio.trades as TradeInput[],
-        oneTimeAmount: portfolio.dailyBuyAmount,
-        feeRate: portfolio.feeRate || 0.25,
-        currentPrice,
-        strategy,
-      });
-
-      if (!cancelled) setExecutionData(nextExecution);
     };
 
-    run();
+    void runFetch();
 
     return () => {
-      cancelled = true;
+      requestIdRef.current += 1;
     };
+  }, [targetStock]);
+
+  const executionData = useMemo(() => {
+    if (
+      !isNoStopMultiSplit ||
+      networkSnapshot == null ||
+      !isDailyBuyAmountValid ||
+      totalSplitCount === 0
+    ) {
+      return null;
+    }
+
+    const safeStrategyObj: NoStopMultiSplitParams = {
+      targetStock,
+      lowLocBudgetRatio,
+      highLocPremiumPct,
+      takeProfitPct,
+      totalSplitCount,
+    };
+
+    return calcNoStopMultiSplitOrders({
+      trades: tradeInputs,
+      oneTimeAmount: dailyBuyAmount,
+      feeRate: portfolio.feeRate ?? DEFAULT_PORTFOLIO_FEE_RATE,
+      currentPrice: networkSnapshot.currentPrice,
+      strategy: safeStrategyObj,
+    });
   }, [
+    dailyBuyAmount,
+    highLocPremiumPct,
+    isDailyBuyAmountValid,
     isNoStopMultiSplit,
-    portfolio.id,
-    portfolio.trades,
-    portfolio.dailyBuyAmount,
+    lowLocBudgetRatio,
+    networkSnapshot,
     portfolio.feeRate,
-    portfolio.strategy.noStopMultiSplit?.targetStock,
-    portfolio.strategy.noStopMultiSplit?.lowLocBudgetRatio,
-    portfolio.strategy.noStopMultiSplit?.highLocPremiumPct,
-    portfolio.strategy.noStopMultiSplit?.takeProfitPct,
-    portfolio.strategy.noStopMultiSplit?.totalSplitCount,
+    targetStock,
+    takeProfitPct,
+    totalSplitCount,
+    tradeInputs,
   ]);
 
   return { currentRound, executionData };

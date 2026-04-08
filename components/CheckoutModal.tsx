@@ -22,11 +22,11 @@ import { MembershipConfig } from '../constants/membership';
 import {
   PAYMENT_CHECKOUT_MESSAGES,
   PAYMENT_CHECKOUT_REFUND_EMAIL,
-  type PaymentCheckoutMessageSet,
-  type TossIapErrorCode,
 } from '../constants/paymentCheckoutMessages';
 import { TDS_DIALOG_MESSAGES } from '../constants/tdsDialogMessages';
 import { TdsAlertDialog } from './tds-adapter/TdsAlertDialog';
+import { getPricingMessages } from '../constants/messages/pricingMessages';
+import { showErrorToast } from './tds-adapter/showErrorToast';
 
 // ---------------------------------------------------------------------------
 // 플랜 카드 스타일 (시각만; 카피는 paymentCheckoutMessages)
@@ -42,21 +42,6 @@ const PLAN_STYLES = {
     total: 'text-blue-600 dark:text-blue-400',
   },
 } as const;
-
-function getTossIapAlertMessage(
-  messages: PaymentCheckoutMessageSet,
-  errorCode: TossIapErrorCode | undefined,
-  rawMessage: string | undefined,
-): string {
-  if (!errorCode) {
-    return messages.TOSS_IAP_ERROR_MESSAGES.UNKNOWN;
-  }
-  const mapped = messages.TOSS_IAP_ERROR_MESSAGES[errorCode];
-  if (mapped) {
-    return mapped;
-  }
-  return messages.FAILED(rawMessage ?? messages.UNKNOWN);
-}
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -86,6 +71,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
   onPaymentSuccess,
 }) => {
   const messages = PAYMENT_CHECKOUT_MESSAGES[lang];
+  const pricingCheckoutCopy = getPricingMessages(lang).checkout;
   const tdsActions = TDS_DIALOG_MESSAGES[lang]?.actions;
   const checkoutNoticeTitle =
     TDS_DIALOG_MESSAGES[lang]?.checkout?.resultNoticeTitle ?? '';
@@ -152,7 +138,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
     return { ok: true as const };
   }, []);
 
-  const handlePay = useCallback(async () => {
+  const handlePay = useCallback(async (): Promise<void> => {
     if (isExecutingRef.current) {
       return;
     }
@@ -164,7 +150,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
     isExecutingRef.current = true;
     setIsProcessing(true);
-    const msgs = PAYMENT_CHECKOUT_MESSAGES[lang];
+
+    let isUnmounted = false;
 
     try {
       const outcome = await Promise.resolve(handleTossIapPay());
@@ -174,30 +161,41 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
       }
 
       if (outcome.ok) {
-        openCheckoutNotice(msgs.SUCCESS, 'success_dismiss');
+        onPaymentSuccess?.();
+        isUnmounted = true;
+        onClose();
         return;
       }
 
-      openCheckoutNotice(
-        getTossIapAlertMessage(
-          msgs,
-          outcome.errorCode as TossIapErrorCode | undefined,
-          outcome.rawMessage,
-        ),
-        'none',
+      const errorCode = outcome.errorCode;
+      console.error(
+        '[CheckoutModal] payment failed:',
+        errorCode,
+        outcome.rawMessage,
       );
+
+      showErrorToast(pricingCheckoutCopy.paymentFailed);
     } catch (error) {
-      console.error('[Payment Error]', error);
-      openCheckoutNotice(msgs.PROCESSING_ERROR, 'none');
+      console.error('[CheckoutModal] unhandled rejection:', error);
+
+      showErrorToast(pricingCheckoutCopy.systemError);
+      isUnmounted = true;
+      onClose();
     } finally {
       isExecutingRef.current = false;
-      setIsProcessing(false);
+      if (!isUnmounted) {
+        setIsProcessing(false);
+      }
     }
   }, [
     isInvalidPrice,
     lang,
     handleTossIapPay,
     openCheckoutNotice,
+    onClose,
+    onPaymentSuccess,
+    pricingCheckoutCopy.paymentFailed,
+    pricingCheckoutCopy.systemError,
   ]);
 
   if (!isOpen) {
@@ -317,9 +315,9 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
           fullWidth
           loading={isProcessing}
           disabled={isProcessing || isInvalidPrice}
-          onClick={handlePay}
+          onClick={() => void handlePay()}
         >
-          {isProcessing ? messages.PROCESSING : messages.PAY}
+          {isProcessing ? pricingCheckoutCopy.processing : pricingCheckoutCopy.pay}
         </TDSButton>
 
         <div className="text-center space-y-1 pt-2">

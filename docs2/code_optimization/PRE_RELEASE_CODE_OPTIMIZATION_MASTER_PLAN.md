@@ -5,6 +5,8 @@
 
 이 문서는 출시 전 **코드 최적화·리팩토링·정리** 작업을 팀(또는 개인)이 동일한 기준으로 나누고, 머지 전 검증까지 일관되게 수행하기 위한 **실무 가이드**입니다. GitHub Wiki·Notion 등에 그대로 옮겨 사용할 수 있도록 표와 체크리스트 중심으로 구성했습니다.
 
+**B3 훅 레이어(Phase B):** `docs2/PHASE_B3_HOOKS_SIMULATION.md`는 회장님 지시에 따라 **[Option A] 기조로 최종 채택·동결**되었습니다. Step B3 구현·리뷰 시 해당 문서 **`§0.0`·스니펫·§4 체크리스트**를 **엄격히 준수**합니다.
+
 ---
 
 ## 1. 문서의 목적 및 기본 원칙
@@ -111,7 +113,9 @@
 
 3. **Rule 1 & Rule 6 (페이로드 무결 일치)**  
    - 검증기에 넣은 **`trimmedName`**, **`normalizedFeeRate`** 등 **정제 완료 값**은, DB에 쓰이는 문자열·숫자와 **100% 동일**해야 한다. 검증 후 **재-trim·재-round·암묵적 보정**으로 저장 값이 달라지는 경로를 **금지**한다.  
-   - 생성·수정·모달 등 **데이터가 들어오는 모든 입구**는 동일 파이프라인을 따른다.
+   - 생성·수정·모달 등 **데이터가 들어오는 모든 입구**는 동일 파이프라인을 따른다.  
+   - **VR 밴드 마법사:** `buildValidationInput` → `validatePortfolioSetupInput`으로 넘기는 **`withdrawalAmount`** 는 **`vrMode === 'withdraw'`일 때만** `roundMoney(Math.abs(deltaCash))` 로 채우고, **`accumulate`·`lump_sum`은 `0`** 으로 둔다(적립을 “출금액” 검증에 태우지 않음). 저장용 전략 조립(`buildVrBandStrategy` 등)과 검증 DTO의 의미를 혼동하지 않는다. 구현 기준: `src/components/StrategyCreator/utils.ts`.
+   - **단일 종목 전략 검증 계약:** `multi_split`·`no_stop_multi_split`·`vr_band`의 **`maShortPeriod` / `maLongPeriod`** 는 사용자 `wizardState.maInterval`이 아니라, 실제 조립 경로 `buildSingleStockStrategyBase(...)`가 쓰는 **`STRATEGY_DEFAULTS.MA_SHORT_PERIOD` / `STRATEGY_DEFAULTS.MA_LONG_PERIOD`** 를 그대로 검증 DTO에 넣는다. 검증기와 저장 조립이 서로 다른 MA 기준을 보면 정상 포트폴리오가 거짓 에러로 저장 차단될 수 있으므로 금지한다. 구현 기준: `src/components/StrategyCreator/utils.ts`.
 
 **확정(비가역) — 탭 라우팅 `default` / TS 빌드와 런타임 UX 분리**
 
@@ -132,7 +136,7 @@
 | **중점 확인** | 기존 **`vitest`**·`test:server`가 있으면 그 경로부터; `useEffect` 의존성·에러 삼키기 여부; 금액·수량 **0·NaN·divide-by-zero** |
 | **QA 힌트** | 이 페이즈 PR에는 **도메인별 최소 시나리오(섹션 4)** 를 반드시 첨부 |
 
-**진행 원칙(핀포인트):** Phase B는 기존 시스템의 **기능·로직에 직접 파급**될 수 있으므로, **한 번에 레이어 전체를 묶지 않고** 아래 **Step B1 → B4** 순으로 **작은 PR 단위**로 세분화해 진행한다. (위험도가 낮은 **순수 계산·경계**부터, **동시성·뮤텍스**는 마지막에 집중한다.)
+**진행 원칙(핀포인트):** Phase B는 기존 시스템의 **기능·로직에 직접 파급**될 수 있으므로, **한 번에 레이어 전체를 묶지 않고** 아래 **Step B1 → B4** 순으로 **작은 PR 단위**로 세분화해 진행한다. (위험도가 낮은 **순수 계산·경계**부터, **동시성·뮤텍스**는 마지막에 집중한다.) **Step B3(`hooks/`)** 는 **`docs2/PHASE_B3_HOOKS_SIMULATION.md` §0.0 [Option A] 동결**과 **해당 문서 §4.0 체크리스트**를 구현·리뷰 계약으로 삼는다.
 
 #### Step B1 — 순수 도메인 수학 및 유틸리티 (위험도: 하)
 
@@ -156,7 +160,7 @@
 |----|------|
 | **타겟** | `hooks/` (예: `usePortfolios`, `useAuth` 등 데이터를 화면에 연결하는 훅) |
 | **목표** | 계산 로직(B1)과 통신 로직(B2)이 안정된 뒤, 이를 조립해 화면에 공급하는 **파이프라인**을 정리한다. |
-| **핵심 적용 룰** | **Rule 2** 및 **Rule 10 (React 안티패턴):** 무의미한 `useMemo` / `useCallback`을 제거하고, 의존성 배열(Dependency Array)의 누락을 메워 메모리 누수·무한 렌더링을 차단한다. **SRP(단일 책임 원칙)** 에 따라 UI 로직과 데이터 로직을 분리한다. |
+| **핵심 적용 룰** | **`docs2/PHASE_B3_HOOKS_SIMULATION.md` 전역은 [Option A] 기조로 동결(Freeze)** — **`§0.0` 참조**; §3.8은 하위 동결 블록. 변경 시 해당 시뮬 문서 개정·아키텍처 리뷰를 선행한다. **Rule 2** 및 **Rule 10 (React 안티패턴):** 무의미한 `useMemo` / `useCallback`을 제거하고, 의존성 배열(Dependency Array)의 누락을 메워 메모리 누수·무한 렌더링을 차단한다. **SRP(단일 책임 원칙)** 에 따라 UI 로직과 데이터 로직을 분리한다. 전략 실행 훅(`useMultiSplitExecution` 등)의 비동기 조립 기조는 **동일 문서 §3.8**과 정합시킨다: **I/O(`runFetch`)와 동기 B1(CPU) 분리**·**`networkSnapshot`은 양 축(최근 거래일+시세) `ok`일 때만 커밋**·범용 토스트 SSOT·회장님 최종 **(1-B)** 비정상 `price` 시 **functional 스냅샷 무효화 + 범용 토스트**·**(2-A)** 예외 시 동일(과거 스냅샷 잔존 금지) + **effect cleanup으로 `requestIdRef` 무효화**(Rule 2) 및 **기본 수수료율 상수화**(Rule 8). 동일 시뮬의 **§3.0**은 **`reduceServiceQueryState` 실패 시 `previous.data` 보존**(WSOD 방지), **§3.2·§3.6**은 **`ServiceResult` 실패 시 `data` 맹신 금지**(`setPortfolios`/`setUserProfile` 조건부; **`useAuth`는 프로필 fetch 실패 시 `EMPTY_PROFILE`로 비움 확정**; **`syncUserProfileClientFactsSafe` 실패 시 `dailySummaryNetworkError` 범용 토스트**로 Silent Failure·Rule 11 위반 방지)·**쿼리·프로필 비동기 ref cleanup**으로 언마운트 `setState`를 차단하고, **§3.8**은 **`portfolio`·`multiSplit`/`strategy` 통 객체를 I/O effect deps에 두지 않으며** **`tradeInputs`·`dailyBuyAmount`·`totalSplitCount`·`isTargetReturnRateValid`·`isDailyBuyAmountValid`·holdings 파생도 I/O deps에 넣지 않음**(분할·예산·수익률 변경 시 시세 스팸 방지)·**`calculateHoldingsFromTrades(trades ?? EMPTY_TRADES)` + `useMemo([trades, targetStock])`로 `avgPrice`/`currentQuantity` 파생**(Rule 10·Stale 방지; B1 `portfolioCalculations`에 함수 추가)·**Rule 1 `isDailyBuyAmountValid`·`isTargetReturnRateValid`는 `areStrictPositiveFiniteScalars`(`utils/financialScalarGuards`)로 산출·파생·`calcT`/`getPhase`만**·**`targetStock`은 포트폴리오 생성 시 필수(도메인 SSOT)·§3.8 훅에서 null/`trim` 중복 방어 생략**·**`isQuoteInvalid`+단일 `showErrorToast`로 Double Toast 금지**·**Rule 11:** `showErrorToast` **직전** `requestId` **재검증**(종목 연속 변경 시 **옛 요청 토스트 억제**)·**`toTradeInputsForMultiSplit` nullish/비배열/빈 배열 시 `EMPTY_TRADE_INPUTS` 공용 참조**·**I/O deps는 `targetStock`만**·**§3.8 `networkErrorMsg`는 `APP_SHELL_MESSAGES[lang].dailySummaryNetworkError` 단독(데드 `?.`/`??` 폴백 금지)·즉시 평가(blind `useMemo` 금지)·`networkErrorMsgRef`는 `useLayoutEffect([networkErrorMsg])`에서만 갱신(렌더 페이즈 `ref.current` 대입 금지·Rule 2)**·**현장 동일 키 직접 조회 병행 가능**·**`lang`/`networkErrorMsg`를 I/O `useEffect` deps에 넣지 않음**·B1 조립은 **`networkSnapshot` 기반 파생 `useMemo`**·**`safeStrategyObj: MultiSplitParams` 3필드 핀셋**(통 객체 전달 금지)·**`totalSplitCount===0`은 CPU·파생·`getPhase` 입구 차단**·**`isInQuarterModeByT`는 `multiSplitPhase === 'quarter'`로 `getPhase` SSOT와 정합**(복사 부등식·`Number.EPSILON`만으로 정수 `a` 경계 보강하는 안은 비채택)·**`calcT`/`getPhase`는 blind `useMemo` 없이 즉시 평가**·**`tradeInputs` 단일 `useMemo([trades])`로 어댑터 DRY**·**`Trade[]`→B1은 `toTradeInputsForMultiSplit`(`as`·B1 시그니처 Option B 금지)** 를 따르며, **§3.12**는 **blind `useMemo` 제거**로 Rule 2와 정합시킨다. |
 
 #### Step B4 — 동시성 통제 및 뮤텍스 (위험도: 최상)
 
@@ -165,6 +169,10 @@
 | **타겟** | `hooks/` 내 **모든 데이터 변경(Mutation) 함수** (예: 포트폴리오 생성, 주식 주문, 결제 승인) |
 | **목표** | 사용자의 연속 입력·네트워크 지연으로 인한 **중복 처리**를 물리적으로 차단한다. |
 | **핵심 적용 룰** | **Rule 11 (One-click Lock):** 버튼 `disabled`만으로는 부족할 수 있으므로, **1-tick 단위**의 중복 네트워크 요청을 막는 **동기식 `useRef` 뮤텍스**를 모든 쓰기 작업에 이식한다. (구현·네이밍은 Phase A 표의 **`hooks/useMutexAction`** 및 관련 시뮬 문서와 정합시킨다.) |
+
+> **B4 UI 오케스트레이션(Step 2) — 레포 정본 vs 시뮬 스니펫:** `docs2/PHASE_B4_UI_COMPONENTS_SIMULATION.md` **§3.1.2** 에 **경로(`src/hooks/usePortfolioUiCommands`)**, **`onSave` vs `saveCommand`/`closeCommand`**, **B3에서 command·`isExecuting` 노출 확장**에 대한 SSOT 보정을 둡니다. §3.1 발췌 코드는 의도 참조용이며 파일·prop 이름이 1:1로 맞지 않을 수 있습니다.
+
+> **B4 — `AuthModalCoordinator` WSOD 방어 (Rule 6·7):** `TDS_DIALOG_MESSAGES[lang]`에 대해 **맹목적 하위 접근 금지**. 확인 다이얼로그 라벨은 `TDS_DIALOG_MESSAGES[lang]?.actions ?? TDS_DIALOG_MESSAGES.ko.actions`, 계정 삭제 등 세션 토큰 공백 시 `throw` 메시지는 `TDS_DIALOG_MESSAGES[lang]?.auth?.sessionExpiredBody ?? TDS_DIALOG_MESSAGES.ko.auth.sessionExpiredBody`처럼 **`ko` 정본 폴백**으로 맞춘다. 시뮬 전문은 `docs2/PHASE_B4_AS_IS_SNAPSHOT.md`의 `components/auth/AuthModalCoordinator.tsx` 블록과 동기화한다.
 
 **세부 분류(요약):** B1 `utils`(순수 계산·포맷) → B2 `services`(외부 I/O·타입 경계) → B3 `hooks`(상태·효과·파이프라인) → B4 `hooks` 내 Mutation(뮤텍스·중복 제출 방지)
 
@@ -179,7 +187,18 @@
 | **중점 확인** | 워크스페이스 규칙: 하드코딩 문구·A11y·중첩 삼항 등; 토스에서만 타는 분기 재확인 |
 | **QA 힌트** | **해당 도메인 체크리스트 전부** + 토스 스모크 1회 |
 
-**세부 분류(러프):** C1 인증·프로필 / C2 대시보드·포트폴리오·모달군 / C3 VR·전략 폼 / C4 히스토리·정산 / C5 백테스트 / C6 랜딩·멤버십 / C7 광고·프리로드 / C8 TDS·토스트 공통
+**세부 분류(러프):** C1 인증·프로필 / C2 대시보드·포트폴리오·모달군 / C3 VR·전략 폼 / C4 히스토리·정산 / C5 백테스트 / C6 랜딩·멤버십 / C7 광고·프리로드 / C8 TDS·토스트 공통 / **C10 중앙 금융 검증 엔진 통합**
+
+#### Step C10 — 중앙 금융 검증 엔진 통합 (Safe Parse 패턴) [위험도: 중]
+
+| 축 | 내용 |
+|----|------|
+| **범위** | B1 코어의 금융 검증 SSOT(통합 목표 모듈 예: `utils/financialValidation.ts` — 구현 시 기존 `validateFinancialArgs` 등이 위치한 파일을 흡수·이관) 및 이를 참조하는 모든 `hooks/` (B3) |
+| **목표** | B1의 `validateFinancialArgs`(Throw형)와 B3의 `areStrictPositiveFiniteScalars`(Boolean형)를 **단일 엔진**으로 통합하여 비즈니스 로직의 중복(DRY 위반)을 제거한다. |
+| **핵심 적용 룰** | **Safe Parse 패턴:** 단일 엔진 내에서 `mode: 'strict' \| 'safe'` 옵션을 제공하여, 코어 계산 시에는 에러를 던지고 UI 가드 시에는 불리언을 반환하도록 개조한다. |
+| **QA 힌트** | 엔진 통합 후 기존 다분할/쿼터 매매 계산 결과가 1원도 틀리지 않는지(Regression) 전수 검증. |
+
+> **현행 결정(B3 범위 고정):** Phase B3 설계·구현 단계에서는 `areStrictPositiveFiniteScalars`(`utils/financialScalarGuards`)를 **의도된 임시 SSOT**로 **유지**한다. `validateFinancialArgs` 계열과의 **단일 엔진 통합은 Step C10까지 연기**하며, 통합 착수 시 **`docs2/PHASE_B3_HOOKS_SIMULATION.md` §5.1** 및 B1 검증 모듈 계약을 **함께 개정**한다.
 
 ---
 
@@ -261,6 +280,7 @@
 
 #### 대시보드·포트폴리오·VR·알람·거래
 
+- [ ] **`hooks/`·B3 PR인 경우:** `docs2/PHASE_B3_HOOKS_SIMULATION.md` **§0.0 [Option A] 동결** — 전용 어댑터·**`EMPTY_TRADE_INPUTS`·`areStrictPositiveFiniteScalars`**·§3.8 **네트워크 스냅샷·I/O/CPU 분리**·**`APP_SHELL_MESSAGES[lang].dailySummaryNetworkError` 단독(§3.8 데드 폴백 금지)**·**`targetStock` 도메인 SSOT(훅 내부 null/`trim` 중복 방어 생략)**·**`networkErrorMsgRef`는 `useLayoutEffect`로만 갱신(렌더 바디 ref 변이 금지)**·1-B/2-A·`dailySummaryNetworkError` SSOT·Silent Failure 없음·§4.0 검증 항목을 위반하지 않았는가.
 - [ ] 포트폴리오 목록 로드·생성·수정·삭제(권한 내)가 된다. *(A3 PR인 경우: **Option B** 파이프라인 — UI 정제·`validatePortfolioSetupInput`·페이로드 일치·훅은 통신만 — 이 깨지지 않았는지 확인.)*
 - [ ] 상세 모달·퀵 입력·체결·AI 입력(해당 티어) 중 PR에서 수정한 경로만큼 실행한다.
 - [ ] VR 관련 화면/저장이 된다.

@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { AppLang, Portfolio, Trade } from './types';
+import { AlarmConfig, AppLang, Portfolio, Trade } from './types';
 import { I18N } from './constants';
 import Footer from './components/Footer';
 import TradeExecutionModal from './components/TradeExecutionModal';
-import { TerminationInput, Result as SettlementResult } from './components/SettlementModals';
+import {
+  FinalSellInput,
+  TerminationInput,
+  Result as SettlementResult,
+} from './components/SettlementModals';
 import { supabase, clearAuthStorage } from './services/supabase';
 import { calculateHoldings } from './utils/portfolioCalculations';
 import { fetchStockPricesWithPrev, loadInitialStockData, loadPaidStockData } from './services/stockService';
@@ -12,7 +16,6 @@ import { getCurrentKSTDateString, getDeviceTimeZone } from './utils/dateUtils';
 import { useFCMToken } from './hooks/useFCMToken';
 import { useAuth } from './hooks/useAuth';
 import { usePortfolios } from './hooks/usePortfolios';
-import { useMutexAction } from './hooks/useMutexAction';
 import { isTossApp } from './services/tossAppBridge';
 import {
   AdPreloadProvider,
@@ -40,7 +43,11 @@ import { showErrorToast } from './components/tds-adapter/showErrorToast';
 import { useAsyncTdsConfirm } from './components/tds-adapter/useAsyncTdsConfirm';
 import { TDS_DIALOG_MESSAGES } from './constants/tdsDialogMessages';
 import SessionExpiredAlertGate from './components/auth/SessionExpiredAlertGate';
-import { getPortfolioMutationNotice } from './constants/portfolioMutationErrors';
+import {
+  getPortfolioMutationNotice,
+  isPortfolioMutationErrorCode,
+  PORTFOLIO_MUTATION_ERROR_CODES,
+} from './constants/portfolioMutationErrors';
 import { APP_SHELL_MESSAGES } from './constants/appShellMessages';
 import { 
   LayoutDashboard, 
@@ -60,15 +67,17 @@ import {
 } from './utils/subscriptionUtils';
 import { toAdUserTier, type UserTier } from '@/types/userTier';
 import { useTierDisplay } from './hooks/useTierDisplay';
+import { getTierNameLabel } from './utils/tierNameLabel';
 import AuthModalCoordinator from './components/auth/AuthModalCoordinator';
 import { replaceHashIfMatched } from './utils/appEntryHelpers';
 import { TabContent, type ActiveTab } from './components/TabContent';
-const QuickInputModal = React.lazy(() => import('./components/QuickInputModal'));
-const CheckoutModal = React.lazy(() => import('./components/CheckoutModal'));
-const StrategyCreator = React.lazy(() => import('./components/StrategyCreator'));
-const AlarmModal = React.lazy(() => import('./components/AlarmModal'));
-const PortfolioDetailsModal = React.lazy(() => import('./components/PortfolioDetailsModal'));
-const AIImageInputModal = React.lazy(() => import('./components/AIImageInputModal'));
+import QuickInputModal from './components/QuickInputModal';
+import CheckoutModal from './components/CheckoutModal';
+import StrategyCreator from './components/StrategyCreator';
+import AlarmModal from './components/AlarmModal';
+import PortfolioDetailsModal from './components/PortfolioDetailsModal';
+import AIImageInputModal from './components/AIImageInputModal';
+import { usePortfolioUiCommands } from './src/hooks/usePortfolioUiCommands';
 
 const BOOTSTRAP_AD_USER_TIER: UserTier = 'free';
 const INTERSTITIAL_GLOBAL_COOLDOWN_MS = 60_000;
@@ -86,11 +95,6 @@ const GLOBAL_INTERSTITIAL_AD_MANAGER = new GlobalAdManager(
   },
 );
 
-/** Lazy-loaded 모달 공통 Suspense fallback — DRY */
-const LAZY_MODAL_FALLBACK = (
-  <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/50 dark:bg-slate-950/80 text-slate-400 font-bold">…</div>
-);
-
 /** 동일 openId 닫기: setTimeout 기반 물리적 더블 입력 디듀프 */
 const UI_DOUBLE_CLICK_PREVENTION_MS = 300;
 const NON_BLOCKING_AD_TRIGGER_DELAY_MS = 0;
@@ -106,6 +110,18 @@ const PRO_TIER_ICON_PROPS = {
 interface FinishSignedInFlowOptions {
   shouldShowWelcome: boolean;
 }
+
+type QuickInputSection = 1 | 2 | 3;
+
+type ModalState =
+  | { kind: 'none' }
+  | { kind: 'creator' }
+  | { kind: 'alarm'; portfolioId: string }
+  | { kind: 'details'; portfolioId: string }
+  | { kind: 'quick_input'; portfolioId: string; activeSection?: QuickInputSection }
+  | { kind: 'trade_execution'; portfolioId: string }
+  | { kind: 'ai_image'; portfolioId: string }
+  | { kind: 'terminate'; portfolioId: string };
 
 function getPrimeableAdRouteKey(activeTab: ActiveTab): AdRouteKey | null {
   switch (activeTab) {
@@ -236,11 +252,59 @@ async function saveDailyExecutionSummary(params: {
   };
 }
 
+function getModalPortfolioId(modalState: ModalState): string | null {
+  switch (modalState.kind) {
+    case 'none':
+    case 'creator':
+      return null;
+    case 'alarm':
+    case 'details':
+    case 'quick_input':
+    case 'trade_execution':
+    case 'ai_image':
+    case 'terminate':
+      return modalState.portfolioId;
+    default: {
+      const exhaustiveCheck: never = modalState;
+      return exhaustiveCheck;
+    }
+  }
+}
+
+interface ActiveModalRendererProps {
+  lang: AppLang;
+  modalState: ModalState;
+  portfolio: Portfolio | null;
+  activePortfolioCount: number;
+  maxPortfolios: number;
+  maxAlarms: number;
+  alarmTimezone: string;
+  canAccessPaidStocks: boolean;
+  currentTier: string;
+  geminiApiKey?: string;
+  onClose: () => void;
+  onCloseDetails: () => void;
+  onDeleteCurrentPortfolioTrade: (tradeId: string) => void;
+  onSaveCreator: (portfolio: Omit<Portfolio, 'id'>) => Promise<void>;
+  onSaveAlarm: (
+    portfolio: Portfolio,
+    timezone: string,
+    config: AlarmConfig,
+  ) => Promise<void>;
+  onSaveTrade: (portfolioId: string, trade: Trade) => Promise<void>;
+  onSaveAiTrades: (portfolioId: string, trades: Trade[]) => Promise<void>;
+  onClosePortfolio: (
+    portfolioId: string,
+    finalSells: FinalSellInput[],
+    additionalFee: number,
+  ) => Promise<void>;
+}
+
 const App: React.FC = () => {
   const [lang, setLang] = useState<AppLang>('ko');
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
-  const [isCreatorOpen, setIsCreatorOpen] = useState(false);
+  const [modalState, setModalState] = useState<ModalState>({ kind: 'none' });
   /** 웹: 기존과 동일 기본 다크. 토스 미니앱: 출시 가이드(라이트 테마)에 맞춰 라이트 고정. */
   const [isDarkMode, setIsDarkMode] = useState(() =>
     typeof window !== 'undefined' && isTossApp() ? false : true,
@@ -251,12 +315,6 @@ const App: React.FC = () => {
     ((key: InterstitialPlacementKey) => Promise<boolean>) | null
   >(null);
 
-  const [alarmTargetId, setAlarmTargetId] = useState<string | null>(null);
-  const [detailsTargetId, setDetailsTargetId] = useState<string | null>(null);
-  const [quickInputTargetId, setQuickInputTargetId] = useState<string | null>(null);
-  const [quickInputActiveSection, setQuickInputActiveSection] = useState<1 | 2 | 3 | undefined>(undefined);
-  const [executionTargetId, setExecutionTargetId] = useState<string | null>(null);
-  const [aiImageTargetId, setAiImageTargetId] = useState<string | null>(null);
   const [totalValuation, setTotalValuation] = useState<number>(0);
   const [totalValuationPrev, setTotalValuationPrev] = useState<number>(0);
   const [totalValuationChange, setTotalValuationChange] = useState<number>(0);
@@ -308,7 +366,14 @@ const App: React.FC = () => {
   const dailyExecutionDebounceRef = useRef<number | null>(null);
   const lastSavedSummaryRef = useRef<string | null>(null);
 
-  const { saveFCMToken } = useFCMToken();
+  const { saveFCMToken, fcmSaveFailureTick } = useFCMToken();
+
+  useEffect(() => {
+    if (fcmSaveFailureTick === 0) {
+      return;
+    }
+    showErrorToast(APP_SHELL_MESSAGES[lang].dailySummaryNetworkError);
+  }, [fcmSaveFailureTick, lang]);
 
   const {
     user,
@@ -322,28 +387,32 @@ const App: React.FC = () => {
     hasSessionExpired,
     handleDismissSessionExpired,
   } = useAuth({
+    lang,
     setPortfolios,
     saveFCMToken,
     fetchPortfoliosRef,
   });
   const [shouldShowSignedInWelcome, setShouldShowSignedInWelcome] = useState(false);
 
-  const {
-    fetchPortfolios,
-    handleAddPortfolio,
-    handleClosePortfolio,
-    handleUpdatePortfolio,
-    handleAddTrade,
-    handleDeleteTrade,
-    deletePortfolioById,
-    handleDeleteHistory,
-    handleClearHistory,
-  } = usePortfolios({
+  const portfolioBundle = usePortfolios({
     userId: user?.id ?? null,
     userProfile,
     portfolios,
     setPortfolios,
+    lang,
   });
+  const {
+    fetchPortfolios,
+    handleDeleteTrade,
+    handleDeleteHistory,
+    handleClearHistory,
+  } = portfolioBundle;
+  const portfolioCommands = usePortfolioUiCommands(portfolioBundle);
+  const executeCreatePortfolio = portfolioCommands.createPortfolio.run;
+  const executeSaveTrade = portfolioCommands.saveTrade.run;
+  const executeUpdatePortfolio = portfolioCommands.updatePortfolio.run;
+  const executeDeletePortfolio = portfolioCommands.deletePortfolio.run;
+  const executeClosePortfolio = portfolioCommands.closePortfolio.run;
 
   const effectiveSubscription = useMemo(
     () => getEffectiveSubscription(userProfile),
@@ -360,9 +429,9 @@ const App: React.FC = () => {
     return tierOk && effectiveSubscription.isActive && !effectiveSubscription.isExpired;
   }, [currentTier, effectiveSubscription.isActive, effectiveSubscription.isExpired]);
 
-  const { tierLabel, tierClassName, TierIcon, tierIconClassName } = useTierDisplay(
-    paidTier,
-  );
+  const { translationKey, tierClassName, TierIcon, tierIconClassName } =
+    useTierDisplay(paidTier);
+  const tierLabel = getTierNameLabel(lang, translationKey);
 
   const geminiApiKey = useMemo(() => {
     const isPaid = currentTier !== 'free';
@@ -372,7 +441,6 @@ const App: React.FC = () => {
     return (isPaid ? paid : free) || fallback || undefined;
   }, [currentTier]);
 
-  const [terminateTargetId, setTerminateTargetId] = useState<string | null>(null);
   const [settlementResult, setSettlementResult] = useState<{
     portfolio: Portfolio;
     totalInvested: number;
@@ -389,6 +457,17 @@ const App: React.FC = () => {
   const primeableAdRouteKey = useMemo(
     () => getPrimeableAdRouteKey(activeTab),
     [activeTab],
+  );
+  const currentModalPortfolioId = getModalPortfolioId(modalState);
+  const detailsTargetId =
+    modalState.kind === 'details' ? modalState.portfolioId : null;
+  const currentModalPortfolio = useMemo(
+    () =>
+      currentModalPortfolioId == null
+        ? null
+        : portfolios.find((portfolio) => portfolio.id === currentModalPortfolioId) ??
+          null,
+    [currentModalPortfolioId, portfolios],
   );
 
   useEffect(() => {
@@ -702,24 +781,42 @@ const App: React.FC = () => {
     setPortfolioMutationNotice(getPortfolioMutationNotice(lang, error));
   }, [lang]);
 
+  const shouldOpenPortfolioMutationNotice = useCallback((error: unknown): boolean => {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    if (!isPortfolioMutationErrorCode(error.message)) {
+      return false;
+    }
+
+    return error.message === PORTFOLIO_MUTATION_ERROR_CODES.portfolioLimitReached;
+  }, []);
+
   const runPortfolioMutation = useCallback(
     async <Result,>(operation: () => Promise<Result>): Promise<Result> => {
       try {
         return await operation();
       } catch (error: unknown) {
-        openPortfolioMutationNotice(error);
+        if (shouldOpenPortfolioMutationNotice(error)) {
+          openPortfolioMutationNotice(error);
+        }
         throw error;
       }
     },
-    [openPortfolioMutationNotice],
+    [openPortfolioMutationNotice, shouldOpenPortfolioMutationNotice],
   );
+
+  const handleCloseModal = useCallback(() => {
+    setModalState({ kind: 'none' });
+  }, []);
 
   const handleSaveTrade = useCallback(
     async (portfolioId: string, trade: Trade): Promise<void> => {
-      await runPortfolioMutation(() => handleAddTrade(portfolioId, trade));
+      await executeSaveTrade(portfolioId, trade);
       scheduleInterstitialAd(INTERSTITIAL_PLACEMENT_KEYS.TRADE_SAVE);
     },
-    [handleAddTrade, runPortfolioMutation, scheduleInterstitialAd],
+    [executeSaveTrade, scheduleInterstitialAd],
   );
 
   useEffect(() => {
@@ -754,11 +851,11 @@ const App: React.FC = () => {
       }
       void handleDeleteTrade(detailsTargetId, tradeId).catch(
         (error: unknown) => {
-          openPortfolioMutationNotice(error);
+          console.error('[Portfolio] delete trade failed:', error);
         },
       );
     },
-    [detailsTargetId, handleDeleteTrade, openPortfolioMutationNotice],
+    [detailsTargetId, handleDeleteTrade],
   );
 
   const handlePortfolioDetailsModalClose = useCallback(() => {
@@ -779,7 +876,7 @@ const App: React.FC = () => {
       settlementDetailsCloseUiDedupeTimerRef.current = null;
       settlementDetailsCloseUiDedupeOpenIdRef.current = null;
     }, UI_DOUBLE_CLICK_PREVENTION_MS);
-    setDetailsTargetId(null);
+    setModalState({ kind: 'none' });
     if (portfolio?.isClosed) {
       scheduleInterstitialAd(INTERSTITIAL_PLACEMENT_KEYS.SETTLEMENT_DETAIL);
     }
@@ -867,23 +964,17 @@ const App: React.FC = () => {
     [isInTossApp, lang, navigationExitDialog.open],
   );
 
-  const currentAlarmPortfolio = portfolios.find(p => p.id === alarmTargetId);
-  const currentDetailsPortfolio = portfolios.find(p => p.id === detailsTargetId);
-  const currentQuickInputPortfolio = portfolios.find(p => p.id === quickInputTargetId);
-  const currentExecutionPortfolio = portfolios.find(p => p.id === executionTargetId);
-  const currentAIImagePortfolio = portfolios.find(p => p.id === aiImageTargetId);
-  const currentTerminatePortfolio = portfolios.find(p => p.id === terminateTargetId);
-
   const [portfolioLimitNoticeMax, setPortfolioLimitNoticeMax] = useState<number | null>(null);
+  const maxPortfolios = getMaxPortfolios(userProfile);
+  const maxAlarms = getMaxAlarms(userProfile);
 
   const handleRequestOpenCreator = useCallback(() => {
-    const maxAllowed = getMaxPortfolios(userProfile);
-    if (activePortfolios.length >= maxAllowed) {
-      setPortfolioLimitNoticeMax(maxAllowed);
+    if (activePortfolios.length >= maxPortfolios) {
+      setPortfolioLimitNoticeMax(maxPortfolios);
       return;
     }
-    setIsCreatorOpen(true);
-  }, [activePortfolios.length, userProfile]);
+    setModalState({ kind: 'creator' });
+  }, [activePortfolios.length, maxPortfolios]);
 
   const handlePortfolioLimitNoticeClose = useCallback(() => {
     setPortfolioLimitNoticeMax(null);
@@ -901,73 +992,163 @@ const App: React.FC = () => {
     setAuthModal('signup');
   }, [setAuthModal]);
 
+  const handleOpenAlarm = useCallback((portfolioId: string) => {
+    setModalState({ kind: 'alarm', portfolioId });
+  }, []);
+
+  const handleOpenDetails = useCallback((portfolioId: string) => {
+    setModalState({ kind: 'details', portfolioId });
+  }, []);
+
   const handleOpenQuickInput = useCallback(
-    (id: string, activeSection: 1 | 2 | 3 | undefined) => {
-      setQuickInputTargetId(id);
-      setQuickInputActiveSection(activeSection);
+    (portfolioId: string, activeSection: QuickInputSection | undefined) => {
+      setModalState({
+        kind: 'quick_input',
+        portfolioId,
+        activeSection,
+      });
     },
-    [setQuickInputTargetId, setQuickInputActiveSection],
+    [],
   );
 
-  const { run: handleUpdatePortfolioForDashboard } = useMutexAction(
-    useCallback(
-      async (portfolio: Portfolio) => {
-        try {
-          await Promise.resolve(handleUpdatePortfolio(portfolio));
-        } catch (error: unknown) {
-          openPortfolioMutationNotice(error);
-        }
-      },
-      [handleUpdatePortfolio, openPortfolioMutationNotice],
-    ),
+  const handleOpenExecution = useCallback((portfolioId: string) => {
+    setModalState({ kind: 'trade_execution', portfolioId });
+  }, []);
+
+  const handleOpenAiImage = useCallback((portfolioId: string) => {
+    setModalState({ kind: 'ai_image', portfolioId });
+  }, []);
+
+  const handleOpenTerminate = useCallback((portfolioId: string) => {
+    setModalState({ kind: 'terminate', portfolioId });
+  }, []);
+
+  const handleSaveCreator = useCallback(
+    async (newPortfolio: Omit<Portfolio, 'id'>): Promise<void> => {
+      try {
+        await runPortfolioMutation(() => executeCreatePortfolio(newPortfolio));
+        handleCloseModal();
+        scheduleInterstitialAd(INTERSTITIAL_PLACEMENT_KEYS.STRATEGY_SAVE);
+      } catch (_error: unknown) {
+        // B3 toast / notice contract가 이미 있으므로 여기서는 닫지 않습니다.
+      }
+    },
+    [
+      executeCreatePortfolio,
+      handleCloseModal,
+      runPortfolioMutation,
+      scheduleInterstitialAd,
+    ],
   );
 
-  const { run: handleDeletePortfolio } = useMutexAction(
-    useCallback(
-      async (id: string) => {
-        const shellCopy = APP_SHELL_MESSAGES[lang];
+  const handleSaveAlarm = useCallback(
+    async (
+      portfolio: Portfolio,
+      timezone: string,
+      config: AlarmConfig,
+    ): Promise<void> => {
+      const nextConfig: AlarmConfig = {
+        ...config,
+        timezone: config.timezone ?? timezone,
+      };
 
-        try {
-          await deletePortfolioById(id);
-        } catch (error: unknown) {
-          showErrorToast(shellCopy.portfolioDeleteFailed);
-          console.error('[Portfolio] delete failed:', error);
-        }
-      },
-      [deletePortfolioById, lang],
-    ),
+      try {
+        await executeUpdatePortfolio({
+          ...portfolio,
+          alarmconfig: nextConfig,
+        });
+        handleCloseModal();
+        scheduleInterstitialAd(INTERSTITIAL_PLACEMENT_KEYS.ALARM_SAVE);
+      } catch (error: unknown) {
+        console.error('[Alarm] save failed:', error);
+      }
+    },
+    [executeUpdatePortfolio, handleCloseModal, scheduleInterstitialAd],
   );
 
-  const { run: handleSafeDeleteHistory } = useMutexAction(
-    useCallback(
-      async (portfolioId: string) => {
-        const shellCopy = APP_SHELL_MESSAGES[lang];
-
-        try {
-          await handleDeleteHistory(portfolioId);
-        } catch (error: unknown) {
-          showErrorToast(shellCopy.historyEntryDeleteFailed);
-          console.error('[History] delete failed:', error);
+  const handleSaveAiTrades = useCallback(
+    async (portfolioId: string, trades: Trade[]): Promise<void> => {
+      try {
+        for (const trade of trades) {
+          await executeSaveTrade(portfolioId, trade);
         }
-      },
-      [handleDeleteHistory, lang],
-    ),
+        handleCloseModal();
+        scheduleInterstitialAd(INTERSTITIAL_PLACEMENT_KEYS.TRADE_SAVE);
+      } catch (error: unknown) {
+        console.error('[AIImageTrade] save failed:', error);
+      }
+    },
+    [executeSaveTrade, handleCloseModal, scheduleInterstitialAd],
   );
 
-  const { run: handleSafeClearHistory } = useMutexAction(
-    useCallback(
-      async () => {
-        const shellCopy = APP_SHELL_MESSAGES[lang];
-
-        try {
-          await handleClearHistory();
-        } catch (error: unknown) {
-          showErrorToast(shellCopy.historyClearFailed);
-          console.error('[History] clear failed:', error);
+  const handleClosePortfolioFromModal = useCallback(
+    async (
+      portfolioId: string,
+      finalSells: FinalSellInput[],
+      additionalFee: number,
+    ): Promise<void> => {
+      try {
+        const result = await executeClosePortfolio(
+          portfolioId,
+          finalSells,
+          additionalFee,
+        );
+        if (result != null) {
+          setSettlementResult(result);
+          handleCloseModal();
+          scheduleInterstitialAd(
+            INTERSTITIAL_PLACEMENT_KEYS.SETTLEMENT_DETAIL,
+          );
         }
-      },
-      [handleClearHistory, lang],
-    ),
+      } catch (error: unknown) {
+        console.error('[Portfolio] close failed:', error);
+      }
+    },
+    [executeClosePortfolio, handleCloseModal, scheduleInterstitialAd],
+  );
+
+  const handleUpdatePortfolioForDashboard = useCallback(
+    async (portfolio: Portfolio) => {
+      try {
+        await executeUpdatePortfolio(portfolio);
+      } catch (error: unknown) {
+        console.error('[Portfolio] update failed:', error);
+      }
+    },
+    [executeUpdatePortfolio],
+  );
+
+  const handleDeletePortfolio = useCallback(
+    async (id: string) => {
+      try {
+        await executeDeletePortfolio(id);
+      } catch (error: unknown) {
+        console.error('[Portfolio] delete failed:', error);
+      }
+    },
+    [executeDeletePortfolio],
+  );
+
+  const handleSafeDeleteHistory = useCallback(
+    async (portfolioId: string) => {
+      try {
+        await handleDeleteHistory(portfolioId);
+      } catch (error: unknown) {
+        console.error('[History] delete failed:', error);
+      }
+    },
+    [handleDeleteHistory],
+  );
+
+  const handleSafeClearHistory = useCallback(
+    async () => {
+      try {
+        await handleClearHistory();
+      } catch (error: unknown) {
+        console.error('[History] clear failed:', error);
+      }
+    },
+    [handleClearHistory],
   );
 
   const handleBackToDashboard = useCallback(
@@ -980,7 +1161,9 @@ const App: React.FC = () => {
     [handleRequestBackNavigation, setActiveTab, replaceHashIfMatched],
   );
 
-  const MainContent = () => (
+  const noop = useCallback(() => {}, []);
+
+  const mainContent = (
     <div className="min-h-screen transition-colors duration-500 bg-slate-50 dark:bg-slate-950 dark:text-slate-200">
       <div className="pb-32">
         <header className="sticky top-0 z-40 w-full glass glass-header px-6 md:px-12 py-5 flex items-center justify-between border-b border-slate-200/50 dark:border-white/10">
@@ -1060,18 +1243,19 @@ const App: React.FC = () => {
             onOpenLogin={handleOpenLogin}
             onOpenSignup={handleOpenSignup}
             onRequestOpenCreator={handleRequestOpenCreator}
-            onOpenAlarm={setAlarmTargetId}
-            onOpenDetails={setDetailsTargetId}
+            onOpenAlarm={handleOpenAlarm}
+            onOpenDetails={handleOpenDetails}
             onOpenQuickInput={handleOpenQuickInput}
-            onOpenExecution={setExecutionTargetId}
-            onOpenAIImage={setAiImageTargetId}
-            onClosePortfolio={setTerminateTargetId}
+            onOpenExecution={handleOpenExecution}
+            onOpenAIImage={handleOpenAiImage}
+            onClosePortfolio={handleOpenTerminate}
             onDeletePortfolio={handleDeletePortfolio}
             onUpdatePortfolio={handleUpdatePortfolioForDashboard}
             onDeleteHistory={handleSafeDeleteHistory}
             onClearHistory={handleSafeClearHistory}
             onSelectCheckoutPlan={setCheckoutPlan}
             onBackToDashboard={handleBackToDashboard}
+            onOpenPricingTab={() => setActiveTab('pricing')}
           />
         </main>
 
@@ -1083,7 +1267,7 @@ const App: React.FC = () => {
             <NavIcon active={activeTab === 'pricing'} onClick={() => setActiveTab('pricing')} icon={<Crown size={22} />} label={t.membership} />
             <NavIcon
               active={false}
-              onClick={() => {}}
+              onClick={noop}
               icon={<LineChart size={22} />}
               label={t.backtest}
               disabled
@@ -1107,145 +1291,26 @@ const App: React.FC = () => {
           </nav>
         </div>
 
-        {isCreatorOpen && (
-          <React.Suspense fallback={LAZY_MODAL_FALLBACK}>
-            <StrategyCreator
-              lang={lang}
-              onClose={() => setIsCreatorOpen(false)}
-              onSave={async (newP) => {
-                try {
-                  await runPortfolioMutation(() => handleAddPortfolio(newP));
-                  setIsCreatorOpen(false);
-                  scheduleInterstitialAd(
-                    INTERSTITIAL_PLACEMENT_KEYS.STRATEGY_SAVE,
-                  );
-                } catch (_error: unknown) {}
-              }}
-              canAccessPaidStocks={canAccessPaidStocks}
-              maxPortfolios={getMaxPortfolios(userProfile)}
-              currentPortfolioCount={activePortfolios.length}
-            />
-          </React.Suspense>
-        )}
-        {currentAlarmPortfolio && (
-          <React.Suspense fallback={LAZY_MODAL_FALLBACK}>
-            <AlarmModal
-              lang={lang}
-              portfolio={currentAlarmPortfolio}
-              onClose={() => setAlarmTargetId(null)}
-              onSave={async (config) => {
-                const tz = userProfile?.timezone || getDeviceTimeZone();
-                const nextConfig = { ...config, timezone: config.timezone || tz };
-                try {
-                  await runPortfolioMutation(() =>
-                    handleUpdatePortfolio({
-                      ...currentAlarmPortfolio,
-                      alarmconfig: nextConfig,
-                    }),
-                  );
-                  setAlarmTargetId(null);
-                  scheduleInterstitialAd(
-                    INTERSTITIAL_PLACEMENT_KEYS.ALARM_SAVE,
-                  );
-                } catch (_error: unknown) {}
-              }}
-              maxAlarms={getMaxAlarms(userProfile)}
-            />
-          </React.Suspense>
-        )}
-        {currentDetailsPortfolio && (
-          <React.Suspense fallback={LAZY_MODAL_FALLBACK}>
-            <PortfolioDetailsModal
-              lang={lang}
-              portfolio={currentDetailsPortfolio}
-              onClose={handlePortfolioDetailsModalClose}
-              onDeleteTrade={handleDeleteCurrentPortfolioTrade}
-              isHistory={currentDetailsPortfolio.isClosed}
-            />
-          </React.Suspense>
-        )}
-        {currentQuickInputPortfolio && (
-          <React.Suspense fallback={LAZY_MODAL_FALLBACK}>
-            <QuickInputModal
-              lang={lang}
-              portfolio={currentQuickInputPortfolio}
-              activeSection={quickInputActiveSection}
-              onClose={() => {
-                setQuickInputTargetId(null);
-                setQuickInputActiveSection(undefined);
-              }}
-              onSave={async (trade) => {
-                try {
-                  await handleSaveTrade(currentQuickInputPortfolio.id, trade);
-                  setQuickInputTargetId(null);
-                  setQuickInputActiveSection(undefined);
-                } catch (_error: unknown) {}
-              }}
-            />
-          </React.Suspense>
-        )}
-        {currentExecutionPortfolio && (
-          <TradeExecutionModal
-            lang={lang}
-            portfolio={currentExecutionPortfolio}
-            onClose={() => setExecutionTargetId(null)}
-            onSave={async (trade) => {
-              try {
-                await handleSaveTrade(currentExecutionPortfolio.id, trade);
-                setExecutionTargetId(null);
-              } catch (_error: unknown) {}
-            }}
-          />
-        )}
-        {currentAIImagePortfolio && (
-          <React.Suspense fallback={LAZY_MODAL_FALLBACK}>
-            <AIImageInputModal
-              lang={lang}
-              portfolio={currentAIImagePortfolio}
-              geminiApiKey={geminiApiKey}
-              isPaidUser={currentTier !== 'free'}
-              currentTier={paidTier}
-              onClose={() => setAiImageTargetId(null)}
-              onSave={async (trades, _skipAd) => {
-                try {
-                  for (const trade of trades) {
-                    await runPortfolioMutation(() =>
-                      handleAddTrade(currentAIImagePortfolio.id, trade),
-                    );
-                  }
-                  setAiImageTargetId(null);
-                  scheduleInterstitialAd(INTERSTITIAL_PLACEMENT_KEYS.TRADE_SAVE);
-                } catch (_error: unknown) {}
-              }}
-            />
-          </React.Suspense>
-        )}
-
-        {currentTerminatePortfolio && (
-          <TerminationInput
-            lang={lang}
-            portfolio={currentTerminatePortfolio}
-            onClose={() => setTerminateTargetId(null)}
-            onSave={async (finalSells, additionalFee) => {
-              try {
-                const result = await runPortfolioMutation(() =>
-                  handleClosePortfolio(
-                    currentTerminatePortfolio.id,
-                    finalSells,
-                    additionalFee,
-                  ),
-                );
-                if (result) {
-                  setSettlementResult(result);
-                  setTerminateTargetId(null);
-                  scheduleInterstitialAd(
-                    INTERSTITIAL_PLACEMENT_KEYS.SETTLEMENT_DETAIL,
-                  );
-                }
-              } catch (_error: unknown) {}
-            }}
-          />
-        )}
+        <ActiveModalRenderer
+          lang={lang}
+          modalState={modalState}
+          portfolio={currentModalPortfolio}
+          activePortfolioCount={activePortfolios.length}
+          maxPortfolios={maxPortfolios}
+          maxAlarms={maxAlarms}
+          alarmTimezone={userProfile?.timezone ?? getDeviceTimeZone()}
+          canAccessPaidStocks={canAccessPaidStocks}
+          currentTier={paidTier}
+          geminiApiKey={geminiApiKey}
+          onClose={handleCloseModal}
+          onCloseDetails={handlePortfolioDetailsModalClose}
+          onDeleteCurrentPortfolioTrade={handleDeleteCurrentPortfolioTrade}
+          onSaveCreator={handleSaveCreator}
+          onSaveAlarm={handleSaveAlarm}
+          onSaveTrade={handleSaveTrade}
+          onSaveAiTrades={handleSaveAiTrades}
+          onClosePortfolio={handleClosePortfolioFromModal}
+        />
         {settlementResult && (
           <SettlementResult 
             lang={lang} 
@@ -1381,19 +1446,17 @@ const App: React.FC = () => {
       </div>
 
       {checkoutPlan && (
-        <React.Suspense fallback={null}>
-          <CheckoutModal
-            isOpen={!!checkoutPlan}
-            onClose={() => setCheckoutPlan(null)}
-            lang={lang}
-            customerEmail={user?.email}
-            customerId={user?.id}
-            onPaymentSuccess={() => {
-              setCheckoutPlan(null);
-              if (user?.id) fetchUserProfile(user.id);
-            }}
-          />
-        </React.Suspense>
+        <CheckoutModal
+          isOpen={checkoutPlan != null}
+          onClose={() => setCheckoutPlan(null)}
+          lang={lang}
+          customerEmail={user?.email}
+          customerId={user?.id}
+          onPaymentSuccess={() => {
+            setCheckoutPlan(null);
+            if (user?.id) fetchUserProfile(user.id);
+          }}
+        />
       )}
 
       <Footer
@@ -1424,12 +1487,141 @@ const App: React.FC = () => {
       >
         <AdPreloadBridge onShowInstantAdChange={handleShowInstantAdChange} />
         <TDSWrapper isInTossApp={isInTossApp}>
-          <MainContent />
+          {mainContent}
         </TDSWrapper>
       </AdPreloadProvider>
     </TossAppProvider>
   );
 };
+
+function ActiveModalRenderer({
+  lang,
+  modalState,
+  portfolio,
+  activePortfolioCount,
+  maxPortfolios,
+  maxAlarms,
+  alarmTimezone,
+  canAccessPaidStocks,
+  currentTier,
+  geminiApiKey,
+  onClose,
+  onCloseDetails,
+  onDeleteCurrentPortfolioTrade,
+  onSaveCreator,
+  onSaveAlarm,
+  onSaveTrade,
+  onSaveAiTrades,
+  onClosePortfolio,
+}: ActiveModalRendererProps): React.ReactElement | null {
+  switch (modalState.kind) {
+    case 'none':
+      return null;
+    case 'creator':
+      return (
+        <StrategyCreator
+          lang={lang}
+          onClose={onClose}
+          onSave={onSaveCreator}
+          canAccessPaidStocks={canAccessPaidStocks}
+          maxPortfolios={maxPortfolios}
+          currentPortfolioCount={activePortfolioCount}
+        />
+      );
+    case 'alarm':
+      if (portfolio == null) {
+        return null;
+      }
+      return (
+        <AlarmModal
+          lang={lang}
+          portfolio={portfolio}
+          onClose={onClose}
+          onSave={(config) => {
+            void onSaveAlarm(portfolio, alarmTimezone, config);
+          }}
+          maxAlarms={maxAlarms}
+        />
+      );
+    case 'details':
+      if (portfolio == null) {
+        return null;
+      }
+      return (
+        <PortfolioDetailsModal
+          lang={lang}
+          portfolio={portfolio}
+          onClose={onCloseDetails}
+          onDeleteTrade={onDeleteCurrentPortfolioTrade}
+          isHistory={portfolio.isClosed}
+        />
+      );
+    case 'quick_input':
+      if (portfolio == null) {
+        return null;
+      }
+      return (
+        <QuickInputModal
+          lang={lang}
+          portfolio={portfolio}
+          activeSection={modalState.activeSection}
+          onClose={onClose}
+          onSave={(trade) => {
+            void onSaveTrade(portfolio.id, trade);
+          }}
+        />
+      );
+    case 'trade_execution':
+      if (portfolio == null) {
+        return null;
+      }
+      return (
+        <TradeExecutionModal
+          lang={lang}
+          portfolio={portfolio}
+          onClose={onClose}
+          onSave={(trade) => {
+            void onSaveTrade(portfolio.id, trade);
+          }}
+        />
+      );
+    case 'ai_image':
+      if (portfolio == null) {
+        return null;
+      }
+      return (
+        <AIImageInputModal
+          lang={lang}
+          portfolio={portfolio}
+          geminiApiKey={geminiApiKey}
+          isPaidUser={currentTier !== 'free'}
+          currentTier={currentTier}
+          onClose={onClose}
+          onSave={(trades) => {
+            void onSaveAiTrades(portfolio.id, trades);
+          }}
+        />
+      );
+    case 'terminate':
+      if (portfolio == null) {
+        return null;
+      }
+      return (
+        <TerminationInput
+          lang={lang}
+          portfolio={portfolio}
+          onClose={onClose}
+          onSave={(finalSells, additionalFee) => {
+            void onClosePortfolio(portfolio.id, finalSells, additionalFee);
+          }}
+        />
+      );
+    default: {
+      const exhaustiveCheck: never = modalState;
+      return exhaustiveCheck;
+    }
+  }
+}
 
 const TDSWrapper: React.FC<{ isInTossApp: boolean; children: React.ReactNode }> = ({ children }) => {
   return <>{children}</>;

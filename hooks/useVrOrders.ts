@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import type { OrderLevel, VrSnapshot } from '../types';
 import { EMPTY_VR_ORDERS } from '../constants/vrConstants';
 
@@ -10,21 +9,21 @@ export function useVrOrders(vrSnapshot: VrSnapshot | null | undefined): {
   safeBuyOrders: OrderLevel[];
   safeSellOrders: OrderLevel[];
 } {
-  return useMemo(() => {
-    if (!vrSnapshot) {
-      return { safeBuyOrders: EMPTY_VR_ORDERS, safeSellOrders: EMPTY_VR_ORDERS };
-    }
-    const step0: OrderLevel = {
-      step: 0,
-      price: 0,
-      qty: 0,
-      isBuffer: false,
-      sharesAfter: vrSnapshot.shares,
-      poolAfter: vrSnapshot.pool,
-    };
-    return {
-      safeBuyOrders: [step0, ...(vrSnapshot.buyOrders ?? [])],
-      safeSellOrders: [step0, ...(vrSnapshot.sellOrders ?? [])],
-    };
-  }, [vrSnapshot]);
+  if (vrSnapshot == null) {
+    return { safeBuyOrders: EMPTY_VR_ORDERS, safeSellOrders: EMPTY_VR_ORDERS };
+  }
+
+  const step0: OrderLevel = {
+    step: 0,
+    price: 0,
+    qty: 0,
+    isBuffer: false,
+    sharesAfter: vrSnapshot.shares,
+    poolAfter: vrSnapshot.pool,
+  };
+
+  return {
+    safeBuyOrders: [step0, ...(vrSnapshot.buyOrders ?? [])],
+    safeSellOrders: [step0, ...(vrSnapshot.sellOrders ?? [])],
+  };
 }

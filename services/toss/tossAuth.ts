@@ -5,9 +5,17 @@
 
 import { appLogin } from '@apps-in-toss/web-framework';
 import { supabase } from '../supabase';
+import {
+  fetchJsonWithTimeout,
+  isRecord,
+  normalizeErrorMessage,
+  readString,
+  wrapBridgeCall,
+} from '../serviceUtils';
+import { readTrimmedViteEnv } from '../../utils/viteImportMetaEnv';
 import { isTossApp } from './tossBridge';
 
-const BFF_URL = import.meta.env.VITE_RAILWAY_BFF_URL;
+const BFF_URL = readTrimmedViteEnv('VITE_RAILWAY_BFF_URL');
 
 export interface TossAuthResult {
   success: boolean;
@@ -28,60 +36,161 @@ export async function loginWithToss(): Promise<TossAuthResult> {
     return { success: false, error: '서버 설정이 올바르지 않습니다.' };
   }
 
-  let code: string;
-  let referrer: string;
-  try {
-    const { authorizationCode, referrer: referrerFromSdk } = await appLogin();
-    code = authorizationCode?.trim();
-    if (!code) {
-      return { success: false, error: '토스 인증 코드를 받지 못했습니다.' };
-    }
-    // SDK: "DEFAULT" | "SANDBOX" → BFF/토스 API 스펙: "DEFAULT" | "sandbox" (대소문자 정확히 일치)
-    referrer = referrerFromSdk === 'SANDBOX' ? 'sandbox' : 'DEFAULT';
-  } catch (err) {
-    const msg = toErrorMessage(err, '토스 로그인 요청 실패');
-    console.warn('[TossAuth] appLogin 실패:', msg);
-    return { success: false, error: msg };
+  const loginCallResult = await wrapBridgeCall<unknown>(
+    () => appLogin(),
+    null,
+    { action: 'appLogin' },
+  );
+  if (!loginCallResult.ok) {
+    const message = normalizeErrorMessage(
+      loginCallResult.error.cause,
+      '토스 로그인 요청 실패',
+    );
+    console.warn('[TossAuth] appLogin 실패:', message);
+    return { success: false, error: message };
+  }
+
+  const decodedAppLogin = decodeAppLoginResponse(loginCallResult.data);
+  if (decodedAppLogin == null) {
+    return { success: false, error: '토스 인증 코드를 받지 못했습니다.' };
+  }
+
+  const exchangeResult = await fetchJsonWithTimeout<null>(
+    `${BFF_URL.replace(/\/+$/, '')}/auth/toss/exchange`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        authorizationCode: decodedAppLogin.authorizationCode,
+        referrer: decodedAppLogin.referrer,
+      }),
+    },
+    null,
+    { context: { action: 'toss_exchange' } },
+  );
+  if (!exchangeResult.ok) {
+    return {
+      success: false,
+      error: extractServerMessage(
+        exchangeResult.error.cause,
+        toAuthFailureMessage(exchangeResult.error.code),
+      ),
+    };
+  }
+
+  const decodedSession = decodeExchangeSession(exchangeResult.data);
+  if (decodedSession == null) {
+    return { success: false, error: '세션 정보를 받지 못했습니다.' };
   }
 
   try {
-    const res = await fetch(`${BFF_URL.replace(/\/+$/, '')}/auth/toss/exchange`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ authorizationCode: code, referrer }),
-    });
-
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      const serverMessage = (typeof data?.error === 'string' ? data.error : data?.message ?? data?.error) ?? '로그인에 실패했습니다.';
-      return { success: false, error: serverMessage };
-    }
-
-    const accessToken = data.access_token ?? data.session?.access_token;
-    const refreshToken = data.refresh_token ?? data.session?.refresh_token;
-    if (!accessToken || !refreshToken) {
-      return { success: false, error: '세션 정보를 받지 못했습니다.' };
-    }
-
     const { error: setError } = await supabase.auth.setSession({
-      access_token: accessToken,
-      refresh_token: refreshToken,
+      access_token: decodedSession.accessToken,
+      refresh_token: decodedSession.refreshToken,
     });
     if (setError) {
       console.error('[TossAuth] setSession error:', setError.message);
       return { success: false, error: setError.message };
     }
-
-    const user = data.user ?? (await supabase.auth.getUser()).data.user;
-    const id = user?.id ?? '';
-    const email = user?.email ?? user?.user_metadata?.email ?? '';
-    return { success: true, user: { id, email } };
-  } catch (err) {
-    return { success: false, error: toErrorMessage(err, '네트워크 오류') };
+  } catch (error: unknown) {
+    const message = normalizeErrorMessage(
+      error,
+      'supabase_set_session_failed',
+    );
+    console.error('[TossAuth] setSession throw:', message);
+    return { success: false, error: message };
   }
+
+  if (decodedSession.user != null) {
+    return { success: true, user: decodedSession.user };
+  }
+
+  const { data } = await supabase.auth.getUser();
+  const id = data.user?.id ?? '';
+  const email = data.user?.email ?? data.user?.user_metadata?.email ?? '';
+  return { success: true, user: { id, email } };
 }
 
-function toErrorMessage(err: unknown, fallback: string): string {
-  return err instanceof Error ? err.message : fallback;
+function decodeAppLoginResponse(
+  value: unknown,
+): { authorizationCode: string; referrer: 'DEFAULT' | 'sandbox' } | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const authorizationCode = readString(value, 'authorizationCode');
+  if (authorizationCode == null) {
+    return null;
+  }
+
+  const rawReferrer = readString(value, 'referrer');
+  return {
+    authorizationCode,
+    referrer: rawReferrer === 'SANDBOX' ? 'sandbox' : 'DEFAULT',
+  };
+}
+
+function decodeExchangeSession(
+  value: unknown,
+): { accessToken: string; refreshToken: string; user?: { id: string; email: string } } | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const sessionRecord = isRecord(value.session) ? value.session : null;
+  const accessToken =
+    readString(value, 'access_token') ??
+    (sessionRecord != null ? readString(sessionRecord, 'access_token') : null);
+  const refreshToken =
+    readString(value, 'refresh_token') ??
+    (sessionRecord != null ? readString(sessionRecord, 'refresh_token') : null);
+
+  if (accessToken == null || refreshToken == null) {
+    return null;
+  }
+
+  const userRecord = isRecord(value.user) ? value.user : null;
+  const userId = userRecord != null ? readString(userRecord, 'id') : null;
+  const userEmail =
+    userRecord != null
+      ? readString(userRecord, 'email') ??
+        (isRecord(userRecord.user_metadata)
+          ? readString(userRecord.user_metadata, 'email')
+          : null)
+      : null;
+
+  return {
+    accessToken,
+    refreshToken,
+    user:
+      userId != null && userEmail != null
+        ? { id: userId, email: userEmail }
+        : undefined,
+  };
+}
+
+function extractServerMessage(payload: unknown, fallback: string): string {
+  if (!isRecord(payload)) {
+    return fallback;
+  }
+
+  return (
+    readString(payload, 'error') ??
+    readString(payload, 'message') ??
+    fallback
+  );
+}
+
+function toAuthFailureMessage(code: string): string {
+  switch (code) {
+    case 'AUTH_REQUIRED':
+      return '인증이 필요합니다.';
+    case 'FORBIDDEN':
+      return '로그인에 실패했습니다.';
+    case 'TIMEOUT':
+    case 'NETWORK':
+      return '네트워크 오류';
+    default:
+      return '로그인에 실패했습니다.';
+  }
 }

@@ -1,6 +1,67 @@
 import { GoogleAdMob } from '@apps-in-toss/web-framework';
 import { isTossApp } from '../toss/tossBridge';
 
+const REWARD_AD_LOAD_TIMEOUT_MS = 10_000;
+const REWARD_AD_SHOW_TIMEOUT_MS = 10_000;
+
+function executeWithTimeout<T>(
+  executor: (
+    resolve: (value: T) => void,
+    reject: (reason?: unknown) => void,
+    onCancel: (cleanup: () => void) => void,
+  ) => void,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    let cancelHandler: (() => void) | null = null;
+    let isSettled = false;
+
+    const settleOnce = (settler: () => void): void => {
+      if (isSettled) {
+        return;
+      }
+
+      isSettled = true;
+      if (timerId != null) {
+        clearTimeout(timerId);
+        timerId = null;
+      }
+      settler();
+    };
+
+    timerId = globalThis.setTimeout(() => {
+      cancelHandler?.();
+      settleOnce(() => {
+        reject(new Error(timeoutMessage));
+      });
+    }, timeoutMs);
+
+    try {
+      executor(
+        (value) => {
+          settleOnce(() => {
+            resolve(value);
+          });
+        },
+        (reason) => {
+          settleOnce(() => {
+            reject(reason);
+          });
+        },
+        (cleanup) => {
+          cancelHandler = cleanup;
+        },
+      );
+    } catch (error: unknown) {
+      settleOnce(() => {
+        reject(error);
+      });
+    }
+  });
+}
+
 function isRewardAdSupported(): boolean {
   try {
     return (
@@ -13,7 +74,7 @@ function isRewardAdSupported(): boolean {
 }
 
 function waitForRewardAdLoad(adGroupId: string): Promise<() => void> {
-  return new Promise((resolve, reject) => {
+  return executeWithTimeout<() => void>((resolve, reject, onCancel) => {
     let unregister: (() => void) | undefined;
 
     try {
@@ -31,14 +92,17 @@ function waitForRewardAdLoad(adGroupId: string): Promise<() => void> {
           reject(error);
         },
       });
+      onCancel(() => {
+        unregister?.();
+      });
     } catch (error: unknown) {
       reject(error);
     }
-  });
+  }, REWARD_AD_LOAD_TIMEOUT_MS, 'reward_ad_load_timeout');
 }
 
 function showRewardAd(adGroupId: string): Promise<boolean> {
-  return new Promise((resolve, reject) => {
+  return executeWithTimeout<boolean>((resolve, reject, onCancel) => {
     let unregister: (() => void) | undefined;
     let isRewardEarned = false;
 
@@ -73,10 +137,13 @@ function showRewardAd(adGroupId: string): Promise<boolean> {
           reject(error);
         },
       });
+      onCancel(() => {
+        unregister?.();
+      });
     } catch (error: unknown) {
       reject(error);
     }
-  });
+  }, REWARD_AD_SHOW_TIMEOUT_MS, 'reward_ad_show_timeout');
 }
 
 export async function requestRewardAd(adGroupId: string): Promise<boolean> {

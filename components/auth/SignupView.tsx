@@ -1,20 +1,11 @@
-/**
- * 회원가입 전용 뷰 (Phase 0.3 — AuthModals 서브뷰 분리)
- * 토스 앱에서는 TossLoginView, 웹에서는 이메일/소셜 폼 + 필수 동의.
- */
-
 import React from 'react';
 import { Mail, Lock } from 'lucide-react';
-import { I18N } from '../../constants';
 import TossLoginView from '../TossLoginView';
-import type { AuthEmailFormProps } from './authViewTypes';
+import type { SignupViewProps } from './authViewTypes';
 
-interface SignupViewProps extends Omit<AuthEmailFormProps, 'type'> {
-  type: 'signup';
-}
-
-const SignupView: React.FC<SignupViewProps> = ({
+function SignupView({
   lang,
+  copy,
   onSwitchType,
   onSignedIn,
   email,
@@ -33,9 +24,7 @@ const SignupView: React.FC<SignupViewProps> = ({
   setPrivacyConsent,
   setError,
   isInTossApp,
-}) => {
-  const t = I18N[lang];
-
+}: SignupViewProps): React.ReactElement {
   if (isInTossApp) {
     return (
       <>
@@ -52,13 +41,15 @@ const SignupView: React.FC<SignupViewProps> = ({
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="space-y-2">
-        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">{t.email}</label>
+        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+          {copy.field.emailLabel}
+        </label>
         <div className="relative">
           <Mail className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
           <input
             type="email"
             required
-            placeholder="name@example.com"
+            placeholder={copy.field.emailPlaceholder}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="w-full p-5 pl-14 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/50"
@@ -66,13 +57,15 @@ const SignupView: React.FC<SignupViewProps> = ({
         </div>
       </div>
       <div className="space-y-2">
-        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">{t.password}</label>
+        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+          {copy.field.passwordLabel}
+        </label>
         <div className="relative">
           <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
           <input
             type="password"
             required
-            placeholder="••••••••"
+            placeholder={copy.field.passwordPlaceholder}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="w-full p-5 pl-14 bg-slate-100/50 dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-blue-500/50"
@@ -81,26 +74,30 @@ const SignupView: React.FC<SignupViewProps> = ({
       </div>
       <div className="space-y-2 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-white/5">
         <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
-          {lang === 'ko' ? '필수 동의' : 'Required Agreements'}
+          {copy.helper.requiredAgreementTitle}
         </p>
         <label className="flex items-start gap-3 cursor-pointer group">
           <input type="checkbox" checked={termsConsent} onChange={(e) => setTermsConsent(e.target.checked)} className="mt-0.5 w-4 h-4 accent-blue-600 rounded" />
           <span className="text-xs text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
-            <span className="text-blue-500 font-bold">[{lang === 'ko' ? '필수' : 'Required'}]</span>{' '}
+            <span className="text-blue-500 font-bold">
+              [{copy.helper.requiredBadge}]
+            </span>{' '}
             <button type="button" onClick={(e) => { e.stopPropagation(); window.open('#terms', '_blank'); }} className="underline underline-offset-2 hover:text-blue-500">
-              {lang === 'ko' ? '이용약관' : 'Terms of Service'}
+              {copy.helper.termsLabel}
             </button>
-            {lang === 'ko' ? '에 동의합니다' : ' - I agree'}
+            {copy.helper.agreeSuffix}
           </span>
         </label>
         <label className="flex items-start gap-3 cursor-pointer group">
           <input type="checkbox" checked={privacyConsent} onChange={(e) => setPrivacyConsent(e.target.checked)} className="mt-0.5 w-4 h-4 accent-blue-600 rounded" />
           <span className="text-xs text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
-            <span className="text-blue-500 font-bold">[{lang === 'ko' ? '필수' : 'Required'}]</span>{' '}
+            <span className="text-blue-500 font-bold">
+              [{copy.helper.requiredBadge}]
+            </span>{' '}
             <button type="button" onClick={(e) => { e.stopPropagation(); window.open('#privacy', '_blank'); }} className="underline underline-offset-2 hover:text-blue-500">
-              {lang === 'ko' ? '개인정보 처리방침' : 'Privacy Policy'}
+              {copy.helper.privacyLabel}
             </button>
-            {lang === 'ko' ? '에 동의합니다' : ' - I agree'}
+            {copy.helper.agreeSuffix}
           </span>
         </label>
       </div>
@@ -115,32 +112,32 @@ const SignupView: React.FC<SignupViewProps> = ({
         className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-blue-500/20 hover:scale-[1.02] active:scale-95 transition-all mt-4 disabled:opacity-60 disabled:hover:scale-100"
         disabled={loading}
       >
-        {loading ? (lang === 'ko' ? '처리 중...' : 'Working...') : t.signup}
+        {loading ? copy.action.processing : copy.action.signup}
       </button>
       <button
         type="button"
         onClick={() => handleResetPassword()}
         className="w-full mt-3 py-2 text-[11px] font-bold text-slate-400 hover:text-blue-400 transition-colors uppercase tracking-widest underline-offset-4 active:scale-95 transition-transform"
       >
-        {lang === 'ko' ? '비밀번호를 잊으셨나요? 재설정 메일 보내기' : 'Forgot password? Send reset email'}
+        {copy.helper.forgotPassword}
       </button>
       <div className="pt-4 border-t border-slate-200 dark:border-white/5 space-y-3">
         <p className="text-[10px] text-slate-600 dark:text-slate-500 font-bold uppercase tracking-[0.2em] text-center">
-          {lang === 'ko' ? '또는 소셜 계정으로 로그인' : 'Or continue with'}
+          {copy.helper.continueWithSocial}
         </p>
         <div className="grid grid-cols-3 gap-3">
-          <button type="button" onClick={() => handleSocialLogin('google')} className="py-3 bg-white text-slate-900 rounded-2xl font-black text-[11px] uppercase tracking-widest border border-white/10 hover:bg-slate-100 transition-all disabled:opacity-60" disabled={loading}>Google</button>
-          <button type="button" onClick={() => handleSocialLogin('kakao')} className="py-3 bg-[#FEE500] text-[#000000] rounded-2xl font-black text-[11px] uppercase tracking-widest border border-[#FEE500]/20 hover:bg-[#FEE500]/90 transition-all disabled:opacity-60 shadow-sm" disabled={loading}>{lang === 'ko' ? '카카오' : 'Kakao'}</button>
-          <button type="button" onClick={() => handleSocialLogin('github')} className="py-3 bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-white rounded-2xl font-black text-[11px] uppercase tracking-widest border border-slate-200 dark:border-white/20 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all disabled:opacity-60" disabled={loading}>GitHub</button>
+          <button type="button" onClick={() => handleSocialLogin('google')} className="py-3 bg-white text-slate-900 rounded-2xl font-black text-[11px] uppercase tracking-widest border border-white/10 hover:bg-slate-100 transition-all disabled:opacity-60" disabled={loading}>{copy.social.google}</button>
+          <button type="button" onClick={() => handleSocialLogin('kakao')} className="py-3 bg-[#FEE500] text-[#000000] rounded-2xl font-black text-[11px] uppercase tracking-widest border border-[#FEE500]/20 hover:bg-[#FEE500]/90 transition-all disabled:opacity-60 shadow-sm" disabled={loading}>{copy.social.kakao}</button>
+          <button type="button" onClick={() => handleSocialLogin('github')} className="py-3 bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-white rounded-2xl font-black text-[11px] uppercase tracking-widest border border-slate-200 dark:border-white/20 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all disabled:opacity-60" disabled={loading}>{copy.social.github}</button>
         </div>
       </div>
       <div className="text-center pt-4">
         <button type="button" onClick={() => onSwitchType('login')} className="text-[11px] font-bold text-slate-500 hover:text-blue-500 transition-colors uppercase tracking-widest">
-          {lang === 'ko' ? '이미 계정이 있으신가요? 로그인' : "Already have an account? Login"}
+          {copy.helper.loginInstead}
         </button>
       </div>
     </form>
   );
-};
+}
 
 export default SignupView;

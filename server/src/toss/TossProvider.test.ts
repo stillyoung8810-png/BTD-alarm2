@@ -6,11 +6,18 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { getToken, getLoginMe } from './TossProvider';
+import {
+  getLoginMe,
+  getRefreshedTossAccessToken,
+  getToken,
+  removeTossAccessByUserKey,
+} from './TossProvider';
 
 describe('TossProvider', () => {
-  it('getToken / getLoginMe 시그니처 및 requestId 전파는 라우트에서 처리됨', () => {
+  it('토스 인증/연결끊기 함수 시그니처는 안정적으로 export 된다', () => {
     expect(typeof getToken).toBe('function');
     expect(typeof getLoginMe).toBe('function');
+    expect(typeof getRefreshedTossAccessToken).toBe('function');
+    expect(typeof removeTossAccessByUserKey).toBe('function');
   });
 });

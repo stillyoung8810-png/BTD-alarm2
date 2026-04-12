@@ -54,6 +54,7 @@ function ProfileView({
   copy,
   onSwitchType,
   onLogout,
+  isLogoutPending,
   onUpgradePlan,
   currentUserEmail,
   currentTier,
@@ -81,6 +82,7 @@ function ProfileView({
   const paidTier = resolvePaidTier(currentTier);
   const membershipBadge = getMembershipMemberBadge(paidTier, lang);
   const deleteConfirmValue = copy.field.deleteConfirmPlaceholder;
+  const isProfileActionDisabled = loading || isLogoutPending;
   const telegramBotUsername = import.meta.env.VITE_TELEGRAM_BOT_USERNAME?.trim();
   const telegramBotSearchMessage = getTelegramBotSearchMessage(
     lang,
@@ -88,7 +90,7 @@ function ProfileView({
   );
 
   const handleConnectTelegramClick = async () => {
-    if (!currentUserId) return;
+    if (!currentUserId || isLogoutPending) return;
     setTelegramLinkLoading(true);
     setError(null);
     try {
@@ -113,6 +115,7 @@ function ProfileView({
   };
 
   const handleDeleteAccountClick = async () => {
+    if (isLogoutPending) return;
     setLoading(true);
     setError(null);
     try {
@@ -124,16 +127,8 @@ function ProfileView({
     }
   };
 
-  const handleLogoutClick = async () => {
-    setLoading(true);
-    try {
-      await onLogout();
-    } catch (err: unknown) {
-      console.error('[ProfileView] Logout failed:', err);
-      setError(copy.profile.logoutFailed);
-    } finally {
-      setLoading(false);
-    }
+  const handleLogoutClick = (): void => {
+    void Promise.resolve(onLogout());
   };
 
   const canUpgrade = !!onUpgradePlan && paidTier !== 'premium';
@@ -194,6 +189,7 @@ function ProfileView({
                 <Toggle
                   checked={telegramAlertsEnabled}
                   onChange={(v) => onTelegramAlertsEnabledChange?.(v)}
+                  disabled={isProfileActionDisabled}
                   aria-label={copy.profile.telegramAlertsAriaLabel}
                 />
               </div>
@@ -216,14 +212,14 @@ function ProfileView({
                 </p>
               </div>
             ) : isInTossApp ? (
-              <TDSButton variant="tertiary" fullWidth disabled={!currentUserId || telegramLinkLoading} loading={telegramLinkLoading} onClick={handleConnectTelegramClick} className="flex items-center justify-center gap-2 text-[#0088cc] border-[#0088cc]/30">
+              <TDSButton variant="tertiary" fullWidth disabled={!currentUserId || telegramLinkLoading || isLogoutPending} loading={telegramLinkLoading} onClick={handleConnectTelegramClick} className="flex items-center justify-center gap-2 text-[#0088cc] border-[#0088cc]/30">
                 <Send size={18} />
                 {telegramLinkLoading
                   ? copy.action.processing
                   : copy.action.connectTelegram}
               </TDSButton>
             ) : (
-              <button type="button" disabled={!currentUserId || telegramLinkLoading} onClick={handleConnectTelegramClick} className="w-full py-4 bg-[#0088cc]/10 text-[#0088cc] dark:text-[#54a9eb] rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 border border-[#0088cc]/30 hover:bg-[#0088cc]/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
+              <button type="button" disabled={!currentUserId || telegramLinkLoading || isLogoutPending} onClick={handleConnectTelegramClick} className="w-full py-4 bg-[#0088cc]/10 text-[#0088cc] dark:text-[#54a9eb] rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 border border-[#0088cc]/30 hover:bg-[#0088cc]/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
                 <Send size={18} />
                 {telegramLinkLoading
                   ? copy.action.processing
@@ -249,7 +245,7 @@ function ProfileView({
               variant="primary"
               fullWidth
               onClick={handleUpgradeClick}
-              disabled={loading}
+              disabled={isProfileActionDisabled}
               className="flex items-center justify-center gap-3"
             >
               {copy.action.upgradeMembership}
@@ -258,7 +254,7 @@ function ProfileView({
             <button
               type="button"
               onClick={handleUpgradeClick}
-              disabled={loading}
+              disabled={isProfileActionDisabled}
               className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-md hover:shadow-lg hover:brightness-110 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {copy.action.upgradeMembership}
@@ -273,7 +269,7 @@ function ProfileView({
           <button
             type="button"
             onClick={() => onSwitchType('change-password')}
-            disabled={loading}
+            disabled={isProfileActionDisabled}
             className="w-full py-5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-white rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 border border-slate-200 dark:border-white/5 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <Key size={18} /> {copy.action.changePassword}
@@ -286,19 +282,22 @@ function ProfileView({
             variant="tertiary"
             fullWidth
             onClick={handleLogoutClick}
-            disabled={loading}
+            loading={isLogoutPending}
+            disabled={isProfileActionDisabled}
             className="flex items-center justify-center gap-3 text-rose-500 border border-rose-500/20"
           >
-            <LogOut size={18} /> {copy.action.logout}
+            <LogOut size={18} />{' '}
+            {isLogoutPending ? copy.action.processing : copy.action.logout}
           </TDSButton>
         ) : (
           <button
             type="button"
             onClick={handleLogoutClick}
-            disabled={loading}
+            disabled={isProfileActionDisabled}
             className="w-full py-5 bg-rose-600/10 text-rose-500 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 border border-rose-500/20 hover:bg-rose-500 hover:text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <LogOut size={18} /> {copy.action.logout}
+            <LogOut size={18} />{' '}
+            {isLogoutPending ? copy.action.processing : copy.action.logout}
           </button>
         )}
 
@@ -306,7 +305,7 @@ function ProfileView({
           <div className="pt-4 border-t border-slate-200 dark:border-white/5">
             <RefundGuideController
               lang={lang}
-              isDisabled={loading}
+              isDisabled={isProfileActionDisabled}
             />
           </div>
         )}
@@ -318,7 +317,7 @@ function ProfileView({
               <button
                 type="button"
                 onClick={() => setShowDeleteConfirm(true)}
-                disabled={loading}
+                disabled={isProfileActionDisabled}
                 className="w-full py-3 text-[11px] font-bold text-slate-400 hover:text-rose-500 transition-colors uppercase tracking-widest underline-offset-4 disabled:opacity-60"
               >
                 {copy.action.deleteAccount}
@@ -351,7 +350,10 @@ function ProfileView({
                   </button>
                   <button
                     type="button"
-                    disabled={loading || deleteConfirmText !== deleteConfirmValue}
+                    disabled={
+                      isProfileActionDisabled ||
+                      deleteConfirmText !== deleteConfirmValue
+                    }
                     onClick={handleDeleteAccountClick}
                     className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest disabled:opacity-40 disabled:cursor-not-allowed hover:bg-rose-700 transition-colors"
                   >

@@ -17,6 +17,7 @@ import ResetPasswordView from './auth/ResetPasswordView';
 import ChangePasswordView from './auth/ChangePasswordView';
 import ProfileView from './auth/ProfileView';
 import type {
+  AuthSignedInPayload,
   SignedInUser,
   LoginViewProps,
   SignupViewProps,
@@ -111,8 +112,9 @@ interface AuthModalsProps {
   onClose: () => void;
   onRequestClose?: () => void;
   onSwitchType: (nextType: AuthModalType) => void;
-  onSignedIn: (user: SignedInUser) => Promise<void> | void;
+  onSignedIn: (payload: AuthSignedInPayload) => Promise<void> | void;
   onLogout: () => Promise<void> | void;
+  isLogoutPending?: boolean;
   currentUserEmail?: string | null;
   currentTier?: 'free' | 'pro' | 'premium' | null;
   currentUserId?: string;
@@ -315,7 +317,7 @@ function useAuthModalController(
   onTelegramAlertsEnabledChange: ((enabled: boolean) => void) | undefined,
   onUpgradePlan: ((planId: 'pro' | 'premium') => void) | undefined,
   onLogout: () => Promise<void> | void,
-  onSignedIn: (user: SignedInUser) => Promise<void> | void,
+  onSignedIn: (payload: AuthSignedInPayload) => Promise<void> | void,
   onSwitchType: (nextType: AuthModalType) => void,
   onClose: () => void,
 ): AuthModalController {
@@ -750,6 +752,7 @@ function AuthViewRenderer({
   onSwitchType,
   onSignedIn,
   onLogout,
+  isLogoutPending,
   onUpgradePlan,
   currentUserEmail,
   currentTier,
@@ -765,8 +768,9 @@ function AuthViewRenderer({
   copy: AuthModalMessageSet;
   onClose: () => void;
   onSwitchType: (nextType: AuthModalType) => void;
-  onSignedIn: (user: SignedInUser) => Promise<void> | void;
+  onSignedIn: (payload: AuthSignedInPayload) => Promise<void> | void;
   onLogout: () => Promise<void> | void;
+  isLogoutPending: boolean;
   onUpgradePlan?: (planId: 'pro' | 'premium') => void;
   currentUserEmail: string | null;
   currentTier: 'free' | 'pro' | 'premium';
@@ -872,6 +876,7 @@ function AuthViewRenderer({
           onClose={onClose}
           onSwitchType={onSwitchType}
           onLogout={onLogout}
+          isLogoutPending={isLogoutPending}
           onUpgradePlan={onUpgradePlan}
           currentUserEmail={currentUserEmail}
           currentTier={currentTier}
@@ -914,6 +919,7 @@ function AuthModals({
   onSwitchType,
   onSignedIn,
   onLogout,
+  isLogoutPending = false,
   currentUserEmail = null,
   currentTier = 'free',
   currentUserId,
@@ -1032,6 +1038,7 @@ function AuthModals({
             onSwitchType={onSwitchType}
             onSignedIn={onSignedIn}
             onLogout={onLogout}
+            isLogoutPending={isLogoutPending}
             onUpgradePlan={onUpgradePlan}
             currentUserEmail={currentUserEmail}
             currentTier={resolvedCurrentTier}

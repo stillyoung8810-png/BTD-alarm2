@@ -14,7 +14,10 @@ import { baseLogger, maskToken } from './logger';
 const BASE_URL = process.env.TOSS_API_URL || 'https://apps-in-toss-api.toss.im';
 const GENERATE_TOKEN_PATH = '/api-partner/v1/apps-in-toss/user/oauth2/generate-token';
 const LOGIN_ME_PATH = '/api-partner/v1/apps-in-toss/user/oauth2/login-me';
+const REFRESH_TOKEN_PATH = '/api-partner/v1/apps-in-toss/user/oauth2/refresh-token';
+const REMOVE_BY_USER_KEY_PATH = '/api-partner/v1/apps-in-toss/user/oauth2/access/remove-by-user-key';
 const SEND_MESSAGE_PATH = '/api-partner/v1/apps-in-toss/messenger/send-message';
+const RESULT_SUCCESS = 'SUCCESS';
 
 /** 스마트 메시지 단건 발송: 템플릿 변수 객체 (userName은 토스가 자동 치환) */
 export interface SendMessageContext {
@@ -61,8 +64,15 @@ export interface SendBulkMessageResult {
 let singletonAgent: https.Agent | null = null;
 let singletonClient: AxiosInstance | null = null;
 
-function maskSecret(value: string, visibleChars = 10): string {
-  if (!value || value.length <= visibleChars * 2) return '***';
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object';
+}
+
+function maskSecret(value: string, visibleChars = 4): string {
+  if (!value || value.length <= visibleChars * 2) {
+    return '***';
+  }
+
   return `${value.slice(0, visibleChars)}...${value.slice(-visibleChars)}`;
 }
 
@@ -70,20 +80,6 @@ function getMtlsAgent(): https.Agent {
   if (singletonAgent) return singletonAgent;
   const rawCert = process.env.TOSS_CLIENT_CERT || '';
   const rawKey = process.env.TOSS_CLIENT_KEY || '';
-
-  baseLogger.info(
-    {
-      hasCert: !!rawCert,
-      hasKey: !!rawKey,
-      certLength: rawCert.length,
-      keyLength: rawKey.length,
-      certHasEscapedNewlines: rawCert.includes('\\n'),
-      keyHasEscapedNewlines: rawKey.includes('\\n'),
-      certSnippet: maskSecret(rawCert),
-      keySnippet: maskSecret(rawKey),
-    },
-    'Toss mTLS env vars loaded'
-  );
 
   const cert = rawCert.replace(/\\n/g, '\n');
   const key = rawKey.replace(/\\n/g, '\n');
@@ -130,6 +126,39 @@ function normalizeTossError(data: unknown): NormalizedTossError {
     if (typeof err === 'string') return { error: err };
   }
   return { error: 'Internal Server Error' };
+}
+
+function readTossFailurePayload(data: unknown): NormalizedTossError | null {
+  if (!isRecord(data)) {
+    return null;
+  }
+
+  const resultType = data.resultType;
+  const error = data.error;
+
+  if (resultType === 'FAIL') {
+    return normalizeTossError({ error });
+  }
+
+  if (typeof error === 'string') {
+    return normalizeTossError({ error });
+  }
+
+  return null;
+}
+
+function parseTossUserKeyOrThrow(tossUserKey: string): number {
+  const normalizedUserKey = tossUserKey.trim();
+  if (!/^\d+$/.test(normalizedUserKey)) {
+    throw new Error('Invalid toss user key format');
+  }
+
+  const parsedUserKey = Number(normalizedUserKey);
+  if (!Number.isSafeInteger(parsedUserKey)) {
+    throw new Error('toss user key exceeds Number safe integer range');
+  }
+
+  return parsedUserKey;
 }
 
 export interface GetTokenResult {
@@ -259,7 +288,11 @@ export async function getToken(
 
 export interface GetLoginMeResult {
   success: true;
-  userKey: string;
+  data: {
+    userKey: string;
+    agreedTerms: string[];
+    email: string | null;
+  };
 }
 export interface GetLoginMeFailure {
   success: false;
@@ -275,29 +308,201 @@ export async function getLoginMe(accessToken: string, log: RequestLogger): Promi
     { url: `${BASE_URL}${LOGIN_ME_PATH}`, hasToken: !!accessToken },
     '[Toss] login-me request (debug)'
   );
+
   try {
     const res = await client.get(LOGIN_ME_PATH, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
+
+    const failurePayload = readTossFailurePayload(res.data);
+    if (failurePayload != null) {
+      log.warn(
+        {
+          error: failurePayload.error,
+          errorCode: failurePayload.errorCode,
+        },
+        'Toss login-me returned failure payload'
+      );
+      return { success: false, error: failurePayload };
+    }
+
     const parsed = parseLoginMeResponse(res.data);
     if (!parsed) {
-      log.warn({ hasData: !!res.data }, 'Toss login-me response shape invalid');
+      log.warn({ raw: res.data }, 'Toss login-me response shape invalid');
       return { success: false, error: { error: 'Invalid login-me response shape' } };
     }
+
     const userKeyStr = userKeyToString(parsed.userKey);
-    log.info({ userKey: userKeyStr }, 'Toss login-me success');
-    return { success: true, userKey: userKeyStr };
+    log.info(
+      {
+        userKey: userKeyStr,
+        agreedTermsCount: parsed.agreedTerms.length,
+        hasEmail: parsed.email != null,
+      },
+      'Toss login-me success'
+    );
+
+    return {
+      success: true,
+      data: {
+        userKey: userKeyStr,
+        agreedTerms: parsed.agreedTerms,
+        email: parsed.email,
+      },
+    };
   } catch (err) {
     if (axios.isAxiosError(err)) {
       const payload = normalizeTossError(err.response?.data);
       log.warn(
-        { status: err.response?.status, errorCode: payload.errorCode, reason: payload.error },
+        {
+          status: err.response?.status,
+          errorCode: payload.errorCode,
+          reason: payload.error,
+          axiosCode: err.code,
+          axiosMessage: err.message,
+        },
         'Toss login-me failed'
       );
       return { success: false, error: payload };
     }
     log.error({ err }, 'Toss login-me unexpected error');
     return { success: false, error: { error: 'Internal Server Error' } };
+  }
+}
+
+export async function getRefreshedTossAccessToken(
+  refreshToken: string,
+  log: RequestLogger,
+): Promise<string> {
+  const normalizedRefreshToken = refreshToken.trim();
+  if (normalizedRefreshToken.length === 0) {
+    throw new Error('refreshToken is required');
+  }
+
+  const client = getClient();
+
+  try {
+    const res = await client.post(REFRESH_TOKEN_PATH, {
+      refreshToken: normalizedRefreshToken,
+    });
+
+    const failurePayload = readTossFailurePayload(res.data);
+    if (failurePayload != null) {
+      log.warn(
+        {
+          error: failurePayload.error,
+          errorCode: failurePayload.errorCode,
+        },
+        'Toss refresh-token returned failure payload',
+      );
+      throw new Error(failurePayload.error);
+    }
+
+    const parsed = parseTokenResponse(res.data);
+    if (parsed == null) {
+      log.error({ raw: res.data }, 'Invalid refresh-token response shape');
+      throw new Error('Invalid refresh-token response');
+    }
+
+    log.info(
+      {
+        expiresIn: parsed.expiresIn,
+        accessTokenMasked: maskToken(parsed.accessToken),
+        refreshTokenMasked: maskToken(parsed.refreshToken),
+      },
+      'Toss refresh-token success',
+    );
+
+    return parsed.accessToken;
+  } catch (error: unknown) {
+    if (axios.isAxiosError(error)) {
+      const payload = normalizeTossError(error.response?.data);
+      log.warn(
+        {
+          status: error.response?.status,
+          errorCode: payload.errorCode,
+          reason: payload.error,
+          axiosCode: error.code,
+          axiosMessage: error.message,
+        },
+        'Toss refresh-token failed',
+      );
+      throw new Error(payload.error);
+    }
+
+    log.error({ error }, 'Toss refresh-token unexpected error');
+    throw error instanceof Error ? error : new Error('Internal Server Error');
+  }
+}
+
+export async function removeTossAccessByUserKey(
+  accessToken: string,
+  tossUserKey: string,
+  log: RequestLogger,
+): Promise<void> {
+  const normalizedAccessToken = accessToken.trim();
+  if (normalizedAccessToken.length === 0) {
+    throw new Error('accessToken is required');
+  }
+
+  const parsedUserKey = parseTossUserKeyOrThrow(tossUserKey);
+  const client = getClient();
+
+  try {
+    const res = await client.post(
+      REMOVE_BY_USER_KEY_PATH,
+      { userKey: parsedUserKey },
+      {
+        headers: {
+          Authorization: `Bearer ${normalizedAccessToken}`,
+        },
+      },
+    );
+
+    const failurePayload = readTossFailurePayload(res.data);
+    if (failurePayload != null) {
+      log.warn(
+        {
+          tossUserKey,
+          error: failurePayload.error,
+          errorCode: failurePayload.errorCode,
+        },
+        'Toss remove-by-user-key returned failure payload',
+      );
+      throw new Error(failurePayload.error);
+    }
+
+    if (isRecord(res.data) && 'resultType' in res.data && res.data.resultType !== RESULT_SUCCESS) {
+      log.warn(
+        {
+          tossUserKey,
+          raw: res.data,
+        },
+        'Unexpected remove-by-user-key success response shape',
+      );
+      throw new Error('Invalid remove-by-user-key response');
+    }
+
+    log.info({ tossUserKey }, 'Toss official unlink completed');
+  } catch (error: unknown) {
+    if (axios.isAxiosError(error)) {
+      const payload = normalizeTossError(error.response?.data);
+      log.warn(
+        {
+          tossUserKey,
+          status: error.response?.status,
+          errorCode: payload.errorCode,
+          reason: payload.error,
+          axiosCode: error.code,
+          axiosMessage: error.message,
+        },
+        'Toss remove-by-user-key failed',
+      );
+      throw new Error(payload.error);
+    }
+
+    log.error({ error, tossUserKey }, 'Toss remove-by-user-key unexpected error');
+    throw error instanceof Error ? error : new Error('Internal Server Error');
   }
 }
 

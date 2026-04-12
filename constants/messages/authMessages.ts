@@ -112,6 +112,43 @@ export interface AuthModalMessageSet {
   };
 }
 
+export interface FallbackAuthMessageSet {
+  tossLoginDescription: string;
+  tossLoginAction: string;
+  tossLoginLoadingAction: string;
+  tossLoginFailed: string;
+  tossLoginUnexpectedError: string;
+  tossSessionApplyFailed: string;
+  tossLogoutNetworkError: string;
+  tossLogoutUnlinkDelayedWarning: string;
+}
+
+export const FALLBACK_AUTH_MESSAGES: Record<AppLang, FallbackAuthMessageSet> = {
+  ko: {
+    tossLoginDescription: '토스 앱에서만 사용 가능한 로그인입니다.',
+    tossLoginAction: 'Toss로 계속하기',
+    tossLoginLoadingAction: '처리 중...',
+    tossLoginFailed: '토스 로그인에 실패했습니다.',
+    tossLoginUnexpectedError: '로그인 중 오류가 발생했습니다.',
+    tossSessionApplyFailed: '세션 설정에 실패했습니다. 다시 시도해주세요.',
+    tossLogoutNetworkError: '로그아웃 처리 중 오류가 발생했습니다. 다시 시도해주세요.',
+    tossLogoutUnlinkDelayedWarning:
+      '토스 서버 지연으로 연결을 끊지 못했습니다. 잠시 후 다시 시도해주세요.',
+  },
+  en: {
+    tossLoginDescription: 'This login is only available in the Toss app.',
+    tossLoginAction: 'Continue with Toss',
+    tossLoginLoadingAction: 'Loading...',
+    tossLoginFailed: 'Toss login failed.',
+    tossLoginUnexpectedError: 'An error occurred during login.',
+    tossSessionApplyFailed: 'Failed to apply the session. Please try again.',
+    tossLogoutNetworkError:
+      'An error occurred while logging out. Please try again.',
+    tossLogoutUnlinkDelayedWarning:
+      'Toss could not disconnect the link due to a server delay. Please try again shortly.',
+  },
+};
+
 export const AUTH_MODAL_MESSAGES: Record<AppLang, AuthModalMessageSet> = {
   ko: {
     title: {

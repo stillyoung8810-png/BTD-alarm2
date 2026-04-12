@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { AppLang } from '../../types';
 import { useTossApp } from '../../contexts/TossAppContext';
 import AuthModals, {
@@ -17,10 +17,19 @@ import {
   type UseAsyncTdsConfirmResult,
 } from '../tds-adapter/useAsyncTdsConfirm';
 import { TDS_DIALOG_MESSAGES } from '../../constants/tdsDialogMessages';
-import { getAuthModalMessages } from '../../constants/messages/authMessages';
-import type { AuthModalType, SignedInUser } from './authViewTypes';
-import { supabase } from '../../services/supabase';
+import {
+  FALLBACK_AUTH_MESSAGES,
+  getAuthModalMessages,
+} from '../../constants/messages/authMessages';
+import type {
+  AuthModalType,
+  AuthSignedInPayload,
+  SignedInUser,
+} from './authViewTypes';
+import { clearAuthStorage, supabase } from '../../services/supabase';
+import { normalizeErrorMessage } from '../../services/serviceUtils';
 import { buildRedirectUrl } from '../../utils/authHelpers';
+import { showErrorToast } from '../tds-adapter/showErrorToast';
 
 const AUTH_PENDING_CONSENT_STORAGE_KEY = 'btd_pending_consent';
 const AUTH_ERROR_CODE_MISSING_CURRENT_USER_EMAIL =
@@ -52,6 +61,12 @@ interface AuthModalCoordinatorProps extends BaseAuthModalsProps {
   onCompleteSignedInWelcome: () => void;
 }
 
+function isTossAuthSuccessPayload(
+  payload: AuthSignedInPayload,
+): payload is Extract<AuthSignedInPayload, { session: unknown }> {
+  return 'session' in payload;
+}
+
 function AuthModalCoordinator({
   lang,
   isOpen,
@@ -76,6 +91,17 @@ function AuthModalCoordinator({
     labels: actionLabels,
   };
   const copy = getAuthModalMessages(lang);
+  const fallbackCopy =
+    FALLBACK_AUTH_MESSAGES[lang] ?? FALLBACK_AUTH_MESSAGES.ko;
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const commands: AuthCommands = useMemo(() => {
     const normalizedCurrentUserEmail = currentUserEmail?.trim() ?? '';
@@ -267,34 +293,134 @@ function AuthModalCoordinator({
 
   const isCommittingSignInRef = useRef(false);
 
+  const resolveSignedInUserAfterSession = useCallback(
+    async (
+      sessionUser: { id: string; email?: string | null } | null,
+      fallbackUser?: SignedInUser,
+    ): Promise<SignedInUser> => {
+      if (sessionUser != null && sessionUser.id.trim().length > 0) {
+        return {
+          id: sessionUser.id,
+          email: sessionUser.email ?? fallbackUser?.email ?? '',
+        };
+      }
+
+      if (fallbackUser != null && fallbackUser.id.trim().length > 0) {
+        return fallbackUser;
+      }
+
+      const { data, error } = await supabase.auth.getUser();
+      if (error != null) {
+        throw error;
+      }
+
+      if (data.user == null || data.user.id.trim().length === 0) {
+        throw new Error(fallbackCopy.tossSessionApplyFailed);
+      }
+
+      return {
+        id: data.user.id,
+        email: data.user.email ?? '',
+      };
+    },
+    [fallbackCopy.tossSessionApplyFailed],
+  );
+
+  const rollbackLocalSession = useCallback(async (): Promise<void> => {
+    clearAuthStorage();
+
+    try {
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch (error: unknown) {
+      console.warn(
+        '[AuthModalCoordinator] Local session rollback failed',
+        error,
+      );
+    }
+  }, []);
+
+  const finishSignedInFlow = useCallback(
+    async (user: SignedInUser): Promise<void> => {
+      if (!isMountedRef.current) {
+        return;
+      }
+
+      await Promise.resolve(onCommitSignedIn(user));
+
+      if (!isMountedRef.current) {
+        return;
+      }
+
+      const shouldShowWelcome =
+        isInTossApp && (type === 'login' || type === 'signup');
+
+      await Promise.resolve(
+        onFinishSignedInFlow(user, {
+          shouldShowWelcome,
+        }),
+      );
+    },
+    [isInTossApp, onCommitSignedIn, onFinishSignedInFlow, type],
+  );
+
   const handleSignedIn = useCallback(
-    async (user: SignedInUser) => {
+    async (payload: AuthSignedInPayload) => {
       if (isCommittingSignInRef.current) {
         return;
       }
       isCommittingSignInRef.current = true;
 
+      const isTossPayload = isTossAuthSuccessPayload(payload);
+      let hasAppliedSession = false;
+
       try {
-        await Promise.resolve(onCommitSignedIn(user));
+        if (!isTossPayload) {
+          await finishSignedInFlow(payload);
+          return;
+        }
 
-        const shouldShowWelcome =
-          isInTossApp && (type === 'login' || type === 'signup');
+        const { data, error } = await supabase.auth.setSession({
+          access_token: payload.session.accessToken,
+          refresh_token: payload.session.refreshToken,
+        });
+        if (error != null) {
+          throw error;
+        }
 
-        await Promise.resolve(
-          onFinishSignedInFlow(user, {
-            shouldShowWelcome,
-          }),
+        hasAppliedSession = true;
+        const signedInUser = await resolveSignedInUserAfterSession(
+          data.user,
+          payload.user,
         );
+        await finishSignedInFlow(signedInUser);
       } catch (error: unknown) {
+        const fallbackMessage = isTossPayload
+          ? fallbackCopy.tossSessionApplyFailed
+          : copy.validation.authenticationFailed;
+        const message = normalizeErrorMessage(error, fallbackMessage);
+
         console.error(
           '[AuthModalCoordinator] Sign-in flow execution failed',
           error,
         );
+
+        if (isTossPayload && hasAppliedSession) {
+          await rollbackLocalSession();
+        }
+
+        showErrorToast(message);
+        throw new Error(message);
       } finally {
         isCommittingSignInRef.current = false;
       }
     },
-    [isInTossApp, onCommitSignedIn, onFinishSignedInFlow, type],
+    [
+      copy.validation.authenticationFailed,
+      fallbackCopy.tossSessionApplyFailed,
+      finishSignedInFlow,
+      resolveSignedInUserAfterSession,
+      rollbackLocalSession,
+    ],
   );
 
   const handleRequestMiniAppExit = useCallback(async () => {

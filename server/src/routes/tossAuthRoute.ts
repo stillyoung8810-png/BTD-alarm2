@@ -8,33 +8,13 @@
 import { FastifyInstance } from 'fastify';
 import { parseTossExchangeBody } from '../toss/authSchemas';
 import { getToken, getLoginMe } from '../toss/TossProvider';
-import { ensureSessionForTossUserKey } from '../toss/AuthService';
+import { finalizeTossLoginExchange } from '../toss/AuthService';
 
 export async function tossAuthRoutes(fastify: FastifyInstance) {
   fastify.post('/auth/toss/exchange', async (request, reply) => {
     const { correlationId, log } = request;
 
-    const rawBody = request.body as Record<string, unknown> | null | undefined;
-    log.info(
-      {
-        codeSnippet:
-          typeof rawBody?.authorizationCode === 'string'
-            ? rawBody.authorizationCode.substring(0, 10)
-            : undefined,
-        referrer: rawBody?.referrer,
-      },
-      'Frontend delivered token data'
-    );
-    if (rawBody == null || typeof rawBody !== 'object') {
-      log.warn('Toss exchange: request body missing or not an object');
-      return reply.code(400).send({
-        error: 'Request body is required (JSON with authorizationCode, referrer)',
-        errorCode: 'VALIDATION_ERROR',
-        requestId: correlationId,
-      });
-    }
-
-    const parsed = parseTossExchangeBody(rawBody);
+    const parsed = parseTossExchangeBody(request.body);
     if (!parsed.success) {
       log.warn({ error: parsed.error }, 'Toss exchange body validation failed');
       return reply.code(400).send({
@@ -55,32 +35,43 @@ export async function tossAuthRoutes(fastify: FastifyInstance) {
       });
     }
 
-    const tokenResult = await getToken(codeTrimmed, referrer, log);
-    if (!tokenResult.success) {
-      return reply.code(400).send({
-        ...tokenResult.error,
-        requestId: correlationId,
-      });
-    }
-
-    const loginMeResult = await getLoginMe(tokenResult.data.accessToken, log);
-    if (!loginMeResult.success) {
-      return reply.code(400).send({
-        ...loginMeResult.error,
-        requestId: correlationId,
-      });
-    }
-
     try {
-      const session = await ensureSessionForTossUserKey(loginMeResult.userKey, log);
-      return reply.send({
-        access_token: session.access_token,
-        refresh_token: session.refresh_token,
-        user: session.user,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Session creation failed';
-      log.error({ err, message }, 'AuthService ensureSession failed');
+      log.info(
+        {
+          referrer,
+          authorizationCodeLength: codeTrimmed.length,
+        },
+        'Processing Toss exchange request'
+      );
+
+      const tokenResult = await getToken(codeTrimmed, referrer, log);
+      if (!tokenResult.success) {
+        return reply.code(400).send({
+          ...tokenResult.error,
+          requestId: correlationId,
+        });
+      }
+
+      const loginMeResult = await getLoginMe(tokenResult.data.accessToken, log);
+      if (!loginMeResult.success) {
+        return reply.code(400).send({
+          ...loginMeResult.error,
+          requestId: correlationId,
+        });
+      }
+
+      const session = await finalizeTossLoginExchange(
+        loginMeResult.data.userKey,
+        loginMeResult.data.email,
+        loginMeResult.data.agreedTerms,
+        tokenResult.data.refreshToken,
+        log
+      );
+
+      return reply.send(session);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Session creation failed';
+      log.error({ error, message }, 'Toss exchange flow failed');
       return reply.code(500).send({
         error: message,
         errorCode: 'SESSION_FAILED',

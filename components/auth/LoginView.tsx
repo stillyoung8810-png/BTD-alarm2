@@ -29,7 +29,7 @@ function LoginView({
             {error}
           </p>
         )}
-        <TossLoginView lang={lang} onSignedIn={onSignedIn} onError={setError} />
+        <TossLoginView lang={lang} onSuccess={onSignedIn} onError={setError} />
       </>
     );
   }

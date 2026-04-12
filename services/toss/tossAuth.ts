@@ -4,7 +4,6 @@
  */
 
 import { appLogin } from '@apps-in-toss/web-framework';
-import { supabase } from '../supabase';
 import {
   fetchJsonWithTimeout,
   isRecord,
@@ -17,15 +16,25 @@ import { isTossApp } from './tossBridge';
 
 const BFF_URL = readTrimmedViteEnv('VITE_RAILWAY_BFF_URL');
 
-export interface TossAuthResult {
-  success: boolean;
+export interface TossAuthSuccessResult {
+  success: true;
+  session: {
+    accessToken: string;
+    refreshToken: string;
+  };
   user?: { id: string; email: string };
-  error?: string;
 }
 
 /**
- * 토스 앱 내에서 로그인: appLogin으로 code·referrer 획득 후 BFF /auth/toss/exchange 호출하여 Supabase 세션 설정.
+ * 토스 앱 내에서 로그인: appLogin으로 code·referrer 획득 후 BFF /auth/toss/exchange 응답만 반환합니다.
  */
+export type TossAuthResult =
+  | TossAuthSuccessResult
+  | {
+      success: false;
+      error: string;
+    };
+
 export async function loginWithToss(): Promise<TossAuthResult> {
   if (!isTossApp()) {
     return { success: false, error: '토스 앱 환경이 아닙니다.' };
@@ -83,32 +92,14 @@ export async function loginWithToss(): Promise<TossAuthResult> {
     return { success: false, error: '세션 정보를 받지 못했습니다.' };
   }
 
-  try {
-    const { error: setError } = await supabase.auth.setSession({
-      access_token: decodedSession.accessToken,
-      refresh_token: decodedSession.refreshToken,
-    });
-    if (setError) {
-      console.error('[TossAuth] setSession error:', setError.message);
-      return { success: false, error: setError.message };
-    }
-  } catch (error: unknown) {
-    const message = normalizeErrorMessage(
-      error,
-      'supabase_set_session_failed',
-    );
-    console.error('[TossAuth] setSession throw:', message);
-    return { success: false, error: message };
-  }
-
-  if (decodedSession.user != null) {
-    return { success: true, user: decodedSession.user };
-  }
-
-  const { data } = await supabase.auth.getUser();
-  const id = data.user?.id ?? '';
-  const email = data.user?.email ?? data.user?.user_metadata?.email ?? '';
-  return { success: true, user: { id, email } };
+  return {
+    success: true,
+    session: {
+      accessToken: decodedSession.accessToken,
+      refreshToken: decodedSession.refreshToken,
+    },
+    user: decodedSession.user,
+  };
 }
 
 function decodeAppLoginResponse(

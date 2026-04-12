@@ -551,6 +551,8 @@ const MS_24H = 24 * 60 * 60 * 1000;
  * 조건 (OR):
  * 1. 현재 시각이 UTC 22:15 이후이고, 아직 오늘 날짜(UTC)로 서버 확인을 하지 않은 경우
  * 2. 마지막 서버 확인 시점(lastCheckedAt)으로부터 24시간 이상 경과한 경우
+ * 3. IndexedDB에 기록된 최종 종가일(lastUpdated)이 KST 기준 달력 "오늘"보다 이전인 경우
+ *    (시간 규칙만으로는 며칠~몇 주 동안 캐시만 쓰는 경우를 막음 — 새로고침 시 서버와 재동기화)
  *
  * metadata가 없는 경우(최초 실행)에는 항상 true 반환
  */
@@ -562,6 +564,7 @@ const shouldCheckServerForSymbol = (
 
   const nowTs = nowUtc.getTime();
   const todayUtc = getTodayUtcDateString(nowUtc);
+  const todayKst = getTodayDateString();
   const cutoffUtc = getTodayUtcCutoff(nowUtc);
   const isAfterCutoff = nowUtc >= cutoffUtc;
 
@@ -572,8 +575,11 @@ const shouldCheckServerForSymbol = (
 
   const cond1 = isAfterCutoff && metadata.lastCheckedDate !== todayUtc;
   const cond2 = msSinceLastCheck >= MS_24H;
+  const lastBar = metadata.lastUpdated?.trim() ?? '';
+  const cond3 =
+    lastBar.length >= 10 && lastBar.localeCompare(todayKst) < 0;
 
-  return cond1 || cond2;
+  return cond1 || cond2 || cond3;
 };
 
 /**
@@ -608,6 +614,18 @@ const loadStockDataForSymbols = async (
                 `[${logTag}] ${symbol}: 캐시 데이터 사용 (dataCount=${metadata.dataCount})`,
               );
             }
+            // 배지용 LATEST_TRADE_DATE가 예전에만 갱신되고 IDB 메타는 맞는 경우 동기화
+            if (
+              typeof window !== 'undefined' &&
+              symbol === REFERENCE_SYMBOL &&
+              metadata.lastUpdated != null &&
+              metadata.lastUpdated.trim() !== ''
+            ) {
+              window.localStorage.setItem(
+                LATEST_TRADE_DATE_KEY,
+                metadata.lastUpdated.trim(),
+              );
+            }
             return;
           }
 
@@ -629,7 +647,7 @@ const loadStockDataForSymbols = async (
             .from("stock_prices")
             .select("close, trade_date")
             .eq("symbol", symbol)
-            .order("trade_date", { ascending: true })
+            .order("trade_date", { ascending: false })
             .limit(STOCK_FULL_LOAD_LIMIT);
 
           const decodedRows = decodeSupabaseStockRows(data);
@@ -639,7 +657,8 @@ const loadStockDataForSymbols = async (
           }
 
           const records = toStockPriceRecords(symbol, decodedRows)
-            .filter((record) => record.date.length > 0 && record.close > 0);
+            .filter((record) => record.date.length > 0 && record.close > 0)
+            .sort((a, b) => a.date.localeCompare(b.date));
 
           if (records.length === 0) return;
 

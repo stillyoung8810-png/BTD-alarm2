@@ -1,16 +1,22 @@
 /**
- * AuthService: Supabase 유저 매핑 및 세션 관리.
- * - toss_accounts 테이블로 토스 userKey ↔ auth.users(id) 매핑을 관리.
- * - user_profiles.toss_user_key는 보조 인덱스 겸 캐시로 유지.
- * - 비밀번호는 서버에서만 결정적 생성(managed), DB·로그·클라이언트에 노출하지 않음.
+ * AuthService: 토스 exchange 완료 후 내부 세션 발급까지의 서버 책임만 담당한다.
+ * 계정 식별은 오직 userKey 기반으로 수행하고, login-me email은 보조 메타데이터로만 취급한다.
  */
 
 import { createHash } from 'crypto';
 import type { RequestLogger } from './logger';
 import { supabaseAdmin } from '../supabaseClient';
 import type { TossSessionResponse } from './types';
+import { encryptStoredRefreshToken } from './storedRefreshTokenCrypto';
 
 const TOSS_EMAIL_DOMAIN = 'toss.placeholder';
+const LIST_USERS_PAGE_SIZE = 1000;
+const LIST_USERS_MAX_PAGES = 100;
+const REQUIRED_TERMS_SEPARATOR = ',';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object';
+}
 
 function tossEmailFromUserKey(tossUserKey: string): string {
   return `toss_${tossUserKey}@${TOSS_EMAIL_DOMAIN}`;
@@ -23,27 +29,57 @@ function managedPassword(email: string): string {
   return `TossLogin_${hash}`;
 }
 
-function isUniqueEmailError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false;
-  const e = error as { message?: string; code?: string };
+function readRequiredTossTermsTags(): string[] {
+  const raw = process.env.TOSS_REQUIRED_TERMS_TAGS?.trim() ?? '';
+  if (raw.length === 0) {
+    throw new Error('TOSS_REQUIRED_TERMS_TAGS is required');
+  }
 
-  if (e.code === '23505') return true; // PostgreSQL unique_violation
-  if (typeof e.message === 'string' && e.message.includes('duplicate key value violates unique constraint')) {
-    return true;
+  const termsTags = raw
+    .split(REQUIRED_TERMS_SEPARATOR)
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+
+  if (termsTags.length === 0) {
+    throw new Error('TOSS_REQUIRED_TERMS_TAGS must include at least one tag');
   }
-  if (typeof e.message === 'string' && e.message.includes('already registered')) {
-    return true;
-  }
-  return false;
+
+  return termsTags;
 }
 
-const LIST_USERS_PAGE_SIZE = 1000;
-const LIST_USERS_MAX_PAGES = 100;
+function hasAllRequiredTerms(agreedTerms: string[]): boolean {
+  const requiredTermsTags = readRequiredTossTermsTags();
+  return requiredTermsTags.every((tag) => agreedTerms.includes(tag));
+}
 
-async function findAuthUserByEmail(email: string, log: RequestLogger) {
-  if (!email) return null;
+function isUniqueEmailError(error: unknown): boolean {
+  if (!isRecord(error)) {
+    return false;
+  }
 
-  const normalized = email.trim().toLowerCase();
+  const message = error.message;
+  const code = error.code;
+
+  if (code === '23505') {
+    return true;
+  }
+
+  if (typeof message !== 'string') {
+    return false;
+  }
+
+  return (
+    message.includes('duplicate key value violates unique constraint') ||
+    message.includes('already registered')
+  );
+}
+
+async function findManagedAuthUserByEmail(email: string, log: RequestLogger): Promise<{ id: string } | null> {
+  const normalizedEmail = email.trim().toLowerCase();
+  if (normalizedEmail.length === 0) {
+    return null;
+  }
+
   let page = 1;
 
   while (page <= LIST_USERS_MAX_PAGES) {
@@ -53,18 +89,19 @@ async function findAuthUserByEmail(email: string, log: RequestLogger) {
     });
 
     if (error) {
-      log.error({ error }, 'findAuthUserByEmail: listUsers failed');
+      log.error({ error, page }, 'findManagedAuthUserByEmail: listUsers failed');
       throw new Error('Auth 사용자 조회 실패');
     }
 
     const users = data?.users ?? [];
-    const match = users.find((u) => (u.email ?? '').trim().toLowerCase() === normalized);
-    if (match) {
-      return match;
+    const matchedUser = users.find((user) => (user.email ?? '').trim().toLowerCase() === normalizedEmail);
+
+    if (matchedUser?.id != null) {
+      return { id: matchedUser.id };
     }
 
     if (users.length < LIST_USERS_PAGE_SIZE) {
-      break;
+      return null;
     }
 
     page += 1;
@@ -73,73 +110,204 @@ async function findAuthUserByEmail(email: string, log: RequestLogger) {
   return null;
 }
 
-async function createSupabaseUserForToss(
-  email: string,
-  password: string,
+async function createManagedTossAuthUser(
   tossUserKey: string,
-  log: RequestLogger
-): Promise<string> {
+  log: RequestLogger,
+): Promise<{ id: string }> {
+  const email = tossEmailFromUserKey(tossUserKey);
+  const password = managedPassword(email);
+
   const { data, error } = await supabaseAdmin.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
-    user_metadata: { provider: 'toss', toss_user_key: tossUserKey },
+    user_metadata: {
+      provider: 'toss',
+      toss_user_key: tossUserKey,
+    },
   });
 
-  if (!error && data?.user?.id) {
-    return data.user.id;
+  if (!error && data?.user?.id != null) {
+    return { id: data.user.id };
   }
 
   if (isUniqueEmailError(error)) {
-    log.warn({ error }, 'createSupabaseUserForToss: email already exists, fallback to listUsers');
-    const existing = await findAuthUserByEmail(email, log);
-    if (existing?.id) {
-      return existing.id;
+    log.warn({ tossUserKey }, 'createManagedTossAuthUser: managed email already exists');
+    const existingUser = await findManagedAuthUserByEmail(email, log);
+    if (existingUser != null) {
+      return existingUser;
     }
   }
 
-  log.error({ error }, 'createSupabaseUserForToss: failed to create user');
+  log.error({ error, tossUserKey }, 'createManagedTossAuthUser: createUser failed');
   throw new Error('Supabase 유저 생성 실패');
 }
 
-async function upsertTossAccount(tossUserKey: string, authUserId: string, log: RequestLogger) {
-  const { error } = await supabaseAdmin
+async function findAuthUserIdByTossUserKey(
+  tossUserKey: string,
+  log: RequestLogger,
+): Promise<string | null> {
+  const { data: accountMapping, error: accountError } = await supabaseAdmin
     .from('toss_accounts')
+    .select('auth_user_id')
+    .eq('toss_user_key', tossUserKey)
+    .maybeSingle();
+
+  if (accountError) {
+    log.error({ accountError, tossUserKey }, 'findAuthUserIdByTossUserKey: toss_accounts select failed');
+    throw new Error('toss_accounts 조회 실패');
+  }
+
+  if (typeof accountMapping?.auth_user_id === 'string' && accountMapping.auth_user_id.trim().length > 0) {
+    return accountMapping.auth_user_id;
+  }
+
+  const { data: profileMapping, error: profileError } = await supabaseAdmin
+    .from('user_profiles')
+    .select('id')
+    .eq('toss_user_key', tossUserKey)
+    .maybeSingle();
+
+  if (profileError) {
+    log.error({ profileError, tossUserKey }, 'findAuthUserIdByTossUserKey: user_profiles select failed');
+    throw new Error('user_profiles 조회 실패');
+  }
+
+  if (typeof profileMapping?.id === 'string' && profileMapping.id.trim().length > 0) {
+    return profileMapping.id;
+  }
+
+  return null;
+}
+
+async function resolveOrCreateAuthUserIdByTossUserKey(
+  tossUserKey: string,
+  log: RequestLogger,
+): Promise<string> {
+  const existingAuthUserId = await findAuthUserIdByTossUserKey(tossUserKey, log);
+  if (existingAuthUserId != null) {
+    return existingAuthUserId;
+  }
+
+  const createdUser = await createManagedTossAuthUser(tossUserKey, log);
+  return createdUser.id;
+}
+
+async function saveStoredTossRefreshToken(
+  authUserId: string,
+  tossUserKey: string,
+  refreshToken: string,
+  log: RequestLogger,
+): Promise<void> {
+  const normalizedRefreshToken = refreshToken.trim();
+  if (normalizedRefreshToken.length === 0) {
+    throw new Error('refreshToken is required');
+  }
+
+  const encryptedRefreshToken = encryptStoredRefreshToken(normalizedRefreshToken);
+
+  const { error: deleteError } = await supabaseAdmin
+    .from('toss_auth_links')
+    .delete()
+    .eq('auth_user_id', authUserId)
+    .neq('toss_user_key', tossUserKey);
+
+  if (deleteError) {
+    log.error({ deleteError, authUserId, tossUserKey }, 'saveStoredTossRefreshToken: stale link cleanup failed');
+    throw new Error('toss_auth_links 정리 실패');
+  }
+
+  const { error: upsertError } = await supabaseAdmin
+    .from('toss_auth_links')
     .upsert(
-      { toss_user_key: tossUserKey, auth_user_id: authUserId },
-      { onConflict: 'toss_user_key' }
+      {
+        auth_user_id: authUserId,
+        toss_user_key: tossUserKey,
+        encrypted_refresh_token: encryptedRefreshToken,
+      },
+      { onConflict: 'toss_user_key' },
     );
 
-  if (error) {
-    log.error({ error }, 'upsertTossAccount: upsert failed');
-    throw new Error('toss_accounts upsert 실패');
+  if (upsertError) {
+    log.error({ upsertError, authUserId, tossUserKey }, 'saveStoredTossRefreshToken: upsert failed');
+    throw new Error('toss_auth_links 저장 실패');
   }
 }
 
-async function upsertUserProfileForToss(authUserId: string, tossUserKey: string, log: RequestLogger) {
-  const { data: profile, error: selectError } = await supabaseAdmin
+async function syncTossAccountMapping(
+  authUserId: string,
+  tossUserKey: string,
+  log: RequestLogger,
+): Promise<void> {
+  const { error: deleteError } = await supabaseAdmin
+    .from('toss_accounts')
+    .delete()
+    .eq('auth_user_id', authUserId)
+    .neq('toss_user_key', tossUserKey);
+
+  if (deleteError) {
+    log.error({ deleteError, authUserId, tossUserKey }, 'syncTossAccountMapping: stale account cleanup failed');
+    throw new Error('toss_accounts 정리 실패');
+  }
+
+  const { error: upsertError } = await supabaseAdmin
+    .from('toss_accounts')
+    .upsert(
+      {
+        auth_user_id: authUserId,
+        toss_user_key: tossUserKey,
+      },
+      { onConflict: 'toss_user_key' },
+    );
+
+  if (upsertError) {
+    log.error({ upsertError, authUserId, tossUserKey }, 'syncTossAccountMapping: upsert failed');
+    throw new Error('toss_accounts 저장 실패');
+  }
+}
+
+async function syncUserProfileForToss(
+  authUserId: string,
+  tossUserKey: string,
+  log: RequestLogger,
+): Promise<void> {
+  const { error: cleanupError } = await supabaseAdmin
+    .from('user_profiles')
+    .update({ toss_user_key: null })
+    .eq('toss_user_key', tossUserKey)
+    .neq('id', authUserId);
+
+  if (cleanupError) {
+    log.error({ cleanupError, authUserId, tossUserKey }, 'syncUserProfileForToss: ghost key cleanup failed');
+    throw new Error('user_profiles 유령 키 정리 실패');
+  }
+
+  const { data: profile, error: profileError } = await supabaseAdmin
     .from('user_profiles')
     .select('id, toss_user_key')
     .eq('id', authUserId)
     .maybeSingle();
 
-  if (selectError) {
-    log.error({ selectError }, 'upsertUserProfileForToss: select failed');
+  if (profileError) {
+    log.error({ profileError, authUserId }, 'syncUserProfileForToss: select failed');
     throw new Error('user_profiles 조회 실패');
   }
 
-  if (profile?.id) {
-    if (!profile.toss_user_key || profile.toss_user_key !== tossUserKey) {
-      const { error: updateError } = await supabaseAdmin
-        .from('user_profiles')
-        .update({ toss_user_key: tossUserKey })
-        .eq('id', authUserId);
-
-      if (updateError) {
-        log.error({ updateError }, 'upsertUserProfileForToss: update failed');
-        throw new Error('user_profiles 업데이트 실패');
-      }
+  if (typeof profile?.id === 'string' && profile.id.trim().length > 0) {
+    if (profile.toss_user_key === tossUserKey) {
+      return;
     }
+
+    const { error: updateError } = await supabaseAdmin
+      .from('user_profiles')
+      .update({ toss_user_key: tossUserKey })
+      .eq('id', authUserId);
+
+    if (updateError) {
+      log.error({ updateError, authUserId, tossUserKey }, 'syncUserProfileForToss: update failed');
+      throw new Error('user_profiles 업데이트 실패');
+    }
+
     return;
   }
 
@@ -151,83 +319,142 @@ async function upsertUserProfileForToss(authUserId: string, tossUserKey: string,
     });
 
   if (insertError) {
-    log.error({ insertError }, 'upsertUserProfileForToss: insert failed');
+    log.error({ insertError, authUserId, tossUserKey }, 'syncUserProfileForToss: insert failed');
     throw new Error('user_profiles 생성 실패');
   }
 }
 
-async function signInSupabaseUser(
-  email: string,
-  password: string,
-  log: RequestLogger
+async function syncOptionalTossMetadata(
+  authUserId: string,
+  tossUserKey: string,
+  encryptedEmail: string | null,
+  log: RequestLogger,
+): Promise<void> {
+  const { data, error } = await supabaseAdmin.auth.admin.getUserById(authUserId);
+  if (error || data.user == null) {
+    log.error({ error, authUserId }, 'syncOptionalTossMetadata: getUserById failed');
+    throw new Error('Auth 사용자 조회 실패');
+  }
+
+  const currentMetadata = isRecord(data.user.user_metadata) ? data.user.user_metadata : {};
+  const nextMetadata: Record<string, unknown> = {
+    ...currentMetadata,
+    provider: 'toss',
+    toss_user_key: tossUserKey,
+  };
+
+  // login-me email은 암호화된 보조 값일 수 있으므로 식별에 절대 사용하지 않고 메타데이터로만 보존한다.
+  if (encryptedEmail != null) {
+    nextMetadata.toss_email_encrypted = encryptedEmail;
+  }
+
+  const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(authUserId, {
+    user_metadata: nextMetadata,
+  });
+
+  if (updateError) {
+    log.error({ updateError, authUserId }, 'syncOptionalTossMetadata: updateUserById failed');
+    throw new Error('Auth 사용자 메타데이터 업데이트 실패');
+  }
+}
+
+async function signInManagedTossUser(
+  tossUserKey: string,
+  log: RequestLogger,
 ): Promise<TossSessionResponse> {
+  const email = tossEmailFromUserKey(tossUserKey);
+  const password = managedPassword(email);
   const { data, error } = await supabaseAdmin.auth.signInWithPassword({ email, password });
 
-  if (error || !data?.session || !data.user) {
-    log.error({ error }, 'signInSupabaseUser: signInWithPassword failed');
+  if (error || data.session == null || data.user == null) {
+    log.error({ error, tossUserKey }, 'signInManagedTossUser: signInWithPassword failed');
     throw new Error('Supabase 로그인 실패');
   }
 
   return {
     access_token: data.session.access_token,
     refresh_token: data.session.refresh_token,
-    user: { id: data.user.id, email: data.user.email ?? undefined },
+    user: {
+      id: data.user.id,
+      email: data.user.email ?? email,
+    },
   };
 }
 
-/**
- * toss_user_key에 해당하는 Supabase 세션 확보.
- * - toss_accounts 기준으로 기존 auth_user_id가 있으면: 즉시 로그인.
- * - 없으면 email 기반으로 기존 Auth 유저 검색 후 매핑/프로필 보정.
- * - 그래도 없으면 새 Auth 유저 생성 후 매핑/프로필 생성.
- * - createUser 중 Unique(email) 에러는 내부에서 처리하여 기존 유저로 수렴.
- */
-export async function ensureSessionForTossUserKey(
-  tossUserKey: string,
-  log: RequestLogger
+export async function issueSessionForUser(
+  authUserId: string,
+  log: RequestLogger,
 ): Promise<TossSessionResponse> {
-  const email = tossEmailFromUserKey(tossUserKey);
-  const password = managedPassword(email);
-
-  const { data: mapping, error: mappingError } = await supabaseAdmin
-    .from('toss_accounts')
-    .select('auth_user_id')
-    .eq('toss_user_key', tossUserKey)
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from('user_profiles')
+    .select('toss_user_key')
+    .eq('id', authUserId)
     .maybeSingle();
 
-  if (mappingError) {
-    log.error({ mappingError }, 'ensureSessionForTossUserKey: toss_accounts select failed');
-    throw new Error('toss_accounts 조회 실패');
+  if (profileError) {
+    log.error({ profileError, authUserId }, 'issueSessionForUser: user_profiles select failed');
+    throw new Error('user_profiles 조회 실패');
   }
 
-  let authUserId: string | null = mapping?.auth_user_id ?? null;
+  const tossUserKey =
+    typeof profile?.toss_user_key === 'string' ? profile.toss_user_key.trim() : '';
 
-  if (authUserId) {
-    await upsertUserProfileForToss(authUserId, tossUserKey, log);
-    const session = await signInSupabaseUser(email, password, log);
-    log.info({ userId: authUserId }, 'Toss user signed in via existing mapping');
-    return session;
+  if (tossUserKey.length === 0) {
+    log.error({ authUserId }, 'issueSessionForUser: toss_user_key missing');
+    throw new Error('Mapped toss_user_key is required to issue session');
   }
 
-  const existingAuthUser = await findAuthUserByEmail(email, log);
+  return signInManagedTossUser(tossUserKey, log);
+}
 
-  if (existingAuthUser?.id) {
-    authUserId = existingAuthUser.id;
-    await upsertTossAccount(tossUserKey, authUserId, log);
-    await upsertUserProfileForToss(authUserId, tossUserKey, log);
+async function syncTossLoginState(
+  authUserId: string,
+  tossUserKey: string,
+  encryptedEmail: string | null,
+  log: RequestLogger,
+): Promise<void> {
+  await syncTossAccountMapping(authUserId, tossUserKey, log);
+  await syncUserProfileForToss(authUserId, tossUserKey, log);
+  await syncOptionalTossMetadata(authUserId, tossUserKey, encryptedEmail, log);
+}
 
-    const session = await signInSupabaseUser(email, password, log);
-    log.info({ userId: authUserId }, 'Toss user signed in via existing auth user');
-    return session;
+export async function finalizeTossLoginExchange(
+  tossUserKey: string,
+  encryptedEmail: string | null,
+  agreedTerms: string[],
+  refreshToken: string,
+  log: RequestLogger,
+): Promise<TossSessionResponse> {
+  const normalizedUserKey = tossUserKey.trim();
+  if (normalizedUserKey.length === 0) {
+    throw new Error('tossUserKey is required');
   }
 
-  authUserId = await createSupabaseUserForToss(email, password, tossUserKey, log);
+  if (!hasAllRequiredTerms(agreedTerms)) {
+    log.warn({ tossUserKey: normalizedUserKey, agreedTerms }, 'finalizeTossLoginExchange: required terms missing');
+    throw new Error('Required Toss terms are missing from login-me response');
+  }
 
-  await upsertTossAccount(tossUserKey, authUserId, log);
-  await upsertUserProfileForToss(authUserId, tossUserKey, log);
+  const authUserId = await resolveOrCreateAuthUserIdByTossUserKey(normalizedUserKey, log);
+  await saveStoredTossRefreshToken(authUserId, normalizedUserKey, refreshToken, log);
+  await syncTossLoginState(authUserId, normalizedUserKey, encryptedEmail, log);
 
-  const session = await signInSupabaseUser(email, password, log);
-  log.info({ userId: authUserId }, 'Toss user created, mapped and signed in');
+  const session = await issueSessionForUser(authUserId, log);
+  log.info({ authUserId, tossUserKey: normalizedUserKey }, 'finalizeTossLoginExchange: session issued');
   return session;
+}
+
+export async function ensureSessionForTossUserKey(
+  tossUserKey: string,
+  log: RequestLogger,
+): Promise<TossSessionResponse> {
+  const normalizedUserKey = tossUserKey.trim();
+  if (normalizedUserKey.length === 0) {
+    throw new Error('tossUserKey is required');
+  }
+
+  const authUserId = await resolveOrCreateAuthUserIdByTossUserKey(normalizedUserKey, log);
+  await syncTossLoginState(authUserId, normalizedUserKey, null, log);
+  return issueSessionForUser(authUserId, log);
 }
 

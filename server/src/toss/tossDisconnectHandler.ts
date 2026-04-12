@@ -14,8 +14,7 @@ export type TossDisconnectReferrer =
 
 export const TOSS_DISCONNECT_ERROR_CODES = {
   MAPPING_LOOKUP_FAILED: "TOSS_DISCONNECT_MAPPING_LOOKUP_FAILED",
-  MAPPING_DELETE_FAILED: "TOSS_DISCONNECT_MAPPING_DELETE_FAILED",
-  PROFILE_UPDATE_FAILED: "TOSS_DISCONNECT_PROFILE_UPDATE_FAILED",
+  SELF_UNLINK_RPC_FAILED: "TOSS_DISCONNECT_SELF_UNLINK_RPC_FAILED",
   UNSUPPORTED_REFERRER: "TOSS_DISCONNECT_UNSUPPORTED_REFERRER",
 } as const;
 
@@ -67,35 +66,15 @@ async function handleUnlink(
     return { action: "noop" };
   }
 
-  const { error: profileUpdateError } = await supabaseAdmin
-    .from("user_profiles")
-    .update({ toss_user_key: null })
-    .eq("id", authUserId);
+  const { error: rpcError } = await supabaseAdmin.rpc("rpc_toss_self_unlink", {
+    target_user_id: authUserId,
+  });
 
-  if (profileUpdateError) {
-    log.error(
-      { userKey, authUserId, profileUpdateError },
-      "UNLINK user_profiles update failed",
-    );
+  if (rpcError) {
+    log.error({ userKey, authUserId, rpcError }, "UNLINK rpc_toss_self_unlink failed");
     throw new TossDisconnectError(
-      "Failed to clear toss_user_key on user profile",
-      TOSS_DISCONNECT_ERROR_CODES.PROFILE_UPDATE_FAILED,
-    );
-  }
-
-  const { error: mappingDeleteError } = await supabaseAdmin
-    .from("toss_accounts")
-    .delete()
-    .eq("toss_user_key", userKey);
-
-  if (mappingDeleteError) {
-    log.error(
-      { userKey, authUserId, mappingDeleteError },
-      "UNLINK toss_accounts delete failed",
-    );
-    throw new TossDisconnectError(
-      "Failed to delete toss_accounts mapping row",
-      TOSS_DISCONNECT_ERROR_CODES.MAPPING_DELETE_FAILED,
+      "Failed to apply rpc_toss_self_unlink",
+      TOSS_DISCONNECT_ERROR_CODES.SELF_UNLINK_RPC_FAILED,
     );
   }
 
@@ -128,6 +107,11 @@ export async function handleTossDisconnect(
   event: TossDisconnectEvent,
   log: RequestLogger,
 ): Promise<TossDisconnectResult> {
+  log.info(
+    { userKey: event.userKey, referrer: event.referrer },
+    "Received Toss disconnect webhook event",
+  );
+
   switch (event.referrer) {
     case "UNLINK":
       return handleUnlink(event.userKey, log);

@@ -4,6 +4,7 @@ import type {
   AuthModalMessageSet,
   AuthProvider,
 } from '../../constants/messages/authMessages';
+import type { TossAuthSuccessResult } from '../../services/toss/tossAuth';
 
 export type AuthModalType =
   | 'login'
@@ -17,12 +18,14 @@ export interface SignedInUser {
   email: string;
 }
 
+export type AuthSignedInPayload = SignedInUser | TossAuthSuccessResult;
+
 export interface LoginViewProps {
   lang: AppLang;
   copy: AuthModalMessageSet;
   onClose: () => void;
   onSwitchType: (nextType: AuthModalType) => void;
-  onSignedIn: (user: SignedInUser) => Promise<void> | void;
+  onSignedIn: (payload: AuthSignedInPayload) => Promise<void> | void;
   email: string;
   setEmail: (value: string) => void;
   password: string;
@@ -42,7 +45,7 @@ export interface SignupViewProps {
   copy: AuthModalMessageSet;
   onClose: () => void;
   onSwitchType: (nextType: AuthModalType) => void;
-  onSignedIn: (user: SignedInUser) => Promise<void> | void;
+  onSignedIn: (payload: AuthSignedInPayload) => Promise<void> | void;
   email: string;
   setEmail: (value: string) => void;
   password: string;
@@ -101,6 +104,7 @@ export interface ProfileViewProps {
   onClose: () => void;
   onSwitchType: (nextType: AuthModalType) => void;
   onLogout: () => Promise<void> | void;
+  isLogoutPending: boolean;
   onUpgradePlan?: (planId: 'pro' | 'premium') => void;
   currentUserEmail: string | null;
   currentTier: 'free' | 'pro' | 'premium';

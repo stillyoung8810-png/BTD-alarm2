@@ -8,7 +8,7 @@ import {
   TerminationInput,
   Result as SettlementResult,
 } from './components/SettlementModals';
-import { supabase, clearAuthStorage } from './services/supabase';
+import { supabase } from './services/supabase';
 import { calculateHoldings } from './utils/portfolioCalculations';
 import { fetchStockPricesWithPrev, loadInitialStockData, loadPaidStockData } from './services/stockService';
 import { getUSSelectionHolidays } from './utils/marketUtils';
@@ -69,6 +69,7 @@ import { toAdUserTier, type UserTier } from '@/types/userTier';
 import { useTierDisplay } from './hooks/useTierDisplay';
 import { getTierNameLabel } from './utils/tierNameLabel';
 import AuthModalCoordinator from './components/auth/AuthModalCoordinator';
+import { useTossLogoutFlow } from './hooks/useTossLogoutFlow';
 import { replaceHashIfMatched } from './utils/appEntryHelpers';
 import { TabContent, type ActiveTab } from './components/TabContent';
 import QuickInputModal from './components/QuickInputModal';
@@ -940,6 +941,30 @@ const App: React.FC = () => {
     setShouldShowSignedInWelcome(false);
   }, []);
 
+  const handleResetLoggedOutUiState = useCallback(() => {
+    justLoggedInRef.current = false;
+    setUser(null);
+    setUserProfile(null);
+    setPortfolios([]);
+    setShouldShowSignedInWelcome(false);
+    handleDismissSessionExpired();
+    setAuthModal('login');
+  }, [
+    handleDismissSessionExpired,
+    justLoggedInRef,
+    setAuthModal,
+    setPortfolios,
+    setShouldShowSignedInWelcome,
+    setUser,
+    setUserProfile,
+  ]);
+
+  const { handleLogout, isLogoutPending } = useTossLogoutFlow({
+    lang,
+    isInTossApp,
+    onResetUiState: handleResetLoggedOutUiState,
+  });
+
   const handleRequestBackNavigation = useCallback(
     (onLeave: () => void) => {
       if (!isInTossApp) {
@@ -1331,34 +1356,8 @@ const App: React.FC = () => {
             onSwitchType={handleSwitchAuthModalType}
             shouldShowSignedInWelcome={shouldShowSignedInWelcome}
             onCompleteSignedInWelcome={handleSignedInWelcomeComplete}
-            onLogout={async () => { 
-              try {
-                const { error } = await supabase.auth.signOut();
-                if (error) {
-                  console.error('Logout error:', error);
-                }
-                clearAuthStorage();
-                setUser(null); 
-                setUserProfile(null);
-                setPortfolios([]); 
-                setShouldShowSignedInWelcome(false);
-                setAuthModal(null);
-                if (typeof window !== 'undefined') {
-                  window.location.reload();
-                }
-              } catch (err) {
-                console.error('Unexpected logout error:', err);
-                clearAuthStorage();
-                setUser(null); 
-                setUserProfile(null);
-                setPortfolios([]); 
-                setShouldShowSignedInWelcome(false);
-                setAuthModal(null);
-                if (typeof window !== 'undefined') {
-                  window.location.reload();
-                }
-              }
-            }}
+            onLogout={handleLogout}
+            isLogoutPending={isLogoutPending}
             currentUserEmail={user?.email}
             currentTier={paidTier}
             currentUserId={user?.id ?? undefined}

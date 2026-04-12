@@ -13,6 +13,8 @@ export interface TossTokenSuccessDto {
 /** login-me 성공 시 필요한 필드만 추출. userKey는 DB 저장 시 string으로 변환 */
 export interface TossLoginMeSuccessDto {
   userKey: number;
+  agreedTerms: string[];
+  email: string | null;
 }
 
 /** 토스 API 실패 시 error 객체 */
@@ -32,5 +34,5 @@ export interface NormalizedTossError {
 export interface TossSessionResponse {
   access_token: string;
   refresh_token: string;
-  user: { id: string; email: string | undefined };
+  user: { id: string; email: string };
 }

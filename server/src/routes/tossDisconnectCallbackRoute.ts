@@ -3,6 +3,7 @@
  * @see docs/TOSS_DISCONNECT_CALLBACK_IMPLEMENTATION_PLAN.md
  */
 
+import { timingSafeEqual } from "crypto";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
@@ -11,8 +12,6 @@ import {
 } from "../toss/tossDisconnectHandler";
 import { DeleteUserDataError, TossDisconnectError } from "../toss/errors";
 
-const TOSS_WEBHOOK_USER = process.env.TOSS_WEBHOOK_USER ?? "";
-const TOSS_WEBHOOK_PASSWORD = process.env.TOSS_WEBHOOK_PASSWORD ?? "";
 export const TOSS_DISCONNECT_PATH = "/webhook/toss/disconnect";
 
 const RESPONSE_CODES = {
@@ -33,20 +32,49 @@ const tossDisconnectBodySchema = z
   })
   .strict();
 
+function hasSameSecret(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left, "utf8");
+  const rightBuffer = Buffer.from(right, "utf8");
+
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function readWebhookBasicAuthConfig(): { user: string; password: string } {
+  return {
+    user: process.env.TOSS_WEBHOOK_USER ?? "",
+    password: process.env.TOSS_WEBHOOK_PASSWORD ?? "",
+  };
+}
+
 function hasValidBasicAuth(authHeader: string | undefined): boolean {
   if (!authHeader?.startsWith("Basic ")) {
     return false;
   }
 
-  if (!TOSS_WEBHOOK_USER || !TOSS_WEBHOOK_PASSWORD) {
+  const configuredAuth = readWebhookBasicAuthConfig();
+  if (!configuredAuth.user || !configuredAuth.password) {
     return false;
   }
 
   try {
     const encodedValue = authHeader.slice("Basic ".length).trim();
     const decodedValue = Buffer.from(encodedValue, "base64").toString("utf8");
-    const [user, password] = decodedValue.split(":");
-    return user === TOSS_WEBHOOK_USER && password === TOSS_WEBHOOK_PASSWORD;
+    const separatorIndex = decodedValue.indexOf(":");
+
+    if (separatorIndex < 0) {
+      return false;
+    }
+
+    const user = decodedValue.slice(0, separatorIndex);
+    const password = decodedValue.slice(separatorIndex + 1);
+    return (
+      hasSameSecret(user, configuredAuth.user) &&
+      hasSameSecret(password, configuredAuth.password)
+    );
   } catch {
     return false;
   }

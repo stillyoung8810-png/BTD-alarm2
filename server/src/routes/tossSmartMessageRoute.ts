@@ -52,7 +52,7 @@ export async function tossSmartMessageRoutes(fastify: FastifyInstance) {
     }
 
     const parsed = parseTossSmartMessageBody(request.body);
-    if (!parsed.success) {
+    if (parsed.success === false) {
       log.warn({ error: parsed.error }, 'Toss smart message body validation failed');
       return reply.code(400).send({
         success: false,
@@ -93,7 +93,7 @@ export async function tossSmartMessageRoutes(fastify: FastifyInstance) {
       log
     );
 
-    if (!result.success) {
+    if (result.success === false) {
       return reply.code(502).send({
         success: false,
         ...result.error,

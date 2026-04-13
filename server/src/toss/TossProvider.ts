@@ -616,7 +616,7 @@ export async function sendBulkMessage(
     }
     const item = items[i];
     const out = await sendMessage(item.userKey, templateSetCode, item.context, log);
-    if (out.success) {
+    if (out.success === true) {
       successCount++;
       results.push({ userKey: item.userKey, success: true });
     } else {

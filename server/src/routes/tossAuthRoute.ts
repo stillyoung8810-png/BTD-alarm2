@@ -15,7 +15,7 @@ export async function tossAuthRoutes(fastify: FastifyInstance) {
     const { correlationId, log } = request;
 
     const parsed = parseTossExchangeBody(request.body);
-    if (!parsed.success) {
+    if (parsed.success === false) {
       log.warn({ error: parsed.error }, 'Toss exchange body validation failed');
       return reply.code(400).send({
         error: parsed.error,
@@ -45,7 +45,7 @@ export async function tossAuthRoutes(fastify: FastifyInstance) {
       );
 
       const tokenResult = await getToken(codeTrimmed, referrer, log);
-      if (!tokenResult.success) {
+      if (tokenResult.success === false) {
         return reply.code(400).send({
           ...tokenResult.error,
           requestId: correlationId,
@@ -53,7 +53,7 @@ export async function tossAuthRoutes(fastify: FastifyInstance) {
       }
 
       const loginMeResult = await getLoginMe(tokenResult.data.accessToken, log);
-      if (!loginMeResult.success) {
+      if (loginMeResult.success === false) {
         return reply.code(400).send({
           ...loginMeResult.error,
           requestId: correlationId,

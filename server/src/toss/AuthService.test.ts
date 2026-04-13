@@ -25,6 +25,11 @@ vi.mock('../supabaseClient', () => ({
       },
     },
   },
+  createSupabaseAuthClient: () => ({
+    auth: {
+      signInWithPassword: (...args: unknown[]) => mockSignIn(...args),
+    },
+  }),
 }));
 
 import { ensureSessionForTossUserKey, finalizeTossLoginExchange } from './AuthService';

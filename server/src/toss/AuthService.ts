@@ -5,7 +5,7 @@
 
 import { createHash } from 'crypto';
 import type { RequestLogger } from './logger';
-import { supabaseAdmin } from '../supabaseClient';
+import { createSupabaseAuthClient, supabaseAdmin } from '../supabaseClient';
 import type { TossSessionResponse } from './types';
 import { decryptStoredRefreshToken, encryptStoredRefreshToken } from './storedRefreshTokenCrypto';
 
@@ -438,7 +438,9 @@ async function signInManagedTossUser(
 ): Promise<TossSessionResponse> {
   const email = tossEmailFromUserKey(tossUserKey);
   const password = managedPassword(email);
-  const { data, error } = await supabaseAdmin.auth.signInWithPassword({ email, password });
+  // service-role 싱글턴을 로그인 세션으로 오염시키면 이후 self-unlink가 toss_auth_links를 못 읽는다.
+  const authClient = createSupabaseAuthClient();
+  const { data, error } = await authClient.auth.signInWithPassword({ email, password });
 
   if (error || data.session == null || data.user == null) {
     log.error({ error, tossUserKey }, 'signInManagedTossUser: signInWithPassword failed');

@@ -13,6 +13,8 @@ import { readTrimmedViteEnv } from '../utils/viteImportMetaEnv';
 
 const BFF_URL = readTrimmedViteEnv('VITE_RAILWAY_BFF_URL');
 const TOSS_SELF_UNLINK_PATH = '/auth/toss/self-unlink';
+/** Fastify는 Content-Type이 application/json일 때 빈 바디를 400(FST_ERR_CTP_EMPTY_JSON_BODY)으로 거부한다. */
+const EMPTY_JSON_OBJECT_BODY = JSON.stringify({});
 
 type TossSelfUnlinkAction = 'unlinked' | 'noop' | 'official_unlink_failed';
 
@@ -112,6 +114,7 @@ export function useTossLogoutFlow({
               Authorization: `Bearer ${accessToken}`,
               'Content-Type': 'application/json',
             },
+            body: EMPTY_JSON_OBJECT_BODY,
           },
           null,
           { context: { action: 'toss_self_unlink' } },

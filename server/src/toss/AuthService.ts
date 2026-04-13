@@ -64,6 +64,11 @@ function isUniqueEmailError(error: unknown): boolean {
     return true;
   }
 
+  // GoTrue admin createUser: 422 + x_sb_error_code email_exists (supabase-js AuthApiError.code)
+  if (code === 'email_exists') {
+    return true;
+  }
+
   if (typeof message !== 'string') {
     return false;
   }

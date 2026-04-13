@@ -23,6 +23,11 @@ interface StoredTossLinkRecord {
   refreshToken: string;
 }
 
+interface StoredTossLinkRow {
+  toss_user_key: unknown;
+  encrypted_refresh_token: unknown;
+}
+
 function hasUsableStoredTossLink(
   value: StoredTossLinkRecord | null,
 ): value is StoredTossLinkRecord {
@@ -33,7 +38,14 @@ function hasUsableStoredTossLink(
   );
 }
 
-async function readStoredTossLinkRecord(
+function mapStoredTossLinkRowToRecord(data: StoredTossLinkRow): StoredTossLinkRecord {
+  return {
+    tossUserKey: String(data.toss_user_key ?? '').trim(),
+    refreshToken: decryptStoredRefreshToken(String(data.encrypted_refresh_token ?? '')),
+  };
+}
+
+async function readStoredTossLinkByAuthUserId(
   authUserId: string,
   log: RequestLogger,
 ): Promise<StoredTossLinkRecord | null> {
@@ -52,10 +64,70 @@ async function readStoredTossLinkRecord(
     return null;
   }
 
-  return {
-    tossUserKey: String(data.toss_user_key ?? '').trim(),
-    refreshToken: decryptStoredRefreshToken(String(data.encrypted_refresh_token ?? '')),
-  };
+  return mapStoredTossLinkRowToRecord(data);
+}
+
+async function readMappedTossUserKey(
+  authUserId: string,
+  log: RequestLogger,
+): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from('user_profiles')
+    .select('toss_user_key')
+    .eq('id', authUserId)
+    .maybeSingle();
+
+  if (error != null) {
+    log.error({ error, authUserId }, 'Failed to read toss_user_key from user_profiles');
+    throw error;
+  }
+
+  const tossUserKey = String(data?.toss_user_key ?? '').trim();
+  return tossUserKey.length > 0 ? tossUserKey : null;
+}
+
+async function readStoredTossLinkByTossUserKey(
+  tossUserKey: string,
+  log: RequestLogger,
+): Promise<StoredTossLinkRecord | null> {
+  const { data, error } = await supabaseAdmin
+    .from('toss_auth_links')
+    .select('toss_user_key, encrypted_refresh_token')
+    .eq('toss_user_key', tossUserKey)
+    .maybeSingle();
+
+  if (error != null) {
+    log.error({ error, tossUserKey }, 'Failed to read stored toss auth link by toss_user_key');
+    throw error;
+  }
+
+  if (data == null) {
+    return null;
+  }
+
+  return mapStoredTossLinkRowToRecord(data);
+}
+
+async function readStoredTossLinkRecord(
+  authUserId: string,
+  log: RequestLogger,
+): Promise<StoredTossLinkRecord | null> {
+  const directRecord = await readStoredTossLinkByAuthUserId(authUserId, log);
+  if (directRecord != null) {
+    return directRecord;
+  }
+
+  const mappedTossUserKey = await readMappedTossUserKey(authUserId, log);
+  if (mappedTossUserKey == null) {
+    return null;
+  }
+
+  log.warn(
+    { authUserId, tossUserKey: mappedTossUserKey },
+    'Stored toss refresh token missing by auth_user_id lookup; retrying with toss_user_key',
+  );
+
+  return readStoredTossLinkByTossUserKey(mappedTossUserKey, log);
 }
 
 async function unlinkByAuthUserIdAtomic(

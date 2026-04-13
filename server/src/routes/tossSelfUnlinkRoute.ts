@@ -38,11 +38,41 @@ function hasUsableStoredTossLink(
   );
 }
 
-function mapStoredTossLinkRowToRecord(data: StoredTossLinkRow): StoredTossLinkRecord {
-  return {
-    tossUserKey: String(data.toss_user_key ?? '').trim(),
-    refreshToken: decryptStoredRefreshToken(String(data.encrypted_refresh_token ?? '')),
-  };
+function tryMapStoredTossLinkRow(
+  data: StoredTossLinkRow,
+  log: RequestLogger,
+  readContext: 'by_auth_user_id' | 'by_toss_user_key',
+): StoredTossLinkRecord | null {
+  const tossUserKey = String(data.toss_user_key ?? '').trim();
+  const cipher = String(data.encrypted_refresh_token ?? '').trim();
+
+  if (cipher.length === 0) {
+    log.warn({ readContext, ciphertextLen: 0 }, 'toss_auth_links row unusable: empty ciphertext');
+    return null;
+  }
+
+  if (tossUserKey.length === 0) {
+    log.warn({ readContext, ciphertextLen: cipher.length }, 'toss_auth_links row unusable: empty toss_user_key');
+    return null;
+  }
+
+  let refreshToken: string;
+  try {
+    refreshToken = decryptStoredRefreshToken(cipher);
+  } catch (error: unknown) {
+    log.error(
+      { error, readContext, ciphertextLen: cipher.length },
+      'toss_auth_links decrypt failed during self-unlink read (secret mismatch or corrupt ciphertext)',
+    );
+    throw error;
+  }
+
+  if (refreshToken.trim().length === 0) {
+    log.warn({ readContext, ciphertextLen: cipher.length }, 'toss_auth_links row unusable: decrypted refresh empty');
+    return null;
+  }
+
+  return { tossUserKey, refreshToken };
 }
 
 async function readStoredTossLinkByAuthUserId(
@@ -64,7 +94,7 @@ async function readStoredTossLinkByAuthUserId(
     return null;
   }
 
-  return mapStoredTossLinkRowToRecord(data);
+  return tryMapStoredTossLinkRow(data, log, 'by_auth_user_id');
 }
 
 async function readMappedTossUserKey(
@@ -105,7 +135,7 @@ async function readStoredTossLinkByTossUserKey(
     return null;
   }
 
-  return mapStoredTossLinkRowToRecord(data);
+  return tryMapStoredTossLinkRow(data, log, 'by_toss_user_key');
 }
 
 async function readStoredTossLinkRecord(
@@ -144,7 +174,10 @@ async function unlinkByAuthUserIdAtomic(
   try {
     storedLink = await readStoredTossLinkRecord(trimmedUserId, log);
   } catch (error: unknown) {
-    log.error({ error, authUserId: trimmedUserId }, 'Failed to decode stored toss refresh token');
+    log.error(
+      { error, authUserId: trimmedUserId },
+      'Self-unlink: toss_auth_links read failed (Supabase error or decrypt exception)',
+    );
     return SELF_UNLINK_RESPONSE.OFFICIAL_UNLINK_FAILED;
   }
 

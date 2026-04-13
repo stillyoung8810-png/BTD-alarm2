@@ -7,7 +7,7 @@ import { createHash } from 'crypto';
 import type { RequestLogger } from './logger';
 import { supabaseAdmin } from '../supabaseClient';
 import type { TossSessionResponse } from './types';
-import { encryptStoredRefreshToken } from './storedRefreshTokenCrypto';
+import { decryptStoredRefreshToken, encryptStoredRefreshToken } from './storedRefreshTokenCrypto';
 
 const TOSS_EMAIL_DOMAIN = 'toss.placeholder';
 const LIST_USERS_PAGE_SIZE = 1000;
@@ -251,6 +251,63 @@ async function saveStoredTossRefreshToken(
   }
 }
 
+/** insert 직후 동일 연결로 읽어 복호화까지 성공하는지 확인해, self-unlink 시 행이 비는 문제를 조기에 드러낸다. */
+async function verifyTossAuthLinkReadableAfterSave(
+  authUserId: string,
+  tossUserKey: string,
+  log: RequestLogger,
+): Promise<void> {
+  const { data, error } = await supabaseAdmin
+    .from('toss_auth_links')
+    .select('toss_user_key, encrypted_refresh_token')
+    .eq('auth_user_id', authUserId)
+    .maybeSingle();
+
+  if (error != null) {
+    log.error({ error, authUserId, tossUserKey }, 'verifyTossAuthLinkReadableAfterSave: select failed');
+    throw new Error('toss_auth_links 저장 검증 실패');
+  }
+
+  if (data == null) {
+    log.error({ authUserId, tossUserKey }, 'verifyTossAuthLinkReadableAfterSave: row missing after insert');
+    throw new Error('toss_auth_links 저장 검증 실패: 저장 직후 행 없음');
+  }
+
+  const storedKey = String(data.toss_user_key ?? '').trim();
+  if (storedKey !== tossUserKey.trim()) {
+    log.error(
+      { authUserId, tossUserKey, storedKey },
+      'verifyTossAuthLinkReadableAfterSave: toss_user_key mismatch after insert',
+    );
+    throw new Error('toss_auth_links 저장 검증 실패: user key 불일치');
+  }
+
+  const cipher = String(data.encrypted_refresh_token ?? '').trim();
+  if (cipher.length === 0) {
+    log.error({ authUserId, tossUserKey }, 'verifyTossAuthLinkReadableAfterSave: empty ciphertext after insert');
+    throw new Error('toss_auth_links 저장 검증 실패: 암호문 없음');
+  }
+
+  let plain: string;
+  try {
+    plain = decryptStoredRefreshToken(cipher);
+  } catch (decryptError: unknown) {
+    log.error(
+      { decryptError, authUserId, tossUserKey, ciphertextLen: cipher.length },
+      'verifyTossAuthLinkReadableAfterSave: decrypt failed (check TOSS_REFRESH_TOKEN_ENCRYPTION_SECRET consistency)',
+    );
+    throw new Error('toss_auth_links 저장 검증 실패: 복호화 실패');
+  }
+
+  if (plain.trim().length === 0) {
+    log.error(
+      { authUserId, tossUserKey, ciphertextLen: cipher.length },
+      'verifyTossAuthLinkReadableAfterSave: decrypted refresh empty after insert',
+    );
+    throw new Error('toss_auth_links 저장 검증 실패: 복호화 결과 빈 문자열');
+  }
+}
+
 async function syncTossAccountMapping(
   authUserId: string,
   tossUserKey: string,
@@ -454,6 +511,7 @@ export async function finalizeTossLoginExchange(
 
   const authUserId = await resolveOrCreateAuthUserIdByTossUserKey(normalizedUserKey, log);
   await saveStoredTossRefreshToken(authUserId, normalizedUserKey, refreshToken, log);
+  await verifyTossAuthLinkReadableAfterSave(authUserId, normalizedUserKey, log);
   await syncTossLoginState(authUserId, normalizedUserKey, encryptedEmail, log);
 
   const session = await issueSessionForUser(authUserId, log);

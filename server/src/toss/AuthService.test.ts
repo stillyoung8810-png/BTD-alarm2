@@ -56,8 +56,15 @@ interface MockMutationCall {
   filters: MockFilter[];
 }
 
+interface MockTossAuthLinkRow {
+  auth_user_id: string;
+  toss_user_key: string;
+  encrypted_refresh_token: string;
+}
+
 interface MockState {
   tossAccountsByKey: Record<string, { auth_user_id: string }>;
+  tossAuthLinksRows: MockTossAuthLinkRow[];
   userProfilesById: Record<string, MockProfileRow>;
   authUsersById: Record<string, MockAuthUserState>;
   upserts: MockUpsertCall[];
@@ -81,6 +88,7 @@ let state: MockState;
 function createMockState(): MockState {
   return {
     tossAccountsByKey: {},
+    tossAuthLinksRows: [],
     userProfilesById: {},
     authUsersById: {},
     upserts: [],
@@ -168,12 +176,57 @@ function createTossAccountsTableMock() {
 
 function createTossAuthLinksTableMock() {
   return {
+    select: (columns: string) => ({
+      eq: (field: string, value: string) => ({
+        maybeSingle: async () => {
+          if (columns !== 'toss_user_key, encrypted_refresh_token') {
+            throw new Error(`Unexpected toss_auth_links select columns: ${columns}`);
+          }
+
+          if (field === 'auth_user_id') {
+            const row = state.tossAuthLinksRows.find((entry) => entry.auth_user_id === value);
+            return {
+              data:
+                row == null
+                  ? null
+                  : {
+                      toss_user_key: row.toss_user_key,
+                      encrypted_refresh_token: row.encrypted_refresh_token,
+                    },
+              error: null,
+            };
+          }
+
+          if (field === 'toss_user_key') {
+            const row = state.tossAuthLinksRows.find((entry) => entry.toss_user_key === value);
+            return {
+              data:
+                row == null
+                  ? null
+                  : {
+                      toss_user_key: row.toss_user_key,
+                      encrypted_refresh_token: row.encrypted_refresh_token,
+                    },
+              error: null,
+            };
+          }
+
+          throw new Error(`Unexpected toss_auth_links select field: ${field}`);
+        },
+      }),
+    }),
     delete: () => ({
       eq: async (field: string, value: string) => {
         state.deletes.push({
           table: 'toss_auth_links',
           filters: [{ operator: 'eq', field, value }],
         });
+
+        if (field === 'auth_user_id') {
+          state.tossAuthLinksRows = state.tossAuthLinksRows.filter((row) => row.auth_user_id !== value);
+        } else if (field === 'toss_user_key') {
+          state.tossAuthLinksRows = state.tossAuthLinksRows.filter((row) => row.toss_user_key !== value);
+        }
 
         return { error: null };
       },
@@ -183,6 +236,24 @@ function createTossAuthLinksTableMock() {
         table: 'toss_auth_links',
         values,
       });
+
+      const authUserId = values.auth_user_id;
+      const tossUserKey = values.toss_user_key;
+      const encryptedRefreshToken = values.encrypted_refresh_token;
+      if (
+        typeof authUserId === 'string' &&
+        typeof tossUserKey === 'string' &&
+        typeof encryptedRefreshToken === 'string'
+      ) {
+        state.tossAuthLinksRows = state.tossAuthLinksRows.filter(
+          (row) => row.auth_user_id !== authUserId && row.toss_user_key !== tossUserKey,
+        );
+        state.tossAuthLinksRows.push({
+          auth_user_id: authUserId,
+          toss_user_key: tossUserKey,
+          encrypted_refresh_token: encryptedRefreshToken,
+        });
+      }
 
       return { error: null };
     },

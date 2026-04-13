@@ -25,6 +25,36 @@ export const VR_LIMITS = {
   MIN_ORDER_QTY: 1,
 } as const;
 
+/**
+ * VR 주기별 입·출금(`deltaCash`) — UI 입력 구간 (USD).
+ * 사용자 입력은 0 이상만 허용; 인출 모드에서의 음수 의미는 저장 후 `getVrDeltaCashForNextV`가 부호를 강제한다.
+ */
+export const VR_DELTA_CASH_INPUT = {
+  MIN_USD: 0,
+  MAX_WITHDRAWAL_AMOUNT_USD: 1_000_000,
+} as const;
+
+export type VrDeltaCashInputValidationReason =
+  | 'non_finite'
+  | 'negative'
+  | 'exceeds_max';
+
+/** Rule 1: NaN·음수·상한 초과를 UI/저장 전에 차단 */
+export function getVrDeltaCashInputValidationReason(
+  value: number,
+): VrDeltaCashInputValidationReason | null {
+  if (!Number.isFinite(value)) {
+    return 'non_finite';
+  }
+  if (value < VR_DELTA_CASH_INPUT.MIN_USD) {
+    return 'negative';
+  }
+  if (value > VR_DELTA_CASH_INPUT.MAX_WITHDRAWAL_AMOUNT_USD) {
+    return 'exceeds_max';
+  }
+  return null;
+}
+
 export const TIME_MS = {
   PER_DAY: 24 * 60 * 60 * 1000,
   PER_WEEK: 7 * 24 * 60 * 60 * 1000,

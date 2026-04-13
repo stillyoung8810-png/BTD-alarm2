@@ -1,6 +1,23 @@
-import type { AppLang, OrderLevel, VrBandStrategyParams, VrSnapshot, Trade } from './types.ts';
+import type {
+  AppLang,
+  OrderLevel,
+  VrBandStrategyParams,
+  VrSnapshot,
+  Trade,
+} from './types.ts';
 import { getVrDeltaCashForNextV } from './types.ts';
 import { TIME_MS, VR_CYCLE } from './vrConstants.ts';
+import {
+  areFiniteNonNegativeScalars,
+  areStrictPositiveFiniteScalars,
+  isFiniteNumber,
+  parseNumberFromTrimmedExternalString,
+} from './financialScalarGuards.ts';
+import {
+  floorToNonNegativeInt,
+  roundMoney,
+  roundShares4,
+} from './financialMath.ts';
 
 /**
  * VR 밴드 전략 — Pool 변동액·N번 계산·표시용 Guard (순수 함수).
@@ -8,12 +25,11 @@ import { TIME_MS, VR_CYCLE } from './vrConstants.ts';
  */
 
 /** 부동소수점 오차 방어: 소수점 2자리까지 반올림 (금융 계산 전용). */
-export const toFixedMoney = (val: number): number =>
-  Math.round((val + Number.EPSILON) * 100) / 100;
+export const toFixedMoney = (val: number): number => roundMoney(val);
 
 /** 통화 표시 전용 (내부 금융 연산은 toFixedMoney). */
 export function formatCurrency(value: number | null | undefined): string {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return '$0.00';
+  if (!isFiniteNumber(value)) return '$0.00';
   return `$${value.toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -22,7 +38,7 @@ export function formatCurrency(value: number | null | undefined): string {
 
 /** 부동소수점 오차를 방어하며 4자리까지 표시하는 수량 포맷터 */
 export const formatSharesDisplay = (val: number): string =>
-  (Math.round((val + Number.EPSILON) * 10000) / 10000).toFixed(4);
+  roundShares4(val).toFixed(4);
 
 /** vrMode에 따라 deltaCash 부호를 강제 정규화. 인출=음수, 적립=양수, 거치=0. */
 export function getSanitizedDeltaCash(
@@ -43,24 +59,49 @@ export function calculateCycleIndexFromDates(
   targetDateMs: number,
   cycleWeeks: number,
 ): number {
-  if (cycleWeeks <= 0) return 0;
+  if (!areFiniteNonNegativeScalars(startDateMs, targetDateMs)) {
+    return 0;
+  }
+
+  if (!areStrictPositiveFiniteScalars(cycleWeeks)) {
+    return 0;
+  }
+
   const diffMs = targetDateMs - startDateMs;
-  if (diffMs < 0) return 0;
+  if (diffMs < 0) {
+    return 0;
+  }
+
   const cycleLengthMs = cycleWeeks * TIME_MS.PER_WEEK;
-  return Math.floor((diffMs + TIME_MS.PER_DAY) / cycleLengthMs);
+  if (!areStrictPositiveFiniteScalars(cycleLengthMs)) {
+    return 0;
+  }
+
+  const exactCycles = (diffMs + TIME_MS.PER_DAY) / cycleLengthMs;
+  return floorToNonNegativeInt(exactCycles);
 }
 
 /**
  * 알 수 없는 입력을 1~12주 정수로 정규화 (SSOT). VR_CYCLE만 참조.
  */
 export function sanitizeVrCycleWeeks(weeks: unknown): number {
-  const parsed = Number(weeks);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
+  let parsed: number;
+
+  if (typeof weeks === 'number') {
+    parsed = weeks;
+  } else if (typeof weeks === 'string') {
+    parsed = parseNumberFromTrimmedExternalString(weeks);
+  } else {
     return VR_CYCLE.DEFAULT_WEEKS;
   }
+
+  if (!areStrictPositiveFiniteScalars(parsed)) {
+    return VR_CYCLE.DEFAULT_WEEKS;
+  }
+
   return Math.max(
     VR_CYCLE.MIN_WEEKS,
-    Math.min(VR_CYCLE.MAX_WEEKS, Math.floor(parsed)),
+    Math.min(VR_CYCLE.MAX_WEEKS, floorToNonNegativeInt(parsed)),
   );
 }
 
@@ -92,7 +133,7 @@ export function getVrCyclePeriodText({
 
   let cycleIndex = 0;
 
-  if (currentCycleIndex !== undefined && currentCycleIndex >= 0) {
+  if (isFiniteNumber(currentCycleIndex) && currentCycleIndex >= 0) {
     cycleIndex = currentCycleIndex;
   } else {
     const now = new Date();
@@ -157,7 +198,7 @@ export function getVrCyclePeriodText({
 
 /** 표시용 숫자 검증. 유효하지 않으면 console.error 후 null 반환(에러 은폐 없음). */
 export function toDisplayNumber(value: unknown): number | null {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
+  if (!isFiniteNumber(value)) {
     console.error('[VR] toDisplayNumber: invalid value received.', { value });
     return null;
   }
@@ -465,7 +506,7 @@ export function generateBuyOrders({
       shares === 0 ? k * minOrderQty : shares + (k - 1) * minOrderQty;
 
     const targetPrice = bandLow / effectiveShares;
-    if (!Number.isFinite(targetPrice) || targetPrice <= 0) break;
+    if (!areStrictPositiveFiniteScalars(targetPrice)) break;
 
     const price = toFixedMoney(targetPrice);
     // 0달러(또는 이하) 호가 방어: 비용이 0이면 예산이 닳지 않아 무한 루프 위험
@@ -539,7 +580,7 @@ export function generateSellOrders({
     if (sharesBefore <= 0) break;
 
     const targetPrice = bandHigh / sharesBefore;
-    if (!Number.isFinite(targetPrice) || targetPrice <= 0) break;
+    if (!areStrictPositiveFiniteScalars(targetPrice)) break;
 
     const price = toFixedMoney(targetPrice);
     // 0달러(또는 이하) 매도 호가 방어: 브로커가 수용할 수 없는 주문은 생성하지 않음

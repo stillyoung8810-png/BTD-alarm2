@@ -9,11 +9,13 @@ Deno 런타임·Supabase 번들러의 엄격한 모듈 리졸루션(상대 경�
 
 앱 루트에서 아래 **원본**을 수정했다면, **Supabase Edge 배포 전**에 이 폴더 사본을 덮어쓰고, 사본 내부 import가 **`./types.ts`**, **`./vrConstants.ts`** 처럼 확장자로 끝나는지 확인하세요.
 
-| 사본 (`_shared/`)   | 원본 (레포 루트 기준)        |
-|---------------------|-----------------------------|
-| `types.ts`          | `types.ts`                  |
-| `vrConstants.ts`    | `constants/vrConstants.ts`  |
-| `vrBandStrategy.ts` | `utils/vrBandStrategy.ts`   |
+| 사본 (`_shared/`)           | 원본 (레포 루트 기준)              |
+|----------------------------|-----------------------------------|
+| `types.ts`                 | `types.ts`                        |
+| `vrConstants.ts`           | `constants/vrConstants.ts`        |
+| `financialScalarGuards.ts` | `utils/financialScalarGuards.ts`  |
+| `financialMath.ts`         | `utils/financialMath.ts`          |
+| `vrBandStrategy.ts`        | `utils/vrBandStrategy.ts`         |
 
 ### 권장 절차 (Windows PowerShell 예시)
 
@@ -22,13 +24,15 @@ Deno 런타임·Supabase 번들러의 엄격한 모듈 리졸루션(상대 경�
 ```powershell
 Copy-Item -Force types.ts supabase/functions/_shared/types.ts
 Copy-Item -Force constants/vrConstants.ts supabase/functions/_shared/vrConstants.ts
+Copy-Item -Force utils/financialScalarGuards.ts supabase/functions/_shared/financialScalarGuards.ts
+Copy-Item -Force utils/financialMath.ts supabase/functions/_shared/financialMath.ts
 Copy-Item -Force utils/vrBandStrategy.ts supabase/functions/_shared/vrBandStrategy.ts
 ```
 
 복사 후 **반드시** 다음을 수동 점검합니다.
 
 1. **`vrConstants.ts`** 첫 줄: `import type { OrderLevel } from './types.ts';`
-2. **`vrBandStrategy.ts`** 상단: `from './types.ts'`, `from './vrConstants.ts'` 만 사용 (상위 `../` 경로 금지)
+2. **`vrBandStrategy.ts`** 상단: `from './types.ts'`, `from './vrConstants.ts'`, `from './financialScalarGuards.ts'`, `from './financialMath.ts'` 만 사용 (상위 `../` 경로 금지)
 3. **`types.ts`**: 다른 로컬 파일을 import 하게 바뀌었다면, 사본에서도 Deno 규격(`.ts` 확장자)으로 맞출 것
 
 검증:

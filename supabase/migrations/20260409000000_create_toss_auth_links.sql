@@ -2,7 +2,7 @@
 -- public.toss_auth_links
 -- ============================================
 -- 목적: 토스 로그인 후 저장되는 암호화 refresh token (BFF service_role 전용).
---       AuthService: upsert onConflict(toss_user_key), stale 행은 auth_user_id 기준 정리.
+--       AuthService: 재로그인 시 auth_user_id·toss_user_key 각각 delete 후 insert (이중 UNIQUE 안전).
 --       tossSelfUnlinkRoute: auth_user_id로 조회 후 공식 unlink.
 -- ============================================
 

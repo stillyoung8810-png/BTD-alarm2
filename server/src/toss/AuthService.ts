@@ -211,30 +211,42 @@ async function saveStoredTossRefreshToken(
 
   const encryptedRefreshToken = encryptStoredRefreshToken(normalizedRefreshToken);
 
-  const { error: deleteError } = await supabaseAdmin
+  // toss_auth_links 는 auth_user_id·toss_user_key 각각 UNIQUE 이므로, upsert(onConflict: toss_user_key)만으로는
+  // 재로그인 직후 self-unlink에서 행이 비는 이슈가 날 수 있다. 두 축을 비운 뒤 단일 insert 로 고정한다.
+  const { error: deleteByAuthError } = await supabaseAdmin
     .from('toss_auth_links')
     .delete()
-    .eq('auth_user_id', authUserId)
-    .neq('toss_user_key', tossUserKey);
+    .eq('auth_user_id', authUserId);
 
-  if (deleteError) {
-    log.error({ deleteError, authUserId, tossUserKey }, 'saveStoredTossRefreshToken: stale link cleanup failed');
+  if (deleteByAuthError) {
+    log.error(
+      { deleteByAuthError, authUserId, tossUserKey },
+      'saveStoredTossRefreshToken: delete by auth_user_id failed',
+    );
     throw new Error('toss_auth_links 정리 실패');
   }
 
-  const { error: upsertError } = await supabaseAdmin
+  const { error: deleteByKeyError } = await supabaseAdmin
     .from('toss_auth_links')
-    .upsert(
-      {
-        auth_user_id: authUserId,
-        toss_user_key: tossUserKey,
-        encrypted_refresh_token: encryptedRefreshToken,
-      },
-      { onConflict: 'toss_user_key' },
-    );
+    .delete()
+    .eq('toss_user_key', tossUserKey);
 
-  if (upsertError) {
-    log.error({ upsertError, authUserId, tossUserKey }, 'saveStoredTossRefreshToken: upsert failed');
+  if (deleteByKeyError) {
+    log.error(
+      { deleteByKeyError, authUserId, tossUserKey },
+      'saveStoredTossRefreshToken: delete by toss_user_key failed',
+    );
+    throw new Error('toss_auth_links 정리 실패');
+  }
+
+  const { error: insertError } = await supabaseAdmin.from('toss_auth_links').insert({
+    auth_user_id: authUserId,
+    toss_user_key: tossUserKey,
+    encrypted_refresh_token: encryptedRefreshToken,
+  });
+
+  if (insertError) {
+    log.error({ insertError, authUserId, tossUserKey }, 'saveStoredTossRefreshToken: insert failed');
     throw new Error('toss_auth_links 저장 실패');
   }
 }

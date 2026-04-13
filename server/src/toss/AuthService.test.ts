@@ -169,25 +169,19 @@ function createTossAccountsTableMock() {
 function createTossAuthLinksTableMock() {
   return {
     delete: () => ({
-      eq: (field: string, value: string) => ({
-        neq: async (neqField: string, neqValue: string) => {
-          state.deletes.push({
-            table: 'toss_auth_links',
-            filters: [
-              { operator: 'eq', field, value },
-              { operator: 'neq', field: neqField, value: neqValue },
-            ],
-          });
+      eq: async (field: string, value: string) => {
+        state.deletes.push({
+          table: 'toss_auth_links',
+          filters: [{ operator: 'eq', field, value }],
+        });
 
-          return { error: null };
-        },
-      }),
+        return { error: null };
+      },
     }),
-    upsert: async (values: Record<string, unknown>, options?: { onConflict?: string }) => {
-      state.upserts.push({
+    insert: async (values: Record<string, unknown>) => {
+      state.inserts.push({
         table: 'toss_auth_links',
         values,
-        options,
       });
 
       return { error: null };
@@ -444,17 +438,21 @@ describe('AuthService', () => {
       expect(mockGetUserById).toHaveBeenCalledWith('existing-user-uuid');
       expect(mockUpdateUserById).toHaveBeenCalledTimes(1);
 
-      const refreshLinkUpsert = state.upserts.find((entry) => entry.table === 'toss_auth_links');
-      expect(refreshLinkUpsert).toBeDefined();
-      if (refreshLinkUpsert == null) {
-        throw new Error('refresh token upsert should exist');
+      const refreshLinkInsert = state.inserts.find((entry) => entry.table === 'toss_auth_links');
+      expect(refreshLinkInsert).toBeDefined();
+      if (refreshLinkInsert == null) {
+        throw new Error('refresh token insert should exist');
       }
 
-      expect(refreshLinkUpsert.options).toEqual({ onConflict: 'toss_user_key' });
-      expect(refreshLinkUpsert.values.auth_user_id).toBe('existing-user-uuid');
-      expect(refreshLinkUpsert.values.toss_user_key).toBe('123');
-      expect(typeof refreshLinkUpsert.values.encrypted_refresh_token).toBe('string');
-      expect(refreshLinkUpsert.values.encrypted_refresh_token).not.toBe('refresh-token-plain');
+      expect(refreshLinkInsert.values.auth_user_id).toBe('existing-user-uuid');
+      expect(refreshLinkInsert.values.toss_user_key).toBe('123');
+      expect(typeof refreshLinkInsert.values.encrypted_refresh_token).toBe('string');
+      expect(refreshLinkInsert.values.encrypted_refresh_token).not.toBe('refresh-token-plain');
+
+      const linkDeletes = state.deletes.filter((entry) => entry.table === 'toss_auth_links');
+      expect(linkDeletes.length).toBeGreaterThanOrEqual(2);
+      expect(linkDeletes.some((d) => d.filters.some((f) => f.field === 'auth_user_id'))).toBe(true);
+      expect(linkDeletes.some((d) => d.filters.some((f) => f.field === 'toss_user_key'))).toBe(true);
 
       const metadata = state.authUsersById['existing-user-uuid']?.user_metadata ?? {};
       expect(metadata.toss_user_key).toBe('123');

@@ -3,7 +3,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// 무료 13개 + PRO/PREMIUM 전용 17개 종목
+// 무료 기본 종목 + PRO/PREMIUM 전용 추가 종목
 const TICKERS = [
   "SPY", "SSO", "UPRO", "QQQ", "QLD", "TQQQ",
   "SOXX", "USD", "SOXL", "STRC", "BIL", "ICSH", "SGOV",

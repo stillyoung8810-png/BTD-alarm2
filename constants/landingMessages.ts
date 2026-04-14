@@ -26,6 +26,7 @@ export interface LandingPageCopy {
     body: string;
     ctaSignup: string;
     ctaLogin: string;
+    ctaTossLogin: string;
   };
   trustLine: string;
   featureLabels: Record<LandingFeatureId, string>;
@@ -44,6 +45,7 @@ const LANDING_PAGE_COPY_KO: LandingPageCopy = {
     body: '퀀트 기반의 매매 전략을 생성하고, 실시간 알림을 통해 체계적으로 자산을 불려나가세요. 프리미엄 등급의 매니징 경험을 제공합니다.',
     ctaSignup: '무료로 시작하기',
     ctaLogin: '이미 계정이 있으신가요? 로그인',
+    ctaTossLogin: 'TOSS로 계속하기',
   },
   trustLine: '안전하고 신뢰할 수 있는 자산 관리 플랫폼',
   featureLabels: {
@@ -66,6 +68,7 @@ const LANDING_PAGE_COPY_EN: LandingPageCopy = {
     body: 'Create quant-based trading strategies and grow your assets systematically with real-time alerts. Experience premium-grade portfolio management.',
     ctaSignup: 'Start for Free',
     ctaLogin: 'Already have an account? Log in',
+    ctaTossLogin: 'Continue with TOSS',
   },
   trustLine: 'Secure & Trusted Asset Management Platform',
   featureLabels: {

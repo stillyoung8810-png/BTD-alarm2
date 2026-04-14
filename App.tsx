@@ -1013,6 +1013,10 @@ const App: React.FC = () => {
     setAuthModal('login');
   }, [setAuthModal]);
 
+  const handleContinueWithToss = useCallback(() => {
+    handleOpenLogin();
+  }, [handleOpenLogin]);
+
   const handleOpenSignup = useCallback(() => {
     setAuthModal('signup');
   }, [setAuthModal]);
@@ -1267,6 +1271,7 @@ const App: React.FC = () => {
             onDailyExecutionSummaryChange={onDailyExecutionSummaryChange}
             onOpenLogin={handleOpenLogin}
             onOpenSignup={handleOpenSignup}
+            onContinueWithToss={handleContinueWithToss}
             onRequestOpenCreator={handleRequestOpenCreator}
             onOpenAlarm={handleOpenAlarm}
             onOpenDetails={handleOpenDetails}
@@ -1459,6 +1464,8 @@ const App: React.FC = () => {
       )}
 
       <Footer
+        lang={lang}
+        showLegalDisclaimer={user != null && activeTab === 'dashboard'}
         onNavigateTerms={() => {
           setActiveTab('terms');
           const u = window.location;

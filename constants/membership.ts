@@ -52,7 +52,7 @@ const PRO_CONFIG: PlanConfig = {
   displayName: 'PRO',
   subtitle: { ko: '전문 투자자', en: 'Active Investor' },
   features: {
-    ko: ['포트폴리오 최대 5개', '알람 슬롯 10개', '기본 13개 + PRO 전용 종목', 'AI 매매 인식 (50회/월)', '텔레그램 상세 알림', '광고 제거'],
+    ko: ['포트폴리오 최대 5개', '알람 슬롯 10개', '기본 종목 + PRO 전용 종목', 'AI 매매 인식 (50회/월)', '텔레그램 상세 알림', '광고 제거'],
     en: ['Up to 5 portfolios', '10 alert slots', 'Core + PRO tickers', 'AI Trade Recognition (50/mo)', 'Detailed Telegram alerts', 'No ads'],
   },
 };

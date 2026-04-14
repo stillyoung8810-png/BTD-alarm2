@@ -1,8 +1,10 @@
 import React from 'react';
 import { STRATEGY_CREATOR_STYLES } from '../styles';
 import type { StrategySelectionStepViewProps } from '../types/ui';
+import { LegalDisclaimer } from '@/components/common/LegalDisclaimer';
 
 export function StrategySelectionStepView({
+  lang,
   heading,
   description,
   definitions,
@@ -57,6 +59,12 @@ export function StrategySelectionStepView({
           );
         })}
       </div>
+
+      <LegalDisclaimer
+        lang={lang}
+        variant="accent"
+        layoutClassName="pt-2 text-center"
+      />
     </div>
   );
 }

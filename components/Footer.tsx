@@ -1,7 +1,9 @@
 import React from 'react';
+import type { AppLang } from '../types';
 import { useTossApp } from '../contexts/TossAppContext';
 import { openExternalUrl } from '../services/tossAppBridge';
 import { TDSButton } from './tds';
+import { LegalDisclaimer } from './common/LegalDisclaimer';
 
 // ---------------------------------------------------------------------------
 // 법인 필수 정보
@@ -20,6 +22,8 @@ const TOSS_CS_URL = 'https://service.toss.im/apps/support';
 // Footer
 // ---------------------------------------------------------------------------
 interface FooterProps {
+  lang: AppLang;
+  showLegalDisclaimer?: boolean;
   /** 토스 앱 내부 접속 여부 (Context에서도 감지하지만 외부 override 가능) */
   isInTossApp?: boolean;
   /** 이용약관 탭으로 이동 */
@@ -30,7 +34,14 @@ interface FooterProps {
   onNavigateRefundPolicy?: () => void;
 }
 
-const Footer: React.FC<FooterProps> = ({ isInTossApp: isInTossAppProp, onNavigateTerms, onNavigatePrivacy, onNavigateRefundPolicy }) => {
+const Footer: React.FC<FooterProps> = ({
+  lang,
+  showLegalDisclaimer = false,
+  isInTossApp: isInTossAppProp,
+  onNavigateTerms,
+  onNavigatePrivacy,
+  onNavigateRefundPolicy,
+}) => {
   const { isInTossApp: isInTossAppCtx, safeAreaInsets } = useTossApp();
 
   const isTossAgent =
@@ -47,6 +58,14 @@ const Footer: React.FC<FooterProps> = ({ isInTossApp: isInTossAppProp, onNavigat
       style={safeBottom > 0 ? { paddingBottom: `${safeBottom}px` } : undefined}
     >
       <div className="px-5 py-6 space-y-4">
+        {showLegalDisclaimer ? (
+          <LegalDisclaimer
+            lang={lang}
+            variant="minimal"
+            layoutClassName="mt-2 text-center"
+          />
+        ) : null}
+
         {/* 이용약관 / 개인정보처리방침 / 환불규정 — 웹·토스 동일하게 글자만(링크 스타일), 버튼 느낌 없음 */}
         <div className="flex items-center gap-3 text-[12px] font-medium flex-wrap">
           <button

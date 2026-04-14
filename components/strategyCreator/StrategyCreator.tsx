@@ -43,6 +43,7 @@ export default function StrategyCreator({
       case 'strategy_select':
         return (
           <StrategySelectionStepView
+            lang={lang}
             heading={controller.copy.strategySelection.heading}
             description={controller.copy.strategySelection.description}
             definitions={controller.strategyDefinitions}

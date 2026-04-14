@@ -38,6 +38,7 @@ export interface TabContentProps {
   onDailyExecutionSummaryChange: (summary: string | null) => void;
   onOpenLogin: () => void;
   onOpenSignup: () => void;
+  onContinueWithToss: () => void;
   onRequestOpenCreator: () => void;
   onOpenAlarm: (id: string) => void;
   onOpenDetails: (id: string) => void;
@@ -80,6 +81,7 @@ const TabContentComponent: React.FC<TabContentProps> = (props) => {
     onDailyExecutionSummaryChange,
     onOpenLogin,
     onOpenSignup,
+    onContinueWithToss,
     onRequestOpenCreator,
     onOpenAlarm,
     onOpenDetails,
@@ -126,6 +128,7 @@ const TabContentComponent: React.FC<TabContentProps> = (props) => {
             lang={lang}
             onOpenSignup={onOpenSignup}
             onOpenLogin={onOpenLogin}
+            onContinueWithToss={onContinueWithToss}
           />
         );
       }

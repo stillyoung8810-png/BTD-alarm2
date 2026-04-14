@@ -1,24 +1,42 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { getLandingPageCopy } from '../constants/landingMessages';
 import { LANDING_FEATURES_CONFIG } from '../constants/landingConfig';
 import type { AppLang } from '../types';
 import { useTossApp } from '../contexts/TossAppContext';
 import { getConditionalTypographyStyle } from '../utils/tossStyleHelpers';
 import { LandingHero, FeatureIcon } from './LandingHero';
+import { LegalDisclaimer } from './common/LegalDisclaimer';
 
 interface LandingProps {
   lang: AppLang;
   onOpenSignup: () => void;
   onOpenLogin: () => void;
+  onContinueWithToss: () => void;
 }
 
-const Landing: React.FC<LandingProps> = ({ lang, onOpenSignup, onOpenLogin }) => {
+const Landing: React.FC<LandingProps> = ({
+  lang,
+  onOpenSignup,
+  onOpenLogin,
+  onContinueWithToss,
+}) => {
   const { isInTossApp } = useTossApp();
   const copy = getLandingPageCopy(lang);
 
   const tossTitleStyle = getConditionalTypographyStyle(isInTossApp, 'Typography2', 'Bold');
   const tossSubtitleStyle = getConditionalTypographyStyle(isInTossApp, 'Typography5', 'Regular');
   const tossCaptionStyle = getConditionalTypographyStyle(isInTossApp, 'Typography7', 'Regular');
+  const featureSharedStyle: React.CSSProperties | undefined = useMemo(() => {
+    if (!isInTossApp || tossCaptionStyle == null) {
+      return undefined;
+    }
+
+    return {
+      fontSize: tossCaptionStyle.fontSize,
+      lineHeight: tossCaptionStyle.lineHeight,
+      fontWeight: tossCaptionStyle.fontWeight,
+    };
+  }, [isInTossApp, tossCaptionStyle]);
 
   return (
     <div className="relative min-h-[80vh] flex flex-col items-center justify-center px-4 py-12 overflow-hidden">
@@ -41,6 +59,7 @@ const Landing: React.FC<LandingProps> = ({ lang, onOpenSignup, onOpenLogin }) =>
         tossSubtitleStyle={tossSubtitleStyle}
         onOpenSignup={onOpenSignup}
         onOpenLogin={onOpenLogin}
+        onContinueWithToss={onContinueWithToss}
       />
 
       <div className="mt-12 flex flex-wrap justify-center gap-3 max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300">
@@ -48,15 +67,7 @@ const Landing: React.FC<LandingProps> = ({ lang, onOpenSignup, onOpenLogin }) =>
           <div
             key={feature.id}
             className="flex items-center gap-2 px-5 py-3 rounded-full bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/50 shadow-sm hover:shadow-md transition-all duration-300 hover:-translate-y-0.5"
-            style={
-              isInTossApp && tossCaptionStyle
-                ? {
-                    fontSize: tossCaptionStyle.fontSize,
-                    lineHeight: tossCaptionStyle.lineHeight,
-                    fontWeight: tossCaptionStyle.fontWeight,
-                  }
-                : undefined
-            }
+            style={featureSharedStyle}
           >
             <span className="text-blue-500 dark:text-blue-400" aria-hidden="true">
               <FeatureIcon iconKey={feature.icon} />
@@ -73,6 +84,12 @@ const Landing: React.FC<LandingProps> = ({ lang, onOpenSignup, onOpenLogin }) =>
           {copy?.trustLine ?? ''}
         </p>
       </div>
+
+      <LegalDisclaimer
+        lang={lang}
+        variant="standard"
+        layoutClassName="mt-6 text-center"
+      />
     </div>
   );
 };

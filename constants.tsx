@@ -1,11 +1,13 @@
 
 export const AVAILABLE_STOCKS = [
-  'SPY', 'SSO', 'UPRO', 'QQQ', 'QLD', 'TQQQ', 'SOXX', 'USD', 'SOXL', 'STRC', 'BIL', 'ICSH', 'SGOV'
+  'SPY', 'SSO', 'UPRO', 'QQQ', 'QLD', 'TQQQ', 'SOXX', 'USD', 'SOXL', 'STRC',
+  'TSLA', 'NVDA', 'GOOGL', 'PLTR', 'COIN', 'MSTR', 'BMNR',
+  'BIL', 'ICSH', 'SGOV',
 ];
 
 // PRO/PREMIUM 전용 추가 종목
 export const PAID_STOCKS = [
-  'TSLA', 'TSLL', 'NVDA', 'NVDL', 'GOOGL', 'GGLL', 'PLTR', 'PTIR', 'COIN', 'CONL', 'MSTR', 'MSTX', 'BMNR',
+  'TSLL', 'NVDL', 'GGLL', 'PTIR', 'CONL', 'MSTX',
   'FNGU', 'TECL', 'BULZ', 'GDXU',
 ];
 
@@ -14,6 +16,7 @@ export const PAID_STOCKS = [
 export const ALL_STOCKS = [
   // 기본 인덱스/레버리지/기타
   'SPY', 'SSO', 'UPRO', 'QQQ', 'QLD', 'TQQQ', 'SOXX', 'USD', 'SOXL', 'STRC',
+  'TSLA', 'NVDA', 'GOOGL', 'PLTR', 'COIN', 'MSTR', 'BMNR',
   // 유료 PRO/PREMIUM 전용 종목
   ...PAID_STOCKS,
   // 채권/현금성 ETF - 시세탭 종목 정보의 맨 마지막에 오도록
@@ -225,7 +228,7 @@ export const I18N = {
     membershipPricingFreePriceNote: "/ 평생",
     membershipPricingFreeFeature1: "포트폴리오 최대 2개",
     membershipPricingFreeFeature2: "알람 슬롯 2개",
-    membershipPricingFreeFeature3: "기본 13개 ETF",
+    membershipPricingFreeFeature3: "기본 종목 ETF",
     membershipPricingFreeFeature4: "AI 매매 인식 (1회/일)",
     membershipPricingFreeFeature5: "백테스트 (2회/일)",
     membershipPricingFreeFeature7: "광고 포함",
@@ -234,7 +237,7 @@ export const I18N = {
     membershipPricingProBadge: "가장 인기 있는 선택",
     membershipPricingProFeature1: "포트폴리오 최대 5개",
     membershipPricingProFeature2: "알람 슬롯 10개",
-    membershipPricingProFeature3: "기본 13개 + PRO 전용 종목",
+    membershipPricingProFeature3: "기본 종목 + PRO 전용 종목",
     membershipPricingProFeature4: "AI 매매 인식 (50회/월)",
     membershipPricingProFeature5: "백테스트 (5회/일)",
     membershipPricingProFeature6: "텔레그램 상세 알림",
@@ -401,7 +404,7 @@ export const I18N = {
     membershipPricingFreePriceNote: "/ lifetime",
     membershipPricingFreeFeature1: "Up to 2 portfolios",
     membershipPricingFreeFeature2: "2 alert slots",
-    membershipPricingFreeFeature3: "13 core ETFs",
+    membershipPricingFreeFeature3: "Core ETFs",
     membershipPricingFreeFeature4: "AI Trade Recognition (1/day)",
     membershipPricingFreeFeature5: "Backtesting (2/day)",
     membershipPricingFreeFeature7: "Includes ads",

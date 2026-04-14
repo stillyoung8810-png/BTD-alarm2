@@ -1,32 +1,5 @@
 import type { AppLang } from '@/types';
 
-export type CommonMessageKey =
-  | 'save'
-  | 'processing'
-  | 'close'
-  | 'closeDialog'
-  | 'acknowledge'
-  | 'notice'
-  | 'portfolioName'
-  | 'dailyBuyAmount'
-  | 'feeRatePercent'
-  | 'shortMaPeriod'
-  | 'longMaPeriod'
-  | 'periodicWithdrawal'
-  | 'createStrategy'
-  | 'setupDescription'
-  | 'saveAriaLabel'
-  | 'namePlaceholder'
-  | 'saveFailed'
-  | 'validationNameRequired'
-  | 'validationNameLength'
-  | 'validationDailyBuy'
-  | 'validationFeeRate'
-  | 'validationMaPeriod'
-  | 'validationWithdrawalNonFinite'
-  | 'validationWithdrawalNegative'
-  | 'validationWithdrawalTooLarge';
-
 export interface CommonMessageSet {
   save: string;
   processing: string;
@@ -53,7 +26,12 @@ export interface CommonMessageSet {
   validationWithdrawalNonFinite: string;
   validationWithdrawalNegative: string;
   validationWithdrawalTooLarge: string;
+  legalDisclaimerMinimal: string;
+  legalDisclaimerStandard: string;
+  legalDisclaimerAccent: string;
 }
+
+export type CommonMessageKey = keyof CommonMessageSet;
 
 export const COMMON_MESSAGES: Record<AppLang, CommonMessageSet> = {
   ko: {
@@ -86,6 +64,12 @@ export const COMMON_MESSAGES: Record<AppLang, CommonMessageSet> = {
       '인출 금액은 0 이상만 입력할 수 있습니다. 음수는 입력할 수 없습니다.',
     validationWithdrawalTooLarge:
       '인출 금액은 $1,000,000 이하여야 합니다.',
+    legalDisclaimerMinimal:
+      '본 서비스 정보는 참고용이며 투자 권유가 아닙니다.',
+    legalDisclaimerStandard:
+      '본 서비스는 투자 참고용 정보만 제공하며, 투자 판단과 책임은 이용자에게 있습니다.',
+    legalDisclaimerAccent:
+      '진행 전에 본 서비스가 투자 권유가 아닌 참고용 정보임을 확인해 주세요.',
   },
   en: {
     save: 'Save',
@@ -119,18 +103,15 @@ export const COMMON_MESSAGES: Record<AppLang, CommonMessageSet> = {
       'Withdrawal amount must be zero or greater. Negative values are not allowed.',
     validationWithdrawalTooLarge:
       'Withdrawal amount must be $1,000,000 or less.',
+    legalDisclaimerMinimal:
+      'This service provides information for reference only and is not investment advice.',
+    legalDisclaimerStandard:
+      'This service provides reference information only; all investment decisions and responsibility remain with the user.',
+    legalDisclaimerAccent:
+      'Before proceeding, please confirm this service is for reference only and not investment advice.',
   },
 };
 
-const COMMON_MESSAGE_CACHE = new Map<AppLang, CommonMessageSet>();
-
 export function getCommonMessages(lang: AppLang): CommonMessageSet {
-  const cached = COMMON_MESSAGE_CACHE.get(lang);
-  if (cached != null) {
-    return cached;
-  }
-
-  const messages = COMMON_MESSAGES[lang];
-  COMMON_MESSAGE_CACHE.set(lang, messages);
-  return messages;
+  return COMMON_MESSAGES[lang];
 }

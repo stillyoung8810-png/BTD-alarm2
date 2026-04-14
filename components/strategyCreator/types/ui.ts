@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { AppLang } from '@/types';
 import type {
   StrategyCreatorMetaDraftInput,
   StrategyType,
@@ -60,6 +61,7 @@ export interface DropdownInfoModalLabels {
 }
 
 export interface StrategySelectionStepViewProps {
+  lang: AppLang;
   heading: string;
   description: string;
   definitions: readonly StrategyDefinitionViewModel[];

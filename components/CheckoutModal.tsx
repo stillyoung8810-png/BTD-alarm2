@@ -27,6 +27,7 @@ import { TDS_DIALOG_MESSAGES } from '../constants/tdsDialogMessages';
 import { TdsAlertDialog } from './tds-adapter/TdsAlertDialog';
 import { getPricingMessages } from '../constants/messages/pricingMessages';
 import { showErrorToast } from './tds-adapter/showErrorToast';
+import { LegalDisclaimer } from './common/LegalDisclaimer';
 
 // ---------------------------------------------------------------------------
 // 플랜 카드 스타일 (시각만; 카피는 paymentCheckoutMessages)
@@ -310,6 +311,12 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
             <p className={`text-2xl font-black ${PLAN_STYLES[TOSS_IAP_FIXED_PLAN_ID].total}`}>{totalFormatted}</p>
           </div>
         </div>
+
+        <LegalDisclaimer
+          lang={lang}
+          variant="accent"
+          layoutClassName="text-center"
+        />
 
         <TDSButton
           fullWidth

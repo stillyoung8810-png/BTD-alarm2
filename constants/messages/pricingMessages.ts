@@ -7,14 +7,6 @@ export type PricingTierPrice =
   | { kind: 'static'; label: string; note: string }
   | { kind: 'membershipConfig'; plan: 'pro'; note: string };
 
-export type PricingTelegramPreviewLineTone =
-  | 'text'
-  | 'buy'
-  | 'sell'
-  | 'footer';
-
-export type PricingTelegramBadgeTone = 'brand' | 'accent' | 'warning';
-
 export interface PricingFeatureRow {
   id: string;
   text: string;
@@ -56,27 +48,16 @@ export interface PricingAiSectionCopy {
   advancePreviewAriaLabel: string;
 }
 
-export interface PricingTelegramPreviewLine {
-  id: string;
-  text: string;
-  tone: PricingTelegramPreviewLineTone;
-}
-
 export interface PricingTelegramPreviewCard {
   id: string;
-  badge: string;
-  badgeTone: PricingTelegramBadgeTone;
-  intro: string;
-  time: string;
-  lines: readonly PricingTelegramPreviewLine[];
+  imageSrc: string;
+  imageAlt: string;
 }
 
 export interface PricingTelegramSectionCopy {
   eyebrowLabel: string;
   title: string;
   description: string;
-  appName: string;
-  avatarText: string;
   previewCards: readonly PricingTelegramPreviewCard[];
   advancePreviewAriaLabel: string;
 }
@@ -104,14 +85,15 @@ export interface PricingMessageSet {
 }
 
 const AI_PREVIEW_IMAGE_PATHS = {
-  input: '/images/ai_step_input.jpg',
-  processing: '/images/ai_step_processing.jpg',
-  result: '/images/ai_step_result.jpg',
+  input: '/images/ai_step_input.png',
+  processing: '/images/ai_step_processing.png',
+  result: '/images/ai_step_result.png',
 } as const;
 
-const TELEGRAM_APP_COPY = {
-  appName: 'BTD Alarm Bot',
-  avatarText: 'B',
+const TELEGRAM_PREVIEW_IMAGE_PATHS = {
+  basicSplit: '/images/telegram_preview_basic_split.png',
+  customMix: '/images/telegram_preview_custom_mix.png',
+  stopSpecial: '/images/telegram_preview_stop_special.png',
 } as const;
 
 const PRICING_MESSAGES = {
@@ -203,85 +185,21 @@ const PRICING_MESSAGES = {
         title: '매매 시점을\n놓치지 마세요',
         description:
           '복잡한 계산 없이 텔레그램으로 전송되는 정교한 매매 지시를 따르기만 하세요.',
-        appName: TELEGRAM_APP_COPY.appName,
-        avatarText: TELEGRAM_APP_COPY.avatarText,
         previewCards: [
           {
             id: 'basic-split',
-            badge: '기본 분할매수',
-            badgeTone: 'brand',
-            intro:
-              '설정하신 매매 알람 시간입니다. 포트폴리오 전략을 확인해 주세요.',
-            time: '18:00',
-            lines: [
-              { id: 'title', text: '다분할 매매법', tone: 'text' },
-              {
-                id: 'alarm',
-                text: '알람 시간 (KST): 17:10, 18:00',
-                tone: 'text',
-              },
-              { id: 'buy-1', text: 'LOC 매수1: 55.14 / 9주', tone: 'buy' },
-              { id: 'buy-2', text: 'LOC 매수2: 60.37 / 8주', tone: 'buy' },
-              { id: 'sell-1', text: 'LOC 매도: 60.38 / 4주', tone: 'sell' },
-              {
-                id: 'sell-2',
-                text: '지정가 매도: 60.65 / 13주',
-                tone: 'sell',
-              },
-            ],
+            imageSrc: TELEGRAM_PREVIEW_IMAGE_PATHS.basicSplit,
+            imageAlt: '텔레그램 다분할 매매 알림 예시',
           },
           {
             id: 'custom-strategy-mix',
-            badge: '커스텀 전략 혼합',
-            badgeTone: 'accent',
-            intro:
-              '설정하신 매매 알람 시간입니다. 포트폴리오 전략을 확인해 주세요.',
-            time: '09:00',
-            lines: [
-              { id: 'title', text: '다분할 매매법', tone: 'text' },
-              { id: 'alarm', text: '알람 시간 (KST): 09:00', tone: 'text' },
-              { id: 'buy-1', text: 'LOC 매수2: 54.56 / 18주', tone: 'buy' },
-              { id: 'sell-1', text: 'LOC 매도: 54.57 / 100주', tone: 'sell' },
-              {
-                id: 'sell-2',
-                text: '지정가 매도: 60.65 / 300주',
-                tone: 'sell',
-              },
-              { id: 'divider', text: '—', tone: 'text' },
-              { id: 'ma-title', text: '이평선 구간매수', tone: 'text' },
-              { id: 'ma-buy', text: '구간 2: QLD 매수', tone: 'buy' },
-              {
-                id: 'footer',
-                text: '오늘 주문 요약은 앱에서 확인해 주세요.',
-                tone: 'footer',
-              },
-            ],
+            imageSrc: TELEGRAM_PREVIEW_IMAGE_PATHS.customMix,
+            imageAlt: '텔레그램 커스텀 전략 혼합 알림 예시',
           },
           {
             id: 'stop-loss-special',
-            badge: '손절 및 특수대응',
-            badgeTone: 'warning',
-            intro:
-              '설정하신 매매 알람 시간입니다. 포트폴리오 전략을 확인해 주세요.',
-            time: '09:00',
-            lines: [
-              { id: 'ma-title', text: '이평선 구간매수', tone: 'text' },
-              { id: 'alarm', text: '알람 시간 (KST): 09:00', tone: 'text' },
-              { id: 'ma-buy', text: '구간 3: QQQ 매수', tone: 'buy' },
-              {
-                id: 'footer',
-                text: '오늘 주문 요약은 앱에서 확인해 주세요.',
-                tone: 'footer',
-              },
-              { id: 'divider', text: '—', tone: 'text' },
-              { id: 'multi-title', text: '다분할 매매법', tone: 'text' },
-              { id: 'moc-sell', text: 'MOC 매도: 104.25 주', tone: 'sell' },
-              {
-                id: 'quarter-stop',
-                text: 'MOC 매도 하여 쿼터 손절 모드 시작',
-                tone: 'sell',
-              },
-            ],
+            imageSrc: TELEGRAM_PREVIEW_IMAGE_PATHS.stopSpecial,
+            imageAlt: '텔레그램 손절·특수 대응 알림 예시',
           },
         ],
         advancePreviewAriaLabel: '다음 텔레그램 예시 보기',
@@ -384,85 +302,21 @@ const PRICING_MESSAGES = {
         eyebrowLabel: 'SMART NOTIFICATIONS',
         title: 'Real-time alerts,\nZero missed trades',
         description: 'Get precise trading signals via Telegram.',
-        appName: TELEGRAM_APP_COPY.appName,
-        avatarText: TELEGRAM_APP_COPY.avatarText,
         previewCards: [
           {
             id: 'basic-split',
-            badge: 'Basic Split',
-            badgeTone: 'brand',
-            intro:
-              'Your set trading alarm time. Please check your portfolio strategy.',
-            time: '18:00',
-            lines: [
-              { id: 'title', text: 'Multi-split trading', tone: 'text' },
-              {
-                id: 'alarm',
-                text: 'Alarm (KST): 17:10, 18:00',
-                tone: 'text',
-              },
-              { id: 'buy-1', text: 'LOC Buy 1: 55.14 / 9 sh', tone: 'buy' },
-              { id: 'buy-2', text: 'LOC Buy 2: 60.37 / 8 sh', tone: 'buy' },
-              { id: 'sell-1', text: 'LOC Sell: 60.38 / 4 sh', tone: 'sell' },
-              {
-                id: 'sell-2',
-                text: 'Limit Sell: 60.65 / 13 sh',
-                tone: 'sell',
-              },
-            ],
+            imageSrc: TELEGRAM_PREVIEW_IMAGE_PATHS.basicSplit,
+            imageAlt: 'Telegram multi-split trading alert sample',
           },
           {
             id: 'custom-strategy-mix',
-            badge: 'Custom Strategy Mix',
-            badgeTone: 'accent',
-            intro:
-              'Your set trading alarm time. Please check your portfolio strategy.',
-            time: '09:00',
-            lines: [
-              { id: 'title', text: 'Multi-split trading', tone: 'text' },
-              { id: 'alarm', text: 'Alarm (KST): 09:00', tone: 'text' },
-              { id: 'buy-1', text: 'LOC Buy 2: 54.56 / 18 sh', tone: 'buy' },
-              { id: 'sell-1', text: 'LOC Sell: 54.57 / 100 sh', tone: 'sell' },
-              {
-                id: 'sell-2',
-                text: 'Limit Sell: 60.65 / 300 sh',
-                tone: 'sell',
-              },
-              { id: 'divider', text: '—', tone: 'text' },
-              { id: 'ma-title', text: 'MA interval buy', tone: 'text' },
-              { id: 'ma-buy', text: 'Section 2: QLD Buy', tone: 'buy' },
-              {
-                id: 'footer',
-                text: "Check today's order summary in the app.",
-                tone: 'footer',
-              },
-            ],
+            imageSrc: TELEGRAM_PREVIEW_IMAGE_PATHS.customMix,
+            imageAlt: 'Telegram custom strategy mix alert sample',
           },
           {
             id: 'stop-loss-special',
-            badge: 'Stop-loss & Special',
-            badgeTone: 'warning',
-            intro:
-              'Your set trading alarm time. Please check your portfolio strategy.',
-            time: '09:00',
-            lines: [
-              { id: 'ma-title', text: 'MA interval buy', tone: 'text' },
-              { id: 'alarm', text: 'Alarm (KST): 09:00', tone: 'text' },
-              { id: 'ma-buy', text: 'Section 3: QQQ Buy', tone: 'buy' },
-              {
-                id: 'footer',
-                text: "Check today's order summary in the app.",
-                tone: 'footer',
-              },
-              { id: 'divider', text: '—', tone: 'text' },
-              { id: 'multi-title', text: 'Multi-split trading', tone: 'text' },
-              { id: 'moc-sell', text: 'MOC Sell: 104.25 sh', tone: 'sell' },
-              {
-                id: 'quarter-stop',
-                text: 'MOC sell to start quarter stop-loss mode',
-                tone: 'sell',
-              },
-            ],
+            imageSrc: TELEGRAM_PREVIEW_IMAGE_PATHS.stopSpecial,
+            imageAlt: 'Telegram stop-loss and special handling alert sample',
           },
         ],
         advancePreviewAriaLabel: 'Show next Telegram example',

@@ -13,9 +13,6 @@ import {
   getPricingMessages,
   type PricingAiSectionCopy,
   type PricingMessageSet,
-  type PricingTelegramBadgeTone,
-  type PricingTelegramPreviewCard,
-  type PricingTelegramPreviewLineTone,
   type PricingTierId,
   type PricingTierPrice,
   type PricingTierRow,
@@ -27,19 +24,41 @@ import { useTossApp } from '../contexts/TossAppContext';
 import { TDSButton, type TDSButtonProps } from './tds';
 import { formatPriceKRW, formatPriceUSDForDisplay } from '../utils/currency';
 
-const PREVIEW_PERSPECTIVE_PX = 1200;
 const AI_PREVIEW_WIDTH_PX = 325;
 const AI_PREVIEW_HEIGHT_PX = 375;
-const TELEGRAM_PREVIEW_MAX_HEIGHT_PX = 360;
+const AI_STACK_BACK_OFFSET_X_PX = 14;
+const AI_STACK_BACK_OFFSET_Y_PX = 20;
+const AI_STACK_MID_OFFSET_X_PX = 7;
+const AI_STACK_MID_OFFSET_Y_PX = 10;
+const AI_STACK_BACK_SCALE = 0.9;
+const AI_STACK_MID_SCALE = 0.96;
+const AI_STACK_BACK_ROTATE_DEG = -4;
+const AI_STACK_MID_ROTATE_DEG = 2;
+const AI_STACK_BACK_OPACITY = 0.55;
+const AI_STACK_MID_OPACITY = 0.78;
+/** 뒤 카드 피크가 잘리지 않도록 프레임보다 약간 넓은 히트 영역 */
+const AI_STACK_CONTAINER_EXTRA_X_PX = 28;
+const AI_STACK_CONTAINER_EXTRA_Y_PX = 36;
 
-const AI_PREVIEW_FRAME_STYLE: CSSProperties = {
-  width: AI_PREVIEW_WIDTH_PX,
-  height: AI_PREVIEW_HEIGHT_PX,
-  perspective: `${PREVIEW_PERSPECTIVE_PX}px`,
-};
+/**
+ * PNG가 사각 캔버스라 모서리에 검정이 남는 경우, 라운드 밖은 표시하지 않도록 마스크합니다.
+ * viewBox 100 기준 rx/ry — 카드 크기에 비례해 스케일됩니다.
+ */
+const AI_PREVIEW_STACK_MASK_RX_RY = 9.5;
 
-const TELEGRAM_SCROLL_STYLE: CSSProperties = {
-  maxHeight: TELEGRAM_PREVIEW_MAX_HEIGHT_PX,
+const AI_PREVIEW_STACK_MASK_SVG_ENCODED = encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none"><rect width="100" height="100" rx="${AI_PREVIEW_STACK_MASK_RX_RY}" ry="${AI_PREVIEW_STACK_MASK_RX_RY}" fill="white"/></svg>`,
+);
+
+const AI_PREVIEW_STACK_MASK_IMAGE_STYLES: CSSProperties = {
+  WebkitMaskImage: `url("data:image/svg+xml,${AI_PREVIEW_STACK_MASK_SVG_ENCODED}")`,
+  maskImage: `url("data:image/svg+xml,${AI_PREVIEW_STACK_MASK_SVG_ENCODED}")`,
+  WebkitMaskSize: '100% 100%',
+  maskSize: '100% 100%',
+  WebkitMaskRepeat: 'no-repeat',
+  maskRepeat: 'no-repeat',
+  WebkitMaskPosition: 'center',
+  maskPosition: 'center',
 };
 
 interface PricingProps {
@@ -100,19 +119,6 @@ const TIER_THEME_STYLES: Record<
     webButton:
       'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/20',
   },
-};
-
-const TELEGRAM_BADGE_STYLES: Record<PricingTelegramBadgeTone, string> = {
-  brand: 'bg-blue-500/20 text-blue-200 border-blue-400/50',
-  accent: 'bg-purple-500/20 text-purple-200 border-purple-400/50',
-  warning: 'bg-amber-500/20 text-amber-200 border-amber-400/50',
-};
-
-const TELEGRAM_LINE_STYLES: Record<PricingTelegramPreviewLineTone, string> = {
-  buy: 'text-emerald-400',
-  sell: 'text-rose-400',
-  footer: 'text-slate-400',
-  text: 'text-slate-100',
 };
 
 function getTierCtaState(input: {
@@ -181,17 +187,131 @@ function getNextPreviewIndex(currentIndex: number, totalCount: number): number {
   return (currentIndex + 1) % totalCount;
 }
 
-function getActivePreviewId<T extends { id: string }>(
-  items: readonly T[],
-  activeIndex: number,
-): string | null {
-  const activeItem = items[activeIndex] ?? items[0] ?? null;
-  if (activeItem == null) {
+type AiPreviewStackLayer = 'back' | 'mid' | 'front';
+
+function getAiPreviewStackLayerStyle(layer: AiPreviewStackLayer): CSSProperties {
+  const stackBodyByLayer: Record<AiPreviewStackLayer, string> = {
+    back: `translate(${AI_STACK_BACK_OFFSET_X_PX}px, ${AI_STACK_BACK_OFFSET_Y_PX}px) scale(${AI_STACK_BACK_SCALE}) rotate(${AI_STACK_BACK_ROTATE_DEG}deg)`,
+    mid: `translate(${AI_STACK_MID_OFFSET_X_PX}px, ${AI_STACK_MID_OFFSET_Y_PX}px) scale(${AI_STACK_MID_SCALE}) rotate(${AI_STACK_MID_ROTATE_DEG}deg)`,
+    front: 'translate(0px, 0px) scale(1) rotate(0deg)',
+  };
+
+  switch (layer) {
+    case 'back':
+      return {
+        zIndex: 10,
+        opacity: AI_STACK_BACK_OPACITY,
+        transform: `translate(-50%, -50%) ${stackBodyByLayer.back}`,
+      };
+    case 'mid':
+      return {
+        zIndex: 20,
+        opacity: AI_STACK_MID_OPACITY,
+        transform: `translate(-50%, -50%) ${stackBodyByLayer.mid}`,
+      };
+    case 'front':
+      return {
+        zIndex: 30,
+        opacity: 1,
+        transform: `translate(-50%, -50%) ${stackBodyByLayer.front}`,
+      };
+    default: {
+      const exhaustive: never = layer;
+      return exhaustive;
+    }
+  }
+}
+
+interface PricingImagePreviewStackCard {
+  id: string;
+  imageSrc: string;
+  imageAlt: string;
+}
+
+const PricingImagePreviewStack = React.memo(function PricingImagePreviewStack({
+  previewCards,
+  activeIndex,
+  onAdvance,
+  ariaLabel,
+  focusRing,
+}: {
+  previewCards: readonly PricingImagePreviewStackCard[];
+  activeIndex: number;
+  onAdvance: () => void;
+  ariaLabel: string;
+  focusRing: 'indigo' | 'blue';
+}): React.ReactElement | null {
+  const previewCount = previewCards.length;
+  if (previewCount <= 0) {
     return null;
   }
 
-  return activeItem.id;
-}
+  const stackLayers: { layer: AiPreviewStackLayer; cardIndex: number }[] = [
+    { layer: 'back', cardIndex: (activeIndex + 2) % previewCount },
+    { layer: 'mid', cardIndex: (activeIndex + 1) % previewCount },
+    { layer: 'front', cardIndex: activeIndex % previewCount },
+  ];
+
+  const focusRingClassName =
+    focusRing === 'indigo' ? 'focus:ring-indigo-500' : 'focus:ring-blue-500';
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onAdvance}
+      onKeyDown={(event) => handleKeyDownAsClick(event, onAdvance)}
+      aria-label={ariaLabel}
+      className={`relative bg-transparent p-0 text-left cursor-pointer focus:outline-none focus:ring-2 ${focusRingClassName} rounded-[1.5rem]`}
+    >
+      <div
+        className="relative mx-auto select-none transition-[transform,opacity] duration-500 ease-out"
+        style={{
+          width: AI_PREVIEW_WIDTH_PX + AI_STACK_CONTAINER_EXTRA_X_PX,
+          height: AI_PREVIEW_HEIGHT_PX + AI_STACK_CONTAINER_EXTRA_Y_PX,
+        }}
+      >
+        {stackLayers.map(({ layer, cardIndex }) => {
+          const previewCard = previewCards[cardIndex];
+          if (previewCard == null) {
+            return null;
+          }
+
+          const isFront = layer === 'front';
+          const layerStyle = getAiPreviewStackLayerStyle(layer);
+
+          return (
+            <div
+              key={`${layer}-${previewCard.id}-${activeIndex}`}
+              aria-hidden={!isFront}
+              className="absolute left-1/2 top-1/2 w-fit h-fit overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-slate-200/70 isolate transition-[transform,opacity] duration-500 ease-out pointer-events-none dark:bg-slate-900 dark:ring-white/10"
+              style={{
+                ...layerStyle,
+                transformOrigin: 'center center',
+                backfaceVisibility: 'hidden',
+                WebkitBackfaceVisibility: 'hidden',
+              }}
+            >
+              <img
+                src={previewCard.imageSrc}
+                alt={isFront ? previewCard.imageAlt : ''}
+                className="block h-auto w-auto"
+                style={{
+                  maxWidth: AI_PREVIEW_WIDTH_PX,
+                  maxHeight: AI_PREVIEW_HEIGHT_PX,
+                  ...AI_PREVIEW_STACK_MASK_IMAGE_STYLES,
+                }}
+                draggable={false}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+});
+
+PricingImagePreviewStack.displayName = 'PricingImagePreviewStack';
 
 function formatTierPriceLabel(
   price: PricingTierPrice,
@@ -486,7 +606,6 @@ const PricingAiSection = React.memo(function PricingAiSection({
   activeIndex: number;
   onAdvance: () => void;
 }): React.ReactElement {
-  const activePreviewId = getActivePreviewId(copy.previewCards, activeIndex);
   const hasPreviewCards = copy.previewCards.length > 0;
 
   return (
@@ -523,40 +642,13 @@ const PricingAiSection = React.memo(function PricingAiSection({
 
         <div className="relative flex justify-center lg:justify-end">
           {hasPreviewCards ? (
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={onAdvance}
-              onKeyDown={(event) => handleKeyDownAsClick(event, onAdvance)}
-              aria-label={copy.advancePreviewAriaLabel}
-              className="relative bg-transparent p-0 text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-[1.5rem]"
-            >
-              <div className="relative select-none" style={AI_PREVIEW_FRAME_STYLE}>
-                {copy.previewCards.map((previewCard) => {
-                  const isActive = previewCard.id === activePreviewId;
-                  const layerVisibilityClass = isActive
-                    ? 'opacity-100 z-30'
-                    : 'opacity-0 z-10 pointer-events-none';
-
-                  return (
-                    <div
-                      key={previewCard.id}
-                      aria-hidden={!isActive}
-                      className={`absolute inset-0 transition-opacity duration-500 ${layerVisibilityClass}`}
-                    >
-                      <div className="relative h-full rounded-2xl overflow-hidden shadow-xl bg-slate-900 flex items-center justify-center border border-white/10">
-                        <img
-                          src={previewCard.imageSrc}
-                          alt={previewCard.imageAlt}
-                          className="max-w-full max-h-full object-contain"
-                          aria-hidden={!isActive}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+            <PricingImagePreviewStack
+              previewCards={copy.previewCards}
+              activeIndex={activeIndex}
+              onAdvance={onAdvance}
+              ariaLabel={copy.advancePreviewAriaLabel}
+              focusRing="indigo"
+            />
           ) : null}
         </div>
       </div>
@@ -575,76 +667,20 @@ const PricingTelegramSection = React.memo(function PricingTelegramSection({
   activeIndex: number;
   onAdvance: () => void;
 }): React.ReactElement {
-  const activePreviewId = getActivePreviewId(copy.previewCards, activeIndex);
   const hasPreviewCards = copy.previewCards.length > 0;
 
   return (
     <section className="mt-40 mb-20">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-        <div className="relative">
+        <div className="relative flex justify-center lg:justify-start">
           {hasPreviewCards ? (
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={onAdvance}
-              onKeyDown={(event) => handleKeyDownAsClick(event, onAdvance)}
-              aria-label={copy.advancePreviewAriaLabel}
-              className="block w-full bg-transparent p-0 text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-[3rem]"
-            >
-              <div className="relative w-full max-w-[320px] mx-auto bg-[#1a1c23] rounded-[3rem] border-8 border-slate-800 shadow-2xl overflow-hidden ring-1 ring-white/10">
-                <div className="rounded-[2rem] bg-[#0e1117] overflow-hidden m-2">
-                  <div className="flex items-center gap-3 px-5 py-4 bg-slate-900/80 border-b border-white/5">
-                    <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-black">
-                      {copy.avatarText}
-                    </div>
-                    <div className="text-xs font-black text-white">{copy.appName}</div>
-                  </div>
-
-                  <div className="p-4 overflow-hidden" style={TELEGRAM_SCROLL_STYLE}>
-                    <div className="relative min-h-[220px]">
-                      {copy.previewCards.map((previewCard: PricingTelegramPreviewCard) => {
-                        const isActive = previewCard.id === activePreviewId;
-                        const visibilityClassName = isActive
-                          ? 'relative opacity-100'
-                          : 'absolute inset-0 opacity-0 pointer-events-none';
-
-                        return (
-                          <div
-                            key={previewCard.id}
-                            aria-hidden={!isActive}
-                            className={`p-4 rounded-2xl bg-slate-800 border border-white/5 transition-opacity duration-300 ${visibilityClassName}`}
-                          >
-                            <div className="flex justify-between items-center mb-2">
-                              <span
-                                className={`px-2 py-0.5 rounded text-[8px] font-bold border ${TELEGRAM_BADGE_STYLES[previewCard.badgeTone]}`}
-                              >
-                                {previewCard.badge}
-                              </span>
-                              <span className="text-[8px] text-slate-500">{previewCard.time}</span>
-                            </div>
-
-                            <p className="text-[10px] text-slate-300 mb-3">
-                              {previewCard.intro}
-                            </p>
-
-                            <div className="space-y-1">
-                              {previewCard.lines.map((previewLine) => (
-                                <div
-                                  key={previewLine.id}
-                                  className={`text-[9px] ${TELEGRAM_LINE_STYLES[previewLine.tone]}`}
-                                >
-                                  {`• ${previewLine.text}`}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <PricingImagePreviewStack
+              previewCards={copy.previewCards}
+              activeIndex={activeIndex}
+              onAdvance={onAdvance}
+              ariaLabel={copy.advancePreviewAriaLabel}
+              focusRing="blue"
+            />
           ) : null}
         </div>
 

@@ -53,11 +53,9 @@ import {
   LayoutDashboard, 
   BarChart3, 
   History as HistoryIcon, 
-  LineChart,
   UserCircle,
   Languages,
   Crown,
-  Hammer,
   FileText
 } from 'lucide-react';
 import { 
@@ -1190,8 +1188,6 @@ const App: React.FC = () => {
     [handleRequestBackNavigation, setActiveTab, replaceHashIfMatched],
   );
 
-  const noop = useCallback(() => {}, []);
-
   const mainContent = (
     <div className="min-h-screen transition-colors duration-500 bg-slate-50 dark:bg-slate-950 dark:text-slate-200">
       <div className="pb-32">
@@ -1295,15 +1291,6 @@ const App: React.FC = () => {
             <NavIcon active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<HistoryIcon size={22} />} label={t.history} />
             <NavIcon active={activeTab === 'markets'} onClick={() => setActiveTab('markets')} icon={<BarChart3 size={22} />} label={t.markets} />
             <NavIcon active={activeTab === 'pricing'} onClick={() => setActiveTab('pricing')} icon={<Crown size={22} />} label={t.membership} />
-            <NavIcon
-              active={false}
-              onClick={noop}
-              icon={<LineChart size={22} />}
-              label={t.backtest}
-              disabled
-              tooltip={shellCopy.backtestPreparingTooltip}
-              tooltipIcon={<Hammer size={16} className="text-indigo-400" />}
-            />
             {!isInTossApp && (
               <a
                 href="/posts"

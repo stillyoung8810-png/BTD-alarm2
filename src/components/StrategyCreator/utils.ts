@@ -2,7 +2,10 @@ import {
   STRATEGY_DEFAULTS,
   roundMoney,
 } from '@/constants/domain/financeRules';
-import { RATE_PRECISION_MULTIPLIER } from '@/constants/vrConstants';
+import {
+  RATE_PRECISION_MULTIPLIER,
+  VR_BAND_WIDTH_PCT,
+} from '@/constants/vrConstants';
 import type {
   Portfolio,
   Strategy,
@@ -149,6 +152,20 @@ export function safeNumber(val: unknown, fallback: number = ZERO_AMOUNT): number
 
 export function safeBoolean(val: unknown, fallback = false): boolean {
   return typeof val === 'boolean' ? val : fallback;
+}
+
+export function sanitizeVrBandWidthPercent(value: unknown): number {
+  const parsedValue = safeNumber(value, VR_BAND_WIDTH_PCT.DEFAULT);
+
+  if (parsedValue < VR_BAND_WIDTH_PCT.MIN) {
+    return VR_BAND_WIDTH_PCT.MIN;
+  }
+
+  if (parsedValue > VR_BAND_WIDTH_PCT.MAX) {
+    return VR_BAND_WIDTH_PCT.MAX;
+  }
+
+  return parsedValue;
 }
 
 function toDecimalRate(percent: number): number {
@@ -364,8 +381,12 @@ function buildVrBandStrategy(
     initialV: safeNumber(draft?.initialV),
     minOrderQty: safeNumber(draft?.minOrderQty),
     feeRate: normalizedFeeRate,
-    bandRateUpper: toDecimalRate(safeNumber(draft?.bandUpperPct)),
-    bandRateLower: toDecimalRate(safeNumber(draft?.bandLowerPct)),
+    bandRateUpper: toDecimalRate(
+      sanitizeVrBandWidthPercent(draft?.bandUpperPct),
+    ),
+    bandRateLower: toDecimalRate(
+      sanitizeVrBandWidthPercent(draft?.bandLowerPct),
+    ),
     G: safeNumber(draft?.g),
     poolUsageRateBuy: toDecimalRate(safeNumber(draft?.poolUsagePct)),
     cycleWeeks: sanitizeVrCycleWeeks(draft?.cycleWeeks),

@@ -10,6 +10,7 @@ import {
 import { getCommonMessages } from '@/constants/messages/commonMessages';
 import { getStrategyCreatorMessages } from '@/constants/messages/strategyCreatorMessages';
 import {
+  VR_BAND_WIDTH_PCT,
   VR_CYCLE,
   getVrDeltaCashInputValidationReason,
 } from '@/constants/vrConstants';
@@ -18,6 +19,7 @@ import {
   buildPortfolioDraftFromWizardState,
   hasDuplicatedSectionStocks,
   safeNumber,
+  sanitizeVrBandWidthPercent,
   safeTrim,
   type StrategyCreatorMetaDraftInput,
   type StrategyType,
@@ -102,8 +104,8 @@ function buildInitialWizardState(): StrategyWizardDraftInput {
       initialCapital: STRATEGY_DEFAULTS.VR_INITIAL_CAPITAL,
       initialV: STRATEGY_DEFAULTS.VR_INITIAL_VALUE,
       minOrderQty: 1,
-      bandUpperPct: 5,
-      bandLowerPct: 5,
+      bandUpperPct: VR_BAND_WIDTH_PCT.DEFAULT,
+      bandLowerPct: VR_BAND_WIDTH_PCT.DEFAULT,
       g: 10,
       poolUsagePct: 50,
       deltaCash: 0,
@@ -145,8 +147,8 @@ const EMPTY_VR_BAND_DRAFT: NonNullable<StrategyWizardDraftInput['vrBand']> = {
   initialCapital: STRATEGY_DEFAULTS.VR_INITIAL_CAPITAL,
   initialV: STRATEGY_DEFAULTS.VR_INITIAL_VALUE,
   minOrderQty: 1,
-  bandUpperPct: 5,
-  bandLowerPct: 5,
+  bandUpperPct: VR_BAND_WIDTH_PCT.DEFAULT,
+  bandLowerPct: VR_BAND_WIDTH_PCT.DEFAULT,
   g: 10,
   poolUsagePct: 50,
   deltaCash: 0,
@@ -432,22 +434,26 @@ export function useStrategyCreatorController({
 
   const handleDailyBuyAmountChange = useCallback(
     (value: string) => {
+      const committedValue = roundMoney(
+        safeNumber(value, STRATEGY_DEFAULTS.DAILY_BUY_AMOUNT_USD),
+      );
       updateMeta({
-        dailyBuyAmount: roundMoney(
-          safeNumber(value, STRATEGY_DEFAULTS.DAILY_BUY_AMOUNT_USD),
-        ),
+        dailyBuyAmount: committedValue,
       });
+      return committedValue;
     },
     [updateMeta],
   );
 
   const handleFeeRatePercentChange = useCallback(
     (value: string) => {
+      const committedValue = roundMoney(
+        safeNumber(value, STRATEGY_DEFAULTS.FEE_RATE_PERCENT),
+      );
       updateMeta({
-        feeRatePercent: roundMoney(
-          safeNumber(value, STRATEGY_DEFAULTS.FEE_RATE_PERCENT),
-        ),
+        feeRatePercent: committedValue,
       });
+      return committedValue;
     },
     [updateMeta],
   );
@@ -479,6 +485,11 @@ export function useStrategyCreatorController({
   }, []);
 
   const handleMaShortPeriodChange = useCallback((value: string) => {
+    const committedValue = clampNumber(
+      safeNumber(value, STRATEGY_DEFAULTS.MA_SHORT_PERIOD),
+      MIN_MA_PERIOD,
+      MAX_MA_PERIOD,
+    );
     setWizardState((previous) => {
       const currentMaInterval =
         previous.maInterval ?? EMPTY_MA_INTERVAL_DRAFT;
@@ -486,17 +497,19 @@ export function useStrategyCreatorController({
         ...previous,
         maInterval: {
           ...currentMaInterval,
-          maAPeriod: clampNumber(
-            safeNumber(value, STRATEGY_DEFAULTS.MA_SHORT_PERIOD),
-            MIN_MA_PERIOD,
-            MAX_MA_PERIOD,
-          ),
+          maAPeriod: committedValue,
         },
       };
     });
+    return committedValue;
   }, []);
 
   const handleMaLongPeriodChange = useCallback((value: string) => {
+    const committedValue = clampNumber(
+      safeNumber(value, STRATEGY_DEFAULTS.MA_LONG_PERIOD),
+      MIN_MA_PERIOD,
+      MAX_MA_PERIOD,
+    );
     setWizardState((previous) => {
       const currentMaInterval =
         previous.maInterval ?? EMPTY_MA_INTERVAL_DRAFT;
@@ -504,14 +517,11 @@ export function useStrategyCreatorController({
         ...previous,
         maInterval: {
           ...currentMaInterval,
-          maBPeriod: clampNumber(
-            safeNumber(value, STRATEGY_DEFAULTS.MA_LONG_PERIOD),
-            MIN_MA_PERIOD,
-            MAX_MA_PERIOD,
-          ),
+          maBPeriod: committedValue,
         },
       };
     });
+    return committedValue;
   }, []);
 
   const handleRsiEnabledChange = useCallback((value: boolean) => {
@@ -544,33 +554,37 @@ export function useStrategyCreatorController({
 
   const handleTargetReturnRateChange = useCallback(
     (value: string) => {
+      const committedValue = clampNumber(
+        safeNumber(value, STRATEGY_DEFAULTS.TARGET_RETURN_PERCENT),
+        MIN_TARGET_RETURN_RATE,
+        MAX_TARGET_RETURN_RATE,
+      );
       setWizardState((previous) => ({
         ...previous,
         multiSplit: {
           ...previous.multiSplit,
-          targetReturnRate: clampNumber(
-            safeNumber(value, STRATEGY_DEFAULTS.TARGET_RETURN_PERCENT),
-            MIN_TARGET_RETURN_RATE,
-            MAX_TARGET_RETURN_RATE,
-          ),
+          targetReturnRate: committedValue,
         },
       }));
+      return committedValue;
     },
     [],
   );
 
   const handleMultiSplitTotalCountChange = useCallback((value: string) => {
+    const committedValue = clampNumber(
+      safeNumber(value, STRATEGY_DEFAULTS.TOTAL_SPLIT_COUNT),
+      MIN_TOTAL_SPLIT_COUNT,
+      MAX_TOTAL_SPLIT_COUNT,
+    );
     setWizardState((previous) => ({
       ...previous,
       multiSplit: {
         ...previous.multiSplit,
-        totalSplitCount: clampNumber(
-          safeNumber(value, STRATEGY_DEFAULTS.TOTAL_SPLIT_COUNT),
-          MIN_TOTAL_SPLIT_COUNT,
-          MAX_TOTAL_SPLIT_COUNT,
-        ),
+        totalSplitCount: committedValue,
       },
     }));
+    return committedValue;
   }, []);
 
   const handleMultiSplitTargetStockChange = useCallback((value: string) => {
@@ -594,59 +608,55 @@ export function useStrategyCreatorController({
   }, []);
 
   const handleNoStopLowLocBudgetRatioChange = useCallback((value: string) => {
+    const committedValue = clampNumber(safeNumber(value, 50), MIN_PERCENT_INPUT, 100);
     setWizardState((previous) => ({
       ...previous,
       noStopMultiSplit: {
         ...previous.noStopMultiSplit,
-        lowLocBudgetRatio: clampNumber(
-          safeNumber(value, 50),
-          MIN_PERCENT_INPUT,
-          100,
-        ),
+        lowLocBudgetRatio: committedValue,
       },
     }));
+    return committedValue;
   }, []);
 
   const handleNoStopHighLocPremiumPctChange = useCallback((value: string) => {
+    const committedValue = clampNumber(safeNumber(value, 15), MIN_PERCENT_INPUT, 100);
     setWizardState((previous) => ({
       ...previous,
       noStopMultiSplit: {
         ...previous.noStopMultiSplit,
-        highLocPremiumPct: clampNumber(
-          safeNumber(value, 15),
-          MIN_PERCENT_INPUT,
-          100,
-        ),
+        highLocPremiumPct: committedValue,
       },
     }));
+    return committedValue;
   }, []);
 
   const handleNoStopTakeProfitPctChange = useCallback((value: string) => {
+    const committedValue = clampNumber(safeNumber(value, 10), MIN_PERCENT_INPUT, 100);
     setWizardState((previous) => ({
       ...previous,
       noStopMultiSplit: {
         ...previous.noStopMultiSplit,
-        takeProfitPct: clampNumber(
-          safeNumber(value, 10),
-          MIN_PERCENT_INPUT,
-          100,
-        ),
+        takeProfitPct: committedValue,
       },
     }));
+    return committedValue;
   }, []);
 
   const handleNoStopTotalSplitCountChange = useCallback((value: string) => {
+    const committedValue = clampNumber(
+      safeNumber(value, STRATEGY_DEFAULTS.TOTAL_SPLIT_COUNT),
+      MIN_TOTAL_SPLIT_COUNT,
+      MAX_TOTAL_SPLIT_COUNT,
+    );
     setWizardState((previous) => ({
       ...previous,
       noStopMultiSplit: {
         ...previous.noStopMultiSplit,
-        totalSplitCount: clampNumber(
-          safeNumber(value, STRATEGY_DEFAULTS.TOTAL_SPLIT_COUNT),
-          MIN_TOTAL_SPLIT_COUNT,
-          MAX_TOTAL_SPLIT_COUNT,
-        ),
+        totalSplitCount: committedValue,
       },
     }));
+    return committedValue;
   }, []);
 
   const handleVrModeChange = useCallback(
@@ -855,31 +865,37 @@ export function useStrategyCreatorController({
         updateMaSection('ma3', { stock: value });
       },
       handleMa1RsiThresholdChange: (value: string) => {
+        const committedValue = clampNumber(
+          safeNumber(value, STRATEGY_DEFAULTS.RSI_THRESHOLD),
+          0,
+          100,
+        );
         updateMaSection('ma1', {
-          rsiThreshold: clampNumber(
-            safeNumber(value, STRATEGY_DEFAULTS.RSI_THRESHOLD),
-            0,
-            100,
-          ),
+          rsiThreshold: committedValue,
         });
+        return committedValue;
       },
       handleMa2RsiThresholdChange: (value: string) => {
+        const committedValue = clampNumber(
+          safeNumber(value, STRATEGY_DEFAULTS.RSI_THRESHOLD),
+          0,
+          100,
+        );
         updateMaSection('ma2', {
-          rsiThreshold: clampNumber(
-            safeNumber(value, STRATEGY_DEFAULTS.RSI_THRESHOLD),
-            0,
-            100,
-          ),
+          rsiThreshold: committedValue,
         });
+        return committedValue;
       },
       handleMa3RsiThresholdChange: (value: string) => {
+        const committedValue = clampNumber(
+          safeNumber(value, STRATEGY_DEFAULTS.RSI_THRESHOLD),
+          0,
+          100,
+        );
         updateMaSection('ma3', {
-          rsiThreshold: clampNumber(
-            safeNumber(value, STRATEGY_DEFAULTS.RSI_THRESHOLD),
-            0,
-            100,
-          ),
+          rsiThreshold: committedValue,
         });
+        return committedValue;
       },
       handleMa1TakePartialProfitChange: (value: boolean) => {
         updateMaSection('ma1', { takePartialProfit: value });
@@ -891,55 +907,93 @@ export function useStrategyCreatorController({
         updateMaSection('ma3', { takePartialProfit: value });
       },
       handleMa1PartialProfitTargetPctChange: (value: string) => {
+        const committedValue = clampNumber(
+          safeNumber(value, STRATEGY_DEFAULTS.PARTIAL_PROFIT_PERCENT),
+          1,
+          100,
+        );
         updateMaSection('ma1', {
-          partialProfitTargetPct: clampNumber(
-            safeNumber(value, STRATEGY_DEFAULTS.PARTIAL_PROFIT_PERCENT),
-            1,
-            100,
-          ),
+          partialProfitTargetPct: committedValue,
         });
+        return committedValue;
       },
       handleMa2PartialProfitTargetPctChange: (value: string) => {
+        const committedValue = clampNumber(
+          safeNumber(value, STRATEGY_DEFAULTS.PARTIAL_PROFIT_PERCENT),
+          1,
+          100,
+        );
         updateMaSection('ma2', {
-          partialProfitTargetPct: clampNumber(
-            safeNumber(value, STRATEGY_DEFAULTS.PARTIAL_PROFIT_PERCENT),
-            1,
-            100,
-          ),
+          partialProfitTargetPct: committedValue,
         });
+        return committedValue;
       },
       handleMa3PartialProfitTargetPctChange: (value: string) => {
+        const committedValue = clampNumber(
+          safeNumber(value, STRATEGY_DEFAULTS.PARTIAL_PROFIT_PERCENT),
+          1,
+          100,
+        );
         updateMaSection('ma3', {
-          partialProfitTargetPct: clampNumber(
-            safeNumber(value, STRATEGY_DEFAULTS.PARTIAL_PROFIT_PERCENT),
-            1,
-            100,
-          ),
+          partialProfitTargetPct: committedValue,
         });
+        return committedValue;
       },
-      handleVrInitialCapitalChange: (value: number) => {
-        updateVrBand({ initialCapital: Math.max(0, value) });
+      handleVrInitialCapitalChange: (value: string) => {
+        const committedValue = Math.max(
+          0,
+          safeNumber(value, STRATEGY_DEFAULTS.VR_INITIAL_CAPITAL),
+        );
+        updateVrBand({
+          initialCapital: committedValue,
+        });
+        return committedValue;
       },
-      handleVrInitialVChange: (value: number) => {
-        updateVrBand({ initialV: Math.max(0, value) });
+      handleVrInitialVChange: (value: string) => {
+        const committedValue = Math.max(
+          0,
+          safeNumber(value, STRATEGY_DEFAULTS.VR_INITIAL_VALUE),
+        );
+        updateVrBand({
+          initialV: committedValue,
+        });
+        return committedValue;
       },
-      handleVrMinOrderQtyChange: (value: number) => {
-        updateVrBand({ minOrderQty: Math.max(0, value) });
+      handleVrMinOrderQtyChange: (value: string) => {
+        const committedValue = Math.max(1, safeNumber(value, 1));
+        updateVrBand({ minOrderQty: committedValue });
+        return committedValue;
       },
-      handleVrBandUpperPctChange: (value: number) => {
-        updateVrBand({ bandUpperPct: Math.max(0, value) });
+      handleVrBandUpperPctChange: (value: string) => {
+        const committedValue = sanitizeVrBandWidthPercent(value);
+        updateVrBand({ bandUpperPct: committedValue });
+        return committedValue;
       },
-      handleVrBandLowerPctChange: (value: number) => {
-        updateVrBand({ bandLowerPct: Math.max(0, value) });
+      handleVrBandLowerPctChange: (value: string) => {
+        const committedValue = sanitizeVrBandWidthPercent(value);
+        updateVrBand({ bandLowerPct: committedValue });
+        return committedValue;
       },
-      handleVrGChange: (value: number) => {
-        updateVrBand({ g: Math.max(0, value) });
+      handleVrGChange: (value: string) => {
+        const committedValue = Math.max(1, safeNumber(value, 10));
+        updateVrBand({ g: committedValue });
+        return committedValue;
       },
-      handleVrPoolUsagePctChange: (value: number) => {
-        updateVrBand({ poolUsagePct: Math.max(0, value) });
+      handleVrPoolUsagePctChange: (value: string) => {
+        const committedValue = clampNumber(
+          safeNumber(value, 50),
+          MIN_PERCENT_INPUT,
+          100,
+        );
+        updateVrBand({
+          poolUsagePct: committedValue,
+        });
+        return committedValue;
       },
-      handleVrDeltaCashChange: (value: number) => {
-        updateVrBand({ deltaCash: Math.max(0, value) });
+      handleVrDeltaCashChange: (value: string) => {
+        const committedValue = Math.max(0, safeNumber(value, 0));
+        updateVrBand({ deltaCash: committedValue });
+        return committedValue;
       },
       handleVrCycleWeeksChange: (value: number) => {
         updateVrBand({ cycleWeeks: value });
@@ -1065,8 +1119,8 @@ export function useStrategyCreatorController({
       STRATEGY_DEFAULTS.VR_INITIAL_VALUE,
     ),
     vrMinOrderQty: safeNumber(wizardState.vrBand?.minOrderQty, 1),
-    vrBandUpperPct: safeNumber(wizardState.vrBand?.bandUpperPct, 5),
-    vrBandLowerPct: safeNumber(wizardState.vrBand?.bandLowerPct, 5),
+    vrBandUpperPct: sanitizeVrBandWidthPercent(wizardState.vrBand?.bandUpperPct),
+    vrBandLowerPct: sanitizeVrBandWidthPercent(wizardState.vrBand?.bandLowerPct),
     vrG: safeNumber(wizardState.vrBand?.g, 10),
     vrPoolUsagePct: safeNumber(wizardState.vrBand?.poolUsagePct, 50),
     vrDeltaCash: safeNumber(wizardState.vrBand?.deltaCash, 0),

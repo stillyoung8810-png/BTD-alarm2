@@ -1,4 +1,5 @@
 import React from 'react';
+import { DraftNumberInput } from '@/components/common/DraftNumberInput';
 import CustomDropdown from '@/components/CustomDropdown';
 import { STRATEGY_CREATOR_STYLES } from '../styles';
 import type {
@@ -6,24 +7,59 @@ import type {
   MaSectionsStepViewProps,
 } from '../types/ui';
 
+const MICROCOPY_TEXT_CLASS_NAME =
+  'mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400';
+
+function FieldHeader({
+  id,
+  label,
+  helperText,
+}: {
+  id?: string;
+  label: string;
+  helperText?: string;
+}): React.ReactElement {
+  return (
+    <div>
+      {id ? (
+        <label htmlFor={id} className={STRATEGY_CREATOR_STYLES.fieldLabel}>
+          {label}
+        </label>
+      ) : (
+        <span className={STRATEGY_CREATOR_STYLES.fieldLabel}>{label}</span>
+      )}
+      {helperText ? (
+        <p className={MICROCOPY_TEXT_CLASS_NAME}>{helperText}</p>
+      ) : null}
+    </div>
+  );
+}
+
 function ToggleField({
   label,
+  helperText,
   isChecked,
   onChange,
 }: {
   label: string;
+  helperText?: string;
   isChecked: boolean;
   onChange: (value: boolean) => void;
 }): React.ReactElement {
   return (
-    <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
-      <span className="text-sm font-black text-slate-900 dark:text-white">
-        {label}
-      </span>
+    <div className="flex items-start justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
+      <div className="pr-4">
+        <span className="text-sm font-black text-slate-900 dark:text-white">
+          {label}
+        </span>
+        {helperText ? (
+          <p className={MICROCOPY_TEXT_CLASS_NAME}>{helperText}</p>
+        ) : null}
+      </div>
       <button
         type="button"
         onClick={() => onChange(!isChecked)}
-        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all ${
+        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-all ${
           isChecked ? 'bg-blue-500' : 'bg-slate-500'
         }`}
       >
@@ -38,29 +74,31 @@ function ToggleField({
 }
 
 function PartialProfitField(props: {
+  idPrefix: string;
   label: string;
   targetLabel: string;
   isEnabled: boolean;
   targetValue: number;
   onEnabledChange: (value: boolean) => void;
-  onTargetValueChange: (value: string) => void;
+  onTargetValueChange: (value: string) => number;
 }): React.ReactElement {
+  const inputId = `${props.idPrefix}-partial-profit-target`;
+
   return (
     <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-900/60">
       <ToggleField
         label={props.label}
+        helperText={undefined}
         isChecked={props.isEnabled}
         onChange={props.onEnabledChange}
       />
       {props.isEnabled && (
         <div className={STRATEGY_CREATOR_STYLES.fieldStack}>
-          <label className={STRATEGY_CREATOR_STYLES.fieldLabel}>
-            {props.targetLabel}
-          </label>
-          <input
-            type="number"
+          <FieldHeader id={inputId} label={props.targetLabel} />
+          <DraftNumberInput
+            id={inputId}
             value={props.targetValue}
-            onChange={(event) => props.onTargetValueChange(event.target.value)}
+            onCommit={props.onTargetValueChange}
             className={STRATEGY_CREATOR_STYLES.textInput}
           />
         </div>
@@ -70,7 +108,9 @@ function PartialProfitField(props: {
 }
 
 function SectionCard(props: {
+  sectionId: string;
   title: string;
+  titleHelper: string;
   stockPickerHeader: string;
   dropdownInfoModalLabels: MaSectionsStepViewProps['dropdownInfoModalLabels'];
   stockLabel: string;
@@ -84,20 +124,23 @@ function SectionCard(props: {
   isTakePartialProfit: boolean;
   partialProfitTargetPct: number;
   onStockChange: (value: string) => void;
-  onRsiThresholdChange: (value: string) => void;
+  onRsiThresholdChange: (value: string) => number;
   onTakePartialProfitChange: (value: boolean) => void;
-  onPartialProfitTargetPctChange: (value: string) => void;
+  onPartialProfitTargetPctChange: (value: string) => number;
 }): React.ReactElement {
+  const rsiInputId = `${props.sectionId}-rsi-threshold`;
+
   return (
     <div className={STRATEGY_CREATOR_STYLES.sectionCard}>
       <div className="space-y-4">
-        <h3 className="text-base font-black text-slate-900 dark:text-white">
-          {props.title}
-        </h3>
+        <div>
+          <h3 className="text-base font-black text-slate-900 dark:text-white">
+            {props.title}
+          </h3>
+          <p className={MICROCOPY_TEXT_CLASS_NAME}>{props.titleHelper}</p>
+        </div>
         <div className={STRATEGY_CREATOR_STYLES.fieldStack}>
-          <label className={STRATEGY_CREATOR_STYLES.fieldLabel}>
-            {props.stockLabel}
-          </label>
+          <FieldHeader label={props.stockLabel} />
           <CustomDropdown
             value={props.stock}
             options={props.stockOptions}
@@ -113,19 +156,18 @@ function SectionCard(props: {
 
         {props.isRsiEnabled && (
           <div className={STRATEGY_CREATOR_STYLES.fieldStack}>
-            <label className={STRATEGY_CREATOR_STYLES.fieldLabel}>
-              {props.rsiThresholdLabel}
-            </label>
-            <input
-              type="number"
+            <FieldHeader id={rsiInputId} label={props.rsiThresholdLabel} />
+            <DraftNumberInput
+              id={rsiInputId}
               value={props.rsiThreshold}
-              onChange={(event) => props.onRsiThresholdChange(event.target.value)}
+              onCommit={props.onRsiThresholdChange}
               className={STRATEGY_CREATOR_STYLES.textInput}
             />
           </div>
         )}
 
         <PartialProfitField
+          idPrefix={props.sectionId}
           label={props.takePartialProfitLabel}
           targetLabel={props.partialProfitTargetLabel}
           isEnabled={props.isTakePartialProfit}
@@ -143,10 +185,13 @@ export function MaBaseStepView({
   stockPickerHeader,
   dropdownInfoModalLabels,
   referenceStockLabel,
+  referenceStockHelper,
   shortPeriodLabel,
   longPeriodLabel,
   rsiEnabledLabel,
+  rsiEnabledHelper,
   alignmentEnabledLabel,
+  alignmentEnabledHelper,
   ma0Stock,
   maShortPeriod,
   maLongPeriod,
@@ -162,9 +207,10 @@ export function MaBaseStepView({
     <div className={STRATEGY_CREATOR_STYLES.sectionCard}>
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         <div className={STRATEGY_CREATOR_STYLES.fieldStack}>
-          <label className={STRATEGY_CREATOR_STYLES.fieldLabel}>
-            {referenceStockLabel}
-          </label>
+          <FieldHeader
+            label={referenceStockLabel}
+            helperText={referenceStockHelper}
+          />
           <CustomDropdown
             value={ma0Stock}
             options={stockOptions}
@@ -179,25 +225,21 @@ export function MaBaseStepView({
         </div>
 
         <div className={STRATEGY_CREATOR_STYLES.fieldStack}>
-          <label className={STRATEGY_CREATOR_STYLES.fieldLabel}>
-            {shortPeriodLabel}
-          </label>
-          <input
-            type="number"
+          <FieldHeader id="ma-short-period" label={shortPeriodLabel} />
+          <DraftNumberInput
+            id="ma-short-period"
             value={maShortPeriod}
-            onChange={(event) => onMaShortPeriodChange(event.target.value)}
+            onCommit={onMaShortPeriodChange}
             className={STRATEGY_CREATOR_STYLES.textInput}
           />
         </div>
 
         <div className={STRATEGY_CREATOR_STYLES.fieldStack}>
-          <label className={STRATEGY_CREATOR_STYLES.fieldLabel}>
-            {longPeriodLabel}
-          </label>
-          <input
-            type="number"
+          <FieldHeader id="ma-long-period" label={longPeriodLabel} />
+          <DraftNumberInput
+            id="ma-long-period"
             value={maLongPeriod}
-            onChange={(event) => onMaLongPeriodChange(event.target.value)}
+            onCommit={onMaLongPeriodChange}
             className={STRATEGY_CREATOR_STYLES.textInput}
           />
         </div>
@@ -206,11 +248,13 @@ export function MaBaseStepView({
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
         <ToggleField
           label={rsiEnabledLabel}
+          helperText={rsiEnabledHelper}
           isChecked={isRsiEnabled}
           onChange={onRsiEnabledChange}
         />
         <ToggleField
           label={alignmentEnabledLabel}
+          helperText={alignmentEnabledHelper}
           isChecked={isAlignmentEnabled}
           onChange={onAlignmentEnabledChange}
         />
@@ -225,7 +269,9 @@ export function MaSectionsStepView(
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
       <SectionCard
+        sectionId="ma1"
         title={props.section1Title}
+        titleHelper={props.section1Helper}
         stockPickerHeader={props.stockPickerHeader}
         dropdownInfoModalLabels={props.dropdownInfoModalLabels}
         stockLabel={props.sectionStockLabel}
@@ -244,7 +290,9 @@ export function MaSectionsStepView(
         onPartialProfitTargetPctChange={props.onMa1PartialProfitTargetPctChange}
       />
       <SectionCard
+        sectionId="ma2"
         title={props.section2Title}
+        titleHelper={props.section2Helper}
         stockPickerHeader={props.stockPickerHeader}
         dropdownInfoModalLabels={props.dropdownInfoModalLabels}
         stockLabel={props.sectionStockLabel}
@@ -263,7 +311,9 @@ export function MaSectionsStepView(
         onPartialProfitTargetPctChange={props.onMa2PartialProfitTargetPctChange}
       />
       <SectionCard
+        sectionId="ma3"
         title={props.section3Title}
+        titleHelper={props.section3Helper}
         stockPickerHeader={props.stockPickerHeader}
         dropdownInfoModalLabels={props.dropdownInfoModalLabels}
         stockLabel={props.sectionStockLabel}

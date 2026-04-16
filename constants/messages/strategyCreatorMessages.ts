@@ -39,13 +39,19 @@ export interface StrategyCreatorMessageSet {
   duplicateSectionStocks: string;
   ma: {
     referenceStock: string;
+    referenceStockHelper: string;
     shortPeriod: string;
     longPeriod: string;
     rsiEnabled: string;
+    rsiEnabledHelper: string;
     alignmentEnabled: string;
+    alignmentEnabledHelper: string;
     section1Title: string;
+    section1Helper: string;
     section2Title: string;
+    section2Helper: string;
     section3Title: string;
+    section3Helper: string;
     sectionStock: string;
     rsiThreshold: string;
     takePartialProfit: string;
@@ -125,13 +131,20 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
     duplicateSectionStocks: '구간 1, 2, 3에서 서로 다른 종목을 선택해 주세요.',
     ma: {
       referenceStock: '기준 종목',
+      referenceStockHelper: '매매 구간(1~3)을 결정하는 기준이 되는 종목이에요.',
       shortPeriod: '단기 이평 기간',
       longPeriod: '장기 이평 기간',
       rsiEnabled: 'RSI 조건 사용',
+      rsiEnabledHelper: '선택한 종목의 RSI가 설정값 아래일 때만 진입해요.',
       alignmentEnabled: '정배열 조건 사용',
+      alignmentEnabledHelper:
+        '단기 이평선이 장기 이평선 위에 있는 상승 추세에서만 진입해요.',
       section1Title: '구간 1',
+      section1Helper: '현재가가 두 이평선보다 모두 높은 구간이에요.',
       section2Title: '구간 2',
+      section2Helper: '현재가가 단기·장기 이평선 사이에 있는 구간이에요.',
       section3Title: '구간 3',
+      section3Helper: '현재가가 두 이평선보다 모두 낮은 구간이에요.',
       sectionStock: '매수 종목',
       rsiThreshold: 'RSI 기준값',
       takePartialProfit: '중간 이익 실현',
@@ -210,13 +223,25 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
       'Please select different stocks for sections 1, 2, and 3.',
     ma: {
       referenceStock: 'Reference Stock',
+      referenceStockHelper:
+        'This asset determines which trading zone (1-3) is active.',
       shortPeriod: 'Short MA Period',
       longPeriod: 'Long MA Period',
       rsiEnabled: 'Use RSI',
+      rsiEnabledHelper:
+        "Enter only when the selected stock's RSI is below the threshold.",
       alignmentEnabled: 'Use Alignment Condition',
+      alignmentEnabledHelper:
+        'Enter only during an uptrend when the short-term MA stays above the long-term MA.',
       section1Title: 'Section 1',
+      section1Helper:
+        'This zone is active when the current price is above both moving averages.',
       section2Title: 'Section 2',
+      section2Helper:
+        'This zone is active when the current price sits between the short-term and long-term moving averages.',
       section3Title: 'Section 3',
+      section3Helper:
+        'This zone is active when the current price is below both moving averages.',
       sectionStock: 'Buy Stock',
       rsiThreshold: 'RSI Threshold',
       takePartialProfit: 'Take Partial Profit',
@@ -244,20 +269,8 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
   },
 };
 
-const STRATEGY_CREATOR_MESSAGE_CACHE = new Map<
-  AppLang,
-  StrategyCreatorMessageSet
->();
-
 export function getStrategyCreatorMessages(
   lang: AppLang,
 ): StrategyCreatorMessageSet {
-  const cached = STRATEGY_CREATOR_MESSAGE_CACHE.get(lang);
-  if (cached != null) {
-    return cached;
-  }
-
-  const messages = STRATEGY_CREATOR_MESSAGES[lang];
-  STRATEGY_CREATOR_MESSAGE_CACHE.set(lang, messages);
-  return messages;
+  return STRATEGY_CREATOR_MESSAGES[lang];
 }

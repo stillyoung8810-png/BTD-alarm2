@@ -1,4 +1,5 @@
 import React from 'react';
+import { DraftNumberInput } from '@/components/common/DraftNumberInput';
 import { VrBandStrategyParams } from '../../types';
 import { Orbit, Wallet, Target, Percent } from 'lucide-react';
 import {
@@ -8,7 +9,6 @@ import {
 } from '../../constants/vrMessages';
 import {
   VR_CYCLE,
-  VR_LIMITS,
   getVrDeltaCashInputValidationReason,
 } from '../../constants/vrConstants';
 
@@ -18,24 +18,33 @@ export interface VrBandStrategyFormProps {
   vrMode: VrBandStrategyParams['vrMode'];
   onVrModeChange: (mode: VrBandStrategyParams['vrMode']) => void;
   vrInitialCapital: number;
-  onVrInitialCapitalChange: (v: number) => void;
+  onVrInitialCapitalChange: (rawValue: string) => number;
   vrInitialV: number;
-  onVrInitialVChange: (v: number) => void;
+  onVrInitialVChange: (rawValue: string) => number;
   vrMinOrderQty: number;
-  onVrMinOrderQtyChange: (v: number) => void;
+  onVrMinOrderQtyChange: (rawValue: string) => number;
   vrBandUpperPct: number;
-  onVrBandUpperPctChange: (v: number) => void;
+  onVrBandUpperPctChange: (rawValue: string) => number;
   vrBandLowerPct: number;
-  onVrBandLowerPctChange: (v: number) => void;
+  onVrBandLowerPctChange: (rawValue: string) => number;
   vrG: number;
-  onVrGChange: (v: number) => void;
+  onVrGChange: (rawValue: string) => number;
   vrPoolUsagePct: number;
-  onVrPoolUsagePctChange: (v: number) => void;
+  onVrPoolUsagePctChange: (rawValue: string) => number;
   vrDeltaCash: number;
-  onVrDeltaCashChange: (v: number) => void;
+  onVrDeltaCashChange: (rawValue: string) => number;
   vrCycleWeeks: number;
   onVrCycleWeeksChange: (v: number) => void;
 }
+
+const VR_LABEL_CLASS_NAME =
+  'text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest';
+const VR_INPUT_CLASS_NAME =
+  'w-full p-4 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm';
+const VR_ICON_INPUT_CLASS_NAME =
+  'w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm';
+const VR_ICON_INPUT_SUCCESS_CLASS_NAME =
+  'w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-emerald-500/60 transition-all shadow-sm';
 
 const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({
   lang,
@@ -141,17 +150,17 @@ const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-3">
-            <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
+            <label htmlFor="vr-initial-capital" className={VR_LABEL_CLASS_NAME}>
               {vrT.initialCapital}
             </label>
             <div className="relative">
               <Wallet className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-              <input
-                type="number"
-                min={1}
+              <DraftNumberInput
+                id="vr-initial-capital"
                 value={vrInitialCapital}
-                onChange={(e) => onVrInitialCapitalChange(Math.max(0, Number(e.target.value)))}
-                className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
+                onCommit={onVrInitialCapitalChange}
+                className={VR_ICON_INPUT_CLASS_NAME}
+                ariaLabel={vrT.initialCapital}
               />
             </div>
             {showErrors && (!vrInitialCapital || vrInitialCapital <= 0) && (
@@ -162,17 +171,17 @@ const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({
           </div>
 
           <div className="space-y-3">
-            <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
+            <label htmlFor="vr-initial-v" className={VR_LABEL_CLASS_NAME}>
               {vrT.initialV}
             </label>
             <div className="relative">
               <Target className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-              <input
-                type="number"
-                min={1}
+              <DraftNumberInput
+                id="vr-initial-v"
                 value={vrInitialV}
-                onChange={(e) => onVrInitialVChange(Math.max(0, Number(e.target.value)))}
-                className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
+                onCommit={onVrInitialVChange}
+                className={VR_ICON_INPUT_CLASS_NAME}
+                ariaLabel={vrT.initialV}
               />
             </div>
             {showErrors && (!vrInitialV || vrInitialV <= 0) && (
@@ -183,49 +192,49 @@ const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({
           </div>
 
           <div className="space-y-3">
-            <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
+            <label htmlFor="vr-band-upper" className={VR_LABEL_CLASS_NAME}>
               {vrT.bandUpper}
             </label>
             <div className="relative">
               <Percent className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-              <input
-                type="number"
-                min={0}
-                step="0.01"
+              <DraftNumberInput
+                id="vr-band-upper"
                 value={vrBandUpperPct}
-                onChange={(e) => onVrBandUpperPctChange(Math.max(0, Number(e.target.value)))}
-                className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
+                onCommit={onVrBandUpperPctChange}
+                allowDecimal={false}
+                className={VR_ICON_INPUT_CLASS_NAME}
+                ariaLabel={vrT.bandUpper}
               />
             </div>
           </div>
 
           <div className="space-y-3">
-            <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
+            <label htmlFor="vr-band-lower" className={VR_LABEL_CLASS_NAME}>
               {vrT.bandLower}
             </label>
             <div className="relative">
               <Percent className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-              <input
-                type="number"
-                min={0}
-                step="0.01"
+              <DraftNumberInput
+                id="vr-band-lower"
                 value={vrBandLowerPct}
-                onChange={(e) => onVrBandLowerPctChange(Math.max(0, Number(e.target.value)))}
-                className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-emerald-500/60 transition-all shadow-sm"
+                onCommit={onVrBandLowerPctChange}
+                allowDecimal={false}
+                className={VR_ICON_INPUT_SUCCESS_CLASS_NAME}
+                ariaLabel={vrT.bandLower}
               />
             </div>
           </div>
 
           <div className="space-y-3">
-            <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
+            <label htmlFor="vr-min-order-qty" className={VR_LABEL_CLASS_NAME}>
               {vrT.minOrderQty}
             </label>
-            <input
-              type="number"
-              min={1}
+            <DraftNumberInput
+              id="vr-min-order-qty"
               value={vrMinOrderQty}
-              onChange={(e) => onVrMinOrderQtyChange(Math.max(1, Number(e.target.value)))}
-              className="w-full p-4 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
+              onCommit={onVrMinOrderQtyChange}
+              className={VR_INPUT_CLASS_NAME}
+              ariaLabel={vrT.minOrderQty}
             />
             {showErrors && (!vrMinOrderQty || vrMinOrderQty <= 0) && (
               <p className="text-[10px] text-red-500 font-medium">
@@ -235,51 +244,49 @@ const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({
           </div>
 
           <div className="space-y-3">
-            <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
+            <label htmlFor="vr-g" className={VR_LABEL_CLASS_NAME}>
               {vrT.G}
             </label>
-            <input
-              type="number"
-              min={VR_LIMITS.MIN_G_VALUE}
-              step="0.1"
+            <DraftNumberInput
+              id="vr-g"
               value={vrG}
-              onChange={(e) => onVrGChange(Math.max(VR_LIMITS.MIN_G_VALUE, Number(e.target.value)))}
-              className="w-full p-4 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
+              onCommit={onVrGChange}
+              allowDecimal={false}
+              className={VR_INPUT_CLASS_NAME}
+              ariaLabel={vrT.G}
             />
           </div>
 
           <div className="space-y-3">
-            <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
+            <label htmlFor="vr-pool-usage" className={VR_LABEL_CLASS_NAME}>
               {vrT.poolUsage}
             </label>
             <div className="relative">
               <Percent className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-              <input
-                type="number"
-                min={0}
-                max={100}
-                step="0.1"
+              <DraftNumberInput
+                id="vr-pool-usage"
                 value={vrPoolUsagePct}
-                onChange={(e) => onVrPoolUsagePctChange(Math.max(0, Math.min(100, Number(e.target.value))))}
-                className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
+                onCommit={onVrPoolUsagePctChange}
+                allowDecimal={false}
+                className={VR_ICON_INPUT_CLASS_NAME}
+                ariaLabel={vrT.poolUsage}
               />
             </div>
           </div>
 
           {vrMode !== 'lump_sum' && (
             <div className="space-y-3 md:col-span-2">
-              <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
+              <label htmlFor="vr-delta-cash" className={VR_LABEL_CLASS_NAME}>
                 {vrT.deltaCash}
               </label>
               <div className="relative max-w-xs">
                 <Wallet className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                <input
-                  type="number"
-                  min={0}
-                  step="1"
+                <DraftNumberInput
+                  id="vr-delta-cash"
                   value={vrDeltaCash}
-                  onChange={(e) => onVrDeltaCashChange(Number(e.target.value))}
-                  className="w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-indigo-500/60 transition-all shadow-sm"
+                  onCommit={onVrDeltaCashChange}
+                  className={VR_ICON_INPUT_CLASS_NAME}
+                  ariaLabel={vrT.deltaCash}
                 />
               </div>
               {showErrors && deltaCashFailure != null && (

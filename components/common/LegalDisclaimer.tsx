@@ -13,7 +13,7 @@ export type LegalDisclaimerVariant =
 
 const DISCLAIMER_CLASSNAME_BY_VARIANT: Record<LegalDisclaimerVariant, string> = {
   minimal:
-    'text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed',
+    'text-[15px] text-slate-400 dark:text-slate-500 leading-relaxed',
   standard:
     'text-[12px] text-slate-500 dark:text-slate-400 leading-relaxed',
   accent:

@@ -26,9 +26,10 @@ except ImportError:
 
 
 TICKERS: List[str] = [
-    "SPY", "SSO", "UPRO", "QQQ", "QLD", "TQQQ",
+    "SPY", "SSO", "UPRO", "QQQ", "QLD", "TQQQ", "SQQQ",
     "SOXX", "USD", "SOXL", "STRC", "BIL", "ICSH", "SGOV",
     "TSLA", "TSLL", "NVDA", "NVDL", "GOOGL", "GGLL", "PLTR", "PTIR", "COIN", "CONL", "MSTR", "MSTX", "BMNR",
+    "PSQ",
     "FNGU", "TECL", "BULZ", "GDXU",
 ]
 

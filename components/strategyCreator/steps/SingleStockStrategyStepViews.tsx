@@ -1,4 +1,5 @@
 import React from 'react';
+import { DraftNumberInput } from '@/components/common/DraftNumberInput';
 import CustomDropdown from '@/components/CustomDropdown';
 import { STRATEGY_CREATOR_STYLES } from '../styles';
 import type {
@@ -10,17 +11,21 @@ import type {
 function LabeledNumberField(props: {
   label: string;
   value: number;
-  onChange: (value: string) => void;
+  onCommit: (value: string) => number;
+  allowDecimal?: boolean;
 }): React.ReactElement {
+  const inputId = React.useId();
+
   return (
     <div className={STRATEGY_CREATOR_STYLES.fieldStack}>
-      <label className={STRATEGY_CREATOR_STYLES.fieldLabel}>
+      <label htmlFor={inputId} className={STRATEGY_CREATOR_STYLES.fieldLabel}>
         {props.label}
       </label>
-      <input
-        type="number"
+      <DraftNumberInput
+        id={inputId}
         value={props.value}
-        onChange={(event) => props.onChange(event.target.value)}
+        onCommit={props.onCommit}
+        allowDecimal={props.allowDecimal}
         className={STRATEGY_CREATOR_STYLES.textInput}
       />
     </div>
@@ -67,12 +72,12 @@ export function MultiSplitConfigStepView({
           <LabeledNumberField
             label={targetReturnRateLabel}
             value={targetReturnRate}
-            onChange={onTargetReturnRateChange}
+            onCommit={onTargetReturnRateChange}
           />
           <LabeledNumberField
             label={totalSplitCountLabel}
             value={totalSplitCount}
-            onChange={onTotalSplitCountChange}
+            onCommit={onTotalSplitCountChange}
           />
         </div>
       </div>
@@ -124,22 +129,22 @@ export function NoStopMultiSplitConfigStepView({
           <LabeledNumberField
             label={lowLocBudgetRatioLabel}
             value={lowLocBudgetRatio}
-            onChange={onLowLocBudgetRatioChange}
+            onCommit={onLowLocBudgetRatioChange}
           />
           <LabeledNumberField
             label={highLocPremiumPctLabel}
             value={highLocPremiumPct}
-            onChange={onHighLocPremiumPctChange}
+            onCommit={onHighLocPremiumPctChange}
           />
           <LabeledNumberField
             label={takeProfitPctLabel}
             value={takeProfitPct}
-            onChange={onTakeProfitPctChange}
+            onCommit={onTakeProfitPctChange}
           />
           <LabeledNumberField
             label={totalSplitCountLabel}
             value={totalSplitCount}
-            onChange={onTotalSplitCountChange}
+            onCommit={onTotalSplitCountChange}
           />
         </div>
       </div>
@@ -177,11 +182,13 @@ export function StrategyMetaStepView({
             value={
               typeof meta.dailyBuyAmount === 'number' ? meta.dailyBuyAmount : 0
             }
-            onChange={onDailyBuyAmountChange}
+            onCommit={onDailyBuyAmountChange}
           />
         )}
 
-        <div className={STRATEGY_CREATOR_STYLES.fieldStack}>
+        <div
+          className={`${STRATEGY_CREATOR_STYLES.fieldStack} min-w-0`}
+        >
           <label className={STRATEGY_CREATOR_STYLES.fieldLabel}>
             {metaLabels.startDate}
           </label>
@@ -196,7 +203,8 @@ export function StrategyMetaStepView({
         <LabeledNumberField
           label={metaLabels.feeRatePercent}
           value={typeof meta.feeRatePercent === 'number' ? meta.feeRatePercent : 0}
-          onChange={onFeeRatePercentChange}
+          onCommit={onFeeRatePercentChange}
+          allowDecimal
         />
       </div>
     </div>

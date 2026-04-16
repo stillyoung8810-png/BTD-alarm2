@@ -13,6 +13,7 @@ export default defineConfig({
     include: [
       'utils/**/*.test.ts',
       'components/**/*.test.tsx',
+      'src/components/**/*.test.ts',
       'hooks/**/*.test.ts',
       'hooks/**/*.test.tsx',
     ],

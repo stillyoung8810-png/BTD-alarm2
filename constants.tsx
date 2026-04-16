@@ -1,12 +1,13 @@
 
 export const AVAILABLE_STOCKS = [
-  'SPY', 'SSO', 'UPRO', 'QQQ', 'QLD', 'TQQQ', 'SOXX', 'USD', 'SOXL', 'STRC',
+  'SPY', 'SSO', 'UPRO', 'QQQ', 'QLD', 'TQQQ', 'SQQQ', 'SOXX', 'USD', 'SOXL', 'STRC',
   'TSLA', 'NVDA', 'GOOGL', 'PLTR', 'COIN', 'MSTR', 'BMNR',
   'BIL', 'ICSH', 'SGOV',
 ];
 
 // PRO/PREMIUM 전용 추가 종목
 export const PAID_STOCKS = [
+  'PSQ',
   'TSLL', 'NVDL', 'GGLL', 'PTIR', 'CONL', 'MSTX',
   'FNGU', 'TECL', 'BULZ', 'GDXU',
 ];
@@ -15,7 +16,7 @@ export const PAID_STOCKS = [
 // 시세탭 종목 정보 순서를 제어하기 위해, 채권/현금성 ETF(BIL, ICSH, SGOV)를 가장 마지막으로 배치
 export const ALL_STOCKS = [
   // 기본 인덱스/레버리지/기타
-  'SPY', 'SSO', 'UPRO', 'QQQ', 'QLD', 'TQQQ', 'SOXX', 'USD', 'SOXL', 'STRC',
+  'SPY', 'SSO', 'UPRO', 'QQQ', 'QLD', 'TQQQ', 'SQQQ', 'SOXX', 'USD', 'SOXL', 'STRC',
   'TSLA', 'NVDA', 'GOOGL', 'PLTR', 'COIN', 'MSTR', 'BMNR',
   // 유료 PRO/PREMIUM 전용 종목
   ...PAID_STOCKS,
@@ -25,7 +26,7 @@ export const ALL_STOCKS = [
 
 export const STOCK_COLORS: Record<string, string> = {
   'SPY': '#4285F4', 'SSO': '#EA4335', 'UPRO': '#FBBC04', 'QQQ': '#34A853',
-  'QLD': '#FF6D01', 'TQQQ': '#9C27B0', 'SOXX': '#00BCD4', 'USD': '#607D8B',
+  'QLD': '#FF6D01', 'TQQQ': '#9C27B0', 'SQQQ': '#be185d', 'SOXX': '#00BCD4', 'USD': '#607D8B',
   'SOXL': '#E91E63', 'STRC': '#795548', 'BIL': '#3F51B5', 'ICSH': '#009688', 'SGOV': '#FF9800',
   // paid tickers (fallback 컬러)
   'TSLA': '#e11d48', 'TSLL': '#fb7185',
@@ -36,12 +37,14 @@ export const STOCK_COLORS: Record<string, string> = {
   'MSTR': '#06b6d4', 'MSTX': '#22d3ee',
   'BMNR': '#64748b',
   'FNGU': '#6366f1', 'TECL': '#0ea5e9', 'BULZ': '#f97316', 'GDXU': '#eab308',
+  'PSQ': '#a21caf',
 };
 
 export const CUSTOM_GRADIENT_LOGOS: Record<string, { gradient: string; label: string }> = {
     'QQQ': { gradient: 'linear-gradient(135deg, #4285F4 0%, #9C27B0 100%)', label: 'NQ 100' },
     'QLD': { gradient: 'linear-gradient(135deg, #4285F4 0%, #9C27B0 100%)', label: '2X' },
     'TQQQ': { gradient: 'linear-gradient(135deg, #4285F4 0%, #9C27B0 100%)', label: '3X' },
+    'SQQQ': { gradient: 'linear-gradient(135deg, #9d174d 0%, #4c0519 100%)', label: '3X INV' },
     'USD': { gradient: 'linear-gradient(180deg, #87CEEB 0%, #32CD32 50%, #FFD700 100%)', label: '2x' },
     'SOXL': { gradient: 'linear-gradient(180deg, #9C27B0 0%, #E91E63 100%)', label: '3X' },
     'SOXX': { gradient: 'linear-gradient(180deg, #32CD32 0%, #00CED1 100%)', label: 'PHLX-SEMI' },
@@ -71,6 +74,7 @@ export const CUSTOM_GRADIENT_LOGOS: Record<string, { gradient: string; label: st
     'TECL': { gradient: 'linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%)', label: 'S&P TECH 3X' },
     'BULZ': { gradient: 'linear-gradient(135deg, #f97316 0%, #9a3412 100%)', label: 'INNOV TECH' },
     'GDXU': { gradient: 'linear-gradient(135deg, #eab308 0%, #854d0e 100%)', label: 'GOLD MINERS 3X' },
+    'PSQ': { gradient: 'linear-gradient(135deg, #86198f 0%, #4a044e 100%)', label: 'QQQ -1X' },
 };
 
 export const MOCK_PRICES: Record<string, number> = {

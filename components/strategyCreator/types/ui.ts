@@ -74,18 +74,21 @@ export interface MaBaseStepViewProps {
   stockPickerHeader: string;
   dropdownInfoModalLabels: DropdownInfoModalLabels;
   referenceStockLabel: string;
+  referenceStockHelper: string;
   shortPeriodLabel: string;
   longPeriodLabel: string;
   rsiEnabledLabel: string;
+  rsiEnabledHelper: string;
   alignmentEnabledLabel: string;
+  alignmentEnabledHelper: string;
   ma0Stock: string;
   maShortPeriod: number;
   maLongPeriod: number;
   isRsiEnabled: boolean;
   isAlignmentEnabled: boolean;
   onMa0StockChange: (value: string) => void;
-  onMaShortPeriodChange: (value: string) => void;
-  onMaLongPeriodChange: (value: string) => void;
+  onMaShortPeriodChange: (value: string) => number;
+  onMaLongPeriodChange: (value: string) => number;
   onRsiEnabledChange: (value: boolean) => void;
   onAlignmentEnabledChange: (value: boolean) => void;
 }
@@ -94,8 +97,11 @@ export interface MaSectionsStepViewProps {
   stockPickerHeader: string;
   dropdownInfoModalLabels: DropdownInfoModalLabels;
   section1Title: string;
+  section1Helper: string;
   section2Title: string;
+  section2Helper: string;
   section3Title: string;
+  section3Helper: string;
   sectionStockLabel: string;
   rsiThresholdLabel: string;
   takePartialProfitLabel: string;
@@ -119,15 +125,15 @@ export interface MaSectionsStepViewProps {
   onMa1StockChange: (value: string) => void;
   onMa2StockChange: (value: string) => void;
   onMa3StockChange: (value: string) => void;
-  onMa1RsiThresholdChange: (value: string) => void;
-  onMa2RsiThresholdChange: (value: string) => void;
-  onMa3RsiThresholdChange: (value: string) => void;
+  onMa1RsiThresholdChange: (value: string) => number;
+  onMa2RsiThresholdChange: (value: string) => number;
+  onMa3RsiThresholdChange: (value: string) => number;
   onMa1TakePartialProfitChange: (value: boolean) => void;
   onMa2TakePartialProfitChange: (value: boolean) => void;
   onMa3TakePartialProfitChange: (value: boolean) => void;
-  onMa1PartialProfitTargetPctChange: (value: string) => void;
-  onMa2PartialProfitTargetPctChange: (value: string) => void;
-  onMa3PartialProfitTargetPctChange: (value: string) => void;
+  onMa1PartialProfitTargetPctChange: (value: string) => number;
+  onMa2PartialProfitTargetPctChange: (value: string) => number;
+  onMa3PartialProfitTargetPctChange: (value: string) => number;
 }
 
 export interface MultiSplitConfigStepViewProps {
@@ -142,8 +148,8 @@ export interface MultiSplitConfigStepViewProps {
   targetReturnRate: number;
   totalSplitCount: number;
   onTargetStockChange: (value: string) => void;
-  onTargetReturnRateChange: (value: string) => void;
-  onTotalSplitCountChange: (value: string) => void;
+  onTargetReturnRateChange: (value: string) => number;
+  onTotalSplitCountChange: (value: string) => number;
 }
 
 export interface NoStopMultiSplitConfigStepViewProps {
@@ -161,10 +167,10 @@ export interface NoStopMultiSplitConfigStepViewProps {
   takeProfitPct: number;
   totalSplitCount: number;
   onTargetStockChange: (value: string) => void;
-  onLowLocBudgetRatioChange: (value: string) => void;
-  onHighLocPremiumPctChange: (value: string) => void;
-  onTakeProfitPctChange: (value: string) => void;
-  onTotalSplitCountChange: (value: string) => void;
+  onLowLocBudgetRatioChange: (value: string) => number;
+  onHighLocPremiumPctChange: (value: string) => number;
+  onTakeProfitPctChange: (value: string) => number;
+  onTotalSplitCountChange: (value: string) => number;
 }
 
 export interface StrategyMetaStepViewProps {
@@ -177,7 +183,7 @@ export interface StrategyMetaStepViewProps {
   meta: StrategyCreatorMetaDraftInput;
   isVrStrategy: boolean;
   onNameChange: (value: string) => void;
-  onDailyBuyAmountChange: (value: string) => void;
+  onDailyBuyAmountChange: (value: string) => number;
   onStartDateChange: (value: string) => void;
-  onFeeRatePercentChange: (value: string) => void;
+  onFeeRatePercentChange: (value: string) => number;
 }

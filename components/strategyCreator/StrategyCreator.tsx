@@ -64,10 +64,13 @@ export default function StrategyCreator({
               defaultMessage: controller.copy.lockedTickerTooltip,
             }}
             referenceStockLabel={controller.copy.ma.referenceStock}
+            referenceStockHelper={controller.copy.ma.referenceStockHelper}
             shortPeriodLabel={controller.copy.ma.shortPeriod}
             longPeriodLabel={controller.copy.ma.longPeriod}
             rsiEnabledLabel={controller.copy.ma.rsiEnabled}
+            rsiEnabledHelper={controller.copy.ma.rsiEnabledHelper}
             alignmentEnabledLabel={controller.copy.ma.alignmentEnabled}
+            alignmentEnabledHelper={controller.copy.ma.alignmentEnabledHelper}
             ma0Stock={controller.ma0Stock}
             maShortPeriod={controller.maShortPeriod}
             maLongPeriod={controller.maLongPeriod}
@@ -92,8 +95,11 @@ export default function StrategyCreator({
               defaultMessage: controller.copy.lockedTickerTooltip,
             }}
             section1Title={controller.copy.ma.section1Title}
+            section1Helper={controller.copy.ma.section1Helper}
             section2Title={controller.copy.ma.section2Title}
+            section2Helper={controller.copy.ma.section2Helper}
             section3Title={controller.copy.ma.section3Title}
+            section3Helper={controller.copy.ma.section3Helper}
             sectionStockLabel={controller.copy.ma.sectionStock}
             rsiThresholdLabel={controller.copy.ma.rsiThreshold}
             takePartialProfitLabel={controller.copy.ma.takePartialProfit}

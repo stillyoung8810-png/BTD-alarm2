@@ -5,9 +5,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // 무료 기본 종목 + PRO/PREMIUM 전용 추가 종목
 const TICKERS = [
-  "SPY", "SSO", "UPRO", "QQQ", "QLD", "TQQQ",
+  "SPY", "SSO", "UPRO", "QQQ", "QLD", "TQQQ", "SQQQ",
   "SOXX", "USD", "SOXL", "STRC", "BIL", "ICSH", "SGOV",
   "TSLA", "TSLL", "NVDA", "NVDL", "GOOGL", "GGLL", "PLTR", "PTIR", "COIN", "CONL", "MSTR", "MSTX", "BMNR",
+  "PSQ",
   "FNGU", "TECL", "BULZ", "GDXU",
 ];
 

@@ -47,7 +47,7 @@ const formatDateKR = (raw: string | undefined): string => {
 // 1배수 종목 상수 (모듈 레벨)
 // ---------------------------------------------------------------------------
 const ONE_X_STOCKS: readonly string[] = [
-  'SPY', 'QQQ', 'SOXX', 'USD', 'STRC', 'BIL', 'ICSH', 'SGOV',
+  'SPY', 'QQQ', 'PSQ', 'SOXX', 'USD', 'STRC', 'BIL', 'ICSH', 'SGOV',
   'TSLA', 'NVDA', 'GOOGL', 'PLTR', 'COIN', 'MSTR', 'BMNR',
 ] as const;
 

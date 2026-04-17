@@ -4,12 +4,11 @@ import { I18N } from './constants';
 import Footer from './components/Footer';
 import TradeExecutionModal from './components/TradeExecutionModal';
 import {
-  FinalSellInput,
-  TerminationInput,
   Result as SettlementResult,
 } from './components/SettlementModals';
 import { supabase } from './services/supabase';
 import { calculateHoldings } from './utils/portfolioCalculations';
+import { HOLDINGS_QTY_EPSILON } from './utils/financialMath';
 import {
   ensureInitialStockDataReady,
   ensurePaidStockDataReady,
@@ -53,6 +52,7 @@ import {
   PORTFOLIO_MUTATION_ERROR_CODES,
 } from './constants/portfolioMutationErrors';
 import { APP_SHELL_MESSAGES } from './constants/appShellMessages';
+import { getDashboardMessages } from './constants/messages/dashboardMessages';
 import { 
   LayoutDashboard, 
   BarChart3, 
@@ -123,8 +123,7 @@ type ModalState =
   | { kind: 'details'; portfolioId: string }
   | { kind: 'quick_input'; portfolioId: string; activeSection?: QuickInputSection }
   | { kind: 'trade_execution'; portfolioId: string }
-  | { kind: 'ai_image'; portfolioId: string }
-  | { kind: 'terminate'; portfolioId: string };
+  | { kind: 'ai_image'; portfolioId: string };
 
 function getPrimeableAdRouteKey(activeTab: ActiveTab): AdRouteKey | null {
   switch (activeTab) {
@@ -265,7 +264,6 @@ function getModalPortfolioId(modalState: ModalState): string | null {
     case 'quick_input':
     case 'trade_execution':
     case 'ai_image':
-    case 'terminate':
       return modalState.portfolioId;
     default: {
       const exhaustiveCheck: never = modalState;
@@ -296,11 +294,6 @@ interface ActiveModalRendererProps {
   ) => Promise<void>;
   onSaveTrade: (portfolioId: string, trade: Trade) => Promise<void>;
   onSaveAiTrades: (portfolioId: string, trades: Trade[]) => Promise<void>;
-  onClosePortfolio: (
-    portfolioId: string,
-    finalSells: FinalSellInput[],
-    additionalFee: number,
-  ) => Promise<void>;
 }
 
 const App: React.FC = () => {
@@ -456,7 +449,10 @@ const App: React.FC = () => {
 
   const t = I18N[lang];
   const shellCopy = APP_SHELL_MESSAGES[lang];
+  const dashboardCopy = getDashboardMessages(lang);
   const shellCopyRef = useRef(shellCopy);
+  const dashboardCopyRef = useRef(dashboardCopy);
+  const isClosingRef = useRef(false);
   const isInTossApp = isTossApp();
   const primeableAdRouteKey = useMemo(
     () => getPrimeableAdRouteKey(activeTab),
@@ -477,6 +473,10 @@ const App: React.FC = () => {
   useLayoutEffect(() => {
     shellCopyRef.current = shellCopy;
   }, [shellCopy]);
+
+  useLayoutEffect(() => {
+    dashboardCopyRef.current = dashboardCopy;
+  }, [dashboardCopy]);
 
   useEffect(() => {
     if (!isInTossApp) return;
@@ -1040,9 +1040,51 @@ const App: React.FC = () => {
     setModalState({ kind: 'ai_image', portfolioId });
   }, []);
 
-  const handleOpenTerminate = useCallback((portfolioId: string) => {
-    setModalState({ kind: 'terminate', portfolioId });
-  }, []);
+  const handleRequestCloseStrategy = useCallback(
+    async (portfolioId: string): Promise<void> => {
+      if (isClosingRef.current) {
+        return;
+      }
+
+      const targetPortfolio =
+        portfolios.find((portfolio) => portfolio.id === portfolioId) ?? null;
+
+      if (targetPortfolio == null) {
+        showErrorToast(shellCopyRef.current.dailySummaryNetworkError);
+        return;
+      }
+
+      const hasActiveShares = calculateHoldings(targetPortfolio).some(
+        (holding) => holding.quantity > HOLDINGS_QTY_EPSILON,
+      );
+
+      if (hasActiveShares) {
+        showErrorToast(
+          dashboardCopyRef.current.closeStrategyRequiresNoSharesToast,
+        );
+        return;
+      }
+
+      isClosingRef.current = true;
+      try {
+        const result = await executeClosePortfolio(portfolioId);
+        if (result == null) {
+          return;
+        }
+
+        setSettlementResult(result);
+        scheduleInterstitialAd(
+          INTERSTITIAL_PLACEMENT_KEYS.SETTLEMENT_DETAIL,
+        );
+      } catch (error: unknown) {
+        console.error('[Portfolio] close failed:', error);
+        showErrorToast(dashboardCopyRef.current.systemError);
+      } finally {
+        isClosingRef.current = false;
+      }
+    },
+    [executeClosePortfolio, portfolios, scheduleInterstitialAd],
+  );
 
   const handleSaveCreator = useCallback(
     async (newPortfolio: Omit<Portfolio, 'id'>): Promise<void> => {
@@ -1100,32 +1142,6 @@ const App: React.FC = () => {
       }
     },
     [executeSaveTrade, handleCloseModal, scheduleInterstitialAd],
-  );
-
-  const handleClosePortfolioFromModal = useCallback(
-    async (
-      portfolioId: string,
-      finalSells: FinalSellInput[],
-      additionalFee: number,
-    ): Promise<void> => {
-      try {
-        const result = await executeClosePortfolio(
-          portfolioId,
-          finalSells,
-          additionalFee,
-        );
-        if (result != null) {
-          setSettlementResult(result);
-          handleCloseModal();
-          scheduleInterstitialAd(
-            INTERSTITIAL_PLACEMENT_KEYS.SETTLEMENT_DETAIL,
-          );
-        }
-      } catch (error: unknown) {
-        console.error('[Portfolio] close failed:', error);
-      }
-    },
-    [executeClosePortfolio, handleCloseModal, scheduleInterstitialAd],
   );
 
   const handleUpdatePortfolioForDashboard = useCallback(
@@ -1268,7 +1284,7 @@ const App: React.FC = () => {
             onOpenQuickInput={handleOpenQuickInput}
             onOpenExecution={handleOpenExecution}
             onOpenAIImage={handleOpenAiImage}
-            onClosePortfolio={handleOpenTerminate}
+            onClosePortfolio={handleRequestCloseStrategy}
             onDeletePortfolio={handleDeletePortfolio}
             onUpdatePortfolio={handleUpdatePortfolioForDashboard}
             onDeleteHistory={handleSafeDeleteHistory}
@@ -1320,7 +1336,6 @@ const App: React.FC = () => {
           onSaveAlarm={handleSaveAlarm}
           onSaveTrade={handleSaveTrade}
           onSaveAiTrades={handleSaveAiTrades}
-          onClosePortfolio={handleClosePortfolioFromModal}
         />
         {settlementResult && (
           <SettlementResult 
@@ -1499,7 +1514,6 @@ function ActiveModalRenderer({
   onSaveAlarm,
   onSaveTrade,
   onSaveAiTrades,
-  onClosePortfolio,
 }: ActiveModalRendererProps): React.ReactElement | null {
   switch (modalState.kind) {
     case 'none':
@@ -1586,20 +1600,6 @@ function ActiveModalRenderer({
           onClose={onClose}
           onSave={(trades) => {
             void onSaveAiTrades(portfolio.id, trades);
-          }}
-        />
-      );
-    case 'terminate':
-      if (portfolio == null) {
-        return null;
-      }
-      return (
-        <TerminationInput
-          lang={lang}
-          portfolio={portfolio}
-          onClose={onClose}
-          onSave={(finalSells, additionalFee) => {
-            void onClosePortfolio(portfolio.id, finalSells, additionalFee);
           }}
         />
       );

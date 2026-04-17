@@ -36,13 +36,6 @@ export interface UsePortfoliosReturn {
   ) => Promise<void>;
   handleClosePortfolio: (
     portfolioId: string,
-    finalSells: Array<{
-      stock: string;
-      quantity: number;
-      price: number;
-      fee: number;
-    }>,
-    additionalFee: number,
   ) => Promise<SettlementResult | null>;
   handleUpdatePortfolio: (updated: Portfolio) => Promise<void>;
   handleAddTrade: (portfolioId: string, trade: Trade) => Promise<void>;
@@ -55,16 +48,7 @@ export interface UsePortfoliosReturn {
     void
   >;
   closePortfolioCommand: PortfolioMutationCommand<
-    [
-      portfolioId: string,
-      finalSells: Array<{
-        stock: string;
-        quantity: number;
-        price: number;
-        fee: number;
-      }>,
-      additionalFee: number,
-    ],
+    [portfolioId: string],
     SettlementResult | null
   >;
   updatePortfolioCommand: PortfolioMutationCommand<

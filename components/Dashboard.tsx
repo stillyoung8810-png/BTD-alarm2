@@ -11,6 +11,8 @@ import {
   Zap,
   Info,
   TrendingUp,
+  TrendingDown,
+  Circle,
   Layers,
   Camera,
   Target,
@@ -254,7 +256,8 @@ interface PortfolioCardViewProps {
   valuationText: string;
   realizedProfitText: string;
   roiText: string;
-  isYieldPositive: boolean;
+  yieldTone: DashboardChangeTone;
+  realizedProfitTone: DashboardChangeTone;
   isMetricsLoading: boolean;
   executionSummary: React.ReactNode;
   detailsAriaLabel: string;
@@ -276,6 +279,57 @@ interface PortfolioCardViewProps {
 }
 
 type DashboardChangeTone = 'positive' | 'negative' | 'neutral';
+
+const USD_DISPLAY_DECIMAL_PLACES = 2;
+const ROI_DISPLAY_DECIMAL_PLACES = 1;
+const LOADING_ELLIPSIS_LABEL = '...';
+
+const TONE_TEXT_COLOR_MAP: Record<DashboardChangeTone, string> = {
+  positive: 'text-emerald-500',
+  negative: 'text-rose-500',
+  neutral: 'text-slate-400 dark:text-slate-500',
+};
+
+const TONE_BADGE_CLASS_MAP: Record<DashboardChangeTone, string> = {
+  positive: 'bg-emerald-500 text-white',
+  negative: 'bg-rose-500 text-white',
+  neutral: 'bg-slate-500 text-white',
+};
+
+const TONE_ROTATION_CLASS_MAP: Record<DashboardChangeTone, string> = {
+  positive: '',
+  negative: 'rotate-180',
+  neutral: '',
+};
+
+const REALIZED_PROFIT_INDICATOR_KEY_MAP: Record<
+  DashboardChangeTone,
+  'up' | 'down' | 'none'
+> = {
+  positive: 'up',
+  negative: 'down',
+  neutral: 'none',
+};
+
+function getChangeTone(
+  value: number,
+  digits: number = USD_DISPLAY_DECIMAL_PLACES,
+): DashboardChangeTone {
+  const rounded = getRounded(value, digits);
+  if (rounded > 0) {
+    return 'positive';
+  }
+  if (rounded < 0) {
+    return 'negative';
+  }
+  return 'neutral';
+}
+
+function getRealizedProfitIndicatorKey(
+  tone: DashboardChangeTone,
+): 'up' | 'down' | 'none' {
+  return REALIZED_PROFIT_INDICATOR_KEY_MAP[tone];
+}
 
 interface DashboardHeaderVm {
   title: string;
@@ -335,17 +389,6 @@ function getPortfolioStrategyKind(
 
 function formatShareQuantity(value: number, digits: number = 2): string {
   return getRounded(value, digits).toFixed(digits);
-}
-
-function getChangeTone(value: number): DashboardChangeTone {
-  const rounded = getRounded(value);
-  if (rounded > 0) {
-    return 'positive';
-  }
-  if (rounded < 0) {
-    return 'negative';
-  }
-  return 'neutral';
 }
 
 function renderStrategyIcon(
@@ -1213,20 +1256,24 @@ function DashboardPortfolioCardHost({
     return onDeletePortfolio(portfolioId);
   }, [onDeletePortfolio, portfolioId]);
 
-  const loadingLabel = '...';
   const cardVm = {
     detailsAriaLabel: copy.openDetailsAria(portfolioName),
     executionAriaLabel: copy.openExecutionAria(portfolioName),
     valuationText: isMetricsLoading
-      ? loadingLabel
-      : formatUsdValue(currentValuation, 2),
+      ? LOADING_ELLIPSIS_LABEL
+      : formatUsdValue(currentValuation, USD_DISPLAY_DECIMAL_PLACES),
     realizedProfitText: isMetricsLoading
-      ? loadingLabel
-      : formatSignedUsdValue(realizedProfit, 2),
+      ? LOADING_ELLIPSIS_LABEL
+      : formatSignedUsdValue(realizedProfit, USD_DISPLAY_DECIMAL_PLACES),
     roiText: isMetricsLoading
-      ? loadingLabel
-      : formatSignedPercent(yieldRate, 1),
-    isYieldPositive: isMetricsLoading ? true : getRounded(yieldRate, 1) >= 0,
+      ? LOADING_ELLIPSIS_LABEL
+      : formatSignedPercent(yieldRate, ROI_DISPLAY_DECIMAL_PLACES),
+    yieldTone: isMetricsLoading
+      ? 'neutral'
+      : getChangeTone(yieldRate, ROI_DISPLAY_DECIMAL_PLACES),
+    realizedProfitTone: isMetricsLoading
+      ? 'neutral'
+      : getChangeTone(realizedProfit, USD_DISPLAY_DECIMAL_PLACES),
     strategyName: copy.strategyName[strategyKind],
     canOpenVrOrders: portfolio.vrSnapshot != null,
   };
@@ -1247,7 +1294,8 @@ function DashboardPortfolioCardHost({
         valuationText={cardVm.valuationText}
         realizedProfitText={cardVm.realizedProfitText}
         roiText={cardVm.roiText}
-        isYieldPositive={cardVm.isYieldPositive}
+        yieldTone={cardVm.yieldTone}
+        realizedProfitTone={cardVm.realizedProfitTone}
         isMetricsLoading={isMetricsLoading}
         executionSummary={executionSummary}
         detailsAriaLabel={cardVm.detailsAriaLabel}
@@ -1295,7 +1343,8 @@ const PortfolioCardView = React.memo(function PortfolioCardView({
   valuationText,
   realizedProfitText,
   roiText,
-  isYieldPositive,
+  yieldTone,
+  realizedProfitTone,
   isMetricsLoading,
   executionSummary,
   detailsAriaLabel,
@@ -1316,9 +1365,21 @@ const PortfolioCardView = React.memo(function PortfolioCardView({
   onDeletePortfolio,
 }: PortfolioCardViewProps): React.ReactElement {
   const t = I18N[lang];
-  const roiBadgeClassName = isYieldPositive
-    ? 'bg-emerald-500 text-white'
-    : 'bg-rose-500 text-white';
+  const roiBadgeClassName = TONE_BADGE_CLASS_MAP[yieldTone];
+  const roiIconClassName = TONE_ROTATION_CLASS_MAP[yieldTone];
+  const realizedProfitTextClassName = TONE_TEXT_COLOR_MAP[realizedProfitTone];
+  const realizedProfitIndicatorKey =
+    getRealizedProfitIndicatorKey(realizedProfitTone);
+  const realizedProfitIndicatorIconMap: Record<
+    'up' | 'down' | 'none',
+    React.ReactElement
+  > = {
+    up: <TrendingUp size={12} />,
+    down: <TrendingDown size={12} />,
+    none: <Circle size={4} className="fill-current" />,
+  };
+  const realizedProfitIndicatorIcon =
+    realizedProfitIndicatorIconMap[realizedProfitIndicatorKey];
 
   return (
     <div className="glass light-card-depth p-7 rounded-[2.5rem] space-y-5 group hover:-translate-y-1 transition-all duration-500 relative overflow-hidden shadow-[0_12px_40px_rgba(0,0,0,0.06)] dark:shadow-2xl">
@@ -1346,10 +1407,11 @@ const PortfolioCardView = React.memo(function PortfolioCardView({
             >
               <TrendingUp
                 size={10}
-                className={isYieldPositive ? '' : 'rotate-180'}
+                className={roiIconClassName}
+                aria-hidden="true"
               />
               <span className="text-[10px] font-black">
-                {isMetricsLoading ? '...' : roiText}
+                {isMetricsLoading ? LOADING_ELLIPSIS_LABEL : roiText}
               </span>
             </div>
 
@@ -1428,12 +1490,12 @@ const PortfolioCardView = React.memo(function PortfolioCardView({
             </span>
           </div>
           <p
-            className={`text-2xl font-black tracking-tight leading-tight flex items-center gap-1 ${
-              isYieldPositive ? 'text-emerald-500' : 'text-rose-500'
-            }`}
+            className={`text-2xl font-black tracking-tight leading-tight flex items-center gap-1 ${realizedProfitTextClassName}`}
           >
-            <span className="text-[11px]">{isYieldPositive ? '↑' : '↓'}</span>
-            {realizedProfitText}
+            <span className="text-[11px] flex items-center" aria-hidden="true">
+              {realizedProfitIndicatorIcon}
+            </span>
+            <span>{realizedProfitText}</span>
           </p>
         </div>
 

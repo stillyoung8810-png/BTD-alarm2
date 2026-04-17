@@ -1,5 +1,4 @@
 import { useCallback, useMemo } from 'react';
-import type { FinalSellInput } from '@/components/SettlementModals';
 import type {
   SettlementResult,
   UsePortfoliosReturn,
@@ -18,10 +17,7 @@ export interface PortfolioUiCommands {
   saveTrade: UiMutationCommand<[portfolioId: string, draft: TradeDraftInput]>;
   updatePortfolio: UiMutationCommand<[portfolio: Portfolio]>;
   deletePortfolio: UiMutationCommand<[portfolioId: string]>;
-  closePortfolio: UiMutationCommand<
-    [portfolioId: string, finalSells: FinalSellInput[], additionalFee: number],
-    SettlementResult | null
-  >;
+  closePortfolio: UiMutationCommand<[portfolioId: string], SettlementResult | null>;
 }
 
 export function usePortfolioUiCommands(
@@ -48,11 +44,7 @@ export function usePortfolioUiCommands(
     [bundle.deletePortfolioCommand],
   );
   const handleClosePortfolio = useCallback(
-    async (
-      portfolioId: string,
-      finalSells: FinalSellInput[],
-      additionalFee: number,
-    ) => bundle.closePortfolioCommand.run(portfolioId, finalSells, additionalFee),
+    async (portfolioId: string) => bundle.closePortfolioCommand.run(portfolioId),
     [bundle.closePortfolioCommand],
   );
 

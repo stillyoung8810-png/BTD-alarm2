@@ -24,6 +24,7 @@ export interface DashboardMessageSet {
   openDetailsAria: (portfolioName: string) => string;
   openExecutionAria: (portfolioName: string) => string;
   terminate: string;
+  closeStrategyRequiresNoSharesToast: string;
   strategyName: Record<DashboardStrategyKind, string>;
   execution: {
     calculating: string;
@@ -76,6 +77,8 @@ export const DASHBOARD_MESSAGES: Record<AppLang, DashboardMessageSet> = {
     openExecutionAria: (portfolioName: string) =>
       `${portfolioName} 일별 매매 실행 열기`,
     terminate: '전략 종료하기',
+    closeStrategyRequiresNoSharesToast:
+      '보유 주식을 모두 매도해야 종료가 가능해요.',
     strategyName: {
       vr_band: '타겟 밸류 채널',
       multi_split: '다분할 매매법',
@@ -133,6 +136,8 @@ export const DASHBOARD_MESSAGES: Record<AppLang, DashboardMessageSet> = {
     openExecutionAria: (portfolioName: string) =>
       `Open daily execution for ${portfolioName}`,
     terminate: 'TERMINATE STRATEGY',
+    closeStrategyRequiresNoSharesToast:
+      'You need to sell all held shares before closing the strategy.',
     strategyName: {
       vr_band: 'Target Value Channel',
       multi_split: 'Multi-Split Trading',

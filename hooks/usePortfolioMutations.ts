@@ -10,9 +10,8 @@ import { useMutexAction } from './useMutexAction';
 import type { SettlementResult } from './portfolioTypes';
 import {
   calculateHoldings,
-  calculateTotalInvested,
-  getTotalSellProceeds,
 } from '../utils/portfolioCalculations';
+import { buildClosedStrategySettlementSummary } from '../utils/portfolioSettlement';
 import {
   calculatePoolDelta,
   computeVrSnapshotAfterTrade,
@@ -66,13 +65,6 @@ interface ClosePortfolioDraftResult {
     };
   };
 }
-
-type FinalSellInput = Array<{
-  stock: string;
-  quantity: number;
-  price: number;
-  fee: number;
-}>;
 
 type LegacyVrStrategyShape = Portfolio['strategy'] & {
   vr_band?: VrBandStrategyParams;
@@ -235,56 +227,18 @@ function buildTradeDraft(
   };
 }
 
-function buildFinalSellTrades(
-  finalSells: FinalSellInput,
-  endDate: Date,
-): Trade[] {
-  const endDateText = `${endDate.getFullYear()}-${String(
-    endDate.getMonth() + 1,
-  ).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
-
-  return finalSells.map((finalSell, index) => ({
-    id: `final-${endDate.getTime()}-${index}`,
-    type: 'sell',
-    stock: finalSell.stock,
-    date: endDateText,
-    price: finalSell.price,
-    quantity: finalSell.quantity,
-    fee: finalSell.fee,
-  }));
-}
-
 function buildClosePortfolioDraft(
   portfolio: Portfolio,
   userId: string,
-  finalSells: FinalSellInput,
-  additionalFee: number,
 ): ClosePortfolioDraftResult {
-  const totalInvested = calculateTotalInvested(portfolio);
-  const alreadyRealized = getTotalSellProceeds(portfolio);
-  const totalFinalSellAmount =
-    finalSells.reduce(
-      (sum, finalSell) =>
-        sum + finalSell.price * finalSell.quantity - finalSell.fee,
-      0,
-    ) - additionalFee;
-  const totalReturn = alreadyRealized + totalFinalSellAmount;
-  const profit = totalReturn - totalInvested;
-  const yieldRate =
-    totalInvested > 0 ? (totalReturn / totalInvested - 1) * 100 : 0;
-
   const endDate = new Date();
-  const nextTrades = [
-    ...portfolio.trades,
-    ...buildFinalSellTrades(finalSells, endDate),
-  ];
   const nextPortfolio: Portfolio = {
     ...portfolio,
     isClosed: true,
     closedAt: endDate.toISOString(),
-    finalSellAmount: totalFinalSellAmount + additionalFee,
-    trades: nextTrades,
+    finalSellAmount: 0,
   };
+  const settlement = buildClosedStrategySettlementSummary(nextPortfolio);
 
   const startDate = portfolio.startDate
     ? new Date(portfolio.startDate)
@@ -294,21 +248,17 @@ function buildClosePortfolioDraft(
     nextPortfolio,
     settlementResult: {
       portfolio: nextPortfolio,
-      totalInvested,
-      alreadyRealized,
-      finalSellAmount: totalFinalSellAmount + additionalFee,
-      totalReturn,
-      profit,
-      yieldRate,
+      ...settlement,
+      finalSellAmount: nextPortfolio.finalSellAmount ?? 0,
     },
     historyPayload: {
       portfolio_id: portfolio.id,
       user_id: userId,
       portfolio_name: portfolio.name,
-      total_invested: totalInvested,
-      total_return: totalReturn,
-      total_profit: profit,
-      yield_rate: yieldRate,
+      total_invested: settlement.totalInvested,
+      total_return: settlement.totalReturn,
+      total_profit: settlement.profit,
+      yield_rate: settlement.yieldRate,
       start_date: startDate.toISOString().split('T')[0],
       end_date: endDate.toISOString(),
       strategy_detail: {
@@ -400,18 +350,12 @@ export function usePortfolioMutations({
   const handleAddPortfolio = addPortfolioCommand.run;
 
   const handleClosePortfolioCore = useCallback(
-    async (
-      portfolioId: string,
-      finalSells: FinalSellInput,
-      additionalFee: number,
-    ): Promise<SettlementResult | null> => {
+    async (portfolioId: string): Promise<SettlementResult | null> => {
       const signedInUserId = requireSignedInUserId(userId);
       const targetPortfolio = findPortfolioOrThrow(portfolios, portfolioId);
       const prepared = buildClosePortfolioDraft(
         targetPortfolio,
         signedInUserId,
-        finalSells,
-        additionalFee,
       );
 
       const result = await persistPortfolioClosureSafe({

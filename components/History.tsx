@@ -10,6 +10,10 @@ import {
   formatUsdValue,
   getRounded,
 } from '../src/utils/financialCalculations';
+import {
+  buildClosedStrategySettlementSummary,
+  calculateAggregateHistoryRoi,
+} from '../utils/portfolioSettlement';
 import { TdsConfirmDialog } from './tds-adapter/TdsConfirmDialog';
 import { useAsyncTdsConfirm } from './tds-adapter/useAsyncTdsConfirm';
 import { showErrorToast } from './tds-adapter/showErrorToast';
@@ -28,6 +32,7 @@ interface HistoryRecordVm {
   name: string;
   startDateLabel: string;
   closedDateLabel: string;
+  totalInvested: number;
   investedText: string;
   yieldText: string;
   profitText: string;
@@ -59,31 +64,20 @@ function buildHistoryRecordVm(
   portfolio: Portfolio,
   copy: ReturnType<typeof getHistoryMessages>,
 ): HistoryRecordVm {
-  const invested = portfolio.trades.reduce((sum, trade) => {
-    if (trade.type !== 'buy') {
-      return sum;
-    }
-
-    const tradeCost = trade.price * trade.quantity;
-    const feeCost = Math.abs(trade.fee ?? 0);
-
-    return sum + tradeCost + feeCost;
-  }, 0);
-  const finalSellAmount = portfolio.finalSellAmount ?? 0;
-  const profit = finalSellAmount - invested;
-  const yieldRate = invested > 0 ? (profit / invested) * 100 : 0;
+  const settlement = buildClosedStrategySettlementSummary(portfolio);
 
   return {
     id: portfolio.id,
     name: portfolio.name,
     startDateLabel: copy.startDate(portfolio.startDate),
     closedDateLabel: copy.closedDate(portfolio.closedAt ?? ''),
-    investedText: formatUsdValue(invested),
-    yieldText: formatSignedPercent(yieldRate),
-    profitText: formatSignedUsdValue(profit),
-    yieldRate,
-    profitAmount: profit,
-    isProfitPositive: getRounded(profit) >= 0,
+    totalInvested: settlement.totalInvested,
+    investedText: formatUsdValue(settlement.totalInvested),
+    yieldText: formatSignedPercent(settlement.yieldRate),
+    profitText: formatSignedUsdValue(settlement.profit),
+    yieldRate: settlement.yieldRate,
+    profitAmount: settlement.profit,
+    isProfitPositive: getRounded(settlement.profit) >= 0,
   };
 }
 
@@ -330,14 +324,16 @@ export default function History({
     [recordVms],
   );
 
-  const averageYield = useMemo(() => {
-    if (recordVms.length === 0) {
-      return 0;
-    }
-
-    const totalYield = recordVms.reduce((sum, vm) => sum + vm.yieldRate, 0);
-    return totalYield / recordVms.length;
-  }, [recordVms]);
+  const aggregateRoi = useMemo(
+    () =>
+      calculateAggregateHistoryRoi(
+        recordVms.map((vm) => ({
+          totalInvested: vm.totalInvested,
+          profit: vm.profitAmount,
+        })),
+      ),
+    [recordVms],
+  );
 
   const totalProfitColor =
     getRounded(totalProfit) >= 0 ? 'text-emerald-500' : 'text-rose-500';
@@ -372,7 +368,7 @@ export default function History({
         />
         <StatCard
           label={copy.yieldLabel}
-          value={formatSignedPercent(averageYield)}
+          value={formatSignedPercent(aggregateRoi)}
           color="text-blue-500"
         />
         <StatCard

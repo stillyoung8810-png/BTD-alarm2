@@ -1,6 +1,7 @@
 import React, {
   useState,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useCallback,
@@ -14,7 +15,7 @@ import {
   Camera,
   Target,
 } from 'lucide-react';
-import type { AppLang, Portfolio, Strategy } from '../types';
+import type { AppLang, Portfolio, StockData, Strategy } from '../types';
 import { I18N, PAID_STOCKS } from '../constants';
 import { VR_SUMMARY } from '../constants/vrMessages';
 import type {
@@ -30,13 +31,14 @@ import PortfolioCardActions from './portfolio/PortfolioCardActions';
 import { TDSButton, TDSList, TDSListRow } from './tds';
 import { useTossApp } from '../contexts/TossAppContext';
 import {
-  calculateYield,
-  calculateCurrentValuation,
+  buildPortfolioMetricsSnapshot,
   determineActiveSection,
   calculateHoldings,
-  getMAValuesForAlignment,
+  getMaPeriods,
 } from '../utils/portfolioCalculations';
-import { fetchStockPrices } from '../services/stockService';
+import { fetchStockPriceHistory, fetchStockPrices } from '../services/stockService';
+import { calculateMA } from '../utils/technicalIndicators';
+import { areStrictPositiveFiniteScalars } from '../utils/financialScalarGuards';
 import {
   formatPortfolioDailyExecutionBlock,
   getVrDailyExecutionCycleHeaderLabel,
@@ -100,6 +102,142 @@ interface DashboardPortfolioCardHostProps {
   onOpenExecution: (portfolioId: string) => void;
   onOpenAIImage: (portfolioId: string) => void;
   onDailyExecutionBlock?: (id: string, block: string | null) => void;
+}
+
+function isAbortLikeError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
+const STANDARD_MA_PERIODS = [20, 60, 120] as const;
+const MIN_FALLBACK_HISTORY_DAYS = 120;
+const MA_HISTORY_BUFFER_DAYS = 30;
+
+type StandardMaPeriod = (typeof STANDARD_MA_PERIODS)[number];
+
+const MA_PROPERTY_MAP: Record<StandardMaPeriod, keyof StockData> = {
+  20: 'ma20',
+  60: 'ma60',
+  120: 'ma120',
+};
+
+interface MaAnalysisInputs {
+  baseStock: string;
+  priceMap: Record<string, StockData>;
+  baseHistory: Array<{ price: number }> | null;
+}
+
+function isStandardMaPeriod(period: number): period is StandardMaPeriod {
+  return (STANDARD_MA_PERIODS as readonly number[]).includes(period);
+}
+
+async function loadMaAnalysisInputs(
+  portfolio: Portfolio,
+  options: { signal?: AbortSignal } = {},
+): Promise<MaAnalysisInputs> {
+  const baseStock = portfolio.strategy.ma0.stock;
+  const symbols = Array.from(
+    new Set(
+      [
+        baseStock,
+        portfolio.strategy.ma1.stock,
+        portfolio.strategy.ma2.stock,
+        portfolio.strategy.ma3.stock,
+      ].filter(
+        (symbol): symbol is string =>
+          typeof symbol === 'string' && symbol.trim().length > 0,
+      ),
+    ),
+  );
+
+  const priceMap = await fetchStockPrices(symbols, options);
+  const { maAPeriod, maBPeriod } = getMaPeriods(portfolio);
+  const shouldLoadHistory =
+    !isStandardMaPeriod(maAPeriod) || !isStandardMaPeriod(maBPeriod);
+
+  if (!shouldLoadHistory) {
+    return {
+      baseStock,
+      priceMap,
+      baseHistory: null,
+    };
+  }
+
+  const history = await fetchStockPriceHistory(
+    baseStock,
+    Math.max(maAPeriod, maBPeriod, MIN_FALLBACK_HISTORY_DAYS) +
+      MA_HISTORY_BUFFER_DAYS,
+    options,
+  );
+
+  return {
+    baseStock,
+    priceMap,
+    baseHistory: history.map((item) => ({ price: item.price })),
+  };
+}
+
+function getMaValueFromLoadedData(
+  period: number,
+  baseData: StockData | undefined,
+  baseHistory: Array<{ price: number }> | null,
+): number {
+  if (baseData == null) {
+    return 0;
+  }
+
+  if (isStandardMaPeriod(period)) {
+    const maKey = MA_PROPERTY_MAP[period];
+    const mappedValue = baseData[maKey];
+    return typeof mappedValue === 'number' ? mappedValue : 0;
+  }
+
+  if (baseHistory == null || baseHistory.length < period) {
+    return 0;
+  }
+
+  const prices = baseHistory.map((item) => item.price);
+  return calculateMA(prices.slice(-period), period);
+}
+
+function determineActiveSectionFromLoadedData(
+  portfolio: Portfolio,
+  inputs: MaAnalysisInputs,
+): 1 | 2 | 3 | null {
+  const baseData = inputs.priceMap[inputs.baseStock];
+  const basePrice = baseData?.price ?? 0;
+
+  if (!areStrictPositiveFiniteScalars(basePrice)) {
+    return null;
+  }
+
+  const { maAPeriod, maBPeriod } = getMaPeriods(portfolio);
+  const maA = getMaValueFromLoadedData(
+    maAPeriod,
+    baseData,
+    inputs.baseHistory,
+  );
+  const maB = getMaValueFromLoadedData(
+    maBPeriod,
+    baseData,
+    inputs.baseHistory,
+  );
+
+  if (!areStrictPositiveFiniteScalars(maA, maB)) {
+    return null;
+  }
+
+  const high = Math.max(maA, maB);
+  const low = Math.min(maA, maB);
+
+  if (basePrice > high) {
+    return 1;
+  }
+
+  if (basePrice < low) {
+    return 3;
+  }
+
+  return 2;
 }
 
 interface PortfolioCardViewProps {
@@ -611,6 +749,7 @@ function DashboardPortfolioCardHost({
 }: DashboardPortfolioCardHostProps): React.ReactElement {
   const { isInTossApp } = useTossApp();
   const copy = getDashboardMessages(lang);
+  const copyRef = useRef(copy);
   const portfolioId = portfolio.id;
   const portfolioName = portfolio.name;
   const isAlarmEnabled = portfolio.alarmconfig?.enabled === true;
@@ -632,6 +771,7 @@ function DashboardPortfolioCardHost({
   const noStopCurrentRound = noStopVm.currentRound;
   const noStopExecutionData = noStopVm.executionData;
 
+  const [currentValuation, setCurrentValuation] = useState(0);
   const [investedAmount, setInvestedAmount] = useState(0);
   const [yieldRate, setYieldRate] = useState(0);
   const [realizedProfit, setRealizedProfit] = useState(0);
@@ -660,6 +800,10 @@ function DashboardPortfolioCardHost({
     portfolio.strategy.noStopMultiSplit?.targetStock ||
     (isVrStrategy ? 'TQQQ' : portfolio.strategy.ma0?.stock) ||
     'TQQQ';
+
+  useLayoutEffect(() => {
+    copyRef.current = copy;
+  }, [copy]);
 
   useEffect(() => {
     if (portfolio.isQuarterMode === false) {
@@ -701,14 +845,33 @@ function DashboardPortfolioCardHost({
       return;
     }
 
-    let isCancelled = false;
+    let isMounted = true;
+    const abortController = new AbortController();
 
     const runAnalysis = async () => {
       try {
-        const nextSection = await determineActiveSection(portfolio);
-        if (isCancelled) {
+        const inputs = await loadMaAnalysisInputs(portfolio, {
+          signal: abortController.signal,
+        });
+
+        if (!isMounted) {
           return;
         }
+
+        const nextSection = determineActiveSectionFromLoadedData(portfolio, inputs);
+        const prices = inputs.priceMap;
+        const baseData = inputs.priceMap[inputs.baseStock];
+        const { maAPeriod, maBPeriod } = getMaPeriods(portfolio);
+        const maA = getMaValueFromLoadedData(
+          maAPeriod,
+          baseData,
+          inputs.baseHistory,
+        );
+        const maB = getMaValueFromLoadedData(
+          maBPeriod,
+          baseData,
+          inputs.baseHistory,
+        );
 
         setMaActiveSection((previous) =>
           previous === nextSection ? previous : nextSection,
@@ -730,14 +893,6 @@ function DashboardPortfolioCardHost({
         const ma2 = portfolio.strategy.ma2;
         const ma3 = portfolio.strategy.ma3;
         const baseStock = ma0.stock;
-        const symbolsToFetch = Array.from(
-          new Set([baseStock, ma1.stock, ma2.stock, ma3.stock].filter(Boolean)),
-        );
-
-        const prices = await fetchStockPrices(symbolsToFetch);
-        if (isCancelled) {
-          return;
-        }
 
         if (ma0.rsiEnabled) {
           const threshold =
@@ -753,10 +908,7 @@ function DashboardPortfolioCardHost({
         }
 
         if (ma0.alignmentEnabled) {
-          const { maA, maB } = await getMAValuesForAlignment(portfolio);
-          if (!isCancelled) {
-            setMaAlignmentNotMet(maA <= maB);
-          }
+          setMaAlignmentNotMet(maA <= maB);
         } else {
           setMaAlignmentNotMet(false);
         }
@@ -799,44 +951,51 @@ function DashboardPortfolioCardHost({
           return nextLines;
         });
       } catch (error: unknown) {
-        console.warn('[DashboardPortfolioCardHost:runAnalysis] failed', error);
+        if (isAbortLikeError(error) || !isMounted) {
+          return;
+        }
+
+        console.error('[Dashboard] Failed to load MA analysis inputs:', error);
+        showErrorToast(copyRef.current.systemError);
       }
     };
 
     void runAnalysis();
     return () => {
-      isCancelled = true;
+      isMounted = false;
+      abortController.abort();
     };
   }, [portfolio, isMultiSplitStrategy, isNoStopMultiSplitStrategy, isVrStrategy]);
 
   useEffect(() => {
-    let isCancelled = false;
+    let isMounted = true;
+    const abortController = new AbortController();
 
     const updateMetrics = async () => {
       setIsMetricsLoading(true);
 
       try {
-        const holdings = calculateHoldings(portfolio);
-        const [valuation, nextYield] = await Promise.all([
-          calculateCurrentValuation(portfolio),
-          calculateYield(portfolio),
-        ]);
-        const totalRealizedPnL = holdings.reduce(
-          (sum, holding) => sum + (holding.realizedPnL ?? 0),
-          0,
-        );
+        const nextMetrics = await buildPortfolioMetricsSnapshot(portfolio, {
+          signal: abortController.signal,
+        });
 
-        if (isCancelled) {
+        if (!isMounted) {
           return;
         }
 
-        setInvestedAmount(valuation);
-        setYieldRate(nextYield);
-        setRealizedProfit(totalRealizedPnL);
+        setCurrentValuation(nextMetrics.currentValuation);
+        setInvestedAmount(nextMetrics.investedAmount);
+        setYieldRate(nextMetrics.yieldRate);
+        setRealizedProfit(nextMetrics.realizedProfit);
       } catch (error: unknown) {
-        console.error('[DashboardPortfolioCardHost:updateMetrics] failed', error);
+        if (isAbortLikeError(error) || !isMounted) {
+          return;
+        }
+
+        console.error('[Dashboard] Failed to load metrics snapshot:', error);
+        showErrorToast(copyRef.current.systemError);
       } finally {
-        if (!isCancelled) {
+        if (isMounted) {
           setIsMetricsLoading(false);
         }
       }
@@ -844,7 +1003,8 @@ function DashboardPortfolioCardHost({
 
     void updateMetrics();
     return () => {
-      isCancelled = true;
+      isMounted = false;
+      abortController.abort();
     };
   }, [portfolio]);
 
@@ -1059,7 +1219,7 @@ function DashboardPortfolioCardHost({
     executionAriaLabel: copy.openExecutionAria(portfolioName),
     valuationText: isMetricsLoading
       ? loadingLabel
-      : formatUsdValue(investedAmount, 2),
+      : formatUsdValue(currentValuation, 2),
     realizedProfitText: isMetricsLoading
       ? loadingLabel
       : formatSignedUsdValue(realizedProfit, 2),

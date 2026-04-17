@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { AlarmConfig, AppLang, Portfolio, Trade } from './types';
 import { I18N } from './constants';
 import Footer from './components/Footer';
@@ -10,7 +10,11 @@ import {
 } from './components/SettlementModals';
 import { supabase } from './services/supabase';
 import { calculateHoldings } from './utils/portfolioCalculations';
-import { fetchStockPricesWithPrev, loadInitialStockData, loadPaidStockData } from './services/stockService';
+import {
+  ensureInitialStockDataReady,
+  ensurePaidStockDataReady,
+  fetchStockPricesWithPrev,
+} from './services/stockService';
 import { getUSSelectionHolidays } from './utils/marketUtils';
 import { getCurrentKSTDateString, getDeviceTimeZone } from './utils/dateUtils';
 import { useFCMToken } from './hooks/useFCMToken';
@@ -452,6 +456,7 @@ const App: React.FC = () => {
 
   const t = I18N[lang];
   const shellCopy = APP_SHELL_MESSAGES[lang];
+  const shellCopyRef = useRef(shellCopy);
   const isInTossApp = isTossApp();
   const primeableAdRouteKey = useMemo(
     () => getPrimeableAdRouteKey(activeTab),
@@ -468,6 +473,10 @@ const App: React.FC = () => {
           null,
     [currentModalPortfolioId, portfolios],
   );
+
+  useLayoutEffect(() => {
+    shellCopyRef.current = shellCopy;
+  }, [shellCopy]);
 
   useEffect(() => {
     if (!isInTossApp) return;
@@ -540,16 +549,13 @@ const App: React.FC = () => {
     };
   }, [user?.id, summaryToSave, lang]);
 
-  const paidStocksLoadedRef = useRef(false);
   useEffect(() => {
     if (!canAccessPaidStocks) return;
-    if (paidStocksLoadedRef.current) return;
-    paidStocksLoadedRef.current = true;
-  
-    const run = async () => {
-      await loadPaidStockData();
-    };
-    run();
+
+    ensurePaidStockDataReady().catch((error: unknown) => {
+      console.error('[App] Paid stock warmup failed:', error);
+      showErrorToast(shellCopyRef.current.dailySummaryNetworkError);
+    });
   }, [canAccessPaidStocks]);
 
   useEffect(() => {
@@ -576,22 +582,10 @@ const App: React.FC = () => {
   }, [isDarkMode]);
 
   useEffect(() => {
-    let isMounted = true;
-    const loadData = async () => {
-      try {
-        console.log('[App] IndexedDB 초기 데이터 로딩 시작');
-        await loadInitialStockData();
-        if (isMounted) {
-          console.log('[App] IndexedDB 초기 데이터 로딩 완료');
-        }
-      } catch (error) {
-        console.error('[App] IndexedDB 초기 데이터 로딩 실패:', error);
-      }
-    };
-    loadData();
-    return () => {
-      isMounted = false;
-    };
+    ensureInitialStockDataReady().catch((error: unknown) => {
+      console.error('[App] Initial stock warmup failed:', error);
+      showErrorToast(shellCopyRef.current.dailySummaryNetworkError);
+    });
   }, []);
 
   useEffect(() => {

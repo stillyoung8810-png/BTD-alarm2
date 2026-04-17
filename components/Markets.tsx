@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { 
   XAxis, 
   YAxis, 
@@ -11,7 +11,12 @@ import {
 } from 'recharts';
 import { AVAILABLE_STOCKS, ALL_STOCKS, PAID_STOCKS, I18N } from '../constants';
 import { TrendingUp, TrendingDown, Activity, BarChart2, ChevronLeft, ChevronRight, Lock } from 'lucide-react';
-import { fetchStockPrices, fetchStockPriceHistory } from '../services/stockService';
+import {
+  ensureInitialStockDataReady,
+  ensurePaidStockDataReady,
+  fetchStockPrices,
+  fetchStockPriceHistory,
+} from '../services/stockService';
 import { StockData, Portfolio } from '../types';
 import { getMarketStatus } from '../utils/marketUtils';
 import { calculateHoldings } from '../utils/portfolioCalculations';
@@ -19,12 +24,14 @@ import StockLogo from './StockLogo';
 import HoverTip from './HoverTip';
 import InfoModal from './InfoModal';
 import { useTossApp } from '../contexts/TossAppContext';
+import { APP_SHELL_MESSAGES } from '../constants/appShellMessages';
 import { getCommonMessages } from '../constants/messages/commonMessages';
 import { getDashboardMessages } from '../constants/messages/dashboardMessages';
 import {
   getMarketMessages,
   type MarketMessageSet,
 } from '../constants/messages/marketMessages';
+import { showErrorToast } from './tds-adapter/showErrorToast';
 
 // 🚀 1. 스마트 배너 컴포넌트 임포트
 import { TossInlineBanner } from './TossInlineBanner';
@@ -98,6 +105,25 @@ interface CustomTooltipProps {
   active?: boolean;
   payload?: TooltipPayloadItem[];
   label?: string;
+}
+
+interface RawMarketChartPoint {
+  date: string;
+  price: number;
+  ma20: number;
+  ma60: number;
+}
+
+function isAbortLikeError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
+function formatMarketChartDate(dateText: string, lang: 'ko' | 'en'): string {
+  const date = new Date(dateText);
+  return date.toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-US', {
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
 // Custom Tooltip 컴포넌트
@@ -368,7 +394,7 @@ const Markets: React.FC<MarketsProps> = ({
 }) => {
   const [selectedStock, setSelectedStock] = useState('QQQ');
   const [stockData, setStockData] = useState<Record<string, StockData>>({});
-  const [chartData, setChartData] = useState<Array<{ name: string; price: number; ma20: number; ma60: number; date: string }>>([]);
+  const [rawChartData, setRawChartData] = useState<RawMarketChartPoint[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showHoldingsOnly, setShowHoldingsOnly] = useState(false);
   const [show1xOnly, setShow1xOnly] = useState(false);
@@ -378,6 +404,8 @@ const Markets: React.FC<MarketsProps> = ({
   const commonCopy = getCommonMessages(lang);
   const dashboardCopy = getDashboardMessages(lang);
   const marketCopy = getMarketMessages(lang);
+  const shellCopy = APP_SHELL_MESSAGES[lang];
+  const shellCopyRef = useRef(shellCopy);
   const [proInfoOpen, setProInfoOpen] = useState(false);
   const { isInTossApp } = useTossApp();
 
@@ -393,6 +421,10 @@ const Markets: React.FC<MarketsProps> = ({
 
   // 마켓 상태 계산
   const marketStatus = useMemo(() => getMarketStatus(lang), [lang]);
+
+  useLayoutEffect(() => {
+    shellCopyRef.current = shellCopy;
+  }, [shellCopy]);
 
   // 보유 종목 계산 (활성 포트폴리오만)
   const holdingsSet = useMemo(() => {
@@ -458,54 +490,95 @@ const Markets: React.FC<MarketsProps> = ({
 
   // 초기 주가 데이터 로드
   useEffect(() => {
+    const abortController = new AbortController();
+
     const loadStockData = async () => {
       setIsLoading(true);
       try {
+        const warmups = [ensureInitialStockDataReady()];
+        if (canAccessPaidStocks) {
+          warmups.push(ensurePaidStockDataReady());
+        }
+        await Promise.all(warmups);
+
         const symbolsToFetch = canAccessPaidStocks ? ALL_STOCKS : AVAILABLE_STOCKS;
-        const data = await fetchStockPrices(symbolsToFetch);
+        const data = await fetchStockPrices(symbolsToFetch, {
+          signal: abortController.signal,
+        });
         setStockData(data);
-      } catch (error) {
-        console.error('Error loading stock data:', error);
+      } catch (error: unknown) {
+        if (isAbortLikeError(error)) {
+          return;
+        }
+        console.error('[Markets] Failed to sync latest prices:', error);
+        showErrorToast(shellCopyRef.current.dailySummaryNetworkError);
       } finally {
-        setIsLoading(false);
+        if (!abortController.signal.aborted) {
+          setIsLoading(false);
+        }
       }
     };
-    loadStockData();
+
+    void loadStockData();
+    return () => {
+      abortController.abort();
+    };
   }, [canAccessPaidStocks]);
 
   useEffect(() => {
     if (canAccessPaidStocks) return;
     if (PAID_STOCKS.includes(selectedStock)) {
       setSelectedStock('QQQ');
-      setChartData([]);
+      setRawChartData([]);
     }
   }, [canAccessPaidStocks, selectedStock]);
 
   // 차트 데이터 로드
   useEffect(() => {
+    const stockSymbol = selectedStock;
+    if (!stockSymbol || (!canAccessPaidStocks && PAID_STOCKS.includes(stockSymbol))) {
+      setRawChartData([]);
+      return;
+    }
+
+    const abortController = new AbortController();
+
     const loadChartData = async () => {
-      if (!selectedStock) return;
-      if (!canAccessPaidStocks && PAID_STOCKS.includes(selectedStock)) return;
       try {
-        const history = await fetchStockPriceHistory(selectedStock, 90);
-        const formatted = history.map(item => {
-          const date = new Date(item.date);
-          return {
-            name: date.toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-US', { month: 'short', day: 'numeric' }),
-            date: item.date,
-            price: item.price,
-            ma20: item.ma20,
-            ma60: item.ma60,
-          };
+        const history = await fetchStockPriceHistory(stockSymbol, 90, {
+          signal: abortController.signal,
         });
-        setChartData(formatted);
-      } catch (error) {
-        console.error('Error loading chart data:', error);
-        setChartData([]);
+        setRawChartData(history.map((item) => ({
+          date: item.date,
+          price: item.price,
+          ma20: item.ma20,
+          ma60: item.ma60,
+        })));
+      } catch (error: unknown) {
+        if (isAbortLikeError(error)) {
+          return;
+        }
+        console.error('[Markets] Failed to load chart history:', error);
+        showErrorToast(shellCopyRef.current.dailySummaryNetworkError);
       }
     };
-    loadChartData();
-  }, [selectedStock, lang, canAccessPaidStocks]);
+
+    void loadChartData();
+    return () => {
+      abortController.abort();
+    };
+  }, [selectedStock, canAccessPaidStocks]);
+
+  const chartData = useMemo(
+    () => rawChartData.map((item) => ({
+      name: formatMarketChartDate(item.date, lang),
+      date: item.date,
+      price: item.price,
+      ma20: item.ma20,
+      ma60: item.ma60,
+    })),
+    [lang, rawChartData],
+  );
 
   const yAxisDomain = useMemo(() => {
     if (chartData.length === 0) return ['auto', 'auto'] as const;

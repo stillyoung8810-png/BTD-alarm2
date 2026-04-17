@@ -159,7 +159,7 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
     noStopMultiSplit: {
       targetStock: '대상 종목',
       lowLocBudgetRatio: '저가 LOC 예산 비율 (%)',
-      highLocPremiumPct: '고가 LOC 프리미엄 (%)',
+      highLocPremiumPct: '고가 LOC 프리미엄 (%)[체결 보장용]',
       takeProfitPct: '익절 목표 수익률 (%)',
       totalSplitCount: '총 분할 횟수',
     },
@@ -256,7 +256,7 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
     noStopMultiSplit: {
       targetStock: 'Target Stock',
       lowLocBudgetRatio: 'Low LOC Budget Ratio (%)',
-      highLocPremiumPct: 'High LOC Premium (%)',
+      highLocPremiumPct: 'High LOC Premium (%) [guaranteed fill]',
       takeProfitPct: 'Take Profit (%)',
       totalSplitCount: 'Total Split Count',
     },

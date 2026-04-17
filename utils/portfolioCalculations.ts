@@ -35,10 +35,17 @@ export interface Holdings {
  * 거래 목록만으로 현재 보유 내역을 계산합니다.
  * [Option A] 훅 계층은 통객체 대신 이 함수만 직접 사용합니다.
  */
+function getChronologicalTrades(trades: Trade[]): Trade[] {
+  return [...trades]
+    .reverse()
+    .sort((left, right) => left.date.localeCompare(right.date));
+}
+
 export const calculateHoldingsFromTrades = (trades: Trade[]): Holdings[] => {
+  const chronologicalTrades = getChronologicalTrades(trades);
   const holdingsMap: Record<string, { quantity: number; totalCost: number; realizedPnL: number }> = {};
 
-  trades.forEach(trade => {
+  chronologicalTrades.forEach(trade => {
     if (trade.type === 'buy') {
       if (!holdingsMap[trade.stock]) {
         holdingsMap[trade.stock] = { quantity: 0, totalCost: 0, realizedPnL: 0 };
@@ -111,6 +118,55 @@ export const getTotalSellProceeds = (portfolio: Portfolio): number => {
     .filter(t => t.type === 'sell')
     .reduce((sum, t) => sum + (t.price * t.quantity - Math.abs(t.fee)), 0);
 };
+
+export interface PortfolioMetricsSnapshot {
+  currentValuation: number;
+  investedAmount: number;
+  yieldRate: number;
+  realizedProfit: number;
+}
+
+export async function buildPortfolioMetricsSnapshot(
+  portfolio: Portfolio,
+  options: { signal?: AbortSignal } = {},
+): Promise<PortfolioMetricsSnapshot> {
+  const holdings = calculateHoldings(portfolio);
+  const investedAmount = calculateInvestedAmount(portfolio);
+  const realizedProfit = holdings.reduce(
+    (sum, holding) => sum + (holding.realizedPnL ?? 0),
+    0,
+  );
+
+  if (holdings.length === 0) {
+    return {
+      currentValuation: 0,
+      investedAmount,
+      yieldRate: 0,
+      realizedProfit,
+    };
+  }
+
+  const symbols = Array.from(
+    new Set(
+      holdings
+        .map((holding) => holding.stock.trim())
+        .filter((symbol) => symbol.length > 0),
+    ),
+  );
+
+  const priceMap = await fetchStockPrices(symbols, options);
+  const currentValuation = holdings.reduce((sum, holding) => {
+    const currentPrice = priceMap[holding.stock]?.price ?? 0;
+    return sum + holding.quantity * currentPrice;
+  }, 0);
+
+  return {
+    currentValuation,
+    investedAmount,
+    yieldRate: calculateYieldPercent(currentValuation, investedAmount),
+    realizedProfit,
+  };
+}
 
 /**
  * 포트폴리오의 현재 총 평가액을 계산합니다

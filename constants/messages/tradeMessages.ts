@@ -28,6 +28,10 @@ export interface TradeMessageSet {
     invalidPrice: string;
     invalidQuantity: string;
     noHoldings: string;
+    sellQuantityExceedsHoldings: (
+      availableQuantityText: string,
+      requestedQuantityText: string,
+    ) => string;
     zeroQuantityBudgetLocked: string;
     confirmBeforeSave: string;
     activeSectionAutoSelect: string;
@@ -90,6 +94,11 @@ export const TRADE_MESSAGES: Record<AppLang, TradeMessageSet> = {
       invalidPrice: '체결 단가는 0보다 커야 합니다.',
       invalidQuantity: '수량은 0보다 커야 합니다.',
       noHoldings: '매도 가능한 보유 종목이 없습니다.',
+      sellQuantityExceedsHoldings: (
+        availableQuantityText,
+        requestedQuantityText,
+      ) =>
+        `현재 보유 ${availableQuantityText}주를 초과한 ${requestedQuantityText}주 매도는 저장할 수 없습니다.`,
       zeroQuantityBudgetLocked:
         '현재 예산과 수수료율 기준으로 계산된 매수 수량이 0주입니다. 체결 단가를 낮추거나 수량을 직접 입력할 수 있는 모드로 전환해주세요.',
       confirmBeforeSave: '체결 내용을 확인한 뒤 저장해주세요.',
@@ -159,6 +168,11 @@ export const TRADE_MESSAGES: Record<AppLang, TradeMessageSet> = {
       invalidPrice: 'Execution price must be greater than zero.',
       invalidQuantity: 'Quantity must be greater than zero.',
       noHoldings: 'There are no holdings available to sell.',
+      sellQuantityExceedsHoldings: (
+        availableQuantityText,
+        requestedQuantityText,
+      ) =>
+        `You cannot save a sell quantity of ${requestedQuantityText} shares because only ${availableQuantityText} shares are currently held.`,
       zeroQuantityBudgetLocked:
         'The calculated buy quantity is 0 shares for the current budget and fee rate. Lower the execution price or switch to a mode with manual quantity input.',
       confirmBeforeSave: 'Review the execution details before saving.',

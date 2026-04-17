@@ -40,12 +40,37 @@ const STOCK_SNAPSHOT_FETCH_LIMIT = 2;
 const STOCK_FULL_LOAD_LIMIT = 240;
 const MIN_INDICATOR_HISTORY = 120;
 const INDICATOR_DB_READ_LIMIT = 200;
+interface StockQueryOptions {
+  signal?: AbortSignal;
+}
 
 /** 글로벌 기준 거래일을 결정하는 대표 종목 */
 const REFERENCE_SYMBOL = "QQQ";
 
-// 중복 요청 방지를 위한 inflight 요청 캐시
-const inflightStockRequests = new Map<string, Promise<StockData>>();
+function isAbortLikeError(error: unknown): boolean {
+  if (error instanceof DOMException) {
+    return error.name === 'AbortError';
+  }
+
+  if (error instanceof Error) {
+    return error.name === 'AbortError' ||
+      error.message.toLowerCase().includes('aborted');
+  }
+
+  return false;
+}
+
+function createAbortError(): Error {
+  const error = new Error('The operation was aborted.');
+  error.name = 'AbortError';
+  return error;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
+}
 
 function createStockQueryServiceError(
   error: unknown,
@@ -179,6 +204,22 @@ function mapDbRecordsToStockData(
   };
 }
 
+function mapRowsBySymbol(rows: SupabaseStockRow[]): Record<string, SupabaseStockRow[]> {
+  return rows.reduce<Record<string, SupabaseStockRow[]>>((acc, row) => {
+    const symbol = row.symbol?.trim();
+    if (!symbol) {
+      return acc;
+    }
+
+    if (acc[symbol] == null) {
+      acc[symbol] = [];
+    }
+
+    acc[symbol].push(row);
+    return acc;
+  }, {});
+}
+
 function toStockPriceRecords(
   symbol: string,
   rows: SupabaseStockRow[],
@@ -219,7 +260,11 @@ function readStoredMovingAverage(
  */
 export const fetchStockPrices = async (
   symbols: string[],
+  options: StockQueryOptions = {},
 ): Promise<Record<string, StockData>> => {
+  const { signal } = options;
+  throwIfAborted(signal);
+
   const validSymbols = Array.from(
     new Set(
       symbols
@@ -233,75 +278,83 @@ export const fetchStockPrices = async (
     return {};
   }
 
-  const results: Record<string, StockData> = {};
-  const symbolsToFetch: string[] = [];
-
-  // 1. 이미 진행 중인 요청이 있는지 확인
-  for (const symbol of validSymbols) {
-    if (inflightStockRequests.has(symbol)) {
-      continue;
-    }
-    symbolsToFetch.push(symbol);
-  }
-
-  // 2. 새로운 요청들에 대해 Promise 생성 및 등록
-  if (symbolsToFetch.length > 0) {
-    symbolsToFetch.forEach((symbol) => {
-      const fetchPromise = (async () => {
-        try {
-          await initDatabase();
-          // IndexedDB에서 최신 데이터 가져오기
-          const dbRecords = await getStockPrices(symbol, STOCK_SNAPSHOT_FETCH_LIMIT);
-
-          if (dbRecords.length > 0) {
-            return mapDbRecordsToStockData(symbol, dbRecords);
-          } else {
-            // Supabase fallback
-            const { data, error } = await supabase
-              .from("stock_prices")
-              .select("symbol, close, trade_date")
-              .eq("symbol", symbol)
-              .order("trade_date", { ascending: false })
-              .limit(STOCK_SNAPSHOT_FETCH_LIMIT);
-
-            const decodedRows = decodeSupabaseStockRows(data);
-            if (error || decodedRows == null) {
-              return createEmptyStockData(symbol);
-            }
-
-            const baseData = mapRowsToStockData(symbol, decodedRows);
-
-            const indicators = await calculateTechnicalIndicators(symbol);
-            if (indicators) {
-              baseData.rsi = indicators.rsi;
-              baseData.ma20 = indicators.ma[20] ?? DEFAULT_MA;
-              baseData.ma60 = indicators.ma[60] ?? DEFAULT_MA;
-              baseData.ma120 = indicators.ma[120] ?? DEFAULT_MA;
-            }
-            return baseData;
-          }
-        } catch (err) {
-          console.warn(`[fetchStockPrices] ${symbol} 실패:`, err);
-          return createEmptyStockData(symbol);
-        } finally {
-          // 요청 완료 후 제거
-          inflightStockRequests.delete(symbol);
-        }
-      })();
-
-      inflightStockRequests.set(symbol, fetchPromise);
-    });
-  }
-
-  // 3. 모든 요청 (신규 + 기존 진행중) 완료 대기
-  const allPromises = validSymbols.map((symbol) =>
-    inflightStockRequests.get(symbol) ?? Promise.resolve(createEmptyStockData(symbol))
+  await initDatabase();
+  const lookupResults = await Promise.all(
+    validSymbols.map(async (symbol) => {
+      throwIfAborted(signal);
+      const dbRecords = await getStockPrices(symbol, STOCK_SNAPSHOT_FETCH_LIMIT);
+      return { symbol, dbRecords };
+    }),
   );
-  const fetchedDataArray = await Promise.all(allPromises);
 
-  fetchedDataArray.forEach((data) => {
-    results[data.symbol] = data;
+  throwIfAborted(signal);
+
+  const results: Record<string, StockData> = {};
+  const dbMissSymbols = lookupResults
+    .filter((item) => item.dbRecords.length === 0)
+    .map((item) => item.symbol);
+
+  lookupResults.forEach((item) => {
+    if (item.dbRecords.length === 0) {
+      return;
+    }
+
+    results[item.symbol] = mapDbRecordsToStockData(item.symbol, item.dbRecords);
   });
+
+  if (dbMissSymbols.length === 0) {
+    return results;
+  }
+
+  let query = supabase
+    .from("stock_prices")
+    .select("symbol, close, trade_date")
+    .in("symbol", dbMissSymbols)
+    .order("symbol", { ascending: true })
+    .order("trade_date", { ascending: false });
+
+  if (signal != null) {
+    query = query.abortSignal(signal);
+  }
+
+  const { data, error } = await query;
+  throwIfAborted(signal);
+
+  if (error != null) {
+    if (isAbortLikeError(error)) {
+      throw createAbortError();
+    }
+    throw error;
+  }
+
+  const decodedRows = decodeSupabaseStockRows(data);
+  if (decodedRows == null) {
+    dbMissSymbols.forEach((symbol) => {
+      results[symbol] = createEmptyStockData(symbol);
+    });
+    return results;
+  }
+
+  const fetchedMap = mapRowsBySymbol(decodedRows);
+  await Promise.all(
+    dbMissSymbols.map(async (symbol) => {
+      throwIfAborted(signal);
+
+      const rows = fetchedMap[symbol] ?? [];
+      const baseData = mapRowsToStockData(symbol, rows);
+      const indicators = await calculateTechnicalIndicators(symbol, [20, 60, 120], options);
+      throwIfAborted(signal);
+
+      if (indicators != null) {
+        baseData.rsi = indicators.rsi;
+        baseData.ma20 = indicators.ma[20] ?? DEFAULT_MA;
+        baseData.ma60 = indicators.ma[60] ?? DEFAULT_MA;
+        baseData.ma120 = indicators.ma[120] ?? DEFAULT_MA;
+      }
+
+      results[symbol] = baseData;
+    }),
+  );
 
   return results;
 };
@@ -702,6 +755,46 @@ export const loadInitialStockData = (): Promise<void> =>
 export const loadPaidStockData = (): Promise<void> =>
   loadStockDataForSymbols(PAID_STOCKS, "loadPaidStockData");
 
+let freeStockWarmupPromise: Promise<void> | null = null;
+let paidStockWarmupPromise: Promise<void> | null = null;
+
+function ensureWarmup(
+  currentPromise: Promise<void> | null,
+  setPromise: (nextPromise: Promise<void> | null) => void,
+  loader: () => Promise<void>,
+): Promise<void> {
+  if (currentPromise != null) {
+    return currentPromise;
+  }
+
+  const nextPromise = loader().finally(() => {
+    setPromise(null);
+  });
+
+  setPromise(nextPromise);
+  return nextPromise;
+}
+
+export function ensureInitialStockDataReady(): Promise<void> {
+  return ensureWarmup(
+    freeStockWarmupPromise,
+    (nextPromise) => {
+      freeStockWarmupPromise = nextPromise;
+    },
+    loadInitialStockData,
+  );
+}
+
+export function ensurePaidStockDataReady(): Promise<void> {
+  return ensureWarmup(
+    paidStockWarmupPromise,
+    (nextPromise) => {
+      paidStockWarmupPromise = nextPromise;
+    },
+    loadPaidStockData,
+  );
+}
+
 /**
  * 지표 계산 및 IndexedDB에 저장
  * calculateRollingIndicators로 MA20/60/120, RSI를 일괄 계산
@@ -815,12 +908,16 @@ export const updateLatestStockData = async (symbol: string): Promise<void> => {
 export const calculateTechnicalIndicators = async (
   symbol: string,
   maPeriods: number[] = [20, 60, 120],
+  options: StockQueryOptions = {},
 ): Promise<{ ma: Record<number, number>; rsi: number } | null> => {
+  const { signal } = options;
   const trimmedSymbol = symbol?.trim();
   if (!trimmedSymbol) {
     console.warn("Invalid symbol provided to calculateTechnicalIndicators");
     return null;
   }
+
+  throwIfAborted(signal);
 
   try {
     // IndexedDB에서 데이터 가져오기
@@ -865,15 +962,25 @@ export const calculateTechnicalIndicators = async (
       `[calculateTechnicalIndicators] ${trimmedSymbol}: IndexedDB 데이터 부족, Supabase에서 가져오기`,
     );
 
-    const { data, error } = await supabase
+    let query = supabase
       .from("stock_prices")
       .select("close, trade_date")
       .eq("symbol", trimmedSymbol)
       .order("trade_date", { ascending: true })
       .limit(STOCK_FULL_LOAD_LIMIT);
 
+    if (signal != null) {
+      query = query.abortSignal(signal);
+    }
+
+    const { data, error } = await query;
+    throwIfAborted(signal);
+
     const decodedRows = decodeSupabaseStockRows(data);
     if (error || decodedRows == null) {
+      if (isAbortLikeError(error)) {
+        throw createAbortError();
+      }
       console.error("Error fetching price history for", symbol, error);
       return null;
     }
@@ -884,9 +991,11 @@ export const calculateTechnicalIndicators = async (
     if (records.length === 0) return null;
 
     // calculateAndSaveIndicators가 롤링 윈도우로 모든 지표를 계산 + 저장
+    throwIfAborted(signal);
     await calculateAndSaveIndicators(trimmedSymbol, records);
     const latestDate = records[records.length - 1]?.date || "";
     await updateStockMetadata(trimmedSymbol, latestDate, records.length);
+    throwIfAborted(signal);
 
     // 최종 결과 생성
     const prices = records.map((r) => r.close);
@@ -898,6 +1007,9 @@ export const calculateTechnicalIndicators = async (
 
     return { ma, rsi };
   } catch (err) {
+    if (isAbortLikeError(err)) {
+      throw createAbortError();
+    }
     console.error("Error calculating technical indicators:", err);
     return null;
   }
@@ -910,14 +1022,18 @@ export const calculateTechnicalIndicators = async (
 export const fetchStockPriceHistory = async (
   symbol: string,
   days: number = 90,
+  options: StockQueryOptions = {},
 ): Promise<
   Array<{ date: string; price: number; ma20: number; ma60: number }>
 > => {
+  const { signal } = options;
   const trimmedSymbol = symbol?.trim();
   if (!trimmedSymbol) {
     console.warn("Invalid symbol provided to fetchStockPriceHistory");
     return [];
   }
+
+  throwIfAborted(signal);
 
   try {
     // IndexedDB에서 데이터 가져오기
@@ -938,15 +1054,25 @@ export const fetchStockPriceHistory = async (
       `[fetchStockPriceHistory] ${trimmedSymbol}: IndexedDB 데이터 없음, Supabase에서 가져오기`,
     );
 
-    const { data, error } = await supabase
+    let query = supabase
       .from("stock_prices")
       .select("close, trade_date")
       .eq("symbol", trimmedSymbol)
       .order("trade_date", { ascending: false })
       .limit(days);
 
+    if (signal != null) {
+      query = query.abortSignal(signal);
+    }
+
+    const { data, error } = await query;
+    throwIfAborted(signal);
+
     const decodedRows = decodeSupabaseStockRows(data);
     if (error || decodedRows == null) {
+      if (isAbortLikeError(error)) {
+        throw createAbortError();
+      }
       console.error("Error fetching price history for chart:", symbol, error);
       return [];
     }
@@ -958,12 +1084,15 @@ export const fetchStockPriceHistory = async (
     if (records.length === 0) return [];
 
     // calculateAndSaveIndicators가 롤링 윈도우로 모든 지표를 계산 + 저장
+    throwIfAborted(signal);
     await calculateAndSaveIndicators(trimmedSymbol, records);
     const latestDate = records[records.length - 1]?.date || "";
     await updateStockMetadata(trimmedSymbol, latestDate, records.length);
+    throwIfAborted(signal);
 
     // 저장된 데이터를 다시 읽어서 계산된 지표 포함 반환
     const savedRecords = await getStockPrices(trimmedSymbol, days);
+    throwIfAborted(signal);
     return savedRecords.map((record) => ({
       date: record.date,
       price: record.close,
@@ -971,6 +1100,9 @@ export const fetchStockPriceHistory = async (
       ma60: record.ma60 || record.close,
     }));
   } catch (err) {
+    if (isAbortLikeError(err)) {
+      throw createAbortError();
+    }
     console.error("Unexpected error fetching price history:", err);
     return [];
   }

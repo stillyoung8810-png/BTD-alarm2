@@ -9,6 +9,10 @@ import { useNoStopMultiSplitExecution } from '../hooks/useNoStopMultiSplitExecut
 import type { AppLang, Portfolio, Trade } from '../types';
 import { calculateHoldings } from '../utils/portfolioCalculations';
 import { areStrictPositiveFiniteScalars } from '../utils/financialScalarGuards';
+import {
+  getHoldingQuantityForStock,
+  getSellQuantityLimitViolation,
+} from '../utils/tradeSellValidation';
 import StockLogo from './StockLogo';
 import {
   buildTradeFeePreview,
@@ -30,6 +34,7 @@ const EMPTY_STOCK_BADGE = {
   gradient: 'linear-gradient(135deg, #2563eb, #1e40af)',
   label: 'STOCK',
 };
+const MAX_SHARE_DECIMAL_PLACES = 4;
 
 interface TradeExecutionModalProps {
   lang: AppLang;
@@ -218,6 +223,12 @@ export default function TradeExecutionModal({
   const selectedStock = selectableStocks.includes(selectedStockRaw)
     ? selectedStockRaw
     : (selectableStocks[0] ?? '');
+  const availableSellQuantity = useMemo(() => {
+    if (tradeType !== 'sell' || selectedStock === '') {
+      return 0;
+    }
+    return getHoldingQuantityForStock(portfolio.trades, selectedStock);
+  }, [tradeType, selectedStock, portfolio.trades]);
 
   const price = parseTradeNumericInput(priceRaw);
   const quantity = parseTradeNumericInput(quantityRaw);
@@ -254,6 +265,25 @@ export default function TradeExecutionModal({
     validationMessage = copy.helper.invalidPrice;
   } else if (!areStrictPositiveFiniteScalars(quantity)) {
     validationMessage = copy.helper.invalidQuantity;
+  } else if (tradeType === 'sell') {
+    const sellLimitViolation = getSellQuantityLimitViolation({
+      stock: selectedStock,
+      availableQuantity: availableSellQuantity,
+      requestedQuantity: quantity,
+    });
+
+    if (sellLimitViolation != null) {
+      validationMessage = copy.helper.sellQuantityExceedsHoldings(
+        formatShareQuantity(
+          sellLimitViolation.availableQuantity,
+          MAX_SHARE_DECIMAL_PLACES,
+        ),
+        formatShareQuantity(
+          sellLimitViolation.requestedQuantity,
+          MAX_SHARE_DECIMAL_PLACES,
+        ),
+      );
+    }
   }
 
   const shouldWarnBudget = shouldWarnTradeBudgetExceeded({

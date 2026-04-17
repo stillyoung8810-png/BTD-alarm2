@@ -8,6 +8,10 @@ import { ensureValidSession } from '../services/supabase';
 import { REWARD_UNLOCK_AI_AD_GROUP_ID } from '../services/ads/adPlacements';
 import { requestRewardAd } from '../services/ads/rewardAdService';
 import { incrementUsage } from '../utils/subscriptionUtils';
+import { formatShareQuantity } from '../src/utils/tradeModalCalculations';
+import { validateSelectedTradesAgainstHoldings } from '../utils/tradeSellValidation';
+
+const MAX_SHARE_DECIMAL_PLACES = 4;
 
 interface AIImageInputModalProps {
   lang: 'ko' | 'en';
@@ -39,6 +43,7 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [limitType, setLimitType] = useState<'daily' | 'monthly' | null>(null);
   const [rewardWatched, setRewardWatched] = useState(false);
+  const isSavingRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = useCallback((file: File) => {
@@ -259,18 +264,56 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
     }
   };
 
-  const handleConfirmSave = () => {
+  const handleConfirmSave = async (): Promise<void> => {
+    if (isSavingRef.current) {
+      return;
+    }
+
     if (selectedIndexes.size === 0) {
       // 선택된 항목이 없다면 아무 것도 저장하지 않고 조용히 리턴
       onClose();
       return;
     }
-    const trades = recognizedTrades
-      .map((r, i) => ({ r, i }))
-      .filter(({ i }) => selectedIndexes.has(i))
-      .map(({ r, i }) => toTrade(r, i));
-    onSave(trades, rewardWatched);
-    onClose();
+
+    const selectedTrades = recognizedTrades
+      .map((recognizedTrade, index) => ({ recognizedTrade, index }))
+      .filter(({ index }) => selectedIndexes.has(index))
+      .map(({ recognizedTrade, index }) => toTrade(recognizedTrade, index));
+
+    const sellLimitViolation = validateSelectedTradesAgainstHoldings(
+      portfolio.trades,
+      selectedTrades,
+    );
+
+    if (sellLimitViolation != null) {
+      setErrorMessage(
+        t.aiSellQuantityExceedsHoldings(
+          sellLimitViolation.stock,
+          formatShareQuantity(
+            sellLimitViolation.availableQuantity,
+            MAX_SHARE_DECIMAL_PLACES,
+          ),
+          formatShareQuantity(
+            sellLimitViolation.requestedQuantity,
+            MAX_SHARE_DECIMAL_PLACES,
+          ),
+        ),
+      );
+      return;
+    }
+
+    isSavingRef.current = true;
+
+    try {
+      setErrorMessage(null);
+      await Promise.resolve(onSave(selectedTrades, rewardWatched));
+      onClose();
+    } catch (error: unknown) {
+      console.error('[AIImageInputModal] save failed', error);
+      setErrorMessage(t.aiTradeSaveError);
+    } finally {
+      isSavingRef.current = false;
+    }
   };
 
   const resetToUpload = () => {
@@ -355,9 +398,12 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
                 {t.pasteImageButton}
               </button>
               <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                <Sparkles size={14} className="text-amber-500 shrink-0" />
+                <Sparkles size={14} aria-hidden="true" className="text-amber-500 shrink-0" />
                 <span>{t.aiScanHint}</span>
               </div>
+              <p className="mt-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+                {t.aiUploadDelayNotice}
+              </p>
             </>
           )}
 
@@ -439,10 +485,19 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
                 ))}
               </div>
               <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                {lang === 'ko'
-                  ? '실제로 포트폴리오에 반영할 매매만 선택한 뒤, 아래에서 확인 후 저장해주세요.'
-                  : 'Select only the trades you want to apply to this portfolio, then confirm and save below.'}
+                {t.aiRecognizedTradesSaveGuide}
               </p>
+              <p className="mt-1.5 flex items-start gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400">
+                <span aria-hidden="true" className="shrink-0">💡</span>
+                <span>{t.aiSellQuantityPreventativeNotice}</span>
+              </p>
+              {errorMessage != null ? (
+                <div className="rounded-2xl border border-rose-200 dark:border-rose-500/30 bg-rose-50/50 dark:bg-rose-500/10 p-4">
+                  <p className="text-sm font-bold text-rose-700 dark:text-rose-300">
+                    {errorMessage}
+                  </p>
+                </div>
+              ) : null}
             </>
           )}
 

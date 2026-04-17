@@ -35,7 +35,7 @@ export const BACKTEST_MESSAGES: Record<AppLang, BacktestMessageSet> = {
     backtestUnavailableTitle: '백테스트 실행 불가',
     stockSelectionHeader: '종목 선택',
     lowLocBudgetRatioLabel: '저가(평단가) LOC 예산 비율 (%)',
-    highLocPremiumLabel: '고가 LOC 프리미엄 (%)',
+    highLocPremiumLabel: '고가 LOC 프리미엄 (%)[체결 보장용]',
     highLocPremiumHint:
       '현재가 대비 +X% 가격에 LOC 주문을 겁니다. (매일 체결 보장용)',
     takeProfitLabel: '익절 목표 수익률 (%)',
@@ -60,7 +60,7 @@ export const BACKTEST_MESSAGES: Record<AppLang, BacktestMessageSet> = {
     backtestUnavailableTitle: 'Backtest could not run',
     stockSelectionHeader: 'Select Stock',
     lowLocBudgetRatioLabel: 'Low LOC Budget Ratio (%)',
-    highLocPremiumLabel: 'High LOC Premium (%)',
+    highLocPremiumLabel: 'High LOC Premium (%) [guaranteed fill]',
     highLocPremiumHint:
       'Places LOC at current price +X% (for daily fill).',
     takeProfitLabel: 'Take Profit (%)',

@@ -6,6 +6,10 @@ import { getLatestLocalTradeDateFromDb } from '../services/stockService';
 import type { AppLang, Portfolio, Trade } from '../types';
 import { calculateHoldings } from '../utils/portfolioCalculations';
 import { areStrictPositiveFiniteScalars } from '../utils/financialScalarGuards';
+import {
+  getHoldingQuantityForStock,
+  getSellQuantityLimitViolation,
+} from '../utils/tradeSellValidation';
 import StockLogo from './StockLogo';
 import {
   buildTradeFeePreview,
@@ -24,6 +28,7 @@ const EMPTY_STOCK_BADGE = {
   gradient: 'linear-gradient(135deg, #2563eb, #1e40af)',
   label: 'STOCK',
 };
+const MAX_SHARE_DECIMAL_PLACES = 4;
 
 interface QuickInputModalProps {
   lang: AppLang;
@@ -107,12 +112,6 @@ function getSellableStocks(portfolio: Portfolio): string[] {
     .map((holding) => holding.stock);
 }
 
-function getHoldingQuantity(portfolio: Portfolio, targetStock: string): number {
-  const holdings = calculateHoldings(portfolio);
-  const holding = holdings.find((entry) => entry.stock === targetStock);
-  return holding?.quantity ?? 0;
-}
-
 export default function QuickInputModal({
   lang,
   portfolio,
@@ -148,11 +147,16 @@ export default function QuickInputModal({
     selectedStock = sellableStocks[0] ?? '';
   }
 
+  const availableSellQuantity = useMemo(() => {
+    if (tradeType !== 'sell' || selectedStock === '') {
+      return 0;
+    }
+    return getHoldingQuantityForStock(portfolio.trades, selectedStock);
+  }, [tradeType, selectedStock, portfolio.trades]);
+
   const price = parseTradeNumericInput(priceRaw);
   const manualQuantity = parseTradeNumericInput(quantityRaw);
-  const mocQuantity = calculateMocSellQuantity(
-    getHoldingQuantity(portfolio, selectedStock),
-  );
+  const mocQuantity = calculateMocSellQuantity(availableSellQuantity);
   const autoBuyQuantity =
     tradeType === 'buy' && !isVrStrategy
       ? calculateBudgetBuyQuantity({
@@ -217,6 +221,25 @@ export default function QuickInputModal({
     validationMessage = copy.helper.zeroQuantityBudgetLocked;
   } else if (!areStrictPositiveFiniteScalars(resolvedQuantity)) {
     validationMessage = copy.helper.invalidQuantity;
+  } else if (tradeType === 'sell') {
+    const sellLimitViolation = getSellQuantityLimitViolation({
+      stock: selectedStock,
+      availableQuantity: availableSellQuantity,
+      requestedQuantity: resolvedQuantity,
+    });
+
+    if (sellLimitViolation != null) {
+      validationMessage = copy.helper.sellQuantityExceedsHoldings(
+        formatShareQuantity(
+          sellLimitViolation.availableQuantity,
+          MAX_SHARE_DECIMAL_PLACES,
+        ),
+        formatShareQuantity(
+          sellLimitViolation.requestedQuantity,
+          MAX_SHARE_DECIMAL_PLACES,
+        ),
+      );
+    }
   }
 
   const shouldWarnBudget = shouldWarnTradeBudgetExceeded({

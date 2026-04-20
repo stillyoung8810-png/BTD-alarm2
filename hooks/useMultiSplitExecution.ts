@@ -202,6 +202,7 @@ export function useMultiSplitExecution(
 
     let nextMultiSplitExecutionData: MultiSplitExecutionResult | null = null;
     if (
+      !(isQuarterMode ?? false) &&
       (multiSplitPhase === 'first' || multiSplitPhase === 'second') &&
       basePrice > 0
     ) {

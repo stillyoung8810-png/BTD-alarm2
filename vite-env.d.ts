@@ -34,6 +34,8 @@ declare global {
     readonly VITE_BACKTEST_NO_STOP_MULTI_URL?: string;
 
     readonly VITE_TOSS_INTERSTITIAL_USE_TEST?: BooleanEnvFlag;
+    readonly VITE_TOSS_MARKET_BANNER_USE_TEST?: BooleanEnvFlag;
+    readonly VITE_TOSS_HISTORY_BANNER_USE_TEST?: BooleanEnvFlag;
   }
 
   interface ImportMeta {

@@ -100,6 +100,7 @@ const TabContentComponent: React.FC<TabContentProps> = (props) => {
 
   const copy = APP_SHELL_MESSAGES[lang];
   const paidTier = resolvePaidTier(currentTier);
+  const shouldShowAds = paidTier === 'free';
 
   const handlePricingUpgrade = useCallback(
     (planId: 'pro' | 'premium') => {
@@ -166,7 +167,7 @@ const TabContentComponent: React.FC<TabContentProps> = (props) => {
             lang={lang}
             portfolios={portfolios}
             canAccessPaidStocks={canAccessPaidStocks}
-            currentTier={paidTier}
+            shouldShowAds={shouldShowAds}
           />
         </React.Suspense>
       );
@@ -201,6 +202,7 @@ const TabContentComponent: React.FC<TabContentProps> = (props) => {
           <History
             lang={lang}
             portfolios={closedPortfolios}
+            shouldShowAds={shouldShowAds}
             onOpenDetails={onOpenDetails}
             onDeleteHistory={onDeleteHistory}
             onClearHistory={onClearHistory}

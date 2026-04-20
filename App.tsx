@@ -83,7 +83,7 @@ import AIImageInputModal from './components/AIImageInputModal';
 import { usePortfolioUiCommands } from './src/hooks/usePortfolioUiCommands';
 
 const BOOTSTRAP_AD_USER_TIER: UserTier = 'free';
-const INTERSTITIAL_GLOBAL_COOLDOWN_MS = 60_000;
+const INTERSTITIAL_GLOBAL_COOLDOWN_MS = 240_000;
 const SILENT_AD_AUDIO_MANAGER: AppAudioManager = {
   pauseAllSounds: () => {},
   resumeAllSounds: () => {},

@@ -32,6 +32,7 @@ import {
   type MarketMessageSet,
 } from '../constants/messages/marketMessages';
 import { showErrorToast } from './tds-adapter/showErrorToast';
+import { getResolvedMarketBannerAdGroupId } from '../services/ads/adPlacements';
 
 // 🚀 1. 스마트 배너 컴포넌트 임포트
 import { TossInlineBanner } from './TossInlineBanner';
@@ -383,14 +384,14 @@ interface MarketsProps {
   lang: 'ko' | 'en';
   portfolios?: Portfolio[];
   canAccessPaidStocks?: boolean;
-  currentTier?: 'free' | 'pro' | 'premium'; // 티어 Prop 추가
+  shouldShowAds: boolean;
 }
 
 const Markets: React.FC<MarketsProps> = ({
   lang,
   portfolios = [],
   canAccessPaidStocks = false,
-  currentTier = 'free',
+  shouldShowAds,
 }) => {
   const [selectedStock, setSelectedStock] = useState('QQQ');
   const [stockData, setStockData] = useState<Record<string, StockData>>({});
@@ -636,6 +637,7 @@ const Markets: React.FC<MarketsProps> = ({
   const isPositiveChange = changePercent >= 0;
   const changeColor = isPositiveChange ? 'text-emerald-500' : 'text-rose-500';
   const changeBg = isPositiveChange ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-rose-500/10 border-rose-500/20';
+  const marketBannerAdGroupId = getResolvedMarketBannerAdGroupId();
 
   return (
     <div className="space-y-12 animate-in fade-in duration-500">
@@ -747,8 +749,12 @@ const Markets: React.FC<MarketsProps> = ({
         </div>
       </section>
 
-      {/* 🚀 2. 구형 광고 부착 로직(useEffect)은 삭제하고, 완벽한 스마트 배너 1줄로 교체! */}
-      <TossInlineBanner currentTier={currentTier} isInTossApp={isInTossApp} variant="card" />
+      <TossInlineBanner
+        adGroupId={marketBannerAdGroupId}
+        shouldShowAd={shouldShowAds}
+        isInTossApp={isInTossApp}
+        variant="card"
+      />
 
       <section className="space-y-6" aria-label={marketCopy.sectionTitle}>
         <div className="flex items-center justify-between px-2">

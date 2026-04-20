@@ -14,14 +14,19 @@ import {
   buildClosedStrategySettlementSummary,
   calculateAggregateHistoryRoi,
 } from '../utils/portfolioSettlement';
+import { getResolvedHistoryBannerAdGroupId } from '../services/ads/adPlacements';
 import { TdsConfirmDialog } from './tds-adapter/TdsConfirmDialog';
 import { useAsyncTdsConfirm } from './tds-adapter/useAsyncTdsConfirm';
 import { showErrorToast } from './tds-adapter/showErrorToast';
 import HistoryHeaderActions from './HistoryHeaderActions';
+import { TossInlineBanner } from './TossInlineBanner';
+
+const HISTORY_LIST_BANNER_CONTAINER_CLASS_NAME = 'h-[96px] min-h-[96px]';
 
 interface HistoryProps {
   lang: AppLang;
   portfolios: Portfolio[];
+  shouldShowAds: boolean;
   onOpenDetails: (id: string) => void;
   onDeleteHistory?: (portfolioId: string) => Promise<void> | void;
   onClearHistory?: () => Promise<void> | void;
@@ -269,6 +274,7 @@ function StatCard({ label, value, color }: StatCardProps): React.ReactElement {
 export default function History({
   lang,
   portfolios,
+  shouldShowAds,
   onOpenDetails,
   onDeleteHistory,
   onClearHistory,
@@ -276,6 +282,7 @@ export default function History({
   const copy = getHistoryMessages(lang);
   const { isInTossApp } = useTossApp();
   const historyDialog = useAsyncTdsConfirm(lang);
+  const historyBannerAdGroupId = getResolvedHistoryBannerAdGroupId();
   const labels = TDS_DIALOG_MESSAGES[lang]?.actions;
   const deleteLabel = TDS_DIALOG_MESSAGES[lang]?.history?.deleteRecordButton ?? '';
 
@@ -377,6 +384,14 @@ export default function History({
           color="text-slate-500"
         />
       </div>
+
+      <TossInlineBanner
+        adGroupId={historyBannerAdGroupId}
+        shouldShowAd={shouldShowAds}
+        isInTossApp={isInTossApp}
+        variant="card"
+        containerClassName={HISTORY_LIST_BANNER_CONTAINER_CLASS_NAME}
+      />
 
       <div className="space-y-4">
         {recordVms.length === 0 ? (

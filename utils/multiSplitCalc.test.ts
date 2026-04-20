@@ -17,7 +17,11 @@ import {
   calcQuarterStopLossOrders,
   calcMultiSplitOrders,
   LOC_SELL_RATIO,
+  LOC_PRICE_OFFSET,
+  MIN_PRICE,
+  QUARTER_LOC_PRICE_FACTOR,
   QUARTER_SPLIT_COUNT,
+  type MultiSplitParams,
   type TradeInput,
 } from './multiSplitCalc';
 
@@ -33,6 +37,16 @@ function makeTrade(overrides: Partial<TradeInput> & { type: 'buy' | 'sell'; stoc
     fee: 0,
     isMOC: false,
     ...overrides,
+  };
+}
+
+function makeMultiSplitParams(
+  overrides: Partial<MultiSplitParams> = {},
+): MultiSplitParams {
+  return {
+    targetStock: overrides.targetStock ?? 'AAPL',
+    targetReturnRate: overrides.targetReturnRate ?? 10,
+    totalSplitCount: overrides.totalSplitCount ?? 40,
   };
 }
 
@@ -359,6 +373,27 @@ describe('calcNewOneTimeAmount', () => {
     const result = calcNewOneTimeAmount(trades, 250, 40, '2026-01-01');
     expect(result).toBe(940);
   });
+
+  it('복잡한 매수/매도(MOC 포함) 히스토리에서도 C_current / 10 몫을 센트 단위로 정확히 역산한다', () => {
+    // Why: 쿼터모드 재진입 시 자본금 역산이 1센트라도 틀리면 이후 10개 분할 주문 전체 수량이 연쇄적으로 흔들립니다.
+    const trades: TradeInput[] = [
+      makeTrade({ type: 'buy', stock: 'AAPL', date: '2026-01-01', price: 100, quantity: 10, fee: 1 }),
+      makeTrade({ type: 'buy', stock: 'AAPL', date: '2026-01-02', price: 120, quantity: 5, fee: 0.5 }),
+      makeTrade({ type: 'sell', stock: 'AAPL', date: '2026-01-05', price: 130, quantity: 4, fee: 0.52 }),
+      makeTrade({ type: 'sell', stock: 'AAPL', date: '2026-01-06', price: 110, quantity: 3, fee: 0.4 }),
+      makeTrade({ type: 'sell', stock: 'AAPL', date: '2026-01-10', price: 140, quantity: 2, fee: 0.28, isMOC: true }),
+    ];
+
+    const result = calcNewOneTimeAmount(
+      trades,
+      250,
+      40,
+      '2026-01-10',
+    );
+
+    expect(result).toBe(952.73);
+    expect(result * QUARTER_SPLIT_COUNT).toBe(9527.3);
+  });
 });
 
 // ===========================================================================
@@ -369,7 +404,7 @@ describe('calcQuarterStopLossOrders', () => {
   const baseParams = {
     trades: [] as TradeInput[],
     dailyBuyAmount: 250,
-    multiSplit: { totalSplitCount: 40, targetReturnRate: 10, targetStock: 'AAPL' },
+    multiSplit: makeMultiSplitParams(),
     feeRate: 0.25,
     recentTradingDays: ['2026-01-10', '2026-01-09', '2026-01-08'],
     avgPrice: 100,
@@ -408,6 +443,7 @@ describe('calcQuarterStopLossOrders', () => {
   });
 
   it('MOC 기록 있음 → hasMOC=true + 주문 데이터', () => {
+    // Why: 쿼터모드 재진입은 MOC 체결 직후 새 자본금으로 LOC/지정가를 다시 깔아야 하므로 주문 세트가 전부 살아 있어야 합니다.
     const trades: TradeInput[] = [
       makeTrade({ type: 'buy', stock: 'AAPL', date: '2026-01-01', price: 100, quantity: 40, fee: 0 }),
       makeTrade({ type: 'sell', stock: 'AAPL', date: '2026-01-10', price: 90, quantity: 10, fee: 0, isMOC: true }),
@@ -421,6 +457,33 @@ describe('calcQuarterStopLossOrders', () => {
     expect(result).not.toBeNull();
     expect(result!.hasMOC).toBe(true);
     expect(result!.newOneTimeAmount).toBeGreaterThan(0);
+  });
+
+  it('극단적으로 낮은 주가에서도 쿼터 LOC 매수가가 MIN_PRICE 아래로 내려가지 않는다', () => {
+    // Why: 페니주에서 음수 호가가 생성되면 브로커가 거부하거나 서버/클라이언트 표시가 붕괴합니다.
+    const trades: TradeInput[] = [
+      makeTrade({ type: 'buy', stock: 'AAPL', date: '2026-01-01', price: 0.01, quantity: 100, fee: 0 }),
+      makeTrade({ type: 'sell', stock: 'AAPL', date: '2026-01-10', price: 0.01, quantity: 25, fee: 0, isMOC: true }),
+    ];
+
+    const result = calcQuarterStopLossOrders({
+      ...baseParams,
+      trades,
+      avgPrice: 0.01,
+      currentQuantity: 75,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.hasMOC).toBe(true);
+    expect(result?.locBuy?.price).toBe(MIN_PRICE);
+    expect(
+      result?.locBuy?.price,
+    ).toBe(
+      Math.max(
+        MIN_PRICE,
+        0.01 * QUARTER_LOC_PRICE_FACTOR - LOC_PRICE_OFFSET,
+      ),
+    );
   });
 });
 
@@ -483,5 +546,54 @@ describe('calcMultiSplitOrders', () => {
     const locQty = result.locSell?.quantity ?? 0;
     const limitQty = result.limitSell?.quantity ?? 0;
     expect(locQty + limitQty).toBe(99);
+  });
+
+  it('feeRate는 퍼센트 값으로 해석되어 /100 반영 후 수수료 포함 예산으로 정확히 매수 수량을 산출한다', () => {
+    // Why: 0.25를 25%로 오해하면 전반/후반 매수 수량이 체계적으로 과소 계산되어 전략 전체가 보수적으로 붕괴합니다.
+    const basePrice = 100;
+    const A = 10;
+    const a = 40;
+    const T = 20;
+    const feeRate = 0.25;
+    const locFactor = 1 + (A * (1 - (2 * T) / a)) / 100;
+    const locSellBasePrice = Math.max(MIN_PRICE, basePrice * locFactor);
+    const locBuyBasePrice = Math.max(MIN_PRICE, locSellBasePrice - LOC_PRICE_OFFSET);
+    const oneTimeAmount = locBuyBasePrice * 10 * (1 + feeRate / 100);
+
+    const result = calcMultiSplitOrders({
+      phase: 'second',
+      A,
+      a,
+      T,
+      basePrice,
+      currentQuantity: 20,
+      oneTimeAmount,
+      feeRate,
+    });
+
+    expect(result.locBuy2).toEqual({
+      price: 99.99,
+      quantity: 10,
+    });
+  });
+
+  it('전반전 0.5회분으로는 1주 미만이지만 1회분으로는 1주 이상 가능하면 locBuy1Qty를 최소 1주로 보정한다', () => {
+    // Why: 첫 LOC 매수 수량이 0으로 사라지면 사용자는 전반전 2분할 전략을 보고도 실제로는 한 번만 매수하게 됩니다.
+    const result = calcMultiSplitOrders({
+      phase: 'first',
+      A: 10,
+      a: 40,
+      T: 5,
+      basePrice: 100,
+      currentQuantity: 10,
+      oneTimeAmount: 160,
+      feeRate: 0,
+    });
+
+    expect(result.locBuy1).toEqual({
+      price: 100,
+      quantity: 1,
+    });
+    expect(result.locBuy2).toBeDefined();
   });
 });

@@ -581,6 +581,23 @@ function renderMultiSplitExecutionSummary(
     multiSplitInsufficientAmount,
   } = input;
   const ex = copy.execution;
+  const zeroSharesLabel = `0${ex.sharesUnit}`;
+
+  const renderFixedSellLine = (
+    label: string,
+    order: { price: number; quantity: number } | null | undefined,
+  ): React.ReactNode => {
+    const hasPositiveQuantity = order != null && order.quantity > 0;
+
+    return (
+      <div>
+        <span className="font-black">{label}:</span>{' '}
+        {hasPositiveQuantity
+          ? `${formatUsdValue(order.price)} / ${order.quantity}`
+          : zeroSharesLabel}
+      </div>
+    );
+  };
 
   if (multiSplitInsufficientAmount) {
     return (
@@ -674,28 +691,8 @@ function renderMultiSplitExecutionSummary(
           {multiSplitExecutionData.locBuy2.quantity}
         </div>
       ) : null}
-      {multiSplitExecutionData.locSell != null ? (
-        <div>
-          <span className="font-black">{ex.locSell}:</span>{' '}
-          {formatUsdValue(multiSplitExecutionData.locSell.price)} /{' '}
-          {multiSplitExecutionData.locSell.quantity}
-        </div>
-      ) : (
-        <div>
-          {ex.locSell}: {ex.noHoldings}
-        </div>
-      )}
-      {multiSplitExecutionData.limitSell != null ? (
-        <div>
-          <span className="font-black">{ex.limitSell}:</span>{' '}
-          {formatUsdValue(multiSplitExecutionData.limitSell.price)} /{' '}
-          {multiSplitExecutionData.limitSell.quantity}
-        </div>
-      ) : (
-        <div>
-          {ex.limitSell}: {ex.noHoldings}
-        </div>
-      )}
+      {renderFixedSellLine(ex.locSell, multiSplitExecutionData.locSell)}
+      {renderFixedSellLine(ex.limitSell, multiSplitExecutionData.limitSell)}
     </div>
   );
 }
@@ -777,7 +774,7 @@ function buildPortfolioExecutionSummary(
   }
 }
 
-function DashboardPortfolioCardHost({
+export function DashboardPortfolioCardHost({
   lang,
   portfolio,
   onClosePortfolio,

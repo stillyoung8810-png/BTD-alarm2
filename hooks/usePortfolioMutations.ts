@@ -149,7 +149,7 @@ function normalizeTradeInput(trade: Trade): Trade {
   };
 }
 
-function buildTradeDraft(
+export function buildTradeDraft(
   portfolio: Portfolio,
   trade: Trade,
 ): TradeDraftResult {
@@ -162,7 +162,9 @@ function buildTradeDraft(
 
   if (isVrStrategy && vrParams != null) {
     const currentPool = nextVrSnapshot?.pool ?? vrParams.initialCapital;
-    const feeRate = Number(portfolio.feeRate ?? vrParams.feeRate);
+    // VR Pool 델타는 소수율(예: 0.0025)을 요구한다. 루트 portfolio.feeRate는 UI 퍼센트(예: 0.25)로 저장되므로
+    // strategy.vrBand.feeRate만 사용한다(전략 생성 시 toDecimalRate로 이미 정규화됨).
+    const feeRate = Number(vrParams.feeRate);
     const delta = calculatePoolDelta(
       normalizedTrade.type,
       normalizedTrade.price,

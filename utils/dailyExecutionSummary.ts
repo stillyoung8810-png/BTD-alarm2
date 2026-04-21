@@ -171,10 +171,23 @@ export interface NoStopMultiSplitExecutionData {
   takeProfit?: { price: number; quantity: number };
 }
 
-function linePriceQty(label: string, price: number, qty: number, unit: string): string {
-  if (typeof price !== 'number' || typeof qty !== 'number' || Number.isNaN(price) || Number.isNaN(qty)) return '';
+function linePriceQty(
+  label: string,
+  price: number,
+  qty: number,
+  unit: string,
+  options: { allowZeroQuantity?: boolean } = {},
+): string {
+  if (
+    typeof price !== 'number' ||
+    typeof qty !== 'number' ||
+    Number.isNaN(price) ||
+    Number.isNaN(qty)
+  ) {
+    return '';
+  }
   const q = Math.round(qty);
-  if (q <= 0) return '';
+  if (q <= 0 && options.allowZeroQuantity !== true) return '';
   return `- ${label}: ${price.toFixed(2)} / ${q}${unit}`;
 }
 
@@ -425,10 +438,26 @@ export function formatPortfolioDailyExecutionBlock(
         lines.push(linePriceQty(s.locBuy2, quarterStopLossData.locBuy.price, quarterStopLossData.locBuy.quantity, unit));
       }
       if (quarterStopLossData.locSell) {
-        lines.push(linePriceQty(s.locSell, quarterStopLossData.locSell.price, quarterStopLossData.locSell.quantity, unit));
+        lines.push(
+          linePriceQty(
+            s.locSell,
+            quarterStopLossData.locSell.price,
+            quarterStopLossData.locSell.quantity,
+            unit,
+            { allowZeroQuantity: true },
+          ),
+        );
       }
       if (quarterStopLossData.limitSell) {
-        lines.push(linePriceQty(s.limitSell, quarterStopLossData.limitSell.price, quarterStopLossData.limitSell.quantity, unit));
+        lines.push(
+          linePriceQty(
+            s.limitSell,
+            quarterStopLossData.limitSell.price,
+            quarterStopLossData.limitSell.quantity,
+            unit,
+            { allowZeroQuantity: true },
+          ),
+        );
       }
     }
     return lines.join('\n');
@@ -443,10 +472,26 @@ export function formatPortfolioDailyExecutionBlock(
       lines.push(linePriceQty(s.locBuy2, multiSplitExecutionData.locBuy2.price, multiSplitExecutionData.locBuy2.quantity, unit));
     }
     if (multiSplitExecutionData.locSell) {
-      lines.push(linePriceQty(s.locSell, multiSplitExecutionData.locSell.price, multiSplitExecutionData.locSell.quantity, unit));
+      lines.push(
+        linePriceQty(
+          s.locSell,
+          multiSplitExecutionData.locSell.price,
+          multiSplitExecutionData.locSell.quantity,
+          unit,
+          { allowZeroQuantity: true },
+        ),
+      );
     }
     if (multiSplitExecutionData.limitSell) {
-      lines.push(linePriceQty(s.limitSell, multiSplitExecutionData.limitSell.price, multiSplitExecutionData.limitSell.quantity, unit));
+      lines.push(
+        linePriceQty(
+          s.limitSell,
+          multiSplitExecutionData.limitSell.price,
+          multiSplitExecutionData.limitSell.quantity,
+          unit,
+          { allowZeroQuantity: true },
+        ),
+      );
     }
     if (lines.length <= 3) lines.push(`- ${s.noOrder}`);
     return lines.join('\n');

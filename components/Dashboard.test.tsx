@@ -223,8 +223,8 @@ describe('Dashboard multi-split execution rendering', () => {
           phase: 'first',
           locBuy1: { price: 100, quantity: 1 },
           locBuy2: { price: 95, quantity: 1 },
-          locSell: null,
-          limitSell: null,
+          locSell: { price: 105, quantity: 0 },
+          limitSell: { price: 110, quantity: 0 },
         },
       }),
       {
@@ -258,8 +258,7 @@ describe('Dashboard multi-split execution rendering', () => {
         exact: false,
       }),
     ).toBeInTheDocument();
-    expect(
-      within(executionCard).getAllByText(zeroSharesLabel),
-    ).toHaveLength(2);
+    expect(within(executionCard).getByText('$105.00 / 0주')).toBeInTheDocument();
+    expect(within(executionCard).getByText('$110.00 / 0주')).toBeInTheDocument();
   });
 });

@@ -8,6 +8,12 @@ import {
   isStrictPositiveInteger,
 } from './financialScalarGuards';
 import { roundMoney } from './financialMath';
+export {
+  calculateMaAlignmentNotMet,
+  calculateMaRsiNotMet,
+  collectMaPartialProfitLine,
+  DEFAULT_MA_RSI_FALLBACK,
+} from '../supabase/functions/_shared/maSummaryShared.ts';
 
 /** Trade.metadata.pool_after 접근 표준화. VR 체결 직후 Pool 기록용. 유효하지 않으면 undefined. */
 export function getTradePoolAfter(trade: Trade): number | undefined {

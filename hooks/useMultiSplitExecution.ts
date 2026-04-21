@@ -3,10 +3,8 @@ import { showErrorToast } from '../components/tds-adapter/showErrorToast';
 import { APP_SHELL_MESSAGES } from '../constants/messages/appShellMessages';
 import type { AppLang, Portfolio } from '../types';
 import { areStrictPositiveFiniteScalars } from '../utils/financialScalarGuards';
-import { calculateHoldingsFromTrades } from '../utils/portfolioCalculations';
 import {
-  calcQuarterStopLossOrders,
-  calcMultiSplitOrders,
+  calculateMultiSplitStrategyState,
   calcT,
   getPhase,
   RECENT_TRADING_DAYS_COUNT,
@@ -20,7 +18,6 @@ import {
 } from '../services/stockService';
 import {
   DEFAULT_PORTFOLIO_FEE_RATE,
-  EMPTY_TRADES,
   type MultiSplitNetworkSnapshot,
   toTradeInputsForMultiSplit,
 } from './multiSplitExecutionShared';
@@ -62,15 +59,6 @@ export function useMultiSplitExecution(
     () => toTradeInputsForMultiSplit(trades),
     [trades],
   );
-
-  const { avgPrice, currentQuantity } = useMemo(() => {
-    const holdings = calculateHoldingsFromTrades(trades ?? EMPTY_TRADES);
-    const targetHolding = holdings.find((holding) => holding.stock === targetStock);
-    return {
-      avgPrice: targetHolding?.avgPrice ?? 0,
-      currentQuantity: targetHolding?.quantity ?? 0,
-    };
-  }, [trades, targetStock]);
 
   const requestIdRef = useRef(0);
   const networkErrorMsg = APP_SHELL_MESSAGES[lang].dailySummaryNetworkError;
@@ -179,54 +167,27 @@ export function useMultiSplitExecution(
       };
     }
 
-    const { currentPrice, recentTradingDays } = networkSnapshot;
-    const basePrice = avgPrice > 0 ? avgPrice : currentPrice;
     const safeStrategyObj: MultiSplitParams = {
       targetStock,
       targetReturnRate,
       totalSplitCount,
     };
-
-    let nextQuarterStopLossData: QuarterStopLossResult | null = null;
-    if ((isQuarterMode ?? false) && recentTradingDays.length > 0) {
-      nextQuarterStopLossData = calcQuarterStopLossOrders({
-        trades: tradeInputs,
-        dailyBuyAmount,
-        multiSplit: safeStrategyObj,
-        feeRate: feeRate ?? DEFAULT_PORTFOLIO_FEE_RATE,
-        recentTradingDays,
-        avgPrice,
-        currentQuantity,
-      });
-    }
-
-    let nextMultiSplitExecutionData: MultiSplitExecutionResult | null = null;
-    if (
-      !(isQuarterMode ?? false) &&
-      (multiSplitPhase === 'first' || multiSplitPhase === 'second') &&
-      basePrice > 0
-    ) {
-      nextMultiSplitExecutionData = calcMultiSplitOrders({
-        phase: multiSplitPhase,
-        A: targetReturnRate,
-        a: totalSplitCount,
-        T: currentRound,
-        basePrice,
-        currentQuantity,
-        oneTimeAmount: dailyBuyAmount,
-        feeRate: feeRate ?? DEFAULT_PORTFOLIO_FEE_RATE,
-      });
-    }
+    const sharedState = calculateMultiSplitStrategyState({
+      trades: tradeInputs,
+      dailyBuyAmount,
+      multiSplit: safeStrategyObj,
+      feeRate: feeRate ?? DEFAULT_PORTFOLIO_FEE_RATE,
+      isQuarterMode: isQuarterMode ?? false,
+      currentPrice: networkSnapshot.currentPrice,
+      recentTradingDays: networkSnapshot.recentTradingDays,
+    });
 
     return {
-      quarterStopLossData: nextQuarterStopLossData,
-      multiSplitExecutionData: nextMultiSplitExecutionData,
-      multiSplitInsufficientAmount: dailyBuyAmount < currentPrice,
+      quarterStopLossData: sharedState.quarterStopLossData,
+      multiSplitExecutionData: sharedState.multiSplitExecutionData,
+      multiSplitInsufficientAmount: sharedState.multiSplitInsufficientAmount,
     };
   }, [
-    avgPrice,
-    currentQuantity,
-    currentRound,
     dailyBuyAmount,
     feeRate,
     isDailyBuyAmountValid,

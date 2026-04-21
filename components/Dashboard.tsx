@@ -46,6 +46,11 @@ import {
   getVrDailyExecutionCycleHeaderLabel,
   joinDailyExecutionBlocks,
 } from '../utils/dailyExecutionSummary';
+import {
+  calculateMaAlignmentNotMet,
+  calculateMaRsiNotMet,
+  collectMaPartialProfitLine as collectSharedMaPartialProfitLine,
+} from '../supabase/functions/_shared/maSummaryShared.ts';
 import { useMultiSplitExecution } from '../hooks/useMultiSplitExecution';
 import { useNoStopMultiSplitExecution } from '../hooks/useNoStopMultiSplitExecution';
 import { useVrOrders } from '../hooks/useVrOrders';
@@ -415,36 +420,7 @@ function collectPartialProfitLine(input: {
   holdings: ReturnType<typeof calculateHoldings>;
   prices: Awaited<ReturnType<typeof fetchStockPrices>>;
 }): MaPartialProfitLine | null {
-  const { section, config, holdings, prices } = input;
-
-  if (
-    config?.takePartialProfit !== true ||
-    config.partialProfitTargetPct == null ||
-    config.partialProfitTargetPct <= 0
-  ) {
-    return null;
-  }
-
-  const holding = holdings.find((item) => item.stock === config.stock);
-  if (holding == null || holding.quantity <= 0 || holding.avgPrice <= 0) {
-    return null;
-  }
-
-  const currentPrice = prices[config.stock]?.price ?? 0;
-  if (currentPrice <= 0) {
-    return null;
-  }
-
-  const yieldPct = ((currentPrice - holding.avgPrice) / holding.avgPrice) * 100;
-  if (yieldPct < config.partialProfitTargetPct) {
-    return null;
-  }
-
-  return {
-    section,
-    stock: config.stock,
-    quantity: holding.quantity,
-  };
+  return collectSharedMaPartialProfitLine(input);
 }
 
 function renderMaExecutionSummary(
@@ -587,14 +563,16 @@ function renderMultiSplitExecutionSummary(
     label: string,
     order: { price: number; quantity: number } | null | undefined,
   ): React.ReactNode => {
-    const hasPositiveQuantity = order != null && order.quantity > 0;
+    if (order == null) {
+      return null;
+    }
 
     return (
       <div>
         <span className="font-black">{label}:</span>{' '}
-        {hasPositiveQuantity
-          ? `${formatUsdValue(order.price)} / ${order.quantity}`
-          : zeroSharesLabel}
+        {`${formatUsdValue(order.price)} / ${
+          order.quantity > 0 ? order.quantity : zeroSharesLabel
+        }`}
       </div>
     );
   };
@@ -934,24 +912,21 @@ export function DashboardPortfolioCardHost({
         const ma3 = portfolio.strategy.ma3;
         const baseStock = ma0.stock;
 
-        if (ma0.rsiEnabled) {
-          const threshold =
-            nextSection === 1
-              ? ma1.rsiThreshold
-              : nextSection === 2
-              ? ma2.rsiThreshold
-              : ma3.rsiThreshold;
-          const currentRsi = prices[baseStock]?.rsi ?? 50;
-          setMaRsiNotMet(threshold != null && currentRsi > threshold);
-        } else {
-          setMaRsiNotMet(false);
-        }
+        setMaRsiNotMet(
+          calculateMaRsiNotMet({
+            strategy: portfolio.strategy,
+            section: nextSection,
+            currentRsi: prices[baseStock]?.rsi,
+          }),
+        );
 
-        if (ma0.alignmentEnabled) {
-          setMaAlignmentNotMet(maA <= maB);
-        } else {
-          setMaAlignmentNotMet(false);
-        }
+        setMaAlignmentNotMet(
+          calculateMaAlignmentNotMet({
+            isAlignmentEnabled: ma0.alignmentEnabled,
+            maA,
+            maB,
+          }),
+        );
 
         const holdings = calculateHoldings(portfolio);
         const nextLines = [

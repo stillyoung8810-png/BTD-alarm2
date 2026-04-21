@@ -4,11 +4,10 @@ import { APP_SHELL_MESSAGES } from '../constants/messages/appShellMessages';
 import type { AppLang, Portfolio } from '../types';
 import { fetchLatestStockSnapshot } from '../services/stockService';
 import {
-  calcNoStopCurrentRound,
-  calcNoStopMultiSplitOrders,
+  calculateNoStopMultiSplitState,
   type NoStopMultiSplitExecutionData,
   type NoStopMultiSplitParams,
-} from '../utils/noStopMultiSplitCalc';
+} from '../supabase/functions/_shared/noStopMultiSplitShared.ts';
 import { areStrictPositiveFiniteScalars } from '../utils/financialScalarGuards';
 import {
   DEFAULT_PORTFOLIO_FEE_RATE,
@@ -38,10 +37,6 @@ export function useNoStopMultiSplitExecution(
     () => toTradeInputsForMultiSplit(portfolio.trades),
     [portfolio.trades],
   );
-  const currentRound =
-    !isNoStopMultiSplit || !isDailyBuyAmountValid
-      ? 0
-      : calcNoStopCurrentRound(tradeInputs, dailyBuyAmount);
   const networkErrorMsg = APP_SHELL_MESSAGES[lang].dailySummaryNetworkError;
   const networkErrorMsgRef = useRef(networkErrorMsg);
   const requestIdRef = useRef(0);
@@ -112,7 +107,7 @@ export function useNoStopMultiSplitExecution(
     };
   }, [targetStock]);
 
-  const executionData = useMemo(() => {
+  const noStopState = useMemo(() => {
     if (
       !isNoStopMultiSplit ||
       networkSnapshot == null ||
@@ -130,7 +125,7 @@ export function useNoStopMultiSplitExecution(
       totalSplitCount,
     };
 
-    return calcNoStopMultiSplitOrders({
+    return calculateNoStopMultiSplitState({
       trades: tradeInputs,
       oneTimeAmount: dailyBuyAmount,
       feeRate: portfolio.feeRate ?? DEFAULT_PORTFOLIO_FEE_RATE,
@@ -151,5 +146,8 @@ export function useNoStopMultiSplitExecution(
     tradeInputs,
   ]);
 
-  return { currentRound, executionData };
+  return {
+    currentRound: noStopState?.currentRound ?? 0,
+    executionData: noStopState?.executionData ?? null,
+  };
 }

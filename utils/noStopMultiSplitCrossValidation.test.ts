@@ -1,24 +1,37 @@
 // Tech Debt Monitor: 무손절 다분할 프론트/서버 로직 동기화 감시
-import { renderHook, waitFor } from '@testing-library/react';
+import React from 'react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Portfolio, StockData, Trade } from '../types';
+import type {
+  NoStopIndicatorSnapshot,
+  NoStopMultiSplitStrategy,
+  Portfolio,
+  Trade,
+} from '../types';
 import type { Portfolio as ServerPortfolio } from '../supabase/functions/_shared/types.ts';
 import {
-  calculateNoStopMultiSplitState,
-  type NoStopMultiSplitParams,
+  calcNoStopCurrentRound,
+  calculateNoStopExecution,
 } from '../supabase/functions/_shared/noStopMultiSplitShared.ts';
-import { formatPortfolioDailyExecutionBlock as formatServerDailyExecutionBlock } from '../supabase/functions/_shared/maSummaryShared.ts';
 import { formatPortfolioDailyExecutionBlock as formatFrontendDailyExecutionBlock } from './dailyExecutionSummary';
 import { useNoStopMultiSplitExecution } from '../hooks/useNoStopMultiSplitExecution';
 import { toTradeInputsForMultiSplit } from '../hooks/multiSplitExecutionShared';
 import type { ServiceResult } from '../services/serviceUtils';
 import { okResult } from '../services/serviceUtils';
 
-vi.mock('../services/stockService', () => ({
-  fetchLatestStockSnapshot: vi.fn(),
+vi.mock('../services/stockService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/stockService')>();
+  return {
+    ...actual,
+    fetchIndicatorAwareSnapshot: vi.fn(),
+  };
+});
+
+vi.mock('../components/tds-adapter/showErrorToast', () => ({
+  showErrorToast: vi.fn(),
 }));
 
-import { fetchLatestStockSnapshot } from '../services/stockService';
+import { fetchIndicatorAwareSnapshot } from '../services/stockService';
 
 type CrossValidationPortfolio = Portfolio & ServerPortfolio;
 
@@ -27,16 +40,35 @@ type HookProps = {
   lang: 'ko' | 'en';
 };
 
-function createQuoteResult(price: number): ServiceResult<StockData> {
-  return okResult<StockData>({
-    symbol: 'TQQQ',
-    price,
-    change: 0,
-    changePercent: 0,
-    rsi: 50,
-    ma20: price,
-    ma60: price,
-    ma120: price,
+function StrictModeWrapper(props: {
+  children: React.ReactNode;
+}): React.ReactElement {
+  return React.createElement(React.StrictMode, null, props.children);
+}
+
+function createSnapshotResult(
+  snapshot: NoStopIndicatorSnapshot,
+): ServiceResult<NoStopIndicatorSnapshot | null> {
+  return okResult<NoStopIndicatorSnapshot | null>(snapshot);
+}
+
+function clonePortfolioWithSameNoStopConfig(
+  portfolio: CrossValidationPortfolio,
+): CrossValidationPortfolio {
+  return createPortfolio({
+    ...portfolio,
+    strategy: {
+      ...portfolio.strategy,
+      ma0: { ...portfolio.strategy.ma0 },
+      ma1: { ...portfolio.strategy.ma1 },
+      ma2: { ...portfolio.strategy.ma2 },
+      ma3: { ...portfolio.strategy.ma3 },
+      noStopMultiSplit:
+        portfolio.strategy.noStopMultiSplit == null
+          ? undefined
+          : { ...portfolio.strategy.noStopMultiSplit },
+    },
+    trades: portfolio.trades.map((trade) => ({ ...trade })),
   });
 }
 
@@ -55,14 +87,17 @@ function createTrade(overrides: Partial<Trade> = {}): Trade {
 }
 
 function createNoStopParams(
-  overrides: Partial<NoStopMultiSplitParams> = {},
-): NoStopMultiSplitParams {
+  overrides: Partial<NoStopMultiSplitStrategy> = {},
+): NoStopMultiSplitStrategy {
   return {
     targetStock: overrides.targetStock ?? 'TQQQ',
-    lowLocBudgetRatio: overrides.lowLocBudgetRatio ?? 50,
-    highLocPremiumPct: overrides.highLocPremiumPct ?? 15,
+    baseLocRatio: overrides.baseLocRatio ?? 50,
     takeProfitPct: overrides.takeProfitPct ?? 10,
     totalSplitCount: overrides.totalSplitCount ?? 40,
+    ...(overrides.rsiRule != null ? { rsiRule: overrides.rsiRule } : {}),
+    ...(overrides.alignmentRule != null
+      ? { alignmentRule: overrides.alignmentRule }
+      : {}),
   };
 }
 
@@ -101,7 +136,6 @@ function createPortfolio(
       selectedHours: ['23:00'],
       timezone: 'Asia/Seoul',
     },
-    isQuarterMode: overrides.isQuarterMode,
     vrSnapshot: overrides.vrSnapshot,
   };
 }
@@ -115,13 +149,41 @@ function calculateServerState(
     throw new Error('noStopMultiSplit strategy is required');
   }
 
-  return calculateNoStopMultiSplitState({
-    trades: toTradeInputsForMultiSplit(portfolio.trades),
-    oneTimeAmount: portfolio.dailyBuyAmount,
-    feeRate: portfolio.feeRate ?? 0.25,
-    currentPrice,
+  const trades = toTradeInputsForMultiSplit(portfolio.trades);
+  const oneTimeAmount = portfolio.dailyBuyAmount;
+  const feeRate = portfolio.feeRate ?? 0.25;
+  const currentRound = calcNoStopCurrentRound(
+    trades,
+    oneTimeAmount,
+    strategy.targetStock,
+  );
+  const execution = calculateNoStopExecution({
+    trades,
+    oneTimeAmount,
+    feeRate,
+    snapshot: {
+      currentPrice,
+    },
     strategy,
   });
+
+  return {
+    currentRound,
+    executionData: {
+      currentRound,
+      progressPct: execution.progressPct,
+      appliedLocRatio: execution.appliedLocRatio,
+      isFirstBuy: execution.isFirstBuy,
+      isSplitComplete: execution.isSplitComplete,
+      ...(execution.displayLowLoc != null
+        ? { displayLowLoc: execution.displayLowLoc }
+        : {}),
+      ...(execution.displayMocBuy != null
+        ? { displayMocBuy: execution.displayMocBuy }
+        : {}),
+      ...(execution.takeProfit != null ? { takeProfit: execution.takeProfit } : {}),
+    },
+  };
 }
 
 describe('no-stop multi-split split-brain cross validation', () => {
@@ -132,8 +194,8 @@ describe('no-stop multi-split split-brain cross validation', () => {
   it('소수점 부동오차가 있는 회차 엣지 케이스에서도 프론트 훅과 서버 공용 엔진이 동일한 정수 회차를 반환한다', async () => {
     // Why: 회차 반올림 기준이 어긋나면 서버는 3.0000000000000004, 앱은 3처럼 표시되어 분할 완료 조건과 카드 표기가 갈라질 수 있습니다.
     const currentPrice = 0.1;
-    vi.mocked(fetchLatestStockSnapshot).mockResolvedValue(
-      createQuoteResult(currentPrice),
+    vi.mocked(fetchIndicatorAwareSnapshot).mockResolvedValue(
+      createSnapshotResult({ currentPrice }),
     );
     const portfolio = createPortfolio({
       dailyBuyAmount: 0.1,
@@ -148,7 +210,6 @@ describe('no-stop multi-split split-brain cross validation', () => {
         ...createPortfolio().strategy,
         noStopMultiSplit: createNoStopParams({
           targetStock: 'TQQQ',
-          highLocPremiumPct: 0,
         }),
       },
     });
@@ -173,16 +234,15 @@ describe('no-stop multi-split split-brain cross validation', () => {
     expect(result.current.currentRound).toBe(3);
     expect(serverState.currentRound).toBe(3);
     expect(result.current.executionData?.currentRound).toBe(3);
-    expect(serverState.executionData.currentRound).toBe(3);
     expect(result.current.currentRound).toBe(serverState.currentRound);
     expect(result.current.executionData).toEqual(serverState.executionData);
   });
 
   it('floorSafe가 필요한 애매한 예산 상태에서도 프론트 훅과 서버 공용 엔진이 동일한 저가·고가 LOC와 익절 주문을 계산한다', async () => {
-    // Why: EPSILON 보정이 한쪽에만 빠지면 경계 예산에서 1주씩 줄어드는 잠복 오차가 생겨 실제 주문 수량이 프론트와 서버에서 달라집니다.
+    // Why: isolated engine의 EPSILON floor와 15% MOC 버퍼가 훅 결과에 그대로 반영되어야 주문 수량 drift가 생기지 않습니다.
     const currentPrice = 100;
-    vi.mocked(fetchLatestStockSnapshot).mockResolvedValue(
-      createQuoteResult(currentPrice),
+    vi.mocked(fetchIndicatorAwareSnapshot).mockResolvedValue(
+      createSnapshotResult({ currentPrice }),
     );
     const portfolio = createPortfolio({
       dailyBuyAmount: 399.99999999999994,
@@ -198,8 +258,7 @@ describe('no-stop multi-split split-brain cross validation', () => {
         ...createPortfolio().strategy,
         noStopMultiSplit: createNoStopParams({
           targetStock: 'TQQQ',
-          lowLocBudgetRatio: 25,
-          highLocPremiumPct: 0,
+          baseLocRatio: 25,
           takeProfitPct: 10,
         }),
       },
@@ -221,23 +280,45 @@ describe('no-stop multi-split split-brain cross validation', () => {
     });
 
     const serverState = calculateServerState(portfolio, currentPrice);
+    const frontendSummary = formatFrontendDailyExecutionBlock(portfolio, 'ko', {
+      noStopMultiSplitExecutionData:
+        result.current.executionData == null
+          ? undefined
+          : {
+              currentRound: result.current.executionData.currentRound,
+              progressPct: result.current.executionData.progressPct,
+              isFirstBuy: result.current.executionData.isFirstBuy,
+              isSplitComplete: result.current.executionData.isSplitComplete,
+              displayLowLoc: result.current.executionData.displayLowLoc,
+              displayMocBuy: result.current.executionData.displayMocBuy,
+              takeProfit: result.current.executionData.takeProfit,
+            },
+    });
 
     expect(result.current.executionData).toEqual({
       currentRound: 0.25,
+      progressPct: 0.63,
+      appliedLocRatio: 25,
       isFirstBuy: false,
       isSplitComplete: false,
-      lowLoc: { price: 100, quantity: 1 },
-      highLoc: { price: 100, quantity: 3 },
+      displayLowLoc: { price: 100, quantity: 1 },
+      displayMocBuy: { quantity: 2 },
       takeProfit: { price: 110, quantity: 1 },
     });
     expect(serverState.executionData).toEqual(result.current.executionData);
+    expect(frontendSummary).toContain('전략 진행률: 0.63%');
+    expect(frontendSummary).toContain('평단가 매수 (LOC): $100.00 / 1주');
+    expect(frontendSummary).toContain('분할 매수 (MOC): 2주');
+    expect(frontendSummary).not.toContain('저가 LOC');
+    expect(frontendSummary).not.toContain('고가 LOC');
+    expect(frontendSummary).not.toContain('분할 매수 (MOC): $100.00 / 2주');
   });
 
   it('보유 수량 0인 픽스처에서는 프론트와 서버 모두 동일하게 isFirstBuy로 판정하고 익절 라인을 숨긴다', async () => {
     // Why: 평단가가 없는 첫 매수 상태에서 한쪽만 익절 라인을 만들면 존재하지 않는 매도 계획을 사용자에게 노출하는 제품 오작동이 됩니다.
     const currentPrice = 40;
-    vi.mocked(fetchLatestStockSnapshot).mockResolvedValue(
-      createQuoteResult(currentPrice),
+    vi.mocked(fetchIndicatorAwareSnapshot).mockResolvedValue(
+      createSnapshotResult({ currentPrice }),
     );
     const portfolio = createPortfolio({
       trades: [],
@@ -258,22 +339,197 @@ describe('no-stop multi-split split-brain cross validation', () => {
       expect(result.current.executionData).not.toBeNull();
     });
 
-    const serverState = calculateServerState(portfolio, currentPrice);
     const frontendSummary = formatFrontendDailyExecutionBlock(portfolio, 'ko', {
-      noStopMultiSplitExecutionData: result.current.executionData ?? undefined,
-    });
-    const serverSummary = formatServerDailyExecutionBlock(portfolio, 'ko', {
-      noStopMultiSplitExecutionData: serverState.executionData,
+      noStopMultiSplitExecutionData:
+        result.current.executionData == null
+          ? undefined
+          : {
+              currentRound: result.current.executionData.currentRound,
+              progressPct: result.current.executionData.progressPct,
+              isFirstBuy: result.current.executionData.isFirstBuy,
+              isSplitComplete: result.current.executionData.isSplitComplete,
+              displayLowLoc: result.current.executionData.displayLowLoc,
+              displayMocBuy: result.current.executionData.displayMocBuy,
+              takeProfit: result.current.executionData.takeProfit,
+            },
     });
 
     expect(result.current.executionData?.isFirstBuy).toBe(true);
-    expect(serverState.executionData.isFirstBuy).toBe(true);
     expect(result.current.executionData?.takeProfit).toBeUndefined();
-    expect(serverState.executionData.takeProfit).toBeUndefined();
     expect(frontendSummary).toContain('첫 매수는 장중 아무 때나, 자유롭게 매수해 주세요.');
-    expect(serverSummary).toContain('첫 매수는 장중 아무 때나, 자유롭게 매수해 주세요.');
     expect(frontendSummary).not.toContain('익절 목표');
-    expect(serverSummary).not.toContain('익절 목표');
-    expect(frontendSummary).toBe(serverSummary);
+  });
+
+  it('일회 매수금이 0 이하면 no-stop 훅이 invalid_amount 상태를 반환하고 불필요한 fetch를 건너뛴다', async () => {
+    const portfolio = createPortfolio({
+      dailyBuyAmount: 0,
+    });
+
+    const { result } = renderHook(
+      ({ portfolio: hookPortfolio, lang }: HookProps) =>
+        useNoStopMultiSplitExecution(hookPortfolio, lang),
+      {
+        initialProps: {
+          portfolio,
+          lang: 'ko',
+        },
+      },
+    );
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('invalid_amount');
+    });
+
+    expect(result.current.executionData).toBeNull();
+    expect(fetchIndicatorAwareSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('스냅샷 fetch 실패 시 fetch_error 상태로 전환되어 계산 중 문구에 영구 고착되지 않는다', async () => {
+    vi.mocked(fetchIndicatorAwareSnapshot).mockRejectedValue(
+      new Error('network failed'),
+    );
+    const portfolio = createPortfolio();
+
+    const { result } = renderHook(
+      ({ portfolio: hookPortfolio, lang }: HookProps) =>
+        useNoStopMultiSplitExecution(hookPortfolio, lang),
+      {
+        initialProps: {
+          portfolio,
+          lang: 'ko',
+        },
+      },
+    );
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('fetch_error');
+    });
+
+    expect(result.current.executionData).toBeNull();
+    expect(fetchIndicatorAwareSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it('스냅샷 fetch가 멈춰도 타임아웃 후 fetch_error로 전환되어 영구 loading에 빠지지 않는다', async () => {
+    vi.useFakeTimers();
+
+    try {
+      vi.mocked(fetchIndicatorAwareSnapshot).mockImplementationOnce(
+        async (_symbol, _requirements, options) =>
+          new Promise<ServiceResult<NoStopIndicatorSnapshot | null>>(
+            (_resolve, reject) => {
+              options?.signal?.addEventListener(
+                'abort',
+                () => {
+                  reject(new DOMException('The operation was aborted.', 'AbortError'));
+                },
+                { once: true },
+              );
+            },
+          ),
+      );
+      const portfolio = createPortfolio();
+
+      const { result } = renderHook(
+        ({ portfolio: hookPortfolio, lang }: HookProps) =>
+          useNoStopMultiSplitExecution(hookPortfolio, lang),
+        {
+          initialProps: {
+            portfolio,
+            lang: 'ko',
+          },
+        },
+      );
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(result.current.status).toBe('loading');
+
+      await act(async () => {
+        await vi.runOnlyPendingTimersAsync();
+        await Promise.resolve();
+      });
+
+      expect(result.current.status).toBe('fetch_error');
+      expect(result.current.executionData).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('같은 cache key로 포트폴리오 객체만 새로 들어와도 진행 중인 스냅샷 fetch 결과를 정상 반영한다', async () => {
+    let resolveSnapshotResult:
+      | ((
+          value: ServiceResult<NoStopIndicatorSnapshot | null>,
+        ) => void)
+      | undefined;
+    const pendingSnapshotResult = new Promise<
+      ServiceResult<NoStopIndicatorSnapshot | null>
+    >((resolve) => {
+      resolveSnapshotResult = resolve;
+    });
+    vi.mocked(fetchIndicatorAwareSnapshot).mockReturnValueOnce(
+      pendingSnapshotResult,
+    );
+    const initialPortfolio = createPortfolio();
+
+    const { result, rerender } = renderHook(
+      ({ portfolio: hookPortfolio, lang }: HookProps) =>
+        useNoStopMultiSplitExecution(hookPortfolio, lang),
+      {
+        initialProps: {
+          portfolio: initialPortfolio,
+          lang: 'ko',
+        },
+      },
+    );
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('loading');
+    });
+
+    rerender({
+      portfolio: clonePortfolioWithSameNoStopConfig(initialPortfolio),
+      lang: 'ko',
+    });
+
+    await act(async () => {
+      resolveSnapshotResult?.(createSnapshotResult({ currentPrice: 100 }));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('ready');
+      expect(result.current.executionData).not.toBeNull();
+    });
+
+    expect(fetchIndicatorAwareSnapshot).toHaveBeenCalledTimes(1);
+    expect(result.current.executionData?.currentRound).toBe(0);
+  });
+
+  it('React StrictMode 이중 effect 환경에서도 same cache key fetch가 ready 상태로 수렴한다', async () => {
+    vi.mocked(fetchIndicatorAwareSnapshot).mockResolvedValue(
+      createSnapshotResult({ currentPrice: 100 }),
+    );
+    const portfolio = createPortfolio();
+
+    const { result } = renderHook(
+      ({ portfolio: hookPortfolio, lang }: HookProps) =>
+        useNoStopMultiSplitExecution(hookPortfolio, lang),
+      {
+        initialProps: {
+          portfolio,
+          lang: 'ko',
+        },
+        wrapper: StrictModeWrapper,
+      },
+    );
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('ready');
+      expect(result.current.executionData).not.toBeNull();
+    });
+
+    expect(fetchIndicatorAwareSnapshot).toHaveBeenCalled();
   });
 });

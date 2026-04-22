@@ -1,5 +1,6 @@
 import type { AppLang, Trade } from '@/types';
 import { areStrictPositiveFiniteScalars } from '@/utils/financialScalarGuards';
+import { floorToNonNegativeInt } from '@/utils/financialMath';
 import { safeNumber } from '../components/StrategyCreator/utils';
 import { roundMoneyToPlaces } from './financialCalculations';
 
@@ -255,7 +256,7 @@ export function calculateBudgetBuyQuantity(input: BudgetQuantityInput): number {
     return ZERO_AMOUNT;
   }
 
-  const theoreticalQuantity = Math.floor(
+  const theoreticalQuantity = floorToNonNegativeInt(
     normalizedBudget / (input.price * unitCostMultiplier),
   );
 

@@ -1,35 +1,21 @@
-/**
- * multiSplitCalc.ts 순수 함수 유닛 테스트
- *
- * 엣지 케이스: 99주 분할, T=0, 중간 손익 음수, 쿼터 재진입, 빈 데이터
- */
-
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   calcHoldings,
-  calcT,
-  getPhase,
-  checkRecentMOCSell,
-  calcIntermediateProfit,
-  calcNewOneTimeAmount,
-  calcSellSplitQuantities,
-  safeOrder,
-  calcQuarterStopLossOrders,
-  calcMultiSplitOrders,
-  LOC_SELL_RATIO,
-  LOC_PRICE_OFFSET,
-  MIN_PRICE,
-  QUARTER_LOC_PRICE_FACTOR,
-  QUARTER_SPLIT_COUNT,
-  type MultiSplitParams,
+  calculateMultiSplitBuyGuide,
+  calculateMultiSplitCashUsagePct,
+  calculateMultiSplitGuideState,
+  calculateMultiSplitSellGuide,
+  resolveAppliedLocRatio,
   type TradeInput,
 } from './multiSplitCalc';
+import type {
+  MultiSplitIndicatorSnapshot,
+  MultiSplitStrategy,
+} from '../types';
 
-// ---------------------------------------------------------------------------
-// 테스트 헬퍼
-// ---------------------------------------------------------------------------
-
-function makeTrade(overrides: Partial<TradeInput> & { type: 'buy' | 'sell'; stock: string }): TradeInput {
+function makeTrade(
+  overrides: Partial<TradeInput> & { type: 'buy' | 'sell'; stock: string },
+): TradeInput {
   return {
     date: '2026-01-15',
     price: 100,
@@ -40,560 +26,226 @@ function makeTrade(overrides: Partial<TradeInput> & { type: 'buy' | 'sell'; stoc
   };
 }
 
-function makeMultiSplitParams(
-  overrides: Partial<MultiSplitParams> = {},
-): MultiSplitParams {
+function makeSmartSplitStrategy(
+  overrides: Partial<MultiSplitStrategy> = {},
+): MultiSplitStrategy {
   return {
     targetStock: overrides.targetStock ?? 'AAPL',
     targetReturnRate: overrides.targetReturnRate ?? 10,
-    totalSplitCount: overrides.totalSplitCount ?? 40,
+    totalSplitCount: overrides.totalSplitCount ?? 10,
+    baseLocRatio: overrides.baseLocRatio ?? 50,
+    mainTakeProfitRatioPct: overrides.mainTakeProfitRatioPct ?? 60,
+    riskCutRatioPct: overrides.riskCutRatioPct ?? 25,
+    rsiRule: overrides.rsiRule,
+    alignmentRule: overrides.alignmentRule,
   };
 }
 
-// ===========================================================================
-// calcHoldings
-// ===========================================================================
+function makeIndicatorSnapshot(
+  overrides: Partial<MultiSplitIndicatorSnapshot> = {},
+): MultiSplitIndicatorSnapshot {
+  return {
+    currentPrice: overrides.currentPrice ?? 110,
+    rsi: overrides.rsi,
+    maByPeriod: overrides.maByPeriod,
+  };
+}
 
 describe('calcHoldings', () => {
-  it('빈 거래 목록 → 빈 배열', () => {
+  it('빈 거래 목록이면 빈 배열을 반환한다', () => {
     expect(calcHoldings([])).toEqual([]);
   });
 
-  it('매수 1건 → 보유 1건, realizedPnL 0', () => {
-    const trades: TradeInput[] = [
-      makeTrade({ type: 'buy', stock: 'AAPL', price: 150, quantity: 10, fee: 2.5 }),
-    ];
-    const holdings = calcHoldings(trades);
-    expect(holdings).toHaveLength(1);
-    expect(holdings[0].stock).toBe('AAPL');
-    expect(holdings[0].quantity).toBe(10);
-    expect(holdings[0].totalCost).toBe(150 * 10 + 2.5); // 1502.5
-    expect(holdings[0].avgPrice).toBeCloseTo(150.25, 2);
-    expect(holdings[0].realizedPnL).toBe(0);
-  });
-
-  it('매수 + 부분 매도 → 보유 수량 차감, 실현손익 누적', () => {
-    const trades: TradeInput[] = [
+  it('부분 매도 후 평균 단가와 실현손익을 유지한다', () => {
+    const holdings = calcHoldings([
       makeTrade({ type: 'buy', stock: 'AAPL', price: 100, quantity: 10, fee: 0 }),
       makeTrade({ type: 'sell', stock: 'AAPL', price: 110, quantity: 4, fee: 0 }),
-    ];
-    const holdings = calcHoldings(trades);
-    expect(holdings[0].quantity).toBe(6);
-    expect(holdings[0].avgPrice).toBeCloseTo(100, 2);
-    expect(holdings[0].realizedPnL).toBe((110 - 100) * 4);
+    ]);
+
+    expect(holdings).toEqual([
+      {
+        stock: 'AAPL',
+        quantity: 6,
+        totalCost: 600,
+        avgPrice: 100,
+        realizedPnL: 40,
+      },
+    ]);
   });
 
-  it('전량 매도 → quantity 0이어도 realizedPnL 있으면 1건 반환 (closed position)', () => {
-    const trades: TradeInput[] = [
+  it('전량 매도된 포지션도 realizedPnL 기록을 유지한다', () => {
+    const holdings = calcHoldings([
       makeTrade({ type: 'buy', stock: 'AAPL', price: 100, quantity: 5, fee: 0 }),
       makeTrade({ type: 'sell', stock: 'AAPL', price: 110, quantity: 5, fee: 0 }),
-    ];
-    const holdings = calcHoldings(trades);
-    expect(holdings).toHaveLength(1);
-    expect(holdings[0].stock).toBe('AAPL');
-    expect(holdings[0].quantity).toBe(0);
-    expect(holdings[0].totalCost).toBe(0);
-    expect(holdings[0].avgPrice).toBe(0);
-    expect(holdings[0].realizedPnL).toBe((110 - 100) * 5);
+    ]);
+
+    expect(holdings).toEqual([
+      {
+        stock: 'AAPL',
+        quantity: 0,
+        totalCost: 0,
+        avgPrice: 0,
+        realizedPnL: 50,
+      },
+    ]);
   });
 
-  it('매도 수량 > 보유 수량 → 예외 발생', () => {
-    const trades: TradeInput[] = [
-      makeTrade({ type: 'buy', stock: 'AAPL', price: 100, quantity: 3, fee: 0 }),
-      makeTrade({ type: 'sell', stock: 'AAPL', price: 110, quantity: 5, fee: 0 }),
-    ];
-    expect(() => calcHoldings(trades)).toThrow(/초과 매도 에러/);
-  });
-
-  it('본전 전량 매도(quantity=0, realizedPnL=0) → 1건 반환', () => {
-    const trades: TradeInput[] = [
-      makeTrade({ type: 'buy', stock: 'AAPL', price: 100, quantity: 10, fee: 0 }),
-      makeTrade({ type: 'sell', stock: 'AAPL', price: 100, quantity: 10, fee: 0 }),
-    ];
-    const holdings = calcHoldings(trades);
-    expect(holdings).toHaveLength(1);
-    expect(holdings[0].quantity).toBe(0);
-    expect(holdings[0].realizedPnL).toBe(0);
-  });
-
-  it('여러 종목 보유', () => {
-    const trades: TradeInput[] = [
-      makeTrade({ type: 'buy', stock: 'AAPL', price: 100, quantity: 10, fee: 0 }),
-      makeTrade({ type: 'buy', stock: 'TSLA', price: 200, quantity: 5, fee: 0 }),
-    ];
-    const holdings = calcHoldings(trades);
-    expect(holdings).toHaveLength(2);
-    expect(holdings.find((h) => h.stock === 'AAPL')?.quantity).toBe(10);
-    expect(holdings.find((h) => h.stock === 'TSLA')?.quantity).toBe(5);
+  it('보유 수량보다 많이 매도하면 예외를 던진다', () => {
+    expect(() =>
+      calcHoldings([
+        makeTrade({ type: 'buy', stock: 'AAPL', price: 100, quantity: 3, fee: 0 }),
+        makeTrade({ type: 'sell', stock: 'AAPL', price: 110, quantity: 5, fee: 0 }),
+      ]),
+    ).toThrow(/초과 매도 에러/);
   });
 });
 
-// ===========================================================================
-// calcT
-// ===========================================================================
-
-describe('calcT', () => {
-  it('빈 거래 → T=0', () => {
-    expect(calcT([], 100)).toBe(0);
-  });
-
-  it('dailyBuyAmount=0 → T=0', () => {
-    const trades: TradeInput[] = [
-      makeTrade({ type: 'buy', stock: 'AAPL', price: 100, quantity: 10, fee: 0 }),
-    ];
-    expect(calcT(trades, 0)).toBe(0);
-  });
-
-  it('1000$ 매수, dailyBuyAmount=250 → T=4', () => {
-    const trades: TradeInput[] = [
-      makeTrade({ type: 'buy', stock: 'AAPL', price: 100, quantity: 10, fee: 0 }),
-    ];
-    // totalInvested = 1000, T = ceil(1000/250 * 100) / 100 = ceil(400) / 100 = 4
-    expect(calcT(trades, 250)).toBe(4);
-  });
-
-  it('수수료 포함 시 T 올림', () => {
-    const trades: TradeInput[] = [
-      makeTrade({ type: 'buy', stock: 'AAPL', price: 100, quantity: 10, fee: 5 }),
-    ];
-    // totalInvested = 1005, T = ceil(1005/250 * 100) / 100 = ceil(402) / 100 = 4.02
-    expect(calcT(trades, 250)).toBe(4.02);
-  });
-});
-
-// ===========================================================================
-// getPhase
-// ===========================================================================
-
-describe('getPhase', () => {
-  // a = 40 기준
-  const a = 40;
-
-  it('T < 0.5 → null (초기 구간)', () => {
-    expect(getPhase(0, a)).toBeNull();
-    expect(getPhase(0.49, a)).toBeNull();
-  });
-
-  it('전반전: 0.5 <= T < a/2', () => {
-    expect(getPhase(0.5, a)).toBe('first');
-    expect(getPhase(10, a)).toBe('first');
-    expect(getPhase(19.99, a)).toBe('first');
-  });
-
-  it('후반전: a/2 <= T < a-1', () => {
-    expect(getPhase(20, a)).toBe('second');
-    expect(getPhase(30, a)).toBe('second');
-    expect(getPhase(38.99, a)).toBe('second');
-  });
-
-  it('쿼터: a-1 < T <= a', () => {
-    expect(getPhase(39.01, a)).toBe('quarter');
-    expect(getPhase(40, a)).toBe('quarter');
-  });
-
-  it('T > a → null (초과)', () => {
-    expect(getPhase(40.01, a)).toBeNull();
-    expect(getPhase(50, a)).toBeNull();
-  });
-
-  it('경계값 정확히: T = a-1 → second (미만이므로)', () => {
-    // a-1 = 39, getPhase 조건: T < a-1 이므로 T=39는 false
-    // T > a-1 이므로 quarter? No: T > 39 AND T <= 40 → T=39는 T>39 = false
-    // 따라서 T=39는 second (T >= 20 && T < 39)
-    expect(getPhase(39, a)).toBe('second');
-  });
-});
-
-// ===========================================================================
-// checkRecentMOCSell
-// ===========================================================================
-
-describe('checkRecentMOCSell', () => {
-  it('빈 영업일 → hasMOC=false', () => {
-    const result = checkRecentMOCSell([], []);
-    expect(result.hasMOC).toBe(false);
-  });
-
-  it('MOC 기록 없음 → hasMOC=false', () => {
-    const trades: TradeInput[] = [
-      makeTrade({ type: 'sell', stock: 'AAPL', date: '2026-01-10', isMOC: false }),
-    ];
-    const result = checkRecentMOCSell(trades, ['2026-01-10', '2026-01-09']);
-    expect(result.hasMOC).toBe(false);
-  });
-
-  it('MOC 기록 있음 → hasMOC=true + 최신 날짜', () => {
-    const trades: TradeInput[] = [
-      makeTrade({ type: 'sell', stock: 'AAPL', date: '2026-01-08', isMOC: true }),
-      makeTrade({ type: 'sell', stock: 'AAPL', date: '2026-01-10', isMOC: true }),
-    ];
-    const result = checkRecentMOCSell(trades, ['2026-01-10', '2026-01-09', '2026-01-08']);
-    expect(result.hasMOC).toBe(true);
-    expect(result.mocDate).toBe('2026-01-10');
-  });
-
-  it('기간 밖 MOC → hasMOC=false', () => {
-    const trades: TradeInput[] = [
-      makeTrade({ type: 'sell', stock: 'AAPL', date: '2025-12-01', isMOC: true }),
-    ];
-    const result = checkRecentMOCSell(trades, ['2026-01-10', '2026-01-09']);
-    expect(result.hasMOC).toBe(false);
-  });
-});
-
-// ===========================================================================
-// calcSellSplitQuantities — 25% LOC / 잔량 지정가
-// ===========================================================================
-
-describe('calcSellSplitQuantities', () => {
-  it('100주 → LOC 25, 지정가 75', () => {
-    const { locSellQty, limitSellQty } = calcSellSplitQuantities(100);
-    expect(locSellQty).toBe(25);
-    expect(limitSellQty).toBe(75);
-  });
-
-  it('99주 → LOC 24, 지정가 75 (합계 99, 누락 없음)', () => {
-    const { locSellQty, limitSellQty } = calcSellSplitQuantities(99);
-    expect(locSellQty).toBe(24);
-    expect(limitSellQty).toBe(75);
-    // 핵심: 합계 = 원래 수량
-    expect(locSellQty + limitSellQty).toBe(99);
-  });
-
-  it('1주 → LOC 0, 지정가 1', () => {
-    const { locSellQty, limitSellQty } = calcSellSplitQuantities(1);
-    expect(locSellQty).toBe(0);
-    expect(limitSellQty).toBe(1);
-  });
-
-  it('0주 → 모두 0', () => {
-    const { locSellQty, limitSellQty } = calcSellSplitQuantities(0);
-    expect(locSellQty).toBe(0);
-    expect(limitSellQty).toBe(0);
-  });
-
-  it('3주 → LOC 0, 지정가 3 (floor(0.75)=0)', () => {
-    const { locSellQty, limitSellQty } = calcSellSplitQuantities(3);
-    expect(locSellQty).toBe(0);
-    expect(limitSellQty).toBe(3);
-    expect(locSellQty + limitSellQty).toBe(3);
-  });
-});
-
-// ===========================================================================
-// safeOrder
-// ===========================================================================
-
-describe('safeOrder', () => {
-  it('유효한 입력 → OrderEntry', () => {
-    const order = safeOrder(150.123, 10.7);
-    expect(order).not.toBeNull();
-    expect(order!.price).toBe(150.12);
-    expect(order!.quantity).toBe(10);
-  });
-
-  it('가격 <= 0 → null', () => {
-    expect(safeOrder(0, 10)).toBeNull();
-    expect(safeOrder(-5, 10)).toBeNull();
-  });
-
-  it('수량 floor 후 <= 0 → null', () => {
-    expect(safeOrder(100, 0.5)).toBeNull();
-    expect(safeOrder(100, 0)).toBeNull();
-  });
-
-  it('NaN → null', () => {
-    expect(safeOrder(NaN, 10)).toBeNull();
-    expect(safeOrder(100, NaN)).toBeNull();
-  });
-
-  it('수량이 정수 경계 바로 아래면 floor(+EPSILON)로 1주 누락을 막는다', () => {
-    expect(safeOrder(100, 1.9999999999999998)).toEqual({
-      price: 100,
-      quantity: 2,
+describe('resolveAppliedLocRatio', () => {
+  it('기본값과 조건부 preset이 동시에 맞으면 가장 높은 LOC 비율을 사용한다', () => {
+    const strategy = makeSmartSplitStrategy({
+      baseLocRatio: 50,
+      rsiRule: {
+        threshold: 40,
+        locRatio: 70,
+      },
+      alignmentRule: {
+        shortPeriod: 5,
+        longPeriod: 20,
+        locRatio: 30,
+      },
     });
-  });
-});
-
-// ===========================================================================
-// calcIntermediateProfit
-// ===========================================================================
-
-describe('calcIntermediateProfit', () => {
-  it('매도 거래 없음 → 0', () => {
-    const trades: TradeInput[] = [
-      makeTrade({ type: 'buy', stock: 'AAPL', date: '2026-01-01', price: 100, quantity: 10, fee: 0 }),
-    ];
-    expect(calcIntermediateProfit(trades, '2026-01-01')).toBe(0);
-  });
-
-  it('이익 매도 → 양수', () => {
-    const trades: TradeInput[] = [
-      makeTrade({ type: 'buy', stock: 'AAPL', date: '2026-01-01', price: 100, quantity: 10, fee: 0 }),
-      makeTrade({ type: 'sell', stock: 'AAPL', date: '2026-01-10', price: 120, quantity: 5, fee: 1 }),
-    ];
-    // 평단가 100, 매도가 120 → (120-100)*5 - 1 = 99
-    expect(calcIntermediateProfit(trades, '2026-01-01')).toBe(99);
-  });
-
-  it('손실 매도 → 음수', () => {
-    const trades: TradeInput[] = [
-      makeTrade({ type: 'buy', stock: 'AAPL', date: '2026-01-01', price: 100, quantity: 10, fee: 0 }),
-      makeTrade({ type: 'sell', stock: 'AAPL', date: '2026-01-10', price: 80, quantity: 5, fee: 1 }),
-    ];
-    // (80-100)*5 - 1 = -101
-    expect(calcIntermediateProfit(trades, '2026-01-01')).toBe(-101);
-  });
-});
-
-// ===========================================================================
-// calcNewOneTimeAmount
-// ===========================================================================
-
-describe('calcNewOneTimeAmount', () => {
-  it('dailyBuyAmount=0 → 0', () => {
-    expect(calcNewOneTimeAmount([], 0, 40, '2026-01-01')).toBe(0);
-  });
-
-  it('새 공식: (잔금 + MOC 매도 금액) / 10, C_current = C_init - Σ(E_buy) + Σ(E_sell)', () => {
-    // C_init = 250*40 = 10000, 매수 1000 → C_current = 10000 - 1000 = 9000, new = 9000/10 = 900
-    const trades: TradeInput[] = [
-      makeTrade({ type: 'buy', stock: 'AAPL', date: '2026-01-01', price: 100, quantity: 10, fee: 0 }),
-    ];
-    const result = calcNewOneTimeAmount(trades, 250, 40, '2026-01-01');
-    expect(result).toBe(900);
-  });
-
-  it('매도 회수금 반영: C_current = C_init - E_buy + E_sell', () => {
-    const trades: TradeInput[] = [
-      makeTrade({ type: 'buy', stock: 'AAPL', date: '2026-01-01', price: 100, quantity: 10, fee: 0 }),
-      makeTrade({ type: 'sell', stock: 'AAPL', date: '2026-01-10', price: 80, quantity: 5, fee: 0 }),
-    ];
-    // C_init=10000, E_buy=1000, E_sell=80*5-0=400 → C_current=9400, new=940
-    const result = calcNewOneTimeAmount(trades, 250, 40, '2026-01-01');
-    expect(result).toBe(940);
-  });
-
-  it('복잡한 매수/매도(MOC 포함) 히스토리에서도 C_current / 10 몫을 센트 단위로 정확히 역산한다', () => {
-    // Why: 쿼터모드 재진입 시 자본금 역산이 1센트라도 틀리면 이후 10개 분할 주문 전체 수량이 연쇄적으로 흔들립니다.
-    const trades: TradeInput[] = [
-      makeTrade({ type: 'buy', stock: 'AAPL', date: '2026-01-01', price: 100, quantity: 10, fee: 1 }),
-      makeTrade({ type: 'buy', stock: 'AAPL', date: '2026-01-02', price: 120, quantity: 5, fee: 0.5 }),
-      makeTrade({ type: 'sell', stock: 'AAPL', date: '2026-01-05', price: 130, quantity: 4, fee: 0.52 }),
-      makeTrade({ type: 'sell', stock: 'AAPL', date: '2026-01-06', price: 110, quantity: 3, fee: 0.4 }),
-      makeTrade({ type: 'sell', stock: 'AAPL', date: '2026-01-10', price: 140, quantity: 2, fee: 0.28, isMOC: true }),
-    ];
-
-    const result = calcNewOneTimeAmount(
-      trades,
-      250,
-      40,
-      '2026-01-10',
-    );
-
-    expect(result).toBe(952.73);
-    expect(result * QUARTER_SPLIT_COUNT).toBe(9527.3);
-  });
-});
-
-// ===========================================================================
-// calcQuarterStopLossOrders
-// ===========================================================================
-
-describe('calcQuarterStopLossOrders', () => {
-  const baseParams = {
-    trades: [] as TradeInput[],
-    dailyBuyAmount: 250,
-    multiSplit: makeMultiSplitParams(),
-    feeRate: 0.25,
-    recentTradingDays: ['2026-01-10', '2026-01-09', '2026-01-08'],
-    avgPrice: 100,
-    currentQuantity: 100,
-  };
-
-  it('MOC 기록 없음 → hasMOC=false + mocQuantity 표시', () => {
-    const result = calcQuarterStopLossOrders(baseParams);
-    expect(result).not.toBeNull();
-    expect(result!.hasMOC).toBe(false);
-    expect(result!.mocQuantity).toBe(25); // 100 * 0.25
-  });
-
-  it('avgPrice=0 + MOC 기록 있음 → null', () => {
-    const trades: TradeInput[] = [
-      makeTrade({ type: 'sell', stock: 'AAPL', date: '2026-01-10', isMOC: true }),
-    ];
-    const result = calcQuarterStopLossOrders({
-      ...baseParams,
-      trades,
-      avgPrice: 0,
-    });
-    expect(result).toBeNull();
-  });
-
-  it('currentQuantity=0 + MOC 기록 있음 → null', () => {
-    const trades: TradeInput[] = [
-      makeTrade({ type: 'sell', stock: 'AAPL', date: '2026-01-10', isMOC: true }),
-    ];
-    const result = calcQuarterStopLossOrders({
-      ...baseParams,
-      trades,
-      currentQuantity: 0,
-    });
-    expect(result).toBeNull();
-  });
-
-  it('MOC 기록 있음 → hasMOC=true + 주문 데이터', () => {
-    // Why: 쿼터모드 재진입은 MOC 체결 직후 새 자본금으로 LOC/지정가를 다시 깔아야 하므로 주문 세트가 전부 살아 있어야 합니다.
-    const trades: TradeInput[] = [
-      makeTrade({ type: 'buy', stock: 'AAPL', date: '2026-01-01', price: 100, quantity: 40, fee: 0 }),
-      makeTrade({ type: 'sell', stock: 'AAPL', date: '2026-01-10', price: 90, quantity: 10, fee: 0, isMOC: true }),
-    ];
-    const result = calcQuarterStopLossOrders({
-      ...baseParams,
-      trades,
-      avgPrice: 100,
-      currentQuantity: 30,
-    });
-    expect(result).not.toBeNull();
-    expect(result!.hasMOC).toBe(true);
-    expect(result!.newOneTimeAmount).toBeGreaterThan(0);
-  });
-
-  it('극단적으로 낮은 주가에서도 쿼터 LOC 매수가가 MIN_PRICE 아래로 내려가지 않는다', () => {
-    // Why: 페니주에서 음수 호가가 생성되면 브로커가 거부하거나 서버/클라이언트 표시가 붕괴합니다.
-    const trades: TradeInput[] = [
-      makeTrade({ type: 'buy', stock: 'AAPL', date: '2026-01-01', price: 0.01, quantity: 100, fee: 0 }),
-      makeTrade({ type: 'sell', stock: 'AAPL', date: '2026-01-10', price: 0.01, quantity: 25, fee: 0, isMOC: true }),
-    ];
-
-    const result = calcQuarterStopLossOrders({
-      ...baseParams,
-      trades,
-      avgPrice: 0.01,
-      currentQuantity: 75,
+    const snapshot = makeIndicatorSnapshot({
+      rsi: 30,
+      maByPeriod: {
+        5: 110,
+        20: 100,
+      },
     });
 
-    expect(result).not.toBeNull();
-    expect(result?.hasMOC).toBe(true);
-    expect(result?.locBuy?.price).toBe(MIN_PRICE);
+    expect(resolveAppliedLocRatio(strategy, snapshot)).toBe(70);
+  });
+});
+
+describe('calculateMultiSplitCashUsagePct', () => {
+  it('총 시드 대비 투자금 비율을 0~100 범위로 반올림해 반환한다', () => {
     expect(
-      result?.locBuy?.price,
-    ).toBe(
-      Math.max(
-        MIN_PRICE,
-        0.01 * QUARTER_LOC_PRICE_FACTOR - LOC_PRICE_OFFSET,
-      ),
-    );
+      calculateMultiSplitCashUsagePct({
+        investedCost: 1001,
+        oneTimeAmount: 250,
+        totalSplitCount: 10,
+      }),
+    ).toBe(40.04);
   });
 });
 
-// ===========================================================================
-// calcMultiSplitOrders
-// ===========================================================================
-
-describe('calcMultiSplitOrders', () => {
-  const baseParams = {
-    phase: 'first' as const,
-    A: 10,
-    a: 40,
-    T: 5,
-    basePrice: 100,
-    currentQuantity: 50,
-    oneTimeAmount: 250,
-    feeRate: 0.25,
-  };
-
-  it('전반전: locBuy1 + locBuy2 + locSell + limitSell', () => {
-    const result = calcMultiSplitOrders(baseParams);
-    expect(result.phase).toBe('first');
-    expect(result.locBuy1).toBeDefined();
-    expect(result.locBuy2).toBeDefined();
-    expect(result.locSell).toBeDefined();
-    expect(result.limitSell).toBeDefined();
-  });
-
-  it('후반전: locBuy2만 (locBuy1 없음)', () => {
-    const result = calcMultiSplitOrders({ ...baseParams, phase: 'second', T: 25 });
-    expect(result.phase).toBe('second');
-    expect(result.locBuy1).toBeUndefined();
-    expect(result.locBuy2).toBeDefined();
-  });
-
-  it('유효하지 않은 입력 (A=0) → 빈 결과', () => {
-    const result = calcMultiSplitOrders({ ...baseParams, A: 0 });
-    expect(result.phase).toBe('first');
-    expect(result.locBuy1).toBeUndefined();
-    expect(result.locBuy2).toBeUndefined();
-    expect(result.locSell).toBeUndefined();
-    expect(result.limitSell).toBeUndefined();
-  });
-
-  it('유효하지 않은 입력 (basePrice=0) → 빈 결과', () => {
-    const result = calcMultiSplitOrders({ ...baseParams, basePrice: 0 });
-    expect(result.locBuy1).toBeUndefined();
-  });
-
-  it('currentQuantity=0 → 매도 수량 0으로 표시 (orderEntryForDisplay)', () => {
-    const result = calcMultiSplitOrders({ ...baseParams, currentQuantity: 0 });
-    expect(result.locSell).toBeDefined();
-    expect(result.locSell!.quantity).toBe(0);
-    expect(result.limitSell).toBeDefined();
-    expect(result.limitSell!.quantity).toBe(0);
-  });
-
-  it('매도 수량 합계 = 보유 수량 (누락 없음)', () => {
-    const result = calcMultiSplitOrders({ ...baseParams, currentQuantity: 99 });
-    const locQty = result.locSell?.quantity ?? 0;
-    const limitQty = result.limitSell?.quantity ?? 0;
-    expect(locQty + limitQty).toBe(99);
-  });
-
-  it('feeRate는 퍼센트 값으로 해석되어 /100 반영 후 수수료 포함 예산으로 정확히 매수 수량을 산출한다', () => {
-    // Why: 0.25를 25%로 오해하면 전반/후반 매수 수량이 체계적으로 과소 계산되어 전략 전체가 보수적으로 붕괴합니다.
-    const basePrice = 100;
-    const A = 10;
-    const a = 40;
-    const T = 20;
-    const feeRate = 0.25;
-    const locFactor = 1 + (A * (1 - (2 * T) / a)) / 100;
-    const locSellBasePrice = Math.max(MIN_PRICE, basePrice * locFactor);
-    const locBuyBasePrice = Math.max(MIN_PRICE, locSellBasePrice - LOC_PRICE_OFFSET);
-    const oneTimeAmount = locBuyBasePrice * 10 * (1 + feeRate / 100);
-
-    const result = calcMultiSplitOrders({
-      phase: 'second',
-      A,
-      a,
-      T,
-      basePrice,
-      currentQuantity: 20,
-      oneTimeAmount,
-      feeRate,
+describe('calculateMultiSplitBuyGuide', () => {
+  it('MOC를 먼저 배정한 뒤 남은 예산으로 LOC 수량을 계산한다', () => {
+    const result = calculateMultiSplitBuyGuide({
+      remainingBudget: 1000,
+      feeRate: 0.25,
+      avgPrice: 80,
+      snapshot: makeIndicatorSnapshot({
+        currentPrice: 100,
+      }),
+      strategy: makeSmartSplitStrategy({
+        baseLocRatio: 50,
+      }),
     });
 
-    expect(result.locBuy2).toEqual({
-      price: 99.99,
-      quantity: 10,
+    expect(result).toEqual({
+      appliedLocRatioPct: 50,
+      displayLocBuy: {
+        price: 80,
+        quantity: 6,
+      },
+      displayMocBuy: {
+        quantity: 4,
+      },
     });
   });
 
-  it('전반전 0.5회분으로는 1주 미만이지만 1회분으로는 1주 이상 가능하면 locBuy1Qty를 최소 1주로 보정한다', () => {
-    // Why: 첫 LOC 매수 수량이 0으로 사라지면 사용자는 전반전 2분할 전략을 보고도 실제로는 한 번만 매수하게 됩니다.
-    const result = calcMultiSplitOrders({
-      phase: 'first',
-      A: 10,
-      a: 40,
-      T: 5,
-      basePrice: 100,
+  it('평단가가 near-zero 로 손상되면 분모 계산으로 진입하지 않는다', () => {
+    const result = calculateMultiSplitBuyGuide({
+      remainingBudget: 1000,
+      feeRate: 0.25,
+      avgPrice: Number.EPSILON / 2,
+      snapshot: makeIndicatorSnapshot({
+        currentPrice: 100,
+      }),
+      strategy: makeSmartSplitStrategy(),
+    });
+
+    expect(result).toEqual({
+      appliedLocRatioPct: 50,
+    });
+  });
+});
+
+describe('calculateMultiSplitSellGuide', () => {
+  it('메인 익절은 먼저 반올림하고 중간 익절은 잔량으로 계산한다', () => {
+    expect(
+      calculateMultiSplitSellGuide({
+        currentQuantity: 5,
+        mainTakeProfitRatioPct: 50,
+        riskCutRatioPct: 20,
+      }),
+    ).toEqual({
+      mainTakeProfitQty: 3,
+      intermediateTakeProfitQty: 2,
+      riskCutQty: 1,
+    });
+  });
+});
+
+describe('calculateMultiSplitGuideState', () => {
+  it('보유 수량과 스냅샷을 합성해 Smart Split 가이드를 한 번에 계산한다', () => {
+    const result = calculateMultiSplitGuideState({
+      trades: [
+        makeTrade({
+          type: 'buy',
+          stock: 'AAPL',
+          price: 100,
+          quantity: 10,
+          fee: 0,
+        }),
+      ],
+      strategy: makeSmartSplitStrategy({
+        baseLocRatio: 50,
+        rsiRule: {
+          threshold: 40,
+          locRatio: 70,
+        },
+      }),
+      oneTimeAmount: 200,
+      feeRate: 0.25,
+      snapshot: makeIndicatorSnapshot({
+        currentPrice: 110,
+        rsi: 30,
+      }),
+    });
+
+    expect(result).toEqual({
+      cashUsagePct: 50,
+      totalInvested: 1000,
+      totalSeed: 2000,
+      remainingBudget: 1000,
       currentQuantity: 10,
-      oneTimeAmount: 160,
-      feeRate: 0,
+      avgPrice: 100,
+      isFirstBuy: false,
+      isSeedExhausted: false,
+      appliedLocRatioPct: 70,
+      displayLocBuy: {
+        price: 100,
+        quantity: 7,
+      },
+      displayMocBuy: {
+        quantity: 2,
+      },
+      sellGuide: {
+        mainTakeProfitQty: 6,
+        intermediateTakeProfitQty: 4,
+        riskCutQty: 2,
+      },
     });
-
-    expect(result.locBuy1).toEqual({
-      price: 100,
-      quantity: 1,
-    });
-    expect(result.locBuy2).toBeDefined();
   });
 });

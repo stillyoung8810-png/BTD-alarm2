@@ -160,14 +160,80 @@ export default function StrategyCreator({
             targetStockLabel={controller.copy.multiSplit.targetStock}
             targetReturnRateLabel={controller.copy.multiSplit.targetReturnRate}
             totalSplitCountLabel={controller.copy.multiSplit.totalSplitCount}
+            baseLocRatioLabel={controller.copy.multiSplit.baseLocRatio}
+            mainTakeProfitRatioPctLabel={
+              controller.copy.multiSplit.mainTakeProfitRatioPct
+            }
+            intermediateTakeProfitRatioPctLabel={
+              controller.copy.multiSplit.intermediateTakeProfitRatioPct
+            }
+            riskCutRatioPctLabel={controller.copy.multiSplit.riskCutRatioPct}
+            rsiConditionLabel={controller.copy.multiSplit.rsiConditionLabel}
+            rsiConditionHelper={controller.copy.multiSplit.rsiConditionHelper}
+            alignmentConditionLabel={
+              controller.copy.multiSplit.alignmentConditionLabel
+            }
+            alignmentConditionHelper={
+              controller.copy.multiSplit.alignmentConditionHelper
+            }
+            criterionGroupLabel={controller.copy.multiSplit.criterionGroupLabel}
+            budgetGroupLabel={controller.copy.multiSplit.budgetGroupLabel}
             highlightedHint={controller.copy.multiSplit.leveragedRecommended}
+            rsiCriterionOptions={controller.multiSplitRsiCriterionOptions}
+            alignmentCriterionOptions={
+              controller.multiSplitAlignmentCriterionOptions
+            }
+            budgetOptions={controller.multiSplitBudgetOptions}
             stockOptions={controller.stockOptions}
             targetStock={controller.multiSplitTargetStock}
             targetReturnRate={controller.multiSplitTargetReturnRate}
             totalSplitCount={controller.multiSplitTotalSplitCount}
+            baseLocRatio={controller.multiSplitBaseLocRatio}
+            mainTakeProfitRatioPct={controller.multiSplitMainTakeProfitRatioPct}
+            intermediateTakeProfitRatioPct={
+              controller.multiSplitIntermediateTakeProfitRatioPct
+            }
+            riskCutRatioPct={controller.multiSplitRiskCutRatioPct}
+            isRsiConditionEnabled={controller.isMultiSplitRsiConditionEnabled}
+            selectedRsiCriterionPreset={
+              controller.selectedMultiSplitRsiCriterionPreset
+            }
+            selectedRsiBudgetPreset={controller.selectedMultiSplitRsiBudgetPreset}
+            isAlignmentConditionEnabled={
+              controller.isMultiSplitAlignmentConditionEnabled
+            }
+            selectedAlignmentCriterionPreset={
+              controller.selectedMultiSplitAlignmentCriterionPreset
+            }
+            selectedAlignmentBudgetPreset={
+              controller.selectedMultiSplitAlignmentBudgetPreset
+            }
             onTargetStockChange={controller.handleMultiSplitTargetStockChange}
             onTargetReturnRateChange={controller.handleTargetReturnRateChange}
             onTotalSplitCountChange={controller.handleMultiSplitTotalCountChange}
+            onBaseLocRatioChange={controller.handleMultiSplitBaseLocRatioChange}
+            onMainTakeProfitRatioPctChange={
+              controller.handleMultiSplitMainTakeProfitRatioPctChange
+            }
+            onRiskCutRatioPctChange={controller.handleMultiSplitRiskCutRatioPctChange}
+            onRsiConditionEnabledChange={
+              controller.handleMultiSplitRsiConditionEnabledChange
+            }
+            onRsiCriterionPresetChange={
+              controller.handleMultiSplitRsiCriterionPresetChange
+            }
+            onRsiBudgetPresetChange={
+              controller.handleMultiSplitRsiBudgetPresetChange
+            }
+            onAlignmentConditionEnabledChange={
+              controller.handleMultiSplitAlignmentConditionEnabledChange
+            }
+            onAlignmentCriterionPresetChange={
+              controller.handleMultiSplitAlignmentCriterionPresetChange
+            }
+            onAlignmentBudgetPresetChange={
+              controller.handleMultiSplitAlignmentBudgetPresetChange
+            }
           />
         );
       case 'no_stop_multi_split_config':
@@ -182,32 +248,74 @@ export default function StrategyCreator({
               defaultMessage: controller.copy.lockedTickerTooltip,
             }}
             targetStockLabel={controller.copy.noStopMultiSplit.targetStock}
-            lowLocBudgetRatioLabel={
-              controller.copy.noStopMultiSplit.lowLocBudgetRatio
-            }
-            highLocPremiumPctLabel={
-              controller.copy.noStopMultiSplit.highLocPremiumPct
-            }
+            baseLocRatioLabel={controller.copy.noStopMultiSplit.baseLocRatio}
             takeProfitPctLabel={controller.copy.noStopMultiSplit.takeProfitPct}
             totalSplitCountLabel={
               controller.copy.noStopMultiSplit.totalSplitCount
             }
+            rsiConditionLabel={
+              controller.copy.noStopMultiSplit.rsiConditionLabel
+            }
+            rsiConditionHelper={
+              controller.copy.noStopMultiSplit.rsiConditionHelper
+            }
+            alignmentConditionLabel={
+              controller.copy.noStopMultiSplit.alignmentConditionLabel
+            }
+            alignmentConditionHelper={
+              controller.copy.noStopMultiSplit.alignmentConditionHelper
+            }
+            criterionGroupLabel={
+              controller.copy.noStopMultiSplit.criterionGroupLabel
+            }
+            budgetGroupLabel={controller.copy.noStopMultiSplit.budgetGroupLabel}
+            rsiCriterionOptions={controller.noStopRsiCriterionOptions}
+            alignmentCriterionOptions={
+              controller.noStopAlignmentCriterionOptions
+            }
+            budgetOptions={controller.noStopBudgetOptions}
             stockOptions={controller.stockOptions}
             targetStock={controller.noStopTargetStock}
-            lowLocBudgetRatio={controller.noStopLowLocBudgetRatio}
-            highLocPremiumPct={controller.noStopHighLocPremiumPct}
+            baseLocRatio={controller.noStopBaseLocRatio}
             takeProfitPct={controller.noStopTakeProfitPct}
             totalSplitCount={controller.noStopTotalSplitCount}
+            isRsiConditionEnabled={controller.isNoStopRsiConditionEnabled}
+            selectedRsiCriterionPreset={
+              controller.selectedNoStopRsiCriterionPreset
+            }
+            selectedRsiBudgetPreset={controller.selectedNoStopRsiBudgetPreset}
+            isAlignmentConditionEnabled={
+              controller.isNoStopAlignmentConditionEnabled
+            }
+            selectedAlignmentCriterionPreset={
+              controller.selectedNoStopAlignmentCriterionPreset
+            }
+            selectedAlignmentBudgetPreset={
+              controller.selectedNoStopAlignmentBudgetPreset
+            }
             onTargetStockChange={controller.handleNoStopTargetStockChange}
-            onLowLocBudgetRatioChange={
-              controller.handleNoStopLowLocBudgetRatioChange
-            }
-            onHighLocPremiumPctChange={
-              controller.handleNoStopHighLocPremiumPctChange
-            }
+            onBaseLocRatioChange={controller.handleNoStopBaseLocRatioChange}
             onTakeProfitPctChange={controller.handleNoStopTakeProfitPctChange}
             onTotalSplitCountChange={
               controller.handleNoStopTotalSplitCountChange
+            }
+            onRsiConditionEnabledChange={
+              controller.handleNoStopRsiConditionEnabledChange
+            }
+            onRsiCriterionPresetChange={
+              controller.handleNoStopRsiCriterionPresetChange
+            }
+            onRsiBudgetPresetChange={
+              controller.handleNoStopRsiBudgetPresetChange
+            }
+            onAlignmentConditionEnabledChange={
+              controller.handleNoStopAlignmentConditionEnabledChange
+            }
+            onAlignmentCriterionPresetChange={
+              controller.handleNoStopAlignmentCriterionPresetChange
+            }
+            onAlignmentBudgetPresetChange={
+              controller.handleNoStopAlignmentBudgetPresetChange
             }
           />
         );

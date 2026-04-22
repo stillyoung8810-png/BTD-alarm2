@@ -92,7 +92,6 @@ function createMaPortfolio(
       selectedHours: ['23:00'],
       timezone: 'Asia/Seoul',
     },
-    isQuarterMode: overrides.isQuarterMode,
     vrSnapshot: overrides.vrSnapshot,
   };
 

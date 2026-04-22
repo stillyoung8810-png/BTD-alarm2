@@ -18,6 +18,93 @@ export const STRATEGY_SLICE_KEY_VALUES = [
 export type StrategySliceKey =
   (typeof STRATEGY_SLICE_KEY_VALUES)[number];
 
+export const NO_STOP_LOC_RATIO_PRESET_VALUES = [70, 50, 30] as const;
+export type NoStopLocRatioPreset =
+  (typeof NO_STOP_LOC_RATIO_PRESET_VALUES)[number];
+
+export const NO_STOP_RSI_THRESHOLD_PRESET_VALUES = [30, 40, 50] as const;
+export type NoStopRsiThresholdPreset =
+  (typeof NO_STOP_RSI_THRESHOLD_PRESET_VALUES)[number];
+
+export const NO_STOP_SHORT_MA_PERIOD_VALUES = [5, 20, 60] as const;
+export const NO_STOP_LONG_MA_PERIOD_VALUES = [20, 60, 120] as const;
+
+export type NoStopShortMovingAveragePeriod =
+  (typeof NO_STOP_SHORT_MA_PERIOD_VALUES)[number];
+export type NoStopLongMovingAveragePeriod =
+  (typeof NO_STOP_LONG_MA_PERIOD_VALUES)[number];
+export type NoStopMovingAveragePeriod =
+  | NoStopShortMovingAveragePeriod
+  | NoStopLongMovingAveragePeriod;
+
+export interface NoStopRsiRule {
+  threshold: NoStopRsiThresholdPreset;
+  locRatio: NoStopLocRatioPreset;
+}
+
+export interface NoStopAlignmentRule {
+  shortPeriod: NoStopShortMovingAveragePeriod;
+  longPeriod: NoStopLongMovingAveragePeriod;
+  locRatio: NoStopLocRatioPreset;
+}
+
+export interface NoStopMultiSplitStrategy {
+  targetStock: string;
+  baseLocRatio: number;
+  takeProfitPct: number;
+  totalSplitCount: number;
+  rsiRule?: NoStopRsiRule;
+  alignmentRule?: NoStopAlignmentRule;
+}
+
+export interface NoStopIndicatorSnapshot {
+  currentPrice: number;
+  rsi?: number;
+  maByPeriod?: Partial<Record<NoStopMovingAveragePeriod, number>>;
+}
+
+export const MULTI_SPLIT_LOC_RATIO_PRESET_VALUES =
+  NO_STOP_LOC_RATIO_PRESET_VALUES;
+export type MultiSplitLocRatioPreset = NoStopLocRatioPreset;
+export type MultiSplitRsiThresholdPreset = NoStopRsiThresholdPreset;
+export type MultiSplitShortMovingAveragePeriod =
+  NoStopShortMovingAveragePeriod;
+export type MultiSplitLongMovingAveragePeriod = NoStopLongMovingAveragePeriod;
+export type MultiSplitMovingAveragePeriod = NoStopMovingAveragePeriod;
+
+export interface MultiSplitRsiRule {
+  threshold: MultiSplitRsiThresholdPreset;
+  locRatio: MultiSplitLocRatioPreset;
+}
+
+export interface MultiSplitAlignmentRule {
+  shortPeriod: MultiSplitShortMovingAveragePeriod;
+  longPeriod: MultiSplitLongMovingAveragePeriod;
+  locRatio: MultiSplitLocRatioPreset;
+}
+
+export interface MultiSplitStrategy {
+  targetStock: string;
+  targetReturnRate: number;
+  totalSplitCount: number;
+  baseLocRatio: number;
+  mainTakeProfitRatioPct: number;
+  riskCutRatioPct: number;
+  rsiRule?: MultiSplitRsiRule;
+  alignmentRule?: MultiSplitAlignmentRule;
+}
+
+export interface MultiSplitIndicatorSnapshot {
+  currentPrice: number;
+  rsi?: number;
+  maByPeriod?: Partial<Record<MultiSplitMovingAveragePeriod, number>>;
+}
+
+export interface IndicatorRequirements {
+  needsRsi: boolean;
+  maPeriods: readonly NoStopMovingAveragePeriod[];
+}
+
 export interface AlarmConfig {
   enabled: boolean;
   selectedHours: string[]; // e.g., ["15:00", "16:00"] (최대 2개)
@@ -55,20 +142,10 @@ export interface Strategy {
     takePartialProfit?: boolean;
     partialProfitTargetPct?: number;
   };
-  // 다분할 매매법 전용 필드
-  multiSplit?: {
-    targetStock: string;
-    targetReturnRate: number; // A: 목표 수익률 (5-30)
-    totalSplitCount: number; // a: 총 분할 횟수 (20-80)
-  };
+  // 다분할 매매법(스마트 스플릿) 전용 필드
+  multiSplit?: MultiSplitStrategy;
   // 다분할 매매법(무손절) 전용 필드
-  noStopMultiSplit?: {
-    targetStock: string;
-    lowLocBudgetRatio: number; // 저가 LOC 예산 비율 (%)
-    highLocPremiumPct: number; // 고가 LOC 프리미엄 (%)
-    takeProfitPct: number; // 익절 목표 수익률 (%)
-    totalSplitCount: number; // 총 분할 횟수
-  };
+  noStopMultiSplit?: NoStopMultiSplitStrategy;
   /** VR 밴드 전략 설정. SSOT — 초기 설정은 이 필드 단 한 곳에만 존재. */
   vrBand?: VrBandStrategyParams;
 }
@@ -182,8 +259,6 @@ export interface Portfolio {
   closedAt?: string;
   finalSellAmount?: number;
   alarmconfig?: AlarmConfig;
-  /** 다분할 매매법: T > a-1 이면 true. LOC 매도(24% 이상 감소) 또는 +A% 지정가 매도(99% 이상 감소) 시 false. */
-  isQuarterMode?: boolean;
   /** VR 밴드 전략: 실시간 상태(Pool/V/밴드/주문표). 잔액 계산은 이 값만 사용. 초기 설정은 strategy.vrBand 단일 소스. */
   vrSnapshot?: VrSnapshot;
 }
@@ -203,7 +278,6 @@ export interface PortfolioRow extends Record<string, unknown> {
   strategy?: Strategy;
   trades?: Trade[] | null;
   alarm_config?: AlarmConfig | null;
-  is_quarter_mode?: boolean | null;
   is_closed?: boolean | null;
   closed_at?: string | null;
   final_sell_amount?: number | null;

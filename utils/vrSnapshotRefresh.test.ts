@@ -144,7 +144,6 @@ function createPortfolio(
     closedAt: overrides.closedAt,
     finalSellAmount: overrides.finalSellAmount,
     alarmconfig: overrides.alarmconfig,
-    isQuarterMode: overrides.isQuarterMode,
     vrSnapshot: overrides.vrSnapshot ?? createInitialVrSnapshot(params),
   };
 }
@@ -361,11 +360,12 @@ describe('VR snapshot refresh scheduler core', () => {
 
     expect(beforeMidnight).not.toBeNull();
     expect(afterMidnight).not.toBeNull();
-    expect(afterMidnight?.getTime() - beforeMidnight?.getTime()).toBe(
-      TIME_MS.PER_DAY,
-    );
-    expect(beforeMidnight?.toISOString()).toBe('2026-03-08T00:00:00.000Z');
-    expect(afterMidnight?.toISOString()).toBe('2026-03-09T00:00:00.000Z');
+    if (beforeMidnight == null || afterMidnight == null) {
+      throw new Error('logical New York dates must be resolved');
+    }
+    expect(afterMidnight.getTime() - beforeMidnight.getTime()).toBe(TIME_MS.PER_DAY);
+    expect(beforeMidnight.toISOString()).toBe('2026-03-08T00:00:00.000Z');
+    expect(afterMidnight.toISOString()).toBe('2026-03-09T00:00:00.000Z');
   });
 
   it('뉴욕 DST 종료 경계에서도 logical date는 하루를 중복 계산하지 않고 정확히 1일 전진한다', () => {
@@ -379,10 +379,11 @@ describe('VR snapshot refresh scheduler core', () => {
 
     expect(beforeMidnight).not.toBeNull();
     expect(afterMidnight).not.toBeNull();
-    expect(afterMidnight?.getTime() - beforeMidnight?.getTime()).toBe(
-      TIME_MS.PER_DAY,
-    );
-    expect(beforeMidnight?.toISOString()).toBe('2026-11-01T00:00:00.000Z');
-    expect(afterMidnight?.toISOString()).toBe('2026-11-02T00:00:00.000Z');
+    if (beforeMidnight == null || afterMidnight == null) {
+      throw new Error('logical New York dates must be resolved');
+    }
+    expect(afterMidnight.getTime() - beforeMidnight.getTime()).toBe(TIME_MS.PER_DAY);
+    expect(beforeMidnight.toISOString()).toBe('2026-11-01T00:00:00.000Z');
+    expect(afterMidnight.toISOString()).toBe('2026-11-02T00:00:00.000Z');
   });
 });

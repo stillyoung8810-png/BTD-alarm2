@@ -74,7 +74,6 @@ function createPortfolio(
     closedAt: overrides.closedAt,
     finalSellAmount: overrides.finalSellAmount,
     alarmconfig: overrides.alarmconfig,
-    isQuarterMode: overrides.isQuarterMode,
     vrSnapshot: overrides.vrSnapshot ?? createInitialVrSnapshot(vrParams),
   };
 }

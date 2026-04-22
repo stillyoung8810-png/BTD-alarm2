@@ -3,6 +3,9 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getEffectiveSubscriptionState } from "../../../server/src/services/paymentFulfillment.ts";
 import type {
+  IndicatorRequirements,
+  NoStopIndicatorSnapshot,
+  NoStopMovingAveragePeriod,
   Portfolio,
   PortfolioRow,
   Strategy,
@@ -18,16 +21,20 @@ import {
   type Lang,
 } from "../_shared/maSummaryShared.ts";
 import {
-  calculateMultiSplitStrategyState,
-  RECENT_TRADING_DAYS_COUNT,
-  type MultiSplitExecutionResult,
-  type QuarterStopLossResult,
+  calculateMultiSplitGuideState,
+  collectIndicatorRequirements as collectMultiSplitIndicatorRequirements,
   type TradeInput,
 } from "../_shared/multiSplitShared.ts";
 import {
-  calculateNoStopMultiSplitState,
+  buildSummaryIndicatorSnapshot,
+  calcNoStopCurrentRound,
+  calculateNoStopExecution,
+  collectIndicatorRequirements as collectNoStopIndicatorRequirements,
+  EMPTY_PRICE_HISTORY_ERROR,
   type NoStopMultiSplitExecutionData,
+  type NoStopIndicatorMathPort,
 } from "../_shared/noStopMultiSplitShared.ts";
+import { roundMoney } from "../_shared/financialMath.ts";
 
 interface Holdings {
   stock: string;
@@ -41,14 +48,6 @@ interface StockHistory {
   dates: string[];
 }
 
-interface StockSnapshot {
-  price: number;
-  rsi: number;
-  ma20: number;
-  ma60: number;
-  ma120: number;
-}
-
 interface StockPriceRow {
   close: number | string | null;
   trade_date: string | null;
@@ -59,12 +58,19 @@ type PartialProfitStrategyConfig =
   | Strategy["ma2"]
   | Strategy["ma3"];
 
-type MultiSplitExecutionData = MultiSplitExecutionResult;
-type QuarterStopLossData = QuarterStopLossResult;
-
-const STANDARD_MA_PERIODS = [20, 60, 120];
+const REQUIREMENT_AWARE_MA_PERIODS = [5, 20, 60, 120] as const;
 const PORTFOLIO_USER_CHUNK = 200;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+const RSI_HISTORY_WINDOW = 15;
+const MIN_HISTORY_WINDOW = 1;
+const PRICE_ONLY_REQUIREMENTS: IndicatorRequirements = {
+  needsRsi: false,
+  maPeriods: [],
+};
+const RSI_ONLY_REQUIREMENTS: IndicatorRequirements = {
+  needsRsi: true,
+  maPeriods: [],
+};
 
 function getCurrentKSTDateString(): string {
   const nowUtc = new Date();
@@ -88,6 +94,64 @@ function shouldSendTelegram(profile: UserProfileRow | null): boolean {
   const chatId = profile.telegram_chat_id;
   if (!chatId || String(chatId).trim() === "") return false;
   return true;
+}
+
+function normalizeTickerSymbol(symbol: string): string {
+  return symbol.trim().toUpperCase();
+}
+
+function normalizeIndicatorRequirements(
+  requirements: IndicatorRequirements,
+): IndicatorRequirements {
+  const normalizedPeriods = Array.from(
+    new Set(
+      requirements.maPeriods.filter((period) =>
+        REQUIREMENT_AWARE_MA_PERIODS.includes(period)
+      ),
+    ),
+  ).sort((left, right) => left - right);
+
+  return {
+    needsRsi: requirements.needsRsi === true,
+    maPeriods: normalizedPeriods,
+  };
+}
+
+function buildIndicatorRequirementCacheKey(args: {
+  symbol: string;
+  requirements: IndicatorRequirements;
+}): string {
+  const normalizedSymbol = normalizeTickerSymbol(args.symbol);
+  const normalizedRequirements = normalizeIndicatorRequirements(
+    args.requirements,
+  );
+  const serializedPeriods = normalizedRequirements.maPeriods.join(",");
+
+  return `${normalizedSymbol}|rsi:${normalizedRequirements.needsRsi ? 1 : 0}|ma:${serializedPeriods}`;
+}
+
+function getRequiredHistoryCount(requirements: IndicatorRequirements): number {
+  const minimumRsiWindow = requirements.needsRsi
+    ? RSI_HISTORY_WINDOW
+    : MIN_HISTORY_WINDOW;
+  const maximumMaWindow = requirements.maPeriods.reduce(
+    (currentMax, period) => (period > currentMax ? period : currentMax),
+    MIN_HISTORY_WINDOW,
+  );
+
+  return Math.max(minimumRsiWindow, maximumMaWindow);
+}
+
+function isRequirementAwareMaPeriod(
+  period: number,
+): period is NoStopMovingAveragePeriod {
+  return REQUIREMENT_AWARE_MA_PERIODS.includes(
+    period as NoStopMovingAveragePeriod,
+  );
+}
+
+function isEmptyPriceHistoryError(error: unknown): boolean {
+  return error instanceof Error && error.message === EMPTY_PRICE_HISTORY_ERROR;
 }
 
 function toStockPriceRows(raw: unknown): StockPriceRow[] {
@@ -123,7 +187,6 @@ function mapPortfolioRow(row: PortfolioRow): Portfolio | null {
     trades: Array.isArray(row.trades) ? row.trades : [],
     isClosed: row.is_closed ?? false,
     alarmconfig: row.alarm_config ?? row.alarmconfig ?? undefined,
-    isQuarterMode: row.is_quarter_mode ?? false,
     vrSnapshot: row.vr_snapshot ?? row.vrSnapshot ?? undefined,
   };
 }
@@ -162,7 +225,9 @@ function calculateHoldings(portfolio: Portfolio): Holdings[] {
 function calculateMA(prices: number[], period: number): number {
   if (prices.length < period) return 0;
   const recentPrices = prices.slice(-period);
-  return recentPrices.reduce((sum, price) => sum + price, 0) / period;
+  const rawAverage =
+    recentPrices.reduce((sum, price) => sum + price, 0) / period;
+  return roundMoney(rawAverage);
 }
 
 function calculateRSI(prices: number[], period = 14): number {
@@ -193,7 +258,9 @@ function calculateRSI(prices: number[], period = 14): number {
 
   if (avgLoss === 0) return 100;
   const rs = avgGain / avgLoss;
-  return 100 - (100 / (1 + rs));
+  const rawRsi = 100 - (100 / (1 + rs));
+  const boundedRsi = Math.max(0, Math.min(100, rawRsi));
+  return roundMoney(boundedRsi);
 }
 
 async function getStockHistory(
@@ -202,7 +269,7 @@ async function getStockHistory(
   symbol: string,
   limit: number,
 ): Promise<StockHistory> {
-  const key = symbol.trim().toUpperCase();
+  const key = normalizeTickerSymbol(symbol);
   const cached = cache.get(key);
   if (cached && cached.prices.length >= limit) {
     return cached;
@@ -236,23 +303,35 @@ async function getStockHistory(
 async function getStockSnapshot(
   supabase: ReturnType<typeof createClient>,
   historyCache: Map<string, StockHistory>,
-  snapshotCache: Map<string, StockSnapshot>,
+  snapshotCache: Map<string, NoStopIndicatorSnapshot>,
   symbol: string,
-): Promise<StockSnapshot> {
-  const key = symbol.trim().toUpperCase();
-  const cached = snapshotCache.get(key);
+  requirements: IndicatorRequirements = PRICE_ONLY_REQUIREMENTS,
+): Promise<NoStopIndicatorSnapshot> {
+  const normalizedSymbol = normalizeTickerSymbol(symbol);
+  const normalizedRequirements = normalizeIndicatorRequirements(requirements);
+  const cacheKey = buildIndicatorRequirementCacheKey({
+    symbol: normalizedSymbol,
+    requirements: normalizedRequirements,
+  });
+  const cached = snapshotCache.get(cacheKey);
   if (cached) return cached;
 
-  const history = await getStockHistory(supabase, historyCache, key, 240);
-  const prices = history.prices;
-  const latestPrice = prices.length > 0 ? prices[prices.length - 1] : 0;
-  const ma20 = calculateMA(prices, 20);
-  const ma60 = calculateMA(prices, 60);
-  const ma120 = calculateMA(prices, 120);
-  const rsi = calculateRSI(prices);
-
-  const snapshot = { price: latestPrice, rsi, ma20, ma60, ma120 };
-  snapshotCache.set(key, snapshot);
+  const history = await getStockHistory(
+    supabase,
+    historyCache,
+    normalizedSymbol,
+    getRequiredHistoryCount(normalizedRequirements),
+  );
+  const sharedMath: NoStopIndicatorMathPort = {
+    calculateMA: (prices, period) => calculateMA(prices, period),
+    calculateRSI: (prices) => calculateRSI(prices),
+  };
+  const snapshot = buildSummaryIndicatorSnapshot({
+    prices: history.prices,
+    requirements: normalizedRequirements,
+    sharedMath,
+  });
+  snapshotCache.set(cacheKey, snapshot);
   return snapshot;
 }
 
@@ -264,29 +343,44 @@ function computeMAFromHistory(history: number[], period: number): number {
 async function getMAForBaseStock(
   supabase: ReturnType<typeof createClient>,
   historyCache: Map<string, StockHistory>,
-  snapshotCache: Map<string, StockSnapshot>,
+  snapshotCache: Map<string, NoStopIndicatorSnapshot>,
   symbol: string,
   period: number,
 ): Promise<number> {
-  const snapshot = await getStockSnapshot(supabase, historyCache, snapshotCache, symbol);
-  if (STANDARD_MA_PERIODS.includes(period)) {
-    if (period === 20 && snapshot.ma20 > 0) return snapshot.ma20;
-    if (period === 60 && snapshot.ma60 > 0) return snapshot.ma60;
-    if (period === 120 && snapshot.ma120 > 0) return snapshot.ma120;
+  if (isRequirementAwareMaPeriod(period)) {
+    const snapshot = await getStockSnapshot(
+      supabase,
+      historyCache,
+      snapshotCache,
+      symbol,
+      {
+        needsRsi: false,
+        maPeriods: [period],
+      },
+    );
+    const maValue = snapshot.maByPeriod?.[period];
+    if (typeof maValue === "number" && Number.isFinite(maValue) && maValue > 0) {
+      return maValue;
+    }
   }
+
   const history = await getStockHistory(
     supabase,
     historyCache,
     symbol,
     Math.max(period + 30, 120),
   );
+  if (history.prices.length === 0) {
+    throw new Error(EMPTY_PRICE_HISTORY_ERROR);
+  }
+
   return computeMAFromHistory(history.prices, period);
 }
 
 async function getMAValuesForAlignment(
   supabase: ReturnType<typeof createClient>,
   historyCache: Map<string, StockHistory>,
-  snapshotCache: Map<string, StockSnapshot>,
+  snapshotCache: Map<string, NoStopIndicatorSnapshot>,
   portfolio: Portfolio,
 ): Promise<{ maA: number; maB: number }> {
   const ma0Stock = portfolio.strategy.ma0.stock;
@@ -299,12 +393,17 @@ async function getMAValuesForAlignment(
 async function determineActiveSection(
   supabase: ReturnType<typeof createClient>,
   historyCache: Map<string, StockHistory>,
-  snapshotCache: Map<string, StockSnapshot>,
+  snapshotCache: Map<string, NoStopIndicatorSnapshot>,
   portfolio: Portfolio,
 ): Promise<1 | 2 | 3 | null> {
   const ma0Stock = portfolio.strategy.ma0.stock;
-  const snapshot = await getStockSnapshot(supabase, historyCache, snapshotCache, ma0Stock);
-  const ma0Price = snapshot.price;
+  const snapshot = await getStockSnapshot(
+    supabase,
+    historyCache,
+    snapshotCache,
+    ma0Stock,
+  );
+  const ma0Price = snapshot.currentPrice;
   if (!ma0Price) return null;
 
   const { maAPeriod, maBPeriod } = getMaPeriods(portfolio);
@@ -312,17 +411,6 @@ async function determineActiveSection(
   const maB = await getMAForBaseStock(supabase, historyCache, snapshotCache, ma0Stock, maBPeriod);
 
   return determineMaActiveSectionFromValues(ma0Price, maA, maB);
-}
-
-async function getRecentTradingDays(
-  supabase: ReturnType<typeof createClient>,
-  historyCache: Map<string, StockHistory>,
-  symbol: string,
-  days: number,
-): Promise<string[]> {
-  const history = await getStockHistory(supabase, historyCache, symbol, days * 2);
-  const sorted = [...history.dates].sort((a, b) => b.localeCompare(a));
-  return sorted.slice(0, days);
 }
 
 function toMultiSplitTradeInputs(trades: Portfolio["trades"]): TradeInput[] {
@@ -346,7 +434,7 @@ function joinDailyExecutionBlocks(blocks: string[]): string {
 async function buildPortfolioBlock(
   supabase: ReturnType<typeof createClient>,
   historyCache: Map<string, StockHistory>,
-  snapshotCache: Map<string, StockSnapshot>,
+  snapshotCache: Map<string, NoStopIndicatorSnapshot>,
   portfolio: Portfolio,
   lang: Lang,
 ): Promise<string | null> {
@@ -354,143 +442,191 @@ async function buildPortfolioBlock(
   if (!alarm?.enabled) return null;
   if (!Array.isArray(alarm.selectedHours) || alarm.selectedHours.length === 0) return null;
 
-  if (portfolio.strategy.vrBand) {
-    const snapshot = portfolio.vrSnapshot;
-    let vrMaxBuyStep = 0;
-    if (snapshot?.buyOrders && Array.isArray(snapshot.buyOrders)) {
-      snapshot.buyOrders
-        .filter((o) => !o.isBuffer)
-        .forEach((o) => {
-          if (typeof o.step === "number" && o.step > vrMaxBuyStep) {
-            vrMaxBuyStep = o.step;
-          }
-        });
+  try {
+    if (portfolio.strategy.vrBand) {
+      const snapshot = portfolio.vrSnapshot;
+      let vrMaxBuyStep = 0;
+      if (snapshot?.buyOrders && Array.isArray(snapshot.buyOrders)) {
+        snapshot.buyOrders
+          .filter((o) => !o.isBuffer)
+          .forEach((o) => {
+            if (typeof o.step === "number" && o.step > vrMaxBuyStep) {
+              vrMaxBuyStep = o.step;
+            }
+          });
+      }
+
+      return formatPortfolioDailyExecutionBlock(portfolio, lang, {
+        vrMaxBuyStep,
+      });
     }
 
-    return formatPortfolioDailyExecutionBlock(portfolio, lang, {
-      vrMaxBuyStep,
-    });
-  }
-
-  if (portfolio.strategy.multiSplit) {
-    const a = portfolio.strategy.multiSplit.totalSplitCount ?? 0;
-    const targetStock = portfolio.strategy.multiSplit.targetStock;
-    const snapshot = await getStockSnapshot(supabase, historyCache, snapshotCache, targetStock);
-    const recentTradingDays = await getRecentTradingDays(
-      supabase,
-      historyCache,
-      targetStock,
-      RECENT_TRADING_DAYS_COUNT,
-    );
-    const multiSplitState = calculateMultiSplitStrategyState({
-      trades: toMultiSplitTradeInputs(portfolio.trades),
-      dailyBuyAmount: portfolio.dailyBuyAmount,
-      feeRate: portfolio.feeRate ?? 0.25,
-      multiSplit: portfolio.strategy.multiSplit,
-      isQuarterMode: portfolio.isQuarterMode === true,
-      currentPrice: snapshot.price ?? 0,
-      recentTradingDays,
-    });
-    const currentRound = multiSplitState.currentRound;
-    const multiSplitPhase = multiSplitState.multiSplitPhase;
-    const multiSplitOverLimit = a > 0 && currentRound > a;
-
-    return formatPortfolioDailyExecutionBlock(portfolio, lang, {
-      multiSplitExecutionData: multiSplitState.multiSplitExecutionData,
-      quarterStopLossData: multiSplitState.quarterStopLossData,
-      multiSplitPhase,
-      isQuarterStopLossActive: portfolio.isQuarterMode === true,
-      multiSplitOverLimit,
-      multiSplitFirstRoundHint: currentRound >= 0 && currentRound < 0.5,
-      multiSplitInsufficientAmount: multiSplitState.multiSplitInsufficientAmount,
-    });
-  }
-
-  if (portfolio.strategy.noStopMultiSplit) {
-    const snapshot = await getStockSnapshot(
-      supabase,
-      historyCache,
-      snapshotCache,
-      portfolio.strategy.noStopMultiSplit.targetStock,
-    );
-    const noStopState = calculateNoStopMultiSplitState({
-      trades: toMultiSplitTradeInputs(portfolio.trades),
-      oneTimeAmount: portfolio.dailyBuyAmount,
-      feeRate: portfolio.feeRate ?? 0.25,
-      currentPrice: snapshot.price ?? 0,
-      strategy: portfolio.strategy.noStopMultiSplit,
-    });
-
-    return formatPortfolioDailyExecutionBlock(portfolio, lang, {
-      noStopMultiSplitExecutionData: noStopState.executionData,
-    });
-  }
-
-  const section = await determineActiveSection(supabase, historyCache, snapshotCache, portfolio);
-  let maRsiNotMet = false;
-  let maAlignmentNotMet = false;
-  let maPartialProfitLines: { section: 1 | 2 | 3; stock: string; quantity: number }[] = [];
-
-  if (section === 1 || section === 2 || section === 3) {
-    const ma0 = portfolio.strategy.ma0;
-    const baseStock = ma0.stock;
-    const baseSnapshot = await getStockSnapshot(supabase, historyCache, snapshotCache, baseStock);
-
-    maRsiNotMet = calculateMaRsiNotMet({
-      strategy: portfolio.strategy,
-      section,
-      currentRsi: baseSnapshot.rsi,
-    });
-
-    if (ma0.alignmentEnabled) {
-      const { maA, maB } = await getMAValuesForAlignment(
+    if (portfolio.strategy.multiSplit) {
+      const strategy = portfolio.strategy.multiSplit;
+      const requirements = collectMultiSplitIndicatorRequirements(strategy);
+      const indicatorSnapshot = await getStockSnapshot(
         supabase,
         historyCache,
         snapshotCache,
-        portfolio,
+        strategy.targetStock,
+        requirements,
       );
-      maAlignmentNotMet = calculateMaAlignmentNotMet({
-        isAlignmentEnabled: ma0.alignmentEnabled,
-        maA,
-        maB,
+      const multiSplitExecutionData = calculateMultiSplitGuideState({
+        trades: toMultiSplitTradeInputs(portfolio.trades),
+        oneTimeAmount: portfolio.dailyBuyAmount,
+        feeRate: portfolio.feeRate ?? 0.25,
+        strategy,
+        snapshot: indicatorSnapshot,
+      });
+
+      return formatPortfolioDailyExecutionBlock(portfolio, lang, {
+        multiSplitExecutionData,
       });
     }
 
-    const holdings = calculateHoldings(portfolio);
-    const lines: { section: 1 | 2 | 3; stock: string; quantity: number }[] = [];
-    const checkPartial = async (
-      sec: 1 | 2 | 3,
-      config: PartialProfitStrategyConfig | undefined,
-    ) => {
-      if (!config?.takePartialProfit || config.partialProfitTargetPct == null || config.partialProfitTargetPct <= 0) return;
-      const snapshot = await getStockSnapshot(supabase, historyCache, snapshotCache, config.stock);
-      const nextLine = collectMaPartialProfitLine({
-        section: sec,
-        config,
-        holdings,
-        prices: {
-          [config.stock]: {
-            price: snapshot.price,
-          },
-        },
+    if (portfolio.strategy.noStopMultiSplit) {
+      const strategy = portfolio.strategy.noStopMultiSplit;
+      const requirements = collectNoStopIndicatorRequirements(strategy);
+      const indicatorSnapshot = await getStockSnapshot(
+        supabase,
+        historyCache,
+        snapshotCache,
+        strategy.targetStock,
+        requirements,
+      );
+      const trades = toMultiSplitTradeInputs(portfolio.trades);
+      const currentRound = calcNoStopCurrentRound(
+        trades,
+        portfolio.dailyBuyAmount,
+        strategy.targetStock,
+      );
+      const execution = calculateNoStopExecution({
+        trades,
+        oneTimeAmount: portfolio.dailyBuyAmount,
+        feeRate: portfolio.feeRate ?? 0.25,
+        snapshot: indicatorSnapshot,
+        strategy,
       });
-      if (nextLine != null) {
-        lines.push(nextLine);
+      const noStopExecutionData: NoStopMultiSplitExecutionData = {
+        currentRound,
+        progressPct: execution.progressPct,
+        isFirstBuy: execution.isFirstBuy,
+        isSplitComplete: execution.isSplitComplete,
+        displayLowLoc: execution.displayLowLoc,
+        displayMocBuy: execution.displayMocBuy,
+        takeProfit: execution.takeProfit,
+      };
+
+      return formatPortfolioDailyExecutionBlock(portfolio, lang, {
+        noStopMultiSplitExecutionData: noStopExecutionData,
+      });
+    }
+
+    const section = await determineActiveSection(
+      supabase,
+      historyCache,
+      snapshotCache,
+      portfolio,
+    );
+    let maRsiNotMet = false;
+    let maAlignmentNotMet = false;
+    let maPartialProfitLines: {
+      section: 1 | 2 | 3;
+      stock: string;
+      quantity: number;
+    }[] = [];
+
+    if (section === 1 || section === 2 || section === 3) {
+      const ma0 = portfolio.strategy.ma0;
+      const baseStock = ma0.stock;
+      const baseSnapshot = await getStockSnapshot(
+        supabase,
+        historyCache,
+        snapshotCache,
+        baseStock,
+        RSI_ONLY_REQUIREMENTS,
+      );
+
+      maRsiNotMet = calculateMaRsiNotMet({
+        strategy: portfolio.strategy,
+        section,
+        currentRsi: baseSnapshot.rsi,
+      });
+
+      if (ma0.alignmentEnabled) {
+        const { maA, maB } = await getMAValuesForAlignment(
+          supabase,
+          historyCache,
+          snapshotCache,
+          portfolio,
+        );
+        maAlignmentNotMet = calculateMaAlignmentNotMet({
+          isAlignmentEnabled: ma0.alignmentEnabled,
+          maA,
+          maB,
+        });
       }
-    };
 
-    await checkPartial(1, portfolio.strategy.ma1);
-    await checkPartial(2, portfolio.strategy.ma2);
-    await checkPartial(3, portfolio.strategy.ma3);
-    maPartialProfitLines = lines;
+      const holdings = calculateHoldings(portfolio);
+      const lines: { section: 1 | 2 | 3; stock: string; quantity: number }[] = [];
+      const checkPartial = async (
+        sec: 1 | 2 | 3,
+        config: PartialProfitStrategyConfig | undefined,
+      ) => {
+        if (
+          !config?.takePartialProfit ||
+          config.partialProfitTargetPct == null ||
+          config.partialProfitTargetPct <= 0
+        ) {
+          return;
+        }
+
+        const priceSnapshot = await getStockSnapshot(
+          supabase,
+          historyCache,
+          snapshotCache,
+          config.stock,
+        );
+        const nextLine = collectMaPartialProfitLine({
+          section: sec,
+          config,
+          holdings,
+          prices: {
+            [config.stock]: {
+              price: priceSnapshot.currentPrice,
+            },
+          },
+        });
+        if (nextLine != null) {
+          lines.push(nextLine);
+        }
+      };
+
+      await checkPartial(1, portfolio.strategy.ma1);
+      await checkPartial(2, portfolio.strategy.ma2);
+      await checkPartial(3, portfolio.strategy.ma3);
+      maPartialProfitLines = lines;
+    }
+
+    return formatPortfolioDailyExecutionBlock(portfolio, lang, {
+      maActiveSection: section,
+      maPartialProfitLines: maPartialProfitLines.length
+        ? maPartialProfitLines
+        : undefined,
+      maRsiNotMet,
+      maAlignmentNotMet,
+    });
+  } catch (error) {
+    if (isEmptyPriceHistoryError(error)) {
+      console.warn("Skipping daily execution summary due to empty price history", {
+        portfolioId: portfolio.id,
+        portfolioName: portfolio.name,
+      });
+      return null;
+    }
+
+    throw error;
   }
-
-  return formatPortfolioDailyExecutionBlock(portfolio, lang, {
-    maActiveSection: section,
-    maPartialProfitLines: maPartialProfitLines.length ? maPartialProfitLines : undefined,
-    maRsiNotMet,
-    maAlignmentNotMet,
-  });
 }
 
 async function fetchPortfoliosForUsers(
@@ -502,7 +638,7 @@ async function fetchPortfoliosForUsers(
     const chunk = userIds.slice(i, i + PORTFOLIO_USER_CHUNK);
     const { data, error } = await supabase
       .from("portfolios")
-      .select("id, user_id, name, daily_buy_amount, fee_rate, strategy, trades, alarm_config, is_quarter_mode, is_closed, vr_snapshot")
+      .select("id, user_id, name, daily_buy_amount, fee_rate, strategy, trades, alarm_config, is_closed, vr_snapshot")
       .in("user_id", chunk)
       .eq("is_closed", false);
     if (error) {
@@ -588,7 +724,7 @@ serve(async (_req) => {
     }
 
     const historyCache = new Map<string, StockHistory>();
-    const snapshotCache = new Map<string, StockSnapshot>();
+    const snapshotCache = new Map<string, NoStopIndicatorSnapshot>();
     const summaryDate = getCurrentKSTDateString();
     const upsertRows: Array<{ user_id: string; summary_date: string; summary_text: string; lang: Lang; updated_at: string }> = [];
 
@@ -599,7 +735,23 @@ serve(async (_req) => {
 
       const blocks: string[] = [];
       for (const portfolio of userPortfolios) {
-        const block = await buildPortfolioBlock(supabase, historyCache, snapshotCache, portfolio, lang);
+        let block: string | null = null;
+        try {
+          block = await buildPortfolioBlock(
+            supabase,
+            historyCache,
+            snapshotCache,
+            portfolio,
+            lang,
+          );
+        } catch (error) {
+          console.error("Failed to build daily execution block:", {
+            userId: profile.id,
+            portfolioId: portfolio.id,
+            portfolioName: portfolio.name,
+            error,
+          });
+        }
         if (block) blocks.push(block);
       }
 

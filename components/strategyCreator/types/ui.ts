@@ -1,6 +1,12 @@
 import type { ReactNode } from 'react';
 import type { AppLang } from '@/types';
 import type {
+  MultiSplitBudgetPresetId,
+  MultiSplitMaPresetId,
+  MultiSplitRsiPresetId,
+  NoStopBudgetPresetId,
+  NoStopMaPresetId,
+  NoStopRsiPresetId,
   StrategyCreatorMetaDraftInput,
   StrategyType,
 } from '@/src/components/StrategyCreator/utils';
@@ -142,35 +148,90 @@ export interface MultiSplitConfigStepViewProps {
   targetStockLabel: string;
   targetReturnRateLabel: string;
   totalSplitCountLabel: string;
+  baseLocRatioLabel: string;
+  mainTakeProfitRatioPctLabel: string;
+  intermediateTakeProfitRatioPctLabel: string;
+  riskCutRatioPctLabel: string;
+  rsiConditionLabel: string;
+  rsiConditionHelper: string;
+  alignmentConditionLabel: string;
+  alignmentConditionHelper: string;
+  criterionGroupLabel: string;
+  budgetGroupLabel: string;
   highlightedHint: string;
+  rsiCriterionOptions: readonly PresetChipOption<MultiSplitRsiPresetId>[];
+  alignmentCriterionOptions: readonly PresetChipOption<MultiSplitMaPresetId>[];
+  budgetOptions: readonly PresetChipOption<MultiSplitBudgetPresetId>[];
   stockOptions: readonly StrategyStockOption[];
   targetStock: string;
   targetReturnRate: number;
   totalSplitCount: number;
+  baseLocRatio: number;
+  mainTakeProfitRatioPct: number;
+  intermediateTakeProfitRatioPct: number;
+  riskCutRatioPct: number;
+  isRsiConditionEnabled: boolean;
+  selectedRsiCriterionPreset: MultiSplitRsiPresetId;
+  selectedRsiBudgetPreset: MultiSplitBudgetPresetId;
+  isAlignmentConditionEnabled: boolean;
+  selectedAlignmentCriterionPreset: MultiSplitMaPresetId;
+  selectedAlignmentBudgetPreset: MultiSplitBudgetPresetId;
   onTargetStockChange: (value: string) => void;
   onTargetReturnRateChange: (value: string) => number;
   onTotalSplitCountChange: (value: string) => number;
+  onBaseLocRatioChange: (value: string) => number;
+  onMainTakeProfitRatioPctChange: (value: string) => number;
+  onRiskCutRatioPctChange: (value: string) => number;
+  onRsiConditionEnabledChange: (value: boolean) => void;
+  onRsiCriterionPresetChange: (value: MultiSplitRsiPresetId) => void;
+  onRsiBudgetPresetChange: (value: MultiSplitBudgetPresetId) => void;
+  onAlignmentConditionEnabledChange: (value: boolean) => void;
+  onAlignmentCriterionPresetChange: (value: MultiSplitMaPresetId) => void;
+  onAlignmentBudgetPresetChange: (value: MultiSplitBudgetPresetId) => void;
+}
+
+export interface PresetChipOption<TId extends string> {
+  id: TId;
+  label: string;
 }
 
 export interface NoStopMultiSplitConfigStepViewProps {
   stockPickerHeader: string;
   dropdownInfoModalLabels: DropdownInfoModalLabels;
   targetStockLabel: string;
-  lowLocBudgetRatioLabel: string;
-  highLocPremiumPctLabel: string;
+  baseLocRatioLabel: string;
   takeProfitPctLabel: string;
   totalSplitCountLabel: string;
+  rsiConditionLabel: string;
+  rsiConditionHelper: string;
+  alignmentConditionLabel: string;
+  alignmentConditionHelper: string;
+  criterionGroupLabel: string;
+  budgetGroupLabel: string;
+  rsiCriterionOptions: readonly PresetChipOption<NoStopRsiPresetId>[];
+  alignmentCriterionOptions: readonly PresetChipOption<NoStopMaPresetId>[];
+  budgetOptions: readonly PresetChipOption<NoStopBudgetPresetId>[];
   stockOptions: readonly StrategyStockOption[];
   targetStock: string;
-  lowLocBudgetRatio: number;
-  highLocPremiumPct: number;
+  baseLocRatio: number;
   takeProfitPct: number;
   totalSplitCount: number;
+  isRsiConditionEnabled: boolean;
+  selectedRsiCriterionPreset: NoStopRsiPresetId;
+  selectedRsiBudgetPreset: NoStopBudgetPresetId;
+  isAlignmentConditionEnabled: boolean;
+  selectedAlignmentCriterionPreset: NoStopMaPresetId;
+  selectedAlignmentBudgetPreset: NoStopBudgetPresetId;
   onTargetStockChange: (value: string) => void;
-  onLowLocBudgetRatioChange: (value: string) => number;
-  onHighLocPremiumPctChange: (value: string) => number;
+  onBaseLocRatioChange: (value: string) => number;
   onTakeProfitPctChange: (value: string) => number;
   onTotalSplitCountChange: (value: string) => number;
+  onRsiConditionEnabledChange: (value: boolean) => void;
+  onRsiCriterionPresetChange: (value: NoStopRsiPresetId) => void;
+  onRsiBudgetPresetChange: (value: NoStopBudgetPresetId) => void;
+  onAlignmentConditionEnabledChange: (value: boolean) => void;
+  onAlignmentCriterionPresetChange: (value: NoStopMaPresetId) => void;
+  onAlignmentBudgetPresetChange: (value: NoStopBudgetPresetId) => void;
 }
 
 export interface StrategyMetaStepViewProps {

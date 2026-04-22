@@ -146,7 +146,6 @@ export function normalizePortfolioData(data: unknown[]): Portfolio[] {
       closedAt,
       finalSellAmount,
       alarmconfig: coerceAlarmConfig(item.alarm_config ?? item.alarmconfig),
-      isQuarterMode: Boolean(item.is_quarter_mode ?? item.isQuarterMode ?? false),
       vrSnapshot: readVrSnapshotFromRow(item),
     };
 

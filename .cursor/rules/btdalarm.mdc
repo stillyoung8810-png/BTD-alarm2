@@ -80,3 +80,8 @@ You must apply the following principles to EVERY line of code you write or modif
 - **State Colocation:** Keep React state as close as possible to where it is used. Do not lift state up to parent components (like `Dashboard.tsx`) if it is only needed by a specific child (like `VrOrderModal.tsx`).
 - **Primitive Props:** When passing data to memoized children, prefer passing primitive values (strings, numbers, booleans) instead of large objects to prevent unnecessary re-renders. 
 - **Avoid Object/Function Recreation:** Never pass inline objects `{{ ... }}` or inline arrow functions `() => { ... }` as props to heavy child components inside a map loop.
+
+#11 ## React 18 Strict Mode & Async Fetch Resilience (Zero-Deadlock Policy)
+- **No Blind Fetch Skipping:** In `useEffect` data fetching, NEVER skip a fetch solely because the `cacheKey`, `symbol`, or `dependency` hasn't changed. You MUST explicitly verify that the actual payload/data already exists in the local state or cache before skipping (e.g., `if (prevKey === nextKey && hasData)`).
+- **Strict Mode Double Invocation Awareness:** Always assume every `useEffect` will be invoked twice immediately (Mount -> Unmount/Cleanup -> Remount). If your cleanup function aborts an ongoing network request, the subsequent remount MUST restart the request if the data is not yet completely resolved.
+- **State-Action Sync:** If an async fetch is skipped due to a cache hit, the system MUST synchronously transition to a "Ready/Success" state using the existing data. If it cannot transition to "Ready", it MUST NOT skip the fetch. Never leave the UI in a perpetual 'loading' state.

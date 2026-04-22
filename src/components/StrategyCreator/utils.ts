@@ -7,6 +7,8 @@ import {
   VR_BAND_WIDTH_PCT,
 } from '@/constants/vrConstants';
 import type {
+  MultiSplitStrategy,
+  NoStopMultiSplitStrategy,
   Portfolio,
   Strategy,
   VrBandStrategyParams,
@@ -22,6 +24,56 @@ const SECTION_TWO_SPLIT_COUNT = 1;
 const DEFAULT_VR_REFERENCE_STOCK = 'TQQQ';
 const ZERO_AMOUNT = 0;
 const EMPTY_STRING = '';
+export const DEFAULT_MULTI_SPLIT_BASE_LOC_RATIO = 50;
+export const DEFAULT_MULTI_SPLIT_MAIN_TAKE_PROFIT_RATIO_PCT = 65;
+export const DEFAULT_MULTI_SPLIT_RISK_CUT_RATIO_PCT = 20;
+const DEFAULT_NO_STOP_BASE_LOC_RATIO = 50;
+const DEFAULT_NO_STOP_TAKE_PROFIT_PCT = 10;
+
+export const BUDGET_LOC_RATIO_BY_PRESET = {
+  loc70: 70,
+  balanced: 50,
+  moc70: 30,
+} as const;
+
+export const RSI_THRESHOLD_BY_PRESET = {
+  rsi30: 30,
+  rsi40: 40,
+  rsi50: 50,
+} as const;
+
+export const ALIGNMENT_PERIODS_BY_PRESET = {
+  ma5_20: { shortPeriod: 5, longPeriod: 20 },
+  ma20_60: { shortPeriod: 20, longPeriod: 60 },
+  ma60_120: { shortPeriod: 60, longPeriod: 120 },
+} as const;
+
+export const MULTI_SPLIT_BUDGET_LOC_RATIO_BY_PRESET = BUDGET_LOC_RATIO_BY_PRESET;
+export const MULTI_SPLIT_RSI_THRESHOLD_BY_PRESET = RSI_THRESHOLD_BY_PRESET;
+export const MULTI_SPLIT_ALIGNMENT_PERIODS_BY_PRESET =
+  ALIGNMENT_PERIODS_BY_PRESET;
+
+export type NoStopBudgetPresetId = keyof typeof BUDGET_LOC_RATIO_BY_PRESET;
+export type NoStopRsiPresetId = keyof typeof RSI_THRESHOLD_BY_PRESET;
+export type NoStopMaPresetId = keyof typeof ALIGNMENT_PERIODS_BY_PRESET;
+export type MultiSplitBudgetPresetId =
+  keyof typeof MULTI_SPLIT_BUDGET_LOC_RATIO_BY_PRESET;
+export type MultiSplitRsiPresetId =
+  keyof typeof MULTI_SPLIT_RSI_THRESHOLD_BY_PRESET;
+export type MultiSplitMaPresetId =
+  keyof typeof MULTI_SPLIT_ALIGNMENT_PERIODS_BY_PRESET;
+
+export interface NoStopConditionPresetDraft<TCriterion extends string> {
+  isEnabled: boolean;
+  criterionPreset: TCriterion;
+  budgetPreset: NoStopBudgetPresetId;
+}
+
+export interface MultiSplitConditionPresetDraft<TCriterion extends string> {
+  isEnabled: boolean;
+  criterionPreset: TCriterion;
+  budgetPreset: MultiSplitBudgetPresetId;
+}
 
 export type StrategyType =
   | 'rsi_ma_interval'
@@ -60,14 +112,20 @@ export interface MultiSplitWizardDraftInput {
   targetStock?: string;
   targetReturnRate?: number;
   totalSplitCount?: number;
+  baseLocRatio?: number;
+  mainTakeProfitRatioPct?: number;
+  riskCutRatioPct?: number;
+  rsiCondition?: MultiSplitConditionPresetDraft<MultiSplitRsiPresetId>;
+  alignmentCondition?: MultiSplitConditionPresetDraft<MultiSplitMaPresetId>;
 }
 
 export interface NoStopMultiSplitWizardDraftInput {
   targetStock?: string;
-  lowLocBudgetRatio?: number;
-  highLocPremiumPct?: number;
+  baseLocRatio?: number;
   takeProfitPct?: number;
   totalSplitCount?: number;
+  rsiCondition?: NoStopConditionPresetDraft<NoStopRsiPresetId>;
+  alignmentCondition?: NoStopConditionPresetDraft<NoStopMaPresetId>;
 }
 
 export interface VrBandWizardDraftInput {
@@ -331,15 +389,52 @@ function buildMultiSplitStrategy(
 ): StrategyBuildResult {
   const draft = wizardState.multiSplit;
   const targetStock = safeTrim(draft?.targetStock);
+  const runtimeMultiSplitStrategy: MultiSplitStrategy = {
+    targetStock,
+    targetReturnRate: safeNumber(draft?.targetReturnRate),
+    totalSplitCount: safeNumber(draft?.totalSplitCount),
+    baseLocRatio: safeNumber(
+      draft?.baseLocRatio,
+      DEFAULT_MULTI_SPLIT_BASE_LOC_RATIO,
+    ),
+    mainTakeProfitRatioPct: safeNumber(
+      draft?.mainTakeProfitRatioPct,
+      DEFAULT_MULTI_SPLIT_MAIN_TAKE_PROFIT_RATIO_PCT,
+    ),
+    riskCutRatioPct: safeNumber(
+      draft?.riskCutRatioPct,
+      DEFAULT_MULTI_SPLIT_RISK_CUT_RATIO_PCT,
+    ),
+  };
+
+  if (draft?.rsiCondition?.isEnabled === true) {
+    runtimeMultiSplitStrategy.rsiRule = {
+      threshold:
+        MULTI_SPLIT_RSI_THRESHOLD_BY_PRESET[draft.rsiCondition.criterionPreset],
+      locRatio:
+        MULTI_SPLIT_BUDGET_LOC_RATIO_BY_PRESET[draft.rsiCondition.budgetPreset],
+    };
+  }
+
+  if (draft?.alignmentCondition?.isEnabled === true) {
+    const alignmentPeriods =
+      MULTI_SPLIT_ALIGNMENT_PERIODS_BY_PRESET[
+        draft.alignmentCondition.criterionPreset
+      ];
+    runtimeMultiSplitStrategy.alignmentRule = {
+      shortPeriod: alignmentPeriods.shortPeriod,
+      longPeriod: alignmentPeriods.longPeriod,
+      locRatio:
+        MULTI_SPLIT_BUDGET_LOC_RATIO_BY_PRESET[
+          draft.alignmentCondition.budgetPreset
+        ],
+    };
+  }
 
   return {
     strategy: {
       ...buildSingleStockStrategyBase(targetStock),
-      multiSplit: {
-        targetStock,
-        targetReturnRate: safeNumber(draft?.targetReturnRate),
-        totalSplitCount: safeNumber(draft?.totalSplitCount),
-      },
+      multiSplit: runtimeMultiSplitStrategy,
     },
     initialVrSnapshot: null,
   };
@@ -350,17 +445,40 @@ function buildNoStopMultiSplitStrategy(
 ): StrategyBuildResult {
   const draft = wizardState.noStopMultiSplit;
   const targetStock = safeTrim(draft?.targetStock);
+  const runtimeNoStopStrategy: NoStopMultiSplitStrategy = {
+    targetStock,
+    baseLocRatio: safeNumber(
+      draft?.baseLocRatio,
+      DEFAULT_NO_STOP_BASE_LOC_RATIO,
+    ),
+    takeProfitPct: safeNumber(
+      draft?.takeProfitPct,
+      DEFAULT_NO_STOP_TAKE_PROFIT_PCT,
+    ),
+    totalSplitCount: safeNumber(draft?.totalSplitCount),
+  };
+
+  if (draft?.rsiCondition?.isEnabled === true) {
+    runtimeNoStopStrategy.rsiRule = {
+      threshold: RSI_THRESHOLD_BY_PRESET[draft.rsiCondition.criterionPreset],
+      locRatio: BUDGET_LOC_RATIO_BY_PRESET[draft.rsiCondition.budgetPreset],
+    };
+  }
+
+  if (draft?.alignmentCondition?.isEnabled === true) {
+    const alignmentPeriods =
+      ALIGNMENT_PERIODS_BY_PRESET[draft.alignmentCondition.criterionPreset];
+    runtimeNoStopStrategy.alignmentRule = {
+      shortPeriod: alignmentPeriods.shortPeriod,
+      longPeriod: alignmentPeriods.longPeriod,
+      locRatio: BUDGET_LOC_RATIO_BY_PRESET[draft.alignmentCondition.budgetPreset],
+    };
+  }
 
   return {
     strategy: {
       ...buildSingleStockStrategyBase(targetStock),
-      noStopMultiSplit: {
-        targetStock,
-        lowLocBudgetRatio: safeNumber(draft?.lowLocBudgetRatio),
-        highLocPremiumPct: safeNumber(draft?.highLocPremiumPct),
-        takeProfitPct: safeNumber(draft?.takeProfitPct),
-        totalSplitCount: safeNumber(draft?.totalSplitCount),
-      },
+      noStopMultiSplit: runtimeNoStopStrategy,
     },
     initialVrSnapshot: null,
   };

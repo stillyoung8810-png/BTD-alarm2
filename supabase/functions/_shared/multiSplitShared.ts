@@ -1,17 +1,18 @@
 /**
- * 다분할 매매법(Multi-Split Trading) 공용 계산 모듈.
+ * Smart Split 공용 계산 모듈.
  *
  * 프론트엔드 `utils/multiSplitCalc.ts`를 SSOT로 삼아
  * 클라이언트 훅과 서버 요약기가 동일한 순수 함수를 공유합니다.
  */
 
-export const LOC_SELL_RATIO = 0.25;
-export const QUARTER_LOC_PRICE_FACTOR = 0.9;
-export const LOC_PRICE_OFFSET = 0.01;
-export const QUARTER_SPLIT_COUNT = 10;
-export const RECENT_TRADING_DAYS_COUNT = 11;
-export const FIRST_HALF_BUY_RATIO = 0.5;
-export const MIN_PRICE = 0.01;
+import type {
+  IndicatorRequirements,
+  MultiSplitIndicatorSnapshot,
+  MultiSplitMovingAveragePeriod,
+  MultiSplitStrategy,
+} from './types.ts';
+import { validateFinancialArgs } from './vrBandStrategy.ts';
+
 export const HOLDINGS_QTY_EPSILON = 1e-10;
 
 export interface TradeInput {
@@ -32,54 +33,6 @@ export interface HoldingsResult {
   realizedPnL?: number;
 }
 
-export interface MultiSplitParams {
-  targetStock: string;
-  targetReturnRate: number;
-  totalSplitCount: number;
-}
-
-export interface OrderEntry {
-  price: number;
-  quantity: number;
-}
-
-export interface QuarterStopLossResult {
-  hasMOC: boolean;
-  mocQuantity?: number;
-  newOneTimeAmount?: number;
-  locBuy?: OrderEntry;
-  locSell?: OrderEntry;
-  limitSell?: OrderEntry;
-}
-
-export type MultiSplitPhase = 'first' | 'second' | 'quarter' | null;
-
-export interface MultiSplitExecutionResult {
-  phase: MultiSplitPhase;
-  locBuy1?: OrderEntry;
-  locBuy2?: OrderEntry;
-  locSell?: OrderEntry;
-  limitSell?: OrderEntry;
-  mocSell?: { quantity: number };
-}
-
-export interface MOCSellCheckResult {
-  hasMOC: boolean;
-  mocDate?: string;
-}
-
-export interface MultiSplitStrategyState {
-  currentRound: number;
-  multiSplitPhase: MultiSplitPhase;
-  isInQuarterMode: boolean;
-  isInQuarterModeByT: boolean;
-  quarterStopLossData: QuarterStopLossResult | null;
-  multiSplitExecutionData: MultiSplitExecutionResult | null;
-  multiSplitInsufficientAmount: boolean;
-  currentQuantity: number;
-  avgPrice: number;
-}
-
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
@@ -96,16 +49,8 @@ function areStrictPositiveFiniteScalars(...values: unknown[]): boolean {
   return values.every(isStrictPositiveFiniteNumber);
 }
 
-function areFiniteNonNegativeScalars(...values: unknown[]): boolean {
-  return values.every(isFiniteNonNegativeNumber);
-}
-
 function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
-}
-
-function ceilToTwoDecimals(value: number): number {
-  return Math.ceil((value - Number.EPSILON) * 100) / 100;
 }
 
 function floorToNonNegativeInt(value: number): number {
@@ -173,369 +118,486 @@ export function calcHoldings(trades: TradeInput[]): HoldingsResult[] {
   }));
 }
 
-export function calcT(trades: TradeInput[], dailyBuyAmount: number): number {
-  if (!areStrictPositiveFiniteScalars(dailyBuyAmount)) {
+export const PERCENT_DENOMINATOR = 100;
+export const MIN_PROGRESS_PERCENT = 0;
+export const MAX_PROGRESS_PERCENT = 100;
+export const MOC_SAFETY_BUFFER_MULTIPLIER = 1.15;
+export const MIN_MAIN_TAKE_PROFIT_RATIO_PCT = 1;
+export const MAX_MAIN_TAKE_PROFIT_RATIO_PCT = 100;
+export const MIN_RISK_CUT_RATIO_PCT = 0;
+export const MAX_RISK_CUT_RATIO_PCT = 100;
+export const MIN_LOC_RATIO_PCT = 0;
+export const MAX_LOC_RATIO_PCT = 100;
+const MIN_VALID_UNIT_COST = Number.EPSILON;
+
+export interface MultiSplitRsiConditionPresetDraft<TCriterion extends string> {
+  isEnabled: boolean;
+  criterionPreset: TCriterion;
+  budgetPreset: string;
+}
+
+export interface MultiSplitDisplayOrder {
+  price: number;
+  quantity: number;
+}
+
+export interface MultiSplitDisplayQuantityOnlyOrder {
+  quantity: number;
+}
+
+export interface MultiSplitBuyGuide {
+  appliedLocRatioPct: number;
+  displayLocBuy?: MultiSplitDisplayOrder;
+  displayMocBuy?: MultiSplitDisplayQuantityOnlyOrder;
+}
+
+export interface MultiSplitSellGuide {
+  mainTakeProfitQty: number;
+  intermediateTakeProfitQty: number;
+  riskCutQty: number;
+}
+
+export interface MultiSplitGuideState {
+  cashUsagePct: number;
+  totalInvested: number;
+  totalSeed: number;
+  remainingBudget: number;
+  currentQuantity: number;
+  avgPrice: number;
+  isFirstBuy: boolean;
+  isSeedExhausted: boolean;
+  appliedLocRatioPct: number;
+  displayLocBuy?: MultiSplitDisplayOrder;
+  displayMocBuy?: MultiSplitDisplayQuantityOnlyOrder;
+  sellGuide: MultiSplitSellGuide;
+}
+
+export function validatePercentRange(args: {
+  name: string;
+  value: number;
+  min: number;
+  max: number;
+  context: string;
+}): void {
+  validateFinancialArgs(
+    { [args.name]: args.value },
+    { [args.name]: { min: args.min } },
+    args.context,
+  );
+
+  // 중앙 validator가 상한(max)을 아직 지원하지 않으므로
+  // production 경로에서도 상한 가드를 이 helper 한 곳으로만 집중시킵니다.
+  if (args.value > args.max) {
+    throw new Error(
+      `${args.context}.${args.name} must be <= ${args.max}. Received: ${args.value}`,
+    );
+  }
+}
+
+export function floorSafeQuantity(value: number): number {
+  if (!Number.isFinite(value) || value < 0) {
     return 0;
+  }
+
+  return floorToNonNegativeInt(value);
+}
+
+function roundSafeQuantity(value: number): number {
+  if (!Number.isFinite(value) || value < 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.round(value + Number.EPSILON));
+}
+
+export function normalizeTickerSymbol(stock: string): string {
+  return stock.trim().toUpperCase();
+}
+
+export function findTargetHolding(
+  trades: TradeInput[],
+  targetStock: string,
+): ReturnType<typeof calcHoldings>[number] | null {
+  const normalizedTargetStock = normalizeTickerSymbol(targetStock);
+  if (normalizedTargetStock.length === 0) {
+    return null;
   }
 
   const holdings = calcHoldings(trades);
-  const totalInvested = holdings.reduce((sum, holding) => sum + holding.totalCost, 0);
-  if (!areStrictPositiveFiniteScalars(totalInvested)) {
-    return 0;
-  }
-
-  return ceilToTwoDecimals(totalInvested / dailyBuyAmount);
-}
-
-export function getPhase(T: number, a: number): MultiSplitPhase {
-  if (T >= 0.5 && T < a / 2) return 'first';
-  if (T >= a / 2 && T <= a - 1) return 'second';
-  if (T > a - 1 && T <= a) return 'quarter';
-  return null;
-}
-
-export function checkRecentMOCSell(
-  trades: TradeInput[],
-  recentTradingDays: string[],
-): MOCSellCheckResult {
-  if (recentTradingDays.length === 0) {
-    return { hasMOC: false };
-  }
-
-  const mocSells = trades.filter(
-    (trade) =>
-      trade.type === 'sell' &&
-      trade.isMOC === true &&
-      recentTradingDays.includes(trade.date),
+  return (
+    holdings.find(
+      (holding) => normalizeTickerSymbol(holding.stock) === normalizedTargetStock,
+    ) ?? null
   );
-
-  if (mocSells.length === 0) {
-    return { hasMOC: false };
-  }
-
-  const sorted = [...mocSells].sort((a, b) => b.date.localeCompare(a.date));
-  return { hasMOC: true, mocDate: sorted[0].date };
 }
 
-export function calcIntermediateProfit(
-  trades: TradeInput[],
-  sinceDate: string,
+export function isValidIndicatorScalar(
+  value: number | undefined,
+): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function buildRequiredMovingAveragePeriods(
+  strategy: MultiSplitStrategy,
+): MultiSplitMovingAveragePeriod[] {
+  if (strategy.alignmentRule == null) {
+    return [];
+  }
+
+  return [
+    strategy.alignmentRule.shortPeriod,
+    strategy.alignmentRule.longPeriod,
+  ];
+}
+
+export function collectIndicatorRequirements(
+  strategy: MultiSplitStrategy,
+): IndicatorRequirements {
+  return {
+    needsRsi: strategy.rsiRule != null,
+    maPeriods: buildRequiredMovingAveragePeriods(strategy),
+  };
+}
+
+export function getMatchedLocRatios(args: {
+  strategy: MultiSplitStrategy;
+  snapshot: MultiSplitIndicatorSnapshot;
+}): number[] {
+  const matchedLocRatios: number[] = [];
+  const { strategy, snapshot } = args;
+
+  if (
+    strategy.rsiRule != null &&
+    isValidIndicatorScalar(snapshot.rsi) &&
+    snapshot.rsi < strategy.rsiRule.threshold
+  ) {
+    matchedLocRatios.push(strategy.rsiRule.locRatio);
+  }
+
+  if (strategy.alignmentRule == null || snapshot.maByPeriod == null) {
+    return matchedLocRatios;
+  }
+
+  const shortValue = snapshot.maByPeriod?.[strategy.alignmentRule.shortPeriod];
+  const longValue = snapshot.maByPeriod?.[strategy.alignmentRule.longPeriod];
+
+  if (
+    isValidIndicatorScalar(shortValue) &&
+    isValidIndicatorScalar(longValue) &&
+    shortValue > longValue
+  ) {
+    matchedLocRatios.push(strategy.alignmentRule.locRatio);
+  }
+
+  return matchedLocRatios;
+}
+
+export function resolveAppliedLocRatio(
+  strategy: MultiSplitStrategy,
+  snapshot: MultiSplitIndicatorSnapshot,
 ): number {
-  const sorted = [...trades].sort((a, b) => {
-    const byDate = a.date.localeCompare(b.date);
-    if (byDate !== 0) return byDate;
-    if (a.type === 'buy' && b.type === 'sell') return -1;
-    if (a.type === 'sell' && b.type === 'buy') return 1;
-    return 0;
+  validatePercentRange({
+    name: 'baseLocRatio',
+    value: strategy.baseLocRatio,
+    min: MIN_LOC_RATIO_PCT,
+    max: MAX_LOC_RATIO_PCT,
+    context: 'resolveAppliedLocRatio',
   });
 
-  const tradesUpTo = sorted.filter((trade) => trade.date <= sinceDate);
-  const holdingsFull = calcHoldings(sorted);
-  const holdingsUpTo = calcHoldings(tradesUpTo);
-  const totalRealized = holdingsFull.reduce(
-    (sum, holding) => sum + (holding.realizedPnL ?? 0),
-    0,
-  );
-  const realizedUpTo = holdingsUpTo.reduce(
-    (sum, holding) => sum + (holding.realizedPnL ?? 0),
-    0,
-  );
-
-  return roundMoney(totalRealized - realizedUpTo);
-}
-
-export function calcNewOneTimeAmount(
-  trades: TradeInput[],
-  dailyBuyAmount: number,
-  totalSplitCount: number,
-  _mocDate: string,
-): number {
-  if (!areStrictPositiveFiniteScalars(dailyBuyAmount, totalSplitCount)) {
-    return 0;
+  const matchedLocRatios = getMatchedLocRatios({ strategy, snapshot });
+  if (matchedLocRatios.length === 0) {
+    return strategy.baseLocRatio;
   }
 
-  const initialCapital = dailyBuyAmount * totalSplitCount;
-  const sumBuy = trades
-    .filter((trade) => trade.type === 'buy')
-    .reduce(
-      (sum, trade) => sum + trade.price * trade.quantity + Math.abs(trade.fee),
-      0,
-    );
-  const sells = trades.filter((trade) => trade.type === 'sell');
-  const sumSellNonMOC = sells
-    .filter((trade) => !trade.isMOC)
-    .reduce(
-      (sum, trade) => sum + trade.price * trade.quantity - Math.abs(trade.fee),
-      0,
-    );
-  const mocSellAmount = sells
-    .filter((trade) => trade.isMOC)
-    .reduce(
-      (sum, trade) => sum + trade.price * trade.quantity - Math.abs(trade.fee),
-      0,
-    );
-
-  const cashBeforeMoc = initialCapital - sumBuy + sumSellNonMOC;
-  const newOneTimeAmount = (cashBeforeMoc + mocSellAmount) / QUARTER_SPLIT_COUNT;
-
-  return roundMoney(Math.max(0, newOneTimeAmount));
+  return Math.max(...matchedLocRatios);
 }
 
-export function calcSellSplitQuantities(totalQty: number): {
-  locSellQty: number;
-  limitSellQty: number;
-} {
-  const safeTotalQty = floorToNonNegativeInt(totalQty);
-  const locSellQty = floorToNonNegativeInt(safeTotalQty * LOC_SELL_RATIO);
-  const limitSellQty = safeTotalQty - locSellQty;
+export function calculateMultiSplitCashUsagePct(args: {
+  investedCost: number;
+  oneTimeAmount: number;
+  totalSplitCount: number;
+}): number {
+  validateFinancialArgs(
+    {
+      investedCost: args.investedCost,
+      oneTimeAmount: args.oneTimeAmount,
+      totalSplitCount: args.totalSplitCount,
+    },
+    {
+      investedCost: { min: 0 },
+      oneTimeAmount: { strictPositive: true },
+      totalSplitCount: { strictPositive: true },
+    },
+    'calculateMultiSplitCashUsagePct',
+  );
 
-  return { locSellQty, limitSellQty };
-}
-
-export function safeOrder(price: number, qty: number): OrderEntry | null {
-  if (!areStrictPositiveFiniteScalars(price, qty)) {
-    return null;
+  const totalSeed = roundMoney(args.oneTimeAmount * args.totalSplitCount);
+  if (totalSeed <= 0) {
+    return MIN_PROGRESS_PERCENT;
   }
 
-  const finalQty = floorToNonNegativeInt(qty);
-  if (finalQty <= 0) {
-    return null;
+  const rawUsagePct = (args.investedCost / totalSeed) * PERCENT_DENOMINATOR;
+  const boundedUsagePct = Math.min(
+    MAX_PROGRESS_PERCENT,
+    Math.max(MIN_PROGRESS_PERCENT, rawUsagePct),
+  );
+
+  return roundMoney(boundedUsagePct);
+}
+
+export function calculateRemainingBudget(args: {
+  oneTimeAmount: number;
+  totalInvested: number;
+  totalSplitCount: number;
+}): number {
+  validateFinancialArgs(
+    {
+      oneTimeAmount: args.oneTimeAmount,
+      totalInvested: args.totalInvested,
+      totalSplitCount: args.totalSplitCount,
+    },
+    {
+      oneTimeAmount: { strictPositive: true },
+      totalInvested: { min: 0 },
+      totalSplitCount: { strictPositive: true },
+    },
+    'calculateRemainingBudget',
+  );
+
+  const totalSeed = roundMoney(args.oneTimeAmount * args.totalSplitCount);
+  return roundMoney(Math.max(0, totalSeed - args.totalInvested));
+}
+
+export function buildDisplayOrder(
+  price: number,
+  quantity: number,
+): MultiSplitDisplayOrder | undefined {
+  if (!Number.isFinite(price) || price <= 0) {
+    return undefined;
+  }
+
+  const safeQuantity = Math.max(0, floorSafeQuantity(quantity));
+  if (safeQuantity <= 0) {
+    return undefined;
   }
 
   return {
     price: roundMoney(price),
-    quantity: finalQty,
+    quantity: safeQuantity,
   };
 }
 
-function orderEntryForDisplay(price: number, qty: number): OrderEntry | null {
-  if (!areStrictPositiveFiniteScalars(price)) {
-    return null;
+export function buildDisplayQuantityOnlyOrder(
+  quantity: number,
+): MultiSplitDisplayQuantityOnlyOrder | undefined {
+  const safeQuantity = Math.max(0, floorSafeQuantity(quantity));
+  if (safeQuantity <= 0) {
+    return undefined;
   }
 
   return {
-    price: roundMoney(price),
-    quantity: floorToNonNegativeInt(qty),
+    quantity: safeQuantity,
   };
 }
 
-export function calcQuarterStopLossOrders(params: {
-  trades: TradeInput[];
-  dailyBuyAmount: number;
-  multiSplit: MultiSplitParams;
+export function calculateMultiSplitBuyGuide(args: {
+  remainingBudget: number;
   feeRate: number;
-  recentTradingDays: string[];
   avgPrice: number;
-  currentQuantity: number;
-}): QuarterStopLossResult | null {
-  const {
-    trades,
-    dailyBuyAmount,
-    multiSplit,
-    feeRate,
-    recentTradingDays,
-    avgPrice,
-    currentQuantity,
-  } = params;
+  snapshot: MultiSplitIndicatorSnapshot;
+  strategy: MultiSplitStrategy;
+}): MultiSplitBuyGuide {
+  validateFinancialArgs(
+    {
+      remainingBudget: args.remainingBudget,
+      feeRate: args.feeRate,
+      avgPrice: args.avgPrice,
+      currentPrice: args.snapshot.currentPrice,
+    },
+    {
+      remainingBudget: { min: 0 },
+      feeRate: { min: 0 },
+      avgPrice: { strictPositive: true },
+      currentPrice: { strictPositive: true },
+    },
+    'calculateMultiSplitBuyGuide',
+  );
 
-  const mocCheck = checkRecentMOCSell(trades, recentTradingDays);
-
-  if (!mocCheck.hasMOC) {
+  const appliedLocRatioPct = resolveAppliedLocRatio(
+    args.strategy,
+    args.snapshot,
+  );
+  const locUnitCost = args.avgPrice * (1 + args.feeRate / PERCENT_DENOMINATOR);
+  // [의도된 생략] MOC_SAFETY_BUFFER_MULTIPLIER(1.15)가 이미 15% 버퍼를 제공하므로,
+  // 통상적인 feeRate(0.25% 등) 때문에 예산 초과가 나지 않아 MOC 쪽 feeRate는 더하지 않습니다.
+  const mocUnitCost = args.snapshot.currentPrice * MOC_SAFETY_BUFFER_MULTIPLIER;
+  // Corrupted near-zero price inputs must not reach a division path.
+  if (
+    locUnitCost <= MIN_VALID_UNIT_COST ||
+    mocUnitCost <= MIN_VALID_UNIT_COST
+  ) {
     return {
-      hasMOC: false,
-      mocQuantity: roundMoney(currentQuantity * LOC_SELL_RATIO),
+      appliedLocRatioPct,
+    };
+  }
+  const baseLocBudget =
+    args.remainingBudget * (appliedLocRatioPct / PERCENT_DENOMINATOR);
+  const baseMocBudget = Math.max(0, args.remainingBudget - baseLocBudget);
+  // floorSafeQuantity -> floorToNonNegativeInt already adds Number.EPSILON,
+  // so integer-share boundaries like 0.3 / 0.1 ~= 2.9999999999999996 do not drop a share.
+  const finalMocQty = floorSafeQuantity(baseMocBudget / mocUnitCost);
+  const usedMocCost = finalMocQty * mocUnitCost;
+  const remainingForLoc = Math.max(0, args.remainingBudget - usedMocCost);
+  const finalLocQty = floorSafeQuantity(remainingForLoc / locUnitCost);
+
+  return {
+    appliedLocRatioPct,
+    displayLocBuy: buildDisplayOrder(args.avgPrice, finalLocQty),
+    displayMocBuy: buildDisplayQuantityOnlyOrder(finalMocQty),
+  };
+}
+
+export function calculateMultiSplitSellGuide(args: {
+  currentQuantity: number;
+  mainTakeProfitRatioPct: number;
+  riskCutRatioPct: number;
+}): MultiSplitSellGuide {
+  validateFinancialArgs(
+    {
+      currentQuantity: args.currentQuantity,
+    },
+    {
+      currentQuantity: { min: 0 },
+    },
+    'calculateMultiSplitSellGuide',
+  );
+  validatePercentRange({
+    name: 'mainTakeProfitRatioPct',
+    value: args.mainTakeProfitRatioPct,
+    min: MIN_MAIN_TAKE_PROFIT_RATIO_PCT,
+    max: MAX_MAIN_TAKE_PROFIT_RATIO_PCT,
+    context: 'calculateMultiSplitSellGuide',
+  });
+  validatePercentRange({
+    name: 'riskCutRatioPct',
+    value: args.riskCutRatioPct,
+    min: MIN_RISK_CUT_RATIO_PCT,
+    max: MAX_RISK_CUT_RATIO_PCT,
+    context: 'calculateMultiSplitSellGuide',
+  });
+
+  const safeQuantity = floorSafeQuantity(args.currentQuantity);
+  if (safeQuantity <= 0) {
+    return {
+      mainTakeProfitQty: 0,
+      intermediateTakeProfitQty: 0,
+      riskCutQty: 0,
     };
   }
 
-  if (
-    !mocCheck.mocDate ||
-    !areStrictPositiveFiniteScalars(avgPrice, currentQuantity)
-  ) {
-    return null;
-  }
-
-  const newOneTimeAmount = calcNewOneTimeAmount(
-    trades,
-    dailyBuyAmount,
-    multiSplit.totalSplitCount,
-    mocCheck.mocDate,
+  const rawMainTakeProfitQty =
+    safeQuantity * (args.mainTakeProfitRatioPct / PERCENT_DENOMINATOR);
+  const roundedMainTakeProfitQty = roundSafeQuantity(rawMainTakeProfitQty);
+  const mainTakeProfitQty = Math.min(safeQuantity, roundedMainTakeProfitQty);
+  // 정수 수량으로 떨어질 때는 더 가까운 비율 쪽으로 반올림해 한 주 왜곡을 줄입니다.
+  const intermediateTakeProfitQty = Math.max(
+    0,
+    safeQuantity - mainTakeProfitQty,
   );
-  const locBuyPrice = Math.max(
-    MIN_PRICE,
-    avgPrice * QUARTER_LOC_PRICE_FACTOR - LOC_PRICE_OFFSET,
+  // 리스크 컷은 익절과 동시 집행이 아니라 대체 시나리오이므로 별도 수량으로 계산합니다.
+  const riskCutQty = floorSafeQuantity(
+    safeQuantity * (args.riskCutRatioPct / PERCENT_DENOMINATOR),
   );
-  const locBuyQty =
-    newOneTimeAmount > 0 && locBuyPrice > 0
-      ? floorToNonNegativeInt(
-          newOneTimeAmount / (locBuyPrice * (1 + feeRate / 100)),
-        )
-      : 0;
-  const { locSellQty, limitSellQty } = calcSellSplitQuantities(currentQuantity);
-  const locSellPrice = avgPrice * QUARTER_LOC_PRICE_FACTOR;
-  const limitSellPrice = avgPrice * (1 + multiSplit.targetReturnRate / 100);
 
   return {
-    hasMOC: true,
-    newOneTimeAmount,
-    locBuy: safeOrder(locBuyPrice, locBuyQty) ?? undefined,
-    locSell: orderEntryForDisplay(locSellPrice, locSellQty) ?? undefined,
-    limitSell:
-      orderEntryForDisplay(limitSellPrice, limitSellQty) ?? undefined,
+    mainTakeProfitQty,
+    intermediateTakeProfitQty,
+    riskCutQty,
   };
 }
 
-export function calcMultiSplitOrders(params: {
-  phase: 'first' | 'second';
-  A: number;
-  a: number;
-  T: number;
-  basePrice: number;
-  currentQuantity: number;
+export function calculateMultiSplitGuideState(args: {
+  trades: TradeInput[];
+  strategy: MultiSplitStrategy;
   oneTimeAmount: number;
   feeRate: number;
-}): MultiSplitExecutionResult {
-  const { phase, A, a, T, basePrice, currentQuantity, oneTimeAmount, feeRate } =
-    params;
+  snapshot: MultiSplitIndicatorSnapshot;
+}): MultiSplitGuideState {
+  validateFinancialArgs(
+    {
+      oneTimeAmount: args.oneTimeAmount,
+      totalSplitCount: args.strategy.totalSplitCount,
+      feeRate: args.feeRate,
+      currentPrice: args.snapshot.currentPrice,
+    },
+    {
+      oneTimeAmount: { strictPositive: true },
+      totalSplitCount: { strictPositive: true },
+      feeRate: { min: 0 },
+      currentPrice: { strictPositive: true },
+    },
+    'calculateMultiSplitGuideState',
+  );
 
-  if (!areStrictPositiveFiniteScalars(A, a, T, basePrice)) {
-    return { phase };
-  }
+  const targetHolding = findTargetHolding(args.trades, args.strategy.targetStock);
+  const totalInvested = roundMoney(Math.max(0, targetHolding?.totalCost ?? 0));
+  const currentQuantity = Math.max(0, targetHolding?.quantity ?? 0);
+  const avgPrice = Math.max(0, targetHolding?.avgPrice ?? 0);
+  const totalSeed = roundMoney(
+    args.oneTimeAmount * args.strategy.totalSplitCount,
+  );
+  const cashUsagePct = calculateMultiSplitCashUsagePct({
+    investedCost: totalInvested,
+    oneTimeAmount: args.oneTimeAmount,
+    totalSplitCount: args.strategy.totalSplitCount,
+  });
+  const remainingBudget = calculateRemainingBudget({
+    oneTimeAmount: args.oneTimeAmount,
+    totalInvested,
+    totalSplitCount: args.strategy.totalSplitCount,
+  });
+  const isFirstBuy =
+    currentQuantity <= HOLDINGS_QTY_EPSILON || avgPrice <= MIN_VALID_UNIT_COST;
+  const isSeedExhausted = totalInvested >= totalSeed;
+  const appliedLocRatioPct = resolveAppliedLocRatio(
+    args.strategy,
+    args.snapshot,
+  );
+  const sellGuide = calculateMultiSplitSellGuide({
+    currentQuantity,
+    mainTakeProfitRatioPct: args.strategy.mainTakeProfitRatioPct,
+    riskCutRatioPct: args.strategy.riskCutRatioPct,
+  });
 
-  if (!areFiniteNonNegativeScalars(currentQuantity, oneTimeAmount, feeRate)) {
-    return { phase };
-  }
-
-  const locFactor = 1 + (A * (1 - (2 * T) / a)) / 100;
-  const locSellBasePrice = Math.max(MIN_PRICE, basePrice * locFactor);
-  const locBuyBasePrice = Math.max(MIN_PRICE, locSellBasePrice - LOC_PRICE_OFFSET);
-  const { locSellQty, limitSellQty } = calcSellSplitQuantities(currentQuantity);
-  const result: MultiSplitExecutionResult = { phase };
-
-  if (phase === 'first') {
-    const half = oneTimeAmount * FIRST_HALF_BUY_RATIO;
-    const locBuy1Price = basePrice;
-    const qtyWithHalf =
-      half > 0 && locBuy1Price > 0
-        ? half / (locBuy1Price * (1 + feeRate / 100))
-        : 0;
-    const qtyWithFull =
-      oneTimeAmount > 0 && locBuy1Price > 0
-        ? oneTimeAmount / (locBuy1Price * (1 + feeRate / 100))
-        : 0;
-    const locBuy1Qty =
-      floorToNonNegativeInt(qtyWithHalf) < 1 &&
-      floorToNonNegativeInt(qtyWithFull) >= 1
-        ? 1
-        : qtyWithHalf;
-
-    result.locBuy1 = orderEntryForDisplay(locBuy1Price, locBuy1Qty) ?? undefined;
-
-    const finalLocBuy1Qty = floorToNonNegativeInt(locBuy1Qty);
-    const locBuy1OrderAmount =
-      locBuy1Price * finalLocBuy1Qty * (1 + feeRate / 100);
-    const remainingForLoc2 = Math.max(0, oneTimeAmount - locBuy1OrderAmount);
-    const locBuy2Qty =
-      locBuyBasePrice > 0
-        ? remainingForLoc2 / (locBuyBasePrice * (1 + feeRate / 100))
-        : 0;
-
-    result.locBuy2 = orderEntryForDisplay(locBuyBasePrice, locBuy2Qty) ?? undefined;
-  } else {
-    const locBuyQty =
-      oneTimeAmount > 0 && locBuyBasePrice > 0
-        ? oneTimeAmount / (locBuyBasePrice * (1 + feeRate / 100))
-        : 0;
-
-    result.locBuy2 = orderEntryForDisplay(locBuyBasePrice, locBuyQty) ?? undefined;
-  }
-
-  result.locSell = orderEntryForDisplay(locSellBasePrice, locSellQty) ?? undefined;
-  result.limitSell =
-    orderEntryForDisplay(basePrice * (1 + A / 100), limitSellQty) ?? undefined;
-
-  return result;
-}
-
-export function calculateMultiSplitStrategyState(params: {
-  trades: TradeInput[];
-  dailyBuyAmount: number;
-  feeRate: number;
-  multiSplit: MultiSplitParams;
-  isQuarterMode: boolean;
-  currentPrice: number;
-  recentTradingDays: string[];
-}): MultiSplitStrategyState {
-  const {
-    trades,
-    dailyBuyAmount,
-    feeRate,
-    multiSplit,
-    isQuarterMode,
-    currentPrice,
-    recentTradingDays,
-  } = params;
-
-  const isDailyBuyAmountValid = areStrictPositiveFiniteScalars(dailyBuyAmount);
-  const currentRound = isDailyBuyAmountValid ? calcT(trades, dailyBuyAmount) : 0;
-  const hasValidSplitCount = multiSplit.totalSplitCount > 0;
-  const multiSplitPhase = hasValidSplitCount
-    ? getPhase(currentRound, multiSplit.totalSplitCount)
-    : null;
-  const holdings = calcHoldings(trades);
-  const targetHolding =
-    holdings.find((holding) => holding.stock === multiSplit.targetStock) ?? null;
-  const avgPrice = targetHolding?.avgPrice ?? 0;
-  const currentQuantity = targetHolding?.quantity ?? 0;
-  const isTargetReturnRateValid =
-    areStrictPositiveFiniteScalars(multiSplit.targetReturnRate);
-  const hasValidStrategyInputs =
-    isDailyBuyAmountValid && hasValidSplitCount && isTargetReturnRateValid;
-  const multiSplitInsufficientAmount =
-    currentPrice > 0 && dailyBuyAmount < currentPrice;
-  let quarterStopLossData: QuarterStopLossResult | null = null;
-
-  if (isQuarterMode && recentTradingDays.length > 0 && hasValidStrategyInputs) {
-    quarterStopLossData = calcQuarterStopLossOrders({
-      trades,
-      dailyBuyAmount,
-      multiSplit,
-      feeRate,
-      recentTradingDays,
-      avgPrice,
-      currentQuantity,
-    });
-  }
-
-  let multiSplitExecutionData: MultiSplitExecutionResult | null = null;
-  if (
-    !isQuarterMode &&
-    hasValidStrategyInputs &&
-    (multiSplitPhase === 'first' || multiSplitPhase === 'second')
-  ) {
-    const basePrice = avgPrice > 0 ? avgPrice : currentPrice;
-    if (basePrice > 0) {
-      multiSplitExecutionData = calcMultiSplitOrders({
-        phase: multiSplitPhase,
-        A: multiSplit.targetReturnRate,
-        a: multiSplit.totalSplitCount,
-        T: currentRound,
-        basePrice,
-        currentQuantity,
-        oneTimeAmount: dailyBuyAmount,
-        feeRate,
-      });
-    }
-  }
-
-  return {
-    currentRound,
-    multiSplitPhase,
-    isInQuarterMode: isQuarterMode,
-    isInQuarterModeByT: multiSplitPhase === 'quarter',
-    quarterStopLossData,
-    multiSplitExecutionData,
-    multiSplitInsufficientAmount,
+  const baseState: MultiSplitGuideState = {
+    cashUsagePct,
+    totalInvested,
+    totalSeed,
+    remainingBudget,
     currentQuantity,
     avgPrice,
+    isFirstBuy,
+    isSeedExhausted,
+    appliedLocRatioPct,
+    sellGuide,
+  };
+
+  if (isFirstBuy || isSeedExhausted) {
+    return baseState;
+  }
+
+  const buyGuide = calculateMultiSplitBuyGuide({
+    remainingBudget,
+    feeRate: args.feeRate,
+    avgPrice,
+    snapshot: args.snapshot,
+    strategy: args.strategy,
+  });
+
+  return {
+    ...baseState,
+    appliedLocRatioPct: buyGuide.appliedLocRatioPct,
+    displayLocBuy: buyGuide.displayLocBuy,
+    displayMocBuy: buyGuide.displayMocBuy,
   };
 }

@@ -51,6 +51,13 @@ import {
   calculateMaRsiNotMet,
   collectMaPartialProfitLine as collectSharedMaPartialProfitLine,
 } from '../supabase/functions/_shared/maSummaryShared.ts';
+import {
+  buildNoStopExecutionSummaryLines,
+} from '../supabase/functions/_shared/noStopExecutionMessages.ts';
+import {
+  buildMultiSplitExecutionSummaryLines,
+  buildMultiSplitProgressVm,
+} from '../supabase/functions/_shared/multiSplitExecutionMessages.ts';
 import { useMultiSplitExecution } from '../hooks/useMultiSplitExecution';
 import { useNoStopMultiSplitExecution } from '../hooks/useNoStopMultiSplitExecution';
 import { useVrOrders } from '../hooks/useVrOrders';
@@ -72,7 +79,6 @@ interface DashboardProps {
   portfolios: Portfolio[];
   onClosePortfolio: (id: string) => void;
   onDeletePortfolio: (id: string) => Promise<void> | void;
-  onUpdatePortfolio: (updated: Portfolio) => Promise<void> | void;
   onOpenCreator: () => void;
   onOpenAlarm: (id: string) => void;
   onOpenDetails: (id: string) => void;
@@ -99,7 +105,6 @@ interface DashboardPortfolioCardHostProps {
   portfolio: Portfolio;
   onClosePortfolio: (portfolioId: string) => void;
   onDeletePortfolio: (portfolioId: string) => Promise<void> | void;
-  onUpdatePortfolio: (updated: Portfolio) => Promise<void> | void;
   onOpenAlarm: (portfolioId: string) => void;
   onOpenDetails: (portfolioId: string) => void;
   onOpenQuickInput: (
@@ -288,6 +293,8 @@ type DashboardChangeTone = 'positive' | 'negative' | 'neutral';
 const USD_DISPLAY_DECIMAL_PLACES = 2;
 const ROI_DISPLAY_DECIMAL_PLACES = 1;
 const LOADING_ELLIPSIS_LABEL = '...';
+const PROGRESS_MIN_PERCENT = 0;
+const PROGRESS_MAX_PERCENT = 100;
 
 const TONE_TEXT_COLOR_MAP: Record<DashboardChangeTone, string> = {
   positive: 'text-emerald-500',
@@ -353,16 +360,10 @@ interface PortfolioExecutionSummaryInput {
   trades: Portfolio['trades'];
   vrSnapshot: Portfolio['vrSnapshot'];
   vrSettings: Portfolio['strategy']['vrBand'] | null;
-  multiSplitCurrentRound: number;
-  multiSplitPhase: 'first' | 'second' | 'quarter' | null;
-  multiSplitIsInQuarterMode: boolean;
-  multiSplitIsInQuarterModeByT: boolean;
-  multiSplitInsufficientAmount: boolean;
-  multiSplitQuarterStopLossData:
-    ReturnType<typeof useMultiSplitExecution>['quarterStopLossData'];
   multiSplitExecutionData:
-    ReturnType<typeof useMultiSplitExecution>['multiSplitExecutionData'];
-  noStopCurrentRound: number;
+    ReturnType<typeof useMultiSplitExecution>['executionData'];
+  multiSplitStatus: ReturnType<typeof useMultiSplitExecution>['status'];
+  noStopStatus: ReturnType<typeof useNoStopMultiSplitExecution>['status'];
   noStopExecutionData:
     ReturnType<typeof useNoStopMultiSplitExecution>['executionData'];
   maActiveSection: 1 | 2 | 3 | null;
@@ -538,139 +539,76 @@ function renderVrExecutionSummary(
 function renderMultiSplitExecutionSummary(
   input: Pick<
     PortfolioExecutionSummaryInput,
-    | 'copy'
-    | 'multiSplitCurrentRound'
-    | 'multiSplitPhase'
-    | 'multiSplitIsInQuarterMode'
-    | 'multiSplitQuarterStopLossData'
-    | 'multiSplitExecutionData'
-    | 'multiSplitInsufficientAmount'
+    'lang' | 'copy' | 'multiSplitExecutionData' | 'multiSplitStatus'
   >,
 ): React.ReactNode {
-  const {
-    copy,
-    multiSplitCurrentRound,
-    multiSplitPhase,
-    multiSplitIsInQuarterMode,
-    multiSplitQuarterStopLossData,
-    multiSplitExecutionData,
-    multiSplitInsufficientAmount,
-  } = input;
+  const { lang, copy, multiSplitExecutionData, multiSplitStatus } = input;
   const ex = copy.execution;
-  const zeroSharesLabel = `0${ex.sharesUnit}`;
-
-  const renderFixedSellLine = (
-    label: string,
-    order: { price: number; quantity: number } | null | undefined,
-  ): React.ReactNode => {
-    if (order == null) {
-      return null;
-    }
-
-    return (
-      <div>
-        <span className="font-black">{label}:</span>{' '}
-        {`${formatUsdValue(order.price)} / ${
-          order.quantity > 0 ? order.quantity : zeroSharesLabel
-        }`}
-      </div>
-    );
-  };
-
-  if (multiSplitInsufficientAmount) {
-    return (
-      <div className="text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2 border border-red-200 dark:border-red-500/30">
-        {ex.insufficientAmount}
-      </div>
-    );
-  }
-
-  if (multiSplitIsInQuarterMode) {
-    if (multiSplitQuarterStopLossData == null) {
-      return <span>{ex.calculating}</span>;
-    }
-
-    if (!multiSplitQuarterStopLossData.hasMOC) {
-      return (
-        <div className="space-y-1">
-          <div className="text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium">
-            <span className="font-black">{ex.mocSellLabel}:</span>{' '}
-            {formatShareQuantity(multiSplitQuarterStopLossData.mocQuantity ?? 0)}{' '}
-            {ex.sharesUnit}
-          </div>
-          <div className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-            {ex.startQuarterStopLoss}
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="space-y-2 text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium">
-        <div>
-          <span className="font-black">{ex.firstBuyAmountLabel}:</span>{' '}
-          {multiSplitQuarterStopLossData.newOneTimeAmount != null
-            ? formatUsdValue(multiSplitQuarterStopLossData.newOneTimeAmount)
-            : formatUsdValue(0)}
-        </div>
-        {multiSplitQuarterStopLossData.locBuy != null ? (
-          <div>
-            <span className="font-black">{ex.locBuy1}:</span>{' '}
-            {formatUsdValue(multiSplitQuarterStopLossData.locBuy.price)} /{' '}
-            {multiSplitQuarterStopLossData.locBuy.quantity}
-            <div className="text-[10px] text-slate-500 dark:text-slate-400">
-              ({ex.avgPriceTimesPointNineMinusOffset})
-            </div>
-          </div>
-        ) : null}
-        {multiSplitQuarterStopLossData.locSell != null ? (
-          <div>
-            <span className="font-black">{ex.locSell}:</span>{' '}
-            {formatUsdValue(multiSplitQuarterStopLossData.locSell.price)} /{' '}
-            {multiSplitQuarterStopLossData.locSell.quantity}
-            <div className="text-[10px] text-slate-500 dark:text-slate-400">
-              ({ex.avgPriceTimesPointNine})
-            </div>
-          </div>
-        ) : null}
-        {multiSplitQuarterStopLossData.limitSell != null ? (
-          <div>
-            <span className="font-black">{ex.limitSell}:</span>{' '}
-            {formatUsdValue(multiSplitQuarterStopLossData.limitSell.price)} /{' '}
-            {multiSplitQuarterStopLossData.limitSell.quantity}
-          </div>
-        ) : null}
-      </div>
-    );
-  }
 
   if (multiSplitExecutionData == null) {
-    return (
-      <div className="text-[10px] text-blue-600/70 dark:text-blue-400/70 font-medium">
-        {multiSplitPhase == null ? ex.strategyPreparing : ex.calculating}
-      </div>
-    );
+    if (multiSplitStatus === 'fetch_error') {
+      return <span>{copy.systemError}</span>;
+    }
+
+    if (
+      multiSplitStatus === 'invalid_strategy' ||
+      multiSplitStatus === 'invalid_amount'
+    ) {
+      return <span>{ex.strategyPreparing}</span>;
+    }
+
+    return <span>{ex.calculating}</span>;
   }
+
+  const progressVm = buildMultiSplitProgressVm({
+    lang,
+    cashUsagePct: multiSplitExecutionData.cashUsagePct,
+  });
+  const summaryLines = buildMultiSplitExecutionSummaryLines({
+    lang,
+    execution: multiSplitExecutionData,
+  });
+
+  return renderProgressExecutionSummary({
+    progressLine: progressVm.labelText,
+    progressWidth: progressVm.widthPct,
+    progressBarAriaLabel: ex.multiSplitProgressBarAriaLabel,
+    detailLines: summaryLines.slice(1),
+  });
+}
+
+function renderProgressExecutionSummary(args: {
+  progressLine: string;
+  progressWidth: number;
+  progressBarAriaLabel: string;
+  detailLines: string[];
+}): React.ReactNode {
+  const boundedProgressWidth = Number.isFinite(args.progressWidth)
+    ? Math.min(
+        PROGRESS_MAX_PERCENT,
+        Math.max(PROGRESS_MIN_PERCENT, args.progressWidth),
+      )
+    : PROGRESS_MIN_PERCENT;
 
   return (
     <div className="space-y-2 text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium">
-      <div className="font-black">T = {multiSplitCurrentRound.toFixed(2)}</div>
-      {multiSplitExecutionData.locBuy1 != null ? (
-        <div>
-          <span className="font-black">{ex.locBuy1}:</span>{' '}
-          {formatUsdValue(multiSplitExecutionData.locBuy1.price)} /{' '}
-          {multiSplitExecutionData.locBuy1.quantity}
+      <div className="space-y-1.5">
+        <div className="font-black text-blue-900 dark:text-white">
+          {args.progressLine}
         </div>
-      ) : null}
-      {multiSplitExecutionData.locBuy2 != null ? (
-        <div>
-          <span className="font-black">{ex.locBuy2}:</span>{' '}
-          {formatUsdValue(multiSplitExecutionData.locBuy2.price)} /{' '}
-          {multiSplitExecutionData.locBuy2.quantity}
+        <div
+          aria-label={args.progressBarAriaLabel}
+          className="h-2 overflow-hidden rounded-full bg-blue-100 dark:bg-blue-900/40"
+        >
+          <div
+            className="h-full rounded-full bg-blue-600 transition-[width] dark:bg-blue-400"
+            style={{ width: `${boundedProgressWidth}%` }}
+          />
         </div>
-      ) : null}
-      {renderFixedSellLine(ex.locSell, multiSplitExecutionData.locSell)}
-      {renderFixedSellLine(ex.limitSell, multiSplitExecutionData.limitSell)}
+      </div>
+      {args.detailLines.map((line) => (
+        <div key={line}>{line}</div>
+      ))}
     </div>
   );
 }
@@ -678,59 +616,43 @@ function renderMultiSplitExecutionSummary(
 function renderNoStopExecutionSummary(
   input: Pick<
     PortfolioExecutionSummaryInput,
-    'copy' | 'noStopCurrentRound' | 'noStopExecutionData'
+    'lang' | 'copy' | 'noStopExecutionData' | 'noStopStatus'
   >,
 ): React.ReactNode {
-  const { copy, noStopCurrentRound, noStopExecutionData } = input;
+  const { lang, copy, noStopExecutionData, noStopStatus } = input;
   const ex = copy.execution;
 
   if (noStopExecutionData == null) {
+    if (noStopStatus === 'invalid_amount') {
+      return <span>{ex.insufficientAmount}</span>;
+    }
+
+    if (noStopStatus === 'fetch_error') {
+      return <span>{copy.systemError}</span>;
+    }
+
+    if (noStopStatus === 'invalid_strategy') {
+      return <span>{ex.strategyPreparing}</span>;
+    }
+
     return <span>{ex.calculating}</span>;
   }
 
-  if (noStopExecutionData.isSplitComplete) {
-    return (
-      <div className="space-y-2">
-        <div className="font-black text-blue-900 dark:text-white">
-          {ex.noStopSplitComplete}
-        </div>
-        {noStopExecutionData.takeProfit != null ? (
-          <div className="text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium">
-            <span className="font-black">{ex.noStopTakeProfitTarget}:</span>{' '}
-            {formatUsdValue(noStopExecutionData.takeProfit.price)} /{' '}
-            {noStopExecutionData.takeProfit.quantity}
-          </div>
-        ) : null}
-      </div>
-    );
-  }
+  const summaryLines = buildNoStopExecutionSummaryLines({
+    lang,
+    execution: noStopExecutionData,
+    formatPrice: (price) => formatUsdValue(price),
+    formatQuantity: (quantity) => formatShareQuantity(quantity, 0),
+  });
+  const progressLine = summaryLines[0] ?? '';
+  const detailLines = summaryLines.slice(1);
 
-  return (
-    <div className="space-y-2 text-[12px] text-blue-600/90 dark:text-blue-400/90 font-medium">
-      <div className="font-black">T = {noStopCurrentRound.toFixed(2)}</div>
-      {noStopExecutionData.lowLoc != null ? (
-        <div>
-          <span className="font-black">{ex.lowLoc}:</span>{' '}
-          {formatUsdValue(noStopExecutionData.lowLoc.price)} /{' '}
-          {noStopExecutionData.lowLoc.quantity}
-        </div>
-      ) : null}
-      {noStopExecutionData.highLoc != null ? (
-        <div>
-          <span className="font-black">{ex.highLoc}:</span>{' '}
-          {formatUsdValue(noStopExecutionData.highLoc.price)} /{' '}
-          {noStopExecutionData.highLoc.quantity}
-        </div>
-      ) : null}
-      {noStopExecutionData.takeProfit != null ? (
-        <div>
-          <span className="font-black">{ex.noStopTakeProfitTarget}:</span>{' '}
-          {formatUsdValue(noStopExecutionData.takeProfit.price)} /{' '}
-          {noStopExecutionData.takeProfit.quantity}
-        </div>
-      ) : null}
-    </div>
-  );
+  return renderProgressExecutionSummary({
+    progressLine,
+    progressWidth: noStopExecutionData.progressPct,
+    progressBarAriaLabel: ex.noStopProgressBarAriaLabel,
+    detailLines,
+  });
 }
 
 function buildPortfolioExecutionSummary(
@@ -757,7 +679,6 @@ export function DashboardPortfolioCardHost({
   portfolio,
   onClosePortfolio,
   onDeletePortfolio,
-  onUpdatePortfolio,
   onOpenAlarm,
   onOpenDetails,
   onOpenQuickInput,
@@ -778,15 +699,10 @@ export function DashboardPortfolioCardHost({
   const multiSplitVm = useMultiSplitExecution(portfolio, lang);
   const noStopVm = useNoStopMultiSplitExecution(portfolio, lang);
 
-  const multiSplitCurrentRound = multiSplitVm.currentRound;
-  const multiSplitPhase = multiSplitVm.multiSplitPhase;
-  const multiSplitIsInQuarterMode = multiSplitVm.isInQuarterMode;
-  const multiSplitIsInQuarterModeByT = multiSplitVm.isInQuarterModeByT;
-  const multiSplitInsufficientAmount = multiSplitVm.multiSplitInsufficientAmount;
-  const multiSplitQuarterStopLossData = multiSplitVm.quarterStopLossData;
-  const multiSplitExecutionData = multiSplitVm.multiSplitExecutionData;
+  const multiSplitStatus = multiSplitVm.status;
+  const multiSplitExecutionData = multiSplitVm.executionData;
 
-  const noStopCurrentRound = noStopVm.currentRound;
+  const noStopStatus = noStopVm.status;
   const noStopExecutionData = noStopVm.executionData;
 
   const [currentValuation, setCurrentValuation] = useState(0);
@@ -804,7 +720,6 @@ export function DashboardPortfolioCardHost({
   const [maRsiNotMet, setMaRsiNotMet] = useState(false);
   const [maAlignmentNotMet, setMaAlignmentNotMet] = useState(false);
   const [isVrOrderModalOpen, setIsVrOrderModalOpen] = useState(false);
-  const quarterModeUpdateSentRef = useRef(false);
 
   const { safeBuyOrders, safeSellOrders } = useVrOrders(portfolio.vrSnapshot);
 
@@ -822,37 +737,6 @@ export function DashboardPortfolioCardHost({
   useLayoutEffect(() => {
     copyRef.current = copy;
   }, [copy]);
-
-  useEffect(() => {
-    if (portfolio.isQuarterMode === false) {
-      quarterModeUpdateSentRef.current = false;
-    }
-  }, [portfolio.isQuarterMode]);
-
-  useEffect(() => {
-    if (
-      portfolio.strategy.multiSplit == null ||
-      !multiSplitIsInQuarterModeByT ||
-      portfolio.isQuarterMode === true ||
-      quarterModeUpdateSentRef.current
-    ) {
-      return;
-    }
-
-    quarterModeUpdateSentRef.current = true;
-    void Promise.resolve(
-      onUpdatePortfolio({
-        ...portfolio,
-        isQuarterMode: true,
-      }),
-    );
-  }, [
-    portfolio,
-    portfolio.isQuarterMode,
-    portfolio.strategy.multiSplit,
-    multiSplitIsInQuarterModeByT,
-    onUpdatePortfolio,
-  ]);
 
   useEffect(() => {
     if (isMultiSplitStrategy || isNoStopMultiSplitStrategy || isVrStrategy) {
@@ -1033,16 +917,9 @@ export function DashboardPortfolioCardHost({
       return;
     }
 
-    const multiSplitOverLimit =
-      portfolio.strategy.multiSplit != null &&
-      portfolio.strategy.multiSplit.totalSplitCount > 0 &&
-      multiSplitCurrentRound > portfolio.strategy.multiSplit.totalSplitCount;
-
     if (
       portfolio.strategy.multiSplit != null &&
-      !multiSplitOverLimit &&
-      multiSplitExecutionData == null &&
-      !multiSplitInsufficientAmount
+      multiSplitStatus === 'loading'
     ) {
       return;
     }
@@ -1065,19 +942,7 @@ export function DashboardPortfolioCardHost({
 
     const block = formatPortfolioDailyExecutionBlock(portfolio, lang, {
       multiSplitExecutionData: multiSplitExecutionData ?? undefined,
-      quarterStopLossData: multiSplitQuarterStopLossData ?? undefined,
       noStopMultiSplitExecutionData: noStopExecutionData ?? undefined,
-      multiSplitPhase: multiSplitPhase ?? null,
-      isQuarterStopLossActive: multiSplitIsInQuarterMode,
-      multiSplitOverLimit,
-      multiSplitFirstRoundHint:
-        portfolio.strategy.multiSplit != null &&
-        multiSplitCurrentRound >= 0 &&
-        multiSplitCurrentRound < 0.5,
-      multiSplitInsufficientAmount:
-        portfolio.strategy.multiSplit != null
-          ? multiSplitInsufficientAmount
-          : undefined,
       maActiveSection:
         isMultiSplitStrategy || isNoStopMultiSplitStrategy
           ? undefined
@@ -1105,12 +970,8 @@ export function DashboardPortfolioCardHost({
     portfolio,
     portfolioId,
     lang,
-    multiSplitCurrentRound,
-    multiSplitPhase,
-    multiSplitIsInQuarterMode,
+    multiSplitStatus,
     multiSplitExecutionData,
-    multiSplitInsufficientAmount,
-    multiSplitQuarterStopLossData,
     noStopExecutionData,
     maActiveSection,
     maPartialProfitLines,
@@ -1132,14 +993,9 @@ export function DashboardPortfolioCardHost({
         trades: portfolio.trades,
         vrSnapshot: portfolio.vrSnapshot,
         vrSettings,
-        multiSplitCurrentRound,
-        multiSplitPhase,
-        multiSplitIsInQuarterMode,
-        multiSplitIsInQuarterModeByT,
-        multiSplitInsufficientAmount,
-        multiSplitQuarterStopLossData,
         multiSplitExecutionData,
-        noStopCurrentRound,
+        multiSplitStatus,
+        noStopStatus,
         noStopExecutionData,
         maActiveSection,
         maPartialProfitLines,
@@ -1155,14 +1011,9 @@ export function DashboardPortfolioCardHost({
       portfolio.trades,
       portfolio.vrSnapshot,
       vrSettings,
-      multiSplitCurrentRound,
-      multiSplitPhase,
-      multiSplitIsInQuarterMode,
-      multiSplitIsInQuarterModeByT,
-      multiSplitInsufficientAmount,
-      multiSplitQuarterStopLossData,
       multiSplitExecutionData,
-      noStopCurrentRound,
+      multiSplitStatus,
+      noStopStatus,
       noStopExecutionData,
       maActiveSection,
       maPartialProfitLines,
@@ -1733,7 +1584,6 @@ const Dashboard: React.FC<DashboardProps> = ({
   portfolios,
   onClosePortfolio,
   onDeletePortfolio,
-  onUpdatePortfolio,
   onOpenCreator,
   onOpenAlarm,
   onOpenDetails,
@@ -1912,7 +1762,6 @@ const Dashboard: React.FC<DashboardProps> = ({
                     portfolio={portfolio}
                     onClosePortfolio={handleClosePortfolio}
                     onDeletePortfolio={handleDeletePortfolio}
-                    onUpdatePortfolio={onUpdatePortfolio}
                     onOpenAlarm={handleOpenAlarm}
                     onOpenDetails={handleOpenDetails}
                     onOpenQuickInput={handleOpenQuickInput}
@@ -1935,7 +1784,6 @@ const Dashboard: React.FC<DashboardProps> = ({
                 portfolio={portfolio}
                 onClosePortfolio={handleClosePortfolio}
                 onDeletePortfolio={handleDeletePortfolio}
-                onUpdatePortfolio={onUpdatePortfolio}
                 onOpenAlarm={handleOpenAlarm}
                 onOpenDetails={handleOpenDetails}
                 onOpenQuickInput={handleOpenQuickInput}

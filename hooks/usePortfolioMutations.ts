@@ -8,9 +8,6 @@ import {
 } from '../constants/portfolioMutationErrors';
 import { useMutexAction } from './useMutexAction';
 import type { SettlementResult } from './portfolioTypes';
-import {
-  calculateHoldings,
-} from '../utils/portfolioCalculations';
 import { buildClosedStrategySettlementSummary } from '../utils/portfolioSettlement';
 import {
   calculatePoolDelta,
@@ -41,7 +38,6 @@ interface UsePortfolioMutationsArgs {
 
 interface TradeDraftResult {
   nextPortfolio: Portfolio;
-  nextIsQuarterMode: boolean;
 }
 
 interface ClosePortfolioDraftResult {
@@ -120,7 +116,6 @@ function toPortfolioRecordPayload(portfolio: Portfolio): PortfolioRecordPayload 
     closed_at: portfolio.closedAt ?? null,
     final_sell_amount: portfolio.finalSellAmount ?? null,
     alarm_config: portfolio.alarmconfig ?? null,
-    is_quarter_mode: portfolio.isQuarterMode ?? false,
     vr_snapshot: portfolio.vrSnapshot ?? null,
   };
 }
@@ -197,35 +192,8 @@ export function buildTradeDraft(
     vrSnapshot: nextVrSnapshot ?? portfolio.vrSnapshot,
   };
 
-  let nextIsQuarterMode = portfolio.isQuarterMode ?? false;
-  if (
-    portfolio.strategy.multiSplit != null &&
-    nextIsQuarterMode &&
-    normalizedTrade.type === 'sell'
-  ) {
-    const holdingsBefore = calculateHoldings(portfolio);
-    const holdingsAfter = calculateHoldings(nextPortfolio);
-    const quantityBefore =
-      holdingsBefore.find((holding) => holding.stock === normalizedTrade.stock)
-        ?.quantity ?? 0;
-    const quantityAfter =
-      holdingsAfter.find((holding) => holding.stock === normalizedTrade.stock)
-        ?.quantity ?? 0;
-
-    if (quantityBefore > 0) {
-      const dropRatio = (quantityBefore - quantityAfter) / quantityBefore;
-      if (dropRatio >= 0.2 || dropRatio >= 0.99 || quantityAfter <= 0) {
-        nextIsQuarterMode = false;
-      }
-    }
-  }
-
   return {
-    nextPortfolio: {
-      ...nextPortfolio,
-      isQuarterMode: nextIsQuarterMode,
-    },
-    nextIsQuarterMode,
+    nextPortfolio,
   };
 }
 
@@ -434,7 +402,6 @@ export function usePortfolioMutations({
         portfolioId,
         trades: prepared.nextPortfolio.trades,
         vrSnapshot: prepared.nextPortfolio.vrSnapshot,
-        isQuarterMode: prepared.nextIsQuarterMode,
       });
 
       if (!result.ok) {

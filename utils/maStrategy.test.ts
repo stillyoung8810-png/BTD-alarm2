@@ -73,7 +73,6 @@ function createMaPortfolio(overrides: Partial<Portfolio> = {}): Portfolio {
       selectedHours: ['23:00'],
       timezone: 'Asia/Seoul',
     },
-    isQuarterMode: overrides.isQuarterMode,
     vrSnapshot: overrides.vrSnapshot,
   };
 }

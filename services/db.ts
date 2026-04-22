@@ -1,4 +1,9 @@
 import Dexie, { Table } from 'dexie';
+import type {
+  IndicatorRequirements,
+  NoStopIndicatorSnapshot,
+  NoStopMovingAveragePeriod,
+} from '../types';
 
 // IndexedDB 디버그 로그 토글 (필요할 때만 true로 변경)
 const DEBUG_DB_LOG = false;
@@ -34,6 +39,34 @@ export interface StockMetadata {
   lastCheckedAt?: number; // timestamp (UTC 기준 now.getTime())
 }
 
+export interface IndicatorSnapshotCacheRecord {
+  cacheKey: string;
+  symbol: string;
+  currentPrice: number;
+  rsi?: number;
+  maByPeriod?: Partial<Record<NoStopMovingAveragePeriod, number>>;
+  needsRsi: boolean;
+  maPeriodsKey: string;
+  sourceLastUpdated: string;
+  updatedAt: number;
+}
+
+function normalizeSymbol(symbol: string): string {
+  return symbol.trim().toUpperCase();
+}
+
+function normalizeMaPeriods(
+  periods: readonly NoStopMovingAveragePeriod[],
+): NoStopMovingAveragePeriod[] {
+  return Array.from(new Set(periods)).sort((left, right) => left - right);
+}
+
+function serializeMaPeriods(
+  periods: readonly NoStopMovingAveragePeriod[],
+): string {
+  return normalizeMaPeriods(periods).join(',');
+}
+
 /**
  * Dexie 데이터베이스 클래스
  */
@@ -44,6 +77,9 @@ class StockDatabase extends Dexie {
   // 종목별 메타데이터 테이블
   stockMetadata!: Table<StockMetadata, string>;
 
+  // 요구사항별 파생 snapshot 캐시 테이블
+  indicatorSnapshots!: Table<IndicatorSnapshotCacheRecord, string>;
+
   constructor() {
     super('StockDatabase');
     
@@ -53,6 +89,12 @@ class StockDatabase extends Dexie {
       stockPrices: '[symbol+date], symbol, date, updatedAt',
       // symbol을 키로 사용
       stockMetadata: 'symbol, lastUpdated, updatedAt'
+    });
+
+    this.version(2).stores({
+      stockPrices: '[symbol+date], symbol, date, updatedAt',
+      stockMetadata: 'symbol, lastUpdated, updatedAt',
+      indicatorSnapshots: 'cacheKey, symbol, sourceLastUpdated, updatedAt',
     });
   }
 }
@@ -131,8 +173,30 @@ export const getStockPrices = async (
 export const saveStockPrices = async (
   records: StockPriceRecord[]
 ): Promise<void> => {
+  if (records.length === 0) {
+    return;
+  }
+
   try {
-    await db.stockPrices.bulkPut(records);
+    const affectedSymbols = Array.from(
+      new Set(records.map((record) => normalizeSymbol(record.symbol))),
+    );
+
+    await db.transaction(
+      'rw',
+      db.stockPrices,
+      db.indicatorSnapshots,
+      async () => {
+        await db.stockPrices.bulkPut(records);
+
+        await Promise.all(
+          affectedSymbols.map((symbol) =>
+            db.indicatorSnapshots.where('symbol').equals(symbol).delete(),
+          ),
+        );
+      },
+    );
+
     console.log(`[IndexedDB] ${records.length}개 주가 데이터 저장 완료`);
   } catch (error) {
     console.error('[IndexedDB] 주가 데이터 저장 실패:', error);
@@ -183,6 +247,75 @@ export const updateLastCheckedMetadata = async (
   }
 };
 
+export const getIndicatorSnapshotCache = async (
+  cacheKey: string,
+  sourceLastUpdated?: string,
+): Promise<IndicatorSnapshotCacheRecord | null> => {
+  try {
+    const record = await db.indicatorSnapshots.get(cacheKey);
+    if (record == null) {
+      return null;
+    }
+
+    if (
+      sourceLastUpdated != null &&
+      record.sourceLastUpdated !== sourceLastUpdated
+    ) {
+      return null;
+    }
+
+    return record;
+  } catch (error) {
+    console.error(`[IndexedDB] indicator snapshot 조회 실패 (${cacheKey}):`, error);
+    return null;
+  }
+};
+
+export const saveIndicatorSnapshotCache = async (args: {
+  cacheKey: string;
+  symbol: string;
+  requirements: IndicatorRequirements;
+  snapshot: NoStopIndicatorSnapshot;
+  sourceLastUpdated: string;
+}): Promise<void> => {
+  try {
+    const normalizedSymbol = normalizeSymbol(args.symbol);
+    const normalizedPeriods = normalizeMaPeriods(args.requirements.maPeriods);
+
+    await db.indicatorSnapshots.put({
+      cacheKey: args.cacheKey,
+      symbol: normalizedSymbol,
+      currentPrice: args.snapshot.currentPrice,
+      rsi: args.snapshot.rsi,
+      maByPeriod: args.snapshot.maByPeriod,
+      needsRsi: args.requirements.needsRsi,
+      maPeriodsKey: serializeMaPeriods(normalizedPeriods),
+      sourceLastUpdated: args.sourceLastUpdated,
+      updatedAt: Date.now(),
+    });
+  } catch (error) {
+    console.error(
+      `[IndexedDB] indicator snapshot 저장 실패 (${args.cacheKey}):`,
+      error,
+    );
+    throw error;
+  }
+};
+
+export const deleteIndicatorSnapshotCacheBySymbol = async (
+  symbol: string,
+): Promise<void> => {
+  try {
+    await db.indicatorSnapshots
+      .where('symbol')
+      .equals(normalizeSymbol(symbol))
+      .delete();
+  } catch (error) {
+    console.error(`[IndexedDB] indicator snapshot 삭제 실패 (${symbol}):`, error);
+    throw error;
+  }
+};
+
 /**
  * 특정 종목의 데이터 삭제 (필요시)
  */
@@ -190,6 +323,7 @@ export const deleteStockData = async (symbol: string): Promise<void> => {
   try {
     await db.stockPrices.where('symbol').equals(symbol).delete();
     await db.stockMetadata.where('symbol').equals(symbol).delete();
+    await deleteIndicatorSnapshotCacheBySymbol(symbol);
     console.log(`[IndexedDB] ${symbol} 데이터 삭제 완료`);
   } catch (error) {
     console.error(`[IndexedDB] 데이터 삭제 실패 (${symbol}):`, error);
@@ -204,6 +338,7 @@ export const clearAllStockData = async (): Promise<void> => {
   try {
     await db.stockPrices.clear();
     await db.stockMetadata.clear();
+    await db.indicatorSnapshots.clear();
     console.log('[IndexedDB] 모든 주가 데이터 삭제 완료');
   } catch (error) {
     console.error('[IndexedDB] 데이터 삭제 실패:', error);

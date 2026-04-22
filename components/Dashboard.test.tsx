@@ -125,6 +125,9 @@ function createPortfolio(overrides: Partial<Portfolio> = {}): Portfolio {
         targetStock: 'AAPL',
         targetReturnRate: 10,
         totalSplitCount: 4,
+        baseLocRatio: 50,
+        mainTakeProfitRatioPct: 60,
+        riskCutRatioPct: 20,
       },
     },
     trades: overrides.trades ?? [createTrade({ price: 100, quantity: 1 })],
@@ -132,7 +135,6 @@ function createPortfolio(overrides: Partial<Portfolio> = {}): Portfolio {
     closedAt: overrides.closedAt,
     finalSellAmount: overrides.finalSellAmount,
     alarmconfig: overrides.alarmconfig ?? { enabled: false, selectedHours: [] },
-    isQuarterMode: overrides.isQuarterMode ?? false,
     vrSnapshot: overrides.vrSnapshot,
   };
 }
@@ -140,18 +142,32 @@ function createPortfolio(overrides: Partial<Portfolio> = {}): Portfolio {
 function createDefaultMultiSplitHookResult(
   overrides: Partial<MultiSplitHookResult> = {},
 ): MultiSplitHookResult {
+  const defaultExecutionData: NonNullable<MultiSplitHookResult['executionData']> =
+    {
+      cashUsagePct: 50,
+      totalInvested: 1000,
+      totalSeed: 2000,
+      remainingBudget: 1000,
+      currentQuantity: 10,
+      avgPrice: 100,
+      isFirstBuy: false,
+      isSeedExhausted: false,
+      appliedLocRatioPct: 70,
+      displayLocBuy: { price: 100, quantity: 7 },
+      displayMocBuy: { quantity: 2 },
+      sellGuide: {
+        mainTakeProfitQty: 6,
+        intermediateTakeProfitQty: 4,
+        riskCutQty: 2,
+      },
+    };
+
   return {
-    currentRound: overrides.currentRound ?? 1,
-    multiSplitPhase: overrides.multiSplitPhase ?? 'first',
-    isInQuarterMode: overrides.isInQuarterMode ?? false,
-    isInQuarterModeByT: overrides.isInQuarterModeByT ?? false,
-    quarterStopLossData: overrides.quarterStopLossData ?? null,
-    multiSplitExecutionData: overrides.multiSplitExecutionData ?? {
-      phase: 'first',
-      locBuy1: { price: 100, quantity: 1 },
-      locBuy2: { price: 95, quantity: 1 },
-    },
-    multiSplitInsufficientAmount: overrides.multiSplitInsufficientAmount ?? false,
+    status: overrides.status ?? 'ready',
+    executionData:
+      'executionData' in overrides
+        ? overrides.executionData ?? null
+        : defaultExecutionData,
   };
 }
 
@@ -159,6 +175,7 @@ function createDefaultNoStopHookResult(): NoStopMultiSplitHookResult {
   return {
     currentRound: 0,
     executionData: null,
+    status: 'idle',
   };
 }
 
@@ -186,7 +203,6 @@ async function renderDashboardCard(
       portfolio={createPortfolio(portfolioOverrides)}
       onClosePortfolio={vi.fn()}
       onDeletePortfolio={vi.fn()}
-      onUpdatePortfolio={vi.fn(async () => undefined)}
       onOpenAlarm={vi.fn()}
       onOpenDetails={vi.fn()}
       onOpenQuickInput={vi.fn()}
@@ -213,52 +229,69 @@ describe('Dashboard multi-split execution rendering', () => {
     vi.clearAllMocks();
   });
 
-  it('전반전 0주 초기 상태에서도 매도 UI를 숨기지 않고 0주 fallback을 고정 렌더링한다', async () => {
-    // Why: Phase나 보유 수량에 따라 매도 행이 사라지면 카드 높이가 흔들리고 사용자가 동일 위치에서 주문 타입을 인지하지 못하게 됩니다.
+  it('Smart Split 현금 사용률 progress와 LOC/MOC/익절 가이드를 렌더링한다', async () => {
+    // Why: Smart Split 카드가 구형 phase/T 표기를 계속 쓰면 새 순수 계산 레이어가 붙어도 사용자는 여전히 레거시 전략으로 오해하게 됩니다.
     await renderDashboardCard(
       createDefaultMultiSplitHookResult({
-        currentRound: 1,
-        multiSplitPhase: 'first',
-        multiSplitExecutionData: {
-          phase: 'first',
-          locBuy1: { price: 100, quantity: 1 },
-          locBuy2: { price: 95, quantity: 1 },
-          locSell: { price: 105, quantity: 0 },
-          limitSell: { price: 110, quantity: 0 },
+        executionData: {
+          cashUsagePct: 50,
+          totalInvested: 1000,
+          totalSeed: 2000,
+          remainingBudget: 1000,
+          currentQuantity: 10,
+          avgPrice: 100,
+          isFirstBuy: false,
+          isSeedExhausted: false,
+          appliedLocRatioPct: 70,
+          displayLocBuy: { price: 100, quantity: 7 },
+          displayMocBuy: { quantity: 2 },
+          sellGuide: {
+            mainTakeProfitQty: 6,
+            intermediateTakeProfitQty: 4,
+            riskCutQty: 2,
+          },
         },
       }),
-      {
-        trades: [],
-      },
     );
+
     const executionCard = getExecutionCard();
-    const zeroSharesLabel = `0${KOREAN_COPY.execution.sharesUnit}`;
 
     expect(
-      within(executionCard).getByText(KOREAN_COPY.execution.locBuy1, {
-        selector: 'span',
-        exact: false,
-      }),
+      within(executionCard).getByText('현금 사용률: 50%'),
     ).toBeInTheDocument();
     expect(
-      within(executionCard).getByText(KOREAN_COPY.execution.locBuy2, {
-        selector: 'span',
-        exact: false,
-      }),
+      within(executionCard).getByLabelText(
+        KOREAN_COPY.execution.multiSplitProgressBarAriaLabel,
+      ),
     ).toBeInTheDocument();
     expect(
-      within(executionCard).getByText(KOREAN_COPY.execution.locSell, {
-        selector: 'span',
-        exact: false,
-      }),
+      within(executionCard).getByText('평단가 매수 (LOC): $100.00 / 7주'),
     ).toBeInTheDocument();
     expect(
-      within(executionCard).getByText(KOREAN_COPY.execution.limitSell, {
-        selector: 'span',
-        exact: false,
-      }),
+      within(executionCard).getByText('분할 매수 (MOC): 2주'),
     ).toBeInTheDocument();
-    expect(within(executionCard).getByText('$105.00 / 0주')).toBeInTheDocument();
-    expect(within(executionCard).getByText('$110.00 / 0주')).toBeInTheDocument();
+    expect(
+      within(executionCard).getByText('메인 익절: 6주'),
+    ).toBeInTheDocument();
+    expect(
+      within(executionCard).getByText('중간 익절: 4주'),
+    ).toBeInTheDocument();
+    expect(
+      within(executionCard).getByText('리스크 컷: 2주'),
+    ).toBeInTheDocument();
+    expect(within(executionCard).queryByText(/T = /)).not.toBeInTheDocument();
+  });
+
+  it('데이터 fetch 중에는 계산 중 문구만 노출한다', async () => {
+    await renderDashboardCard(
+      createDefaultMultiSplitHookResult({
+        status: 'loading',
+        executionData: null,
+      }),
+    );
+
+    expect(
+      within(getExecutionCard()).getByText(KOREAN_COPY.execution.calculating),
+    ).toBeInTheDocument();
   });
 });

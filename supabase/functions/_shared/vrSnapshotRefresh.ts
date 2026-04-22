@@ -9,12 +9,33 @@ import {
   sanitizeVrCycleWeeks,
 } from './vrBandStrategy.ts';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object';
+}
+
+function readAlarmConfig(row: PortfolioRow): Portfolio['alarmconfig'] {
+  const rawAlarmConfig = row.alarm_config ?? row.alarmconfig;
+  if (!isRecord(rawAlarmConfig)) {
+    return undefined;
+  }
+
+  return rawAlarmConfig as unknown as Portfolio['alarmconfig'];
+}
+
+function readVrSnapshot(row: PortfolioRow): VrSnapshot | undefined {
+  const rawSnapshot = row.vr_snapshot ?? row.vrSnapshot;
+  if (!isRecord(rawSnapshot)) {
+    return undefined;
+  }
+
+  return rawSnapshot as unknown as VrSnapshot;
+}
+
 export function mapPortfolioRowForRefresh(row: PortfolioRow): Portfolio | null {
   if (!row?.strategy) return null;
 
   const rawTrades = row.trades;
   const trades = Array.isArray(rawTrades) ? rawTrades : [];
-  const rawSnap = row.vr_snapshot ?? row.vrSnapshot;
 
   return {
     id: row.id == null ? '' : String(row.id),
@@ -28,9 +49,8 @@ export function mapPortfolioRowForRefresh(row: PortfolioRow): Portfolio | null {
     closedAt: row.closed_at == null ? undefined : String(row.closed_at),
     finalSellAmount:
       row.final_sell_amount == null ? undefined : Number(row.final_sell_amount),
-    alarmconfig: row.alarm_config ?? row.alarmconfig ?? undefined,
-    isQuarterMode: Boolean(row.is_quarter_mode ?? false),
-    vrSnapshot: rawSnap ?? undefined,
+    alarmconfig: readAlarmConfig(row),
+    vrSnapshot: readVrSnapshot(row),
   };
 }
 

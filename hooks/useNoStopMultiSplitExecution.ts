@@ -2,22 +2,264 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { showErrorToast } from '../components/tds-adapter/showErrorToast';
 import { APP_SHELL_MESSAGES } from '../constants/messages/appShellMessages';
 import type { AppLang, Portfolio } from '../types';
-import { fetchLatestStockSnapshot } from '../services/stockService';
+import { DEFAULT_FETCH_TIMEOUT_MS } from '../services/serviceUtils';
 import {
-  calculateNoStopMultiSplitState,
-  type NoStopMultiSplitExecutionData,
-  type NoStopMultiSplitParams,
-} from '../supabase/functions/_shared/noStopMultiSplitShared.ts';
+  buildIndicatorRequirementCacheKey,
+  fetchIndicatorAwareSnapshot,
+} from '../services/stockService';
+import {
+  calcNoStopCurrentRound,
+  calculateNoStopExecution,
+  collectIndicatorRequirements,
+  type IndicatorRequirements,
+  type NoStopAlignmentRule,
+  type NoStopIndicatorSnapshot,
+  type NoStopMultiSplitStrategy,
+  type NoStopRsiRule,
+} from '../utils/noStopMultiSplitCalc';
 import { areStrictPositiveFiniteScalars } from '../utils/financialScalarGuards';
 import {
   DEFAULT_PORTFOLIO_FEE_RATE,
-  type NoStopMultiSplitNetworkSnapshot,
   toTradeInputsForMultiSplit,
 } from './multiSplitExecutionShared';
 
+const EMPTY_INDICATOR_REQUIREMENTS: IndicatorRequirements = {
+  needsRsi: false,
+  maPeriods: [],
+};
+const NO_STOP_SNAPSHOT_FETCH_TIMEOUT_MS = DEFAULT_FETCH_TIMEOUT_MS;
+const NO_STOP_DEBUG_LOG_PREFIX = '[NoStopDebug]';
+const IS_NO_STOP_DEBUG_LOG_ENABLED =
+  import.meta.env.DEV && import.meta.env.MODE !== 'test';
+
+const NO_STOP_LOC_RATIO_PRESET_VALUES = [70, 50, 30] as const;
+const NO_STOP_RSI_THRESHOLD_PRESET_VALUES = [30, 40, 50] as const;
+const NO_STOP_SHORT_MOVING_AVERAGE_PERIOD_VALUES = [5, 20, 60] as const;
+const NO_STOP_LONG_MOVING_AVERAGE_PERIOD_VALUES = [20, 60, 120] as const;
+
+type IndicatorFetchTrigger =
+  | 'draft-change'
+  | 'step-submit'
+  | 'saved-strategy-mount';
+
+type SnapshotFetchStatus = 'idle' | 'loading' | 'ready' | 'error';
+
+export type NoStopMultiSplitExecutionStatus =
+  | 'idle'
+  | 'loading'
+  | 'ready'
+  | 'invalid_strategy'
+  | 'invalid_amount'
+  | 'fetch_error';
+
+export interface NoStopMultiSplitHookExecutionData {
+  currentRound: number;
+  progressPct: number;
+  appliedLocRatio: number;
+  isFirstBuy: boolean;
+  isSplitComplete: boolean;
+  displayLowLoc?: { price: number; quantity: number };
+  displayMocBuy?: { quantity: number };
+  takeProfit?: { price: number; quantity: number };
+}
+
 export interface NoStopMultiSplitHookResult {
   currentRound: number;
-  executionData: NoStopMultiSplitExecutionData | null;
+  executionData: NoStopMultiSplitHookExecutionData | null;
+  status: NoStopMultiSplitExecutionStatus;
+}
+
+function logNoStopDebug(
+  level: 'info' | 'warn',
+  event: string,
+  payload: Record<string, unknown>,
+): void {
+  if (!IS_NO_STOP_DEBUG_LOG_ENABLED) {
+    return;
+  }
+
+  const message = `${NO_STOP_DEBUG_LOG_PREFIX} ${event}`;
+  if (level === 'warn') {
+    console.warn(message, payload);
+    return;
+  }
+
+  console.info(message, payload);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readTrimmedString(
+  record: Record<string, unknown>,
+  key: string,
+): string | null {
+  const value = record[key];
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmedValue = value.trim();
+  return trimmedValue.length > 0 ? trimmedValue : null;
+}
+
+function readFiniteNumber(
+  record: Record<string, unknown>,
+  key: string,
+): number | null {
+  const value = record[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function isLocRatioPreset(value: number): value is 70 | 50 | 30 {
+  return NO_STOP_LOC_RATIO_PRESET_VALUES.includes(
+    value as (typeof NO_STOP_LOC_RATIO_PRESET_VALUES)[number],
+  );
+}
+
+function isRsiThresholdPreset(value: number): value is 30 | 40 | 50 {
+  return NO_STOP_RSI_THRESHOLD_PRESET_VALUES.includes(
+    value as (typeof NO_STOP_RSI_THRESHOLD_PRESET_VALUES)[number],
+  );
+}
+
+function isShortMovingAveragePeriod(value: number): value is 5 | 20 | 60 {
+  return NO_STOP_SHORT_MOVING_AVERAGE_PERIOD_VALUES.includes(
+    value as (typeof NO_STOP_SHORT_MOVING_AVERAGE_PERIOD_VALUES)[number],
+  );
+}
+
+function isLongMovingAveragePeriod(value: number): value is 20 | 60 | 120 {
+  return NO_STOP_LONG_MOVING_AVERAGE_PERIOD_VALUES.includes(
+    value as (typeof NO_STOP_LONG_MOVING_AVERAGE_PERIOD_VALUES)[number],
+  );
+}
+
+function readRsiRule(strategy: Record<string, unknown>): NoStopRsiRule | undefined {
+  const rawRule = strategy.rsiRule;
+  if (!isRecord(rawRule)) {
+    return undefined;
+  }
+
+  const threshold = readFiniteNumber(rawRule, 'threshold');
+  const locRatio = readFiniteNumber(rawRule, 'locRatio');
+  if (
+    threshold == null ||
+    locRatio == null ||
+    !isRsiThresholdPreset(threshold) ||
+    !isLocRatioPreset(locRatio)
+  ) {
+    return undefined;
+  }
+
+  return {
+    threshold,
+    locRatio,
+  };
+}
+
+function readAlignmentRule(
+  strategy: Record<string, unknown>,
+): NoStopAlignmentRule | undefined {
+  const rawRule = strategy.alignmentRule;
+  if (!isRecord(rawRule)) {
+    return undefined;
+  }
+
+  const shortPeriod = readFiniteNumber(rawRule, 'shortPeriod');
+  const longPeriod = readFiniteNumber(rawRule, 'longPeriod');
+  const locRatio = readFiniteNumber(rawRule, 'locRatio');
+  if (
+    shortPeriod == null ||
+    longPeriod == null ||
+    locRatio == null ||
+    !isShortMovingAveragePeriod(shortPeriod) ||
+    !isLongMovingAveragePeriod(longPeriod) ||
+    !isLocRatioPreset(locRatio) ||
+    shortPeriod >= longPeriod
+  ) {
+    return undefined;
+  }
+
+  return {
+    shortPeriod,
+    longPeriod,
+    locRatio,
+  };
+}
+
+function buildNoStopRuntimeStrategy(
+  strategy: Portfolio['strategy']['noStopMultiSplit'] | null,
+): NoStopMultiSplitStrategy | null {
+  if (!isRecord(strategy)) {
+    return null;
+  }
+
+  const targetStock = readTrimmedString(strategy, 'targetStock');
+  const baseLocRatio =
+    readFiniteNumber(strategy, 'baseLocRatio') ??
+    readFiniteNumber(strategy, 'lowLocBudgetRatio');
+  const takeProfitPct = readFiniteNumber(strategy, 'takeProfitPct');
+  const totalSplitCount = readFiniteNumber(strategy, 'totalSplitCount');
+
+  if (
+    targetStock == null ||
+    baseLocRatio == null ||
+    takeProfitPct == null ||
+    totalSplitCount == null ||
+    baseLocRatio < 0 ||
+    takeProfitPct < 0 ||
+    totalSplitCount <= 0
+  ) {
+    return null;
+  }
+
+  const rsiRule = readRsiRule(strategy);
+  const alignmentRule = readAlignmentRule(strategy);
+
+  return {
+    targetStock,
+    baseLocRatio,
+    takeProfitPct,
+    totalSplitCount,
+    ...(rsiRule != null ? { rsiRule } : {}),
+    ...(alignmentRule != null ? { alignmentRule } : {}),
+  };
+}
+
+function shouldFetchIndicators(args: {
+  trigger: IndicatorFetchTrigger;
+  previousCacheKey?: string;
+  nextCacheKey: string;
+}): boolean {
+  if (args.trigger === 'draft-change') {
+    return false;
+  }
+
+  return args.previousCacheKey !== args.nextCacheKey;
+}
+
+function toHookExecutionData(args: {
+  currentRound: number;
+  execution: ReturnType<typeof calculateNoStopExecution>;
+}): NoStopMultiSplitHookExecutionData {
+  const { currentRound, execution } = args;
+
+  return {
+    currentRound,
+    progressPct: execution.progressPct,
+    appliedLocRatio: execution.appliedLocRatio,
+    isFirstBuy: execution.isFirstBuy,
+    isSplitComplete: execution.isSplitComplete,
+    ...(execution.displayLowLoc != null
+      ? { displayLowLoc: execution.displayLowLoc }
+      : {}),
+    ...(execution.displayMocBuy != null
+      ? { displayMocBuy: execution.displayMocBuy }
+      : {}),
+    ...(execution.takeProfit != null ? { takeProfit: execution.takeProfit } : {}),
+  };
 }
 
 export function useNoStopMultiSplitExecution(
@@ -25,55 +267,176 @@ export function useNoStopMultiSplitExecution(
   lang: AppLang,
 ): NoStopMultiSplitHookResult {
   const noStopStrategy = portfolio.strategy.noStopMultiSplit ?? null;
-  const isNoStopMultiSplit = noStopStrategy != null;
-  const targetStock = noStopStrategy?.targetStock ?? '';
-  const lowLocBudgetRatio = noStopStrategy?.lowLocBudgetRatio ?? 0;
-  const highLocPremiumPct = noStopStrategy?.highLocPremiumPct ?? 0;
-  const takeProfitPct = noStopStrategy?.takeProfitPct ?? 0;
-  const totalSplitCount = noStopStrategy?.totalSplitCount ?? 0;
+  const hasNoStopStrategy = noStopStrategy != null;
+  const runtimeStrategy = useMemo(
+    () => buildNoStopRuntimeStrategy(noStopStrategy),
+    [noStopStrategy],
+  );
+  const isNoStopMultiSplit = runtimeStrategy != null;
   const dailyBuyAmount = portfolio.dailyBuyAmount ?? 0;
   const isDailyBuyAmountValid = areStrictPositiveFiniteScalars(dailyBuyAmount);
   const tradeInputs = useMemo(
     () => toTradeInputsForMultiSplit(portfolio.trades),
     [portfolio.trades],
   );
+  const indicatorRequirements = useMemo(
+    () =>
+      runtimeStrategy == null
+        ? EMPTY_INDICATOR_REQUIREMENTS
+        : collectIndicatorRequirements(runtimeStrategy),
+    [runtimeStrategy],
+  );
+  const targetStock = runtimeStrategy?.targetStock ?? '';
+  const indicatorCacheKey = useMemo(
+    () =>
+      runtimeStrategy == null
+        ? ''
+        : buildIndicatorRequirementCacheKey({
+            symbol: runtimeStrategy.targetStock,
+            requirements: indicatorRequirements,
+          }),
+    [indicatorRequirements, runtimeStrategy],
+  );
+  const fetchIndicatorRequirements = useMemo(
+    // Keep fetch inputs stable per cache key so cache->remote portfolio refreshes
+    // do not cancel the in-flight snapshot request and strand the card in loading.
+    () => indicatorRequirements,
+    [indicatorCacheKey],
+  );
   const networkErrorMsg = APP_SHELL_MESSAGES[lang].dailySummaryNetworkError;
   const networkErrorMsgRef = useRef(networkErrorMsg);
   const requestIdRef = useRef(0);
+  const previousCacheKeyRef = useRef<string | undefined>(undefined);
+  const lastDebugSignatureRef = useRef('');
   const [networkSnapshot, setNetworkSnapshot] =
-    useState<NoStopMultiSplitNetworkSnapshot | null>(null);
+    useState<NoStopIndicatorSnapshot | null>(null);
+  const [snapshotFetchStatus, setSnapshotFetchStatus] =
+    useState<SnapshotFetchStatus>('idle');
 
   useLayoutEffect(() => {
     networkErrorMsgRef.current = networkErrorMsg;
   }, [networkErrorMsg]);
 
   useEffect(() => {
-    if (!isNoStopMultiSplit) {
+    if (
+      !isNoStopMultiSplit ||
+      targetStock === '' ||
+      indicatorCacheKey === '' ||
+      !isDailyBuyAmountValid
+    ) {
       requestIdRef.current += 1;
+      previousCacheKeyRef.current = undefined;
       setNetworkSnapshot((previous) => (previous !== null ? null : previous));
+      setSnapshotFetchStatus((previous) =>
+        previous !== 'idle' ? 'idle' : previous,
+      );
+      logNoStopDebug('warn', 'fetch-reset', {
+        portfolioId: portfolio.id,
+        portfolioName: portfolio.name,
+        indicatorCacheKey,
+        targetStock,
+        isNoStopMultiSplit,
+        isDailyBuyAmountValid,
+      });
       return;
     }
 
+    const nextCacheKey = indicatorCacheKey;
+    const previousCacheKey = previousCacheKeyRef.current;
+    const shouldStartFetch = shouldFetchIndicators({
+      trigger: 'saved-strategy-mount',
+      previousCacheKey,
+      nextCacheKey,
+    });
+    const shouldReuseResolvedSnapshot =
+      !shouldStartFetch && networkSnapshot != null;
+    if (shouldReuseResolvedSnapshot) {
+      logNoStopDebug('info', 'fetch-skip', {
+        portfolioId: portfolio.id,
+        portfolioName: portfolio.name,
+        indicatorCacheKey: nextCacheKey,
+        previousCacheKey: previousCacheKey ?? null,
+        targetStock,
+        reason: 'same_cache_key_with_snapshot',
+      });
+      return;
+    }
+
+    if (!shouldStartFetch) {
+      logNoStopDebug('info', 'fetch-restart', {
+        portfolioId: portfolio.id,
+        portfolioName: portfolio.name,
+        indicatorCacheKey: nextCacheKey,
+        previousCacheKey: previousCacheKey ?? null,
+        targetStock,
+        reason: 'same_cache_key_without_snapshot',
+      });
+    }
+
+    previousCacheKeyRef.current = nextCacheKey;
     setNetworkSnapshot((previous) => (previous !== null ? null : previous));
+    setSnapshotFetchStatus('loading');
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
+    const abortController = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      abortController.abort();
+    }, NO_STOP_SNAPSHOT_FETCH_TIMEOUT_MS);
+    const clearFetchTimeout = () => {
+      window.clearTimeout(timeoutId);
+    };
 
     const runFetch = async () => {
+      logNoStopDebug('info', 'fetch-start', {
+        portfolioId: portfolio.id,
+        portfolioName: portfolio.name,
+        noStopStatus: 'loading',
+        indicatorCacheKey: nextCacheKey,
+        previousCacheKey: previousCacheKey ?? null,
+        targetStock,
+        requirements: fetchIndicatorRequirements,
+      });
+
       try {
-        const quoteResult = await fetchLatestStockSnapshot(targetStock);
+        const snapshotResult = await fetchIndicatorAwareSnapshot(
+          targetStock,
+          fetchIndicatorRequirements,
+          { signal: abortController.signal },
+        );
         if (requestIdRef.current !== requestId) {
           return;
         }
 
-        const isQuoteInvalid =
-          quoteResult.ok &&
-          (!Number.isFinite(quoteResult.data.price) || quoteResult.data.price <= 0);
+        const snapshotData = snapshotResult.data;
+        const isSnapshotInvalid =
+          snapshotResult.ok &&
+          (
+            snapshotData == null ||
+            !Number.isFinite(snapshotData.currentPrice) ||
+            snapshotData.currentPrice <= 0
+          );
 
-        if (!quoteResult.ok || isQuoteInvalid) {
+        if (!snapshotResult.ok || isSnapshotInvalid) {
           if (requestIdRef.current !== requestId) {
             return;
           }
           setNetworkSnapshot((previous) => (previous !== null ? null : previous));
+          setSnapshotFetchStatus('error');
+          logNoStopDebug('warn', 'fetch-failed', {
+            portfolioId: portfolio.id,
+            portfolioName: portfolio.name,
+            noStopStatus: 'fetch_error',
+            indicatorCacheKey: nextCacheKey,
+            targetStock,
+            resultOk: snapshotResult.ok,
+            errorCode: snapshotResult.ok ? null : snapshotResult.error.code,
+            errorMessage: snapshotResult.ok ? null : snapshotResult.error.message,
+            isSnapshotInvalid,
+            currentPrice:
+              snapshotResult.ok && snapshotResult.data != null
+                ? snapshotResult.data.currentPrice
+                : null,
+          });
           if (requestIdRef.current !== requestId) {
             return;
           }
@@ -85,18 +448,46 @@ export function useNoStopMultiSplitExecution(
           return;
         }
 
-        setNetworkSnapshot({
-          currentPrice: quoteResult.data.price,
+        if (snapshotData == null) {
+          return;
+        }
+
+        setSnapshotFetchStatus('ready');
+        setNetworkSnapshot(snapshotData);
+        logNoStopDebug('info', 'fetch-success', {
+          portfolioId: portfolio.id,
+          portfolioName: portfolio.name,
+          noStopStatus: 'ready',
+          indicatorCacheKey: nextCacheKey,
+          targetStock,
+          currentPrice: snapshotData.currentPrice,
         });
-      } catch {
+      } catch (error: unknown) {
         if (requestIdRef.current !== requestId) {
           return;
         }
         setNetworkSnapshot((previous) => (previous !== null ? null : previous));
+        setSnapshotFetchStatus('error');
+        logNoStopDebug('warn', 'fetch-exception', {
+          portfolioId: portfolio.id,
+          portfolioName: portfolio.name,
+          noStopStatus: 'fetch_error',
+          indicatorCacheKey: nextCacheKey,
+          targetStock,
+          error:
+            error instanceof Error
+              ? {
+                  name: error.name,
+                  message: error.message,
+                }
+              : String(error),
+        });
         if (requestIdRef.current !== requestId) {
           return;
         }
         showErrorToast(networkErrorMsgRef.current);
+      } finally {
+        clearFetchTimeout();
       }
     };
 
@@ -104,50 +495,157 @@ export function useNoStopMultiSplitExecution(
 
     return () => {
       requestIdRef.current += 1;
+      clearFetchTimeout();
+      abortController.abort();
     };
-  }, [targetStock]);
+  }, [
+    fetchIndicatorRequirements,
+    indicatorCacheKey,
+    isDailyBuyAmountValid,
+    isNoStopMultiSplit,
+    networkSnapshot,
+    portfolio.id,
+    portfolio.name,
+    targetStock,
+  ]);
 
-  const noStopState = useMemo(() => {
+  const status = useMemo<NoStopMultiSplitExecutionStatus>(() => {
+    if (!hasNoStopStrategy) {
+      return 'idle';
+    }
+
+    if (runtimeStrategy == null) {
+      return 'invalid_strategy';
+    }
+
+    if (!isDailyBuyAmountValid) {
+      return 'invalid_amount';
+    }
+
+    if (networkSnapshot != null) {
+      return 'ready';
+    }
+
+    if (snapshotFetchStatus === 'error') {
+      return 'fetch_error';
+    }
+
+    return 'loading';
+  }, [
+    hasNoStopStrategy,
+    isDailyBuyAmountValid,
+    networkSnapshot,
+    runtimeStrategy,
+    snapshotFetchStatus,
+  ]);
+
+  const execution = useMemo(() => {
     if (
-      !isNoStopMultiSplit ||
+      status !== 'ready' ||
+      runtimeStrategy == null ||
       networkSnapshot == null ||
-      !isDailyBuyAmountValid ||
-      totalSplitCount === 0
+      !isNoStopMultiSplit
     ) {
       return null;
     }
 
-    const safeStrategyObj: NoStopMultiSplitParams = {
-      targetStock,
-      lowLocBudgetRatio,
-      highLocPremiumPct,
-      takeProfitPct,
-      totalSplitCount,
-    };
-
-    return calculateNoStopMultiSplitState({
+    return calculateNoStopExecution({
       trades: tradeInputs,
       oneTimeAmount: dailyBuyAmount,
       feeRate: portfolio.feeRate ?? DEFAULT_PORTFOLIO_FEE_RATE,
-      currentPrice: networkSnapshot.currentPrice,
-      strategy: safeStrategyObj,
+      snapshot: networkSnapshot,
+      strategy: runtimeStrategy,
     });
   }, [
     dailyBuyAmount,
-    highLocPremiumPct,
-    isDailyBuyAmountValid,
     isNoStopMultiSplit,
-    lowLocBudgetRatio,
     networkSnapshot,
     portfolio.feeRate,
-    targetStock,
-    takeProfitPct,
-    totalSplitCount,
+    runtimeStrategy,
+    status,
     tradeInputs,
   ]);
 
-  return {
-    currentRound: noStopState?.currentRound ?? 0,
-    executionData: noStopState?.executionData ?? null,
-  };
+  useEffect(() => {
+    if (!hasNoStopStrategy) {
+      return;
+    }
+
+    const debugSignature = [
+      portfolio.id,
+      status,
+      snapshotFetchStatus,
+      indicatorCacheKey,
+      targetStock,
+      String(networkSnapshot?.currentPrice ?? ''),
+    ].join('|');
+    if (lastDebugSignatureRef.current === debugSignature) {
+      return;
+    }
+
+    lastDebugSignatureRef.current = debugSignature;
+    logNoStopDebug('info', 'state', {
+      portfolioId: portfolio.id,
+      portfolioName: portfolio.name,
+      noStopStatus: status,
+      snapshotFetchStatus,
+      indicatorCacheKey,
+      targetStock,
+      currentPrice: networkSnapshot?.currentPrice ?? null,
+      dailyBuyAmount,
+      isDailyBuyAmountValid,
+      hasRuntimeStrategy: runtimeStrategy != null,
+    });
+  }, [
+    dailyBuyAmount,
+    hasNoStopStrategy,
+    indicatorCacheKey,
+    isDailyBuyAmountValid,
+    networkSnapshot?.currentPrice,
+    portfolio.id,
+    portfolio.name,
+    runtimeStrategy,
+    snapshotFetchStatus,
+    status,
+    targetStock,
+  ]);
+
+  const noStopState = useMemo(() => {
+    if (
+      execution == null ||
+      runtimeStrategy == null ||
+      !isNoStopMultiSplit
+    ) {
+      return null;
+    }
+
+    const currentRound = calcNoStopCurrentRound(
+      tradeInputs,
+      dailyBuyAmount,
+      runtimeStrategy.targetStock,
+    );
+
+    return {
+      currentRound,
+      executionData: toHookExecutionData({
+        currentRound,
+        execution,
+      }),
+    };
+  }, [
+    dailyBuyAmount,
+    execution,
+    isNoStopMultiSplit,
+    runtimeStrategy,
+    tradeInputs,
+  ]);
+
+  return useMemo(
+    () => ({
+      currentRound: noStopState?.currentRound ?? 0,
+      executionData: noStopState?.executionData ?? null,
+      status,
+    }),
+    [noStopState, status],
+  );
 }

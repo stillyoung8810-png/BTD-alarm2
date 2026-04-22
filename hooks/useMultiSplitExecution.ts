@@ -1,131 +1,339 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { showErrorToast } from '../components/tds-adapter/showErrorToast';
 import { APP_SHELL_MESSAGES } from '../constants/messages/appShellMessages';
-import type { AppLang, Portfolio } from '../types';
+import { DEFAULT_FETCH_TIMEOUT_MS } from '../services/serviceUtils';
+import {
+  buildIndicatorRequirementCacheKey,
+  fetchIndicatorAwareSnapshot,
+} from '../services/stockService';
+import type {
+  AppLang,
+  MultiSplitAlignmentRule,
+  MultiSplitIndicatorSnapshot,
+  MultiSplitLocRatioPreset,
+  MultiSplitRsiRule,
+  MultiSplitStrategy,
+  NoStopLongMovingAveragePeriod,
+  NoStopRsiThresholdPreset,
+  NoStopShortMovingAveragePeriod,
+  Portfolio,
+} from '../types';
+import {
+  MULTI_SPLIT_LOC_RATIO_PRESET_VALUES,
+  NO_STOP_LONG_MA_PERIOD_VALUES,
+  NO_STOP_RSI_THRESHOLD_PRESET_VALUES,
+  NO_STOP_SHORT_MA_PERIOD_VALUES,
+} from '../types';
 import { areStrictPositiveFiniteScalars } from '../utils/financialScalarGuards';
 import {
-  calculateMultiSplitStrategyState,
-  calcT,
-  getPhase,
-  RECENT_TRADING_DAYS_COUNT,
-  type MultiSplitParams,
-  type QuarterStopLossResult,
-  type MultiSplitExecutionResult,
+  calculateMultiSplitGuideState,
+  collectIndicatorRequirements,
+  type MultiSplitGuideState,
 } from '../utils/multiSplitCalc';
 import {
-  fetchLatestStockSnapshot,
-  getRecentTradingDaysFromDbSafe,
-} from '../services/stockService';
-import {
   DEFAULT_PORTFOLIO_FEE_RATE,
-  type MultiSplitNetworkSnapshot,
   toTradeInputsForMultiSplit,
 } from './multiSplitExecutionShared';
 
+const EMPTY_INDICATOR_REQUIREMENTS = {
+  needsRsi: false,
+  maPeriods: [],
+} as const;
+const MULTI_SPLIT_SNAPSHOT_FETCH_TIMEOUT_MS = DEFAULT_FETCH_TIMEOUT_MS;
+
+type SnapshotFetchStatus = 'idle' | 'loading' | 'ready' | 'error';
+
+export type MultiSplitExecutionStatus =
+  | 'idle'
+  | 'loading'
+  | 'ready'
+  | 'invalid_strategy'
+  | 'invalid_amount'
+  | 'fetch_error';
+
 export interface MultiSplitHookResult {
-  /** 현재 시행 회차 T */
-  currentRound: number;
-  /** 현재 구간 */
-  multiSplitPhase: 'first' | 'second' | 'quarter' | null;
-  /** 쿼터모드 여부 (DB 플래그) */
-  isInQuarterMode: boolean;
-  /** T > a-1 조건 충족 여부 (신규 쿼터 진입용) */
-  isInQuarterModeByT: boolean;
-  /** 쿼터 손절 모드 주문 데이터 */
-  quarterStopLossData: QuarterStopLossResult | null;
-  /** 전반전/후반전 주문 데이터 */
-  multiSplitExecutionData: MultiSplitExecutionResult | null;
-  /** 1회 매수금 부족 여부 */
-  multiSplitInsufficientAmount: boolean;
+  executionData: MultiSplitGuideState | null;
+  status: MultiSplitExecutionStatus;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readTrimmedString(
+  record: Record<string, unknown>,
+  key: string,
+): string | null {
+  const value = record[key];
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmedValue = value.trim();
+  return trimmedValue.length > 0 ? trimmedValue : null;
+}
+
+function readFiniteNumber(
+  record: Record<string, unknown>,
+  key: string,
+): number | null {
+  const value = record[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function isLocRatioPreset(value: number): value is MultiSplitLocRatioPreset {
+  return MULTI_SPLIT_LOC_RATIO_PRESET_VALUES.includes(
+    value as MultiSplitLocRatioPreset,
+  );
+}
+
+function isRsiThresholdPreset(
+  value: number,
+): value is NoStopRsiThresholdPreset {
+  return NO_STOP_RSI_THRESHOLD_PRESET_VALUES.includes(
+    value as NoStopRsiThresholdPreset,
+  );
+}
+
+function isShortMovingAveragePeriod(
+  value: number,
+): value is NoStopShortMovingAveragePeriod {
+  return NO_STOP_SHORT_MA_PERIOD_VALUES.includes(
+    value as NoStopShortMovingAveragePeriod,
+  );
+}
+
+function isLongMovingAveragePeriod(
+  value: number,
+): value is NoStopLongMovingAveragePeriod {
+  return NO_STOP_LONG_MA_PERIOD_VALUES.includes(
+    value as NoStopLongMovingAveragePeriod,
+  );
+}
+
+function readRsiRule(
+  strategy: Record<string, unknown>,
+): MultiSplitRsiRule | undefined {
+  const rawRule = strategy.rsiRule;
+  if (!isRecord(rawRule)) {
+    return undefined;
+  }
+
+  const threshold = readFiniteNumber(rawRule, 'threshold');
+  const locRatio = readFiniteNumber(rawRule, 'locRatio');
+  if (
+    threshold == null ||
+    locRatio == null ||
+    !isRsiThresholdPreset(threshold) ||
+    !isLocRatioPreset(locRatio)
+  ) {
+    return undefined;
+  }
+
+  return {
+    threshold,
+    locRatio,
+  };
+}
+
+function readAlignmentRule(
+  strategy: Record<string, unknown>,
+): MultiSplitAlignmentRule | undefined {
+  const rawRule = strategy.alignmentRule;
+  if (!isRecord(rawRule)) {
+    return undefined;
+  }
+
+  const shortPeriod = readFiniteNumber(rawRule, 'shortPeriod');
+  const longPeriod = readFiniteNumber(rawRule, 'longPeriod');
+  const locRatio = readFiniteNumber(rawRule, 'locRatio');
+  if (
+    shortPeriod == null ||
+    longPeriod == null ||
+    locRatio == null ||
+    !isShortMovingAveragePeriod(shortPeriod) ||
+    !isLongMovingAveragePeriod(longPeriod) ||
+    !isLocRatioPreset(locRatio) ||
+    shortPeriod >= longPeriod
+  ) {
+    return undefined;
+  }
+
+  return {
+    shortPeriod,
+    longPeriod,
+    locRatio,
+  };
+}
+
+function buildMultiSplitRuntimeStrategy(
+  strategy: Portfolio['strategy']['multiSplit'] | null,
+): MultiSplitStrategy | null {
+  if (!isRecord(strategy)) {
+    return null;
+  }
+
+  const targetStock = readTrimmedString(strategy, 'targetStock');
+  const targetReturnRate = readFiniteNumber(strategy, 'targetReturnRate');
+  const totalSplitCount = readFiniteNumber(strategy, 'totalSplitCount');
+  const baseLocRatio = readFiniteNumber(strategy, 'baseLocRatio');
+  const mainTakeProfitRatioPct = readFiniteNumber(
+    strategy,
+    'mainTakeProfitRatioPct',
+  );
+  const riskCutRatioPct = readFiniteNumber(strategy, 'riskCutRatioPct');
+
+  if (
+    targetStock == null ||
+    targetReturnRate == null ||
+    totalSplitCount == null ||
+    baseLocRatio == null ||
+    mainTakeProfitRatioPct == null ||
+    riskCutRatioPct == null ||
+    totalSplitCount <= 0
+  ) {
+    return null;
+  }
+
+  const rsiRule = readRsiRule(strategy);
+  const alignmentRule = readAlignmentRule(strategy);
+
+  return {
+    targetStock,
+    targetReturnRate,
+    totalSplitCount,
+    baseLocRatio,
+    mainTakeProfitRatioPct,
+    riskCutRatioPct,
+    ...(rsiRule != null ? { rsiRule } : {}),
+    ...(alignmentRule != null ? { alignmentRule } : {}),
+  };
 }
 
 export function useMultiSplitExecution(
   portfolio: Portfolio,
   lang: AppLang,
 ): MultiSplitHookResult {
-  const multiSplitStrategy = portfolio.strategy.multiSplit ?? null;
-  const isMultiSplit = multiSplitStrategy != null;
-  const targetStock = multiSplitStrategy?.targetStock ?? '';
-  const targetReturnRate = multiSplitStrategy?.targetReturnRate ?? 0;
-  const totalSplitCount = multiSplitStrategy?.totalSplitCount ?? 0;
-  const { trades, dailyBuyAmount: dailyBuyAmountRaw, isQuarterMode, feeRate } =
-    portfolio;
-  const dailyBuyAmount = dailyBuyAmountRaw ?? 0;
-  const isDailyBuyAmountValid = areStrictPositiveFiniteScalars(dailyBuyAmount);
-  const isTargetReturnRateValid =
-    areStrictPositiveFiniteScalars(targetReturnRate);
-
-  const tradeInputs = useMemo(
-    () => toTradeInputsForMultiSplit(trades),
-    [trades],
+  const savedStrategy = portfolio.strategy.multiSplit ?? null;
+  const hasMultiSplitStrategy = savedStrategy != null;
+  const runtimeStrategy = useMemo(
+    () => buildMultiSplitRuntimeStrategy(savedStrategy),
+    [savedStrategy],
   );
-
+  const dailyBuyAmount = portfolio.dailyBuyAmount ?? 0;
+  const isDailyBuyAmountValid = areStrictPositiveFiniteScalars(dailyBuyAmount);
+  const tradeInputs = useMemo(
+    () => toTradeInputsForMultiSplit(portfolio.trades),
+    [portfolio.trades],
+  );
+  const indicatorRequirements = useMemo(
+    () =>
+      runtimeStrategy == null
+        ? EMPTY_INDICATOR_REQUIREMENTS
+        : collectIndicatorRequirements(runtimeStrategy),
+    [runtimeStrategy],
+  );
+  const targetStock = runtimeStrategy?.targetStock ?? '';
+  const indicatorCacheKey = useMemo(
+    () =>
+      runtimeStrategy == null
+        ? ''
+        : buildIndicatorRequirementCacheKey({
+            symbol: runtimeStrategy.targetStock,
+            requirements: indicatorRequirements,
+          }),
+    [indicatorRequirements, runtimeStrategy],
+  );
+  const fetchIndicatorRequirements = useMemo(
+    () => indicatorRequirements,
+    [indicatorCacheKey],
+  );
   const requestIdRef = useRef(0);
-  const networkErrorMsg = APP_SHELL_MESSAGES[lang].dailySummaryNetworkError;
-  const networkErrorMsgRef = useRef(networkErrorMsg);
-
-  useLayoutEffect(() => {
-    networkErrorMsgRef.current = networkErrorMsg;
-  }, [networkErrorMsg]);
-
+  const previousCacheKeyRef = useRef<string>('');
   const [networkSnapshot, setNetworkSnapshot] =
-    useState<MultiSplitNetworkSnapshot | null>(null);
+    useState<MultiSplitIndicatorSnapshot | null>(null);
+  const [snapshotFetchStatus, setSnapshotFetchStatus] =
+    useState<SnapshotFetchStatus>('idle');
 
   useEffect(() => {
-    if (!isMultiSplit) {
+    if (
+      !hasMultiSplitStrategy ||
+      runtimeStrategy == null ||
+      targetStock === '' ||
+      indicatorCacheKey === '' ||
+      !isDailyBuyAmountValid
+    ) {
       requestIdRef.current += 1;
+      previousCacheKeyRef.current = '';
       setNetworkSnapshot((previous) => (previous !== null ? null : previous));
+      setSnapshotFetchStatus((previous) =>
+        previous !== 'idle' ? 'idle' : previous,
+      );
       return;
     }
 
+    const shouldReuseResolvedSnapshot =
+      previousCacheKeyRef.current === indicatorCacheKey &&
+      networkSnapshot != null;
+    if (shouldReuseResolvedSnapshot) {
+      return;
+    }
+
+    previousCacheKeyRef.current = indicatorCacheKey;
     setNetworkSnapshot((previous) => (previous !== null ? null : previous));
+    setSnapshotFetchStatus('loading');
+
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
+    const abortController = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      abortController.abort();
+    }, MULTI_SPLIT_SNAPSHOT_FETCH_TIMEOUT_MS);
+    const clearFetchTimeout = () => {
+      window.clearTimeout(timeoutId);
+    };
 
     const runFetch = async () => {
       try {
-        const [recentDaysResult, quoteResult] = await Promise.all([
-          getRecentTradingDaysFromDbSafe(targetStock, RECENT_TRADING_DAYS_COUNT),
-          fetchLatestStockSnapshot(targetStock),
-        ]);
+        const snapshotResult = await fetchIndicatorAwareSnapshot(
+          targetStock,
+          fetchIndicatorRequirements,
+          { signal: abortController.signal },
+        );
 
         if (requestIdRef.current !== requestId) {
           return;
         }
 
-        const isQuoteInvalid =
-          quoteResult.ok &&
-          (!Number.isFinite(quoteResult.data.price) || quoteResult.data.price <= 0);
+        const isSnapshotInvalid =
+          snapshotResult.ok &&
+          (
+            snapshotResult.data == null ||
+            !Number.isFinite(snapshotResult.data.currentPrice) ||
+            snapshotResult.data.currentPrice <= 0
+          );
 
-        if (!recentDaysResult.ok || !quoteResult.ok || isQuoteInvalid) {
-          if (requestIdRef.current !== requestId) {
-            return;
-          }
+        if (!snapshotResult.ok || isSnapshotInvalid) {
           setNetworkSnapshot((previous) => (previous !== null ? null : previous));
-          if (requestIdRef.current !== requestId) {
-            return;
+          setSnapshotFetchStatus('error');
+          if (requestIdRef.current === requestId) {
+            showErrorToast(APP_SHELL_MESSAGES[lang].dailySummaryNetworkError);
           }
-          showErrorToast(networkErrorMsgRef.current);
           return;
         }
 
-        if (requestIdRef.current !== requestId) {
-          return;
-        }
-
-        setNetworkSnapshot({
-          currentPrice: quoteResult.data.price,
-          recentTradingDays: recentDaysResult.data,
-        });
+        setNetworkSnapshot(snapshotResult.data);
+        setSnapshotFetchStatus('ready');
       } catch {
         if (requestIdRef.current !== requestId) {
           return;
         }
+
         setNetworkSnapshot((previous) => (previous !== null ? null : previous));
-        if (requestIdRef.current !== requestId) {
-          return;
-        }
-        showErrorToast(networkErrorMsgRef.current);
+        setSnapshotFetchStatus('error');
+        showErrorToast(APP_SHELL_MESSAGES[lang].dailySummaryNetworkError);
+      } finally {
+        clearFetchTimeout();
       }
     };
 
@@ -133,82 +341,80 @@ export function useMultiSplitExecution(
 
     return () => {
       requestIdRef.current += 1;
-    };
-  }, [targetStock]);
-
-  const currentRound =
-    !isMultiSplit || !isDailyBuyAmountValid
-      ? 0
-      : calcT(tradeInputs, dailyBuyAmount);
-
-  const multiSplitPhase =
-    !isMultiSplit ||
-    totalSplitCount === 0 ||
-    !isDailyBuyAmountValid
-      ? null
-      : getPhase(currentRound, totalSplitCount);
-
-  const {
-    quarterStopLossData,
-    multiSplitExecutionData,
-    multiSplitInsufficientAmount,
-  } = useMemo(() => {
-    if (
-      !isMultiSplit ||
-      networkSnapshot == null ||
-      !isTargetReturnRateValid ||
-      totalSplitCount === 0 ||
-      !isDailyBuyAmountValid
-    ) {
-      return {
-        quarterStopLossData: null,
-        multiSplitExecutionData: null,
-        multiSplitInsufficientAmount: false,
-      };
-    }
-
-    const safeStrategyObj: MultiSplitParams = {
-      targetStock,
-      targetReturnRate,
-      totalSplitCount,
-    };
-    const sharedState = calculateMultiSplitStrategyState({
-      trades: tradeInputs,
-      dailyBuyAmount,
-      multiSplit: safeStrategyObj,
-      feeRate: feeRate ?? DEFAULT_PORTFOLIO_FEE_RATE,
-      isQuarterMode: isQuarterMode ?? false,
-      currentPrice: networkSnapshot.currentPrice,
-      recentTradingDays: networkSnapshot.recentTradingDays,
-    });
-
-    return {
-      quarterStopLossData: sharedState.quarterStopLossData,
-      multiSplitExecutionData: sharedState.multiSplitExecutionData,
-      multiSplitInsufficientAmount: sharedState.multiSplitInsufficientAmount,
+      clearFetchTimeout();
+      abortController.abort();
     };
   }, [
-    dailyBuyAmount,
-    feeRate,
+    fetchIndicatorRequirements,
+    hasMultiSplitStrategy,
+    indicatorCacheKey,
     isDailyBuyAmountValid,
-    isMultiSplit,
-    isQuarterMode,
-    isTargetReturnRateValid,
-    multiSplitPhase,
+    lang,
     networkSnapshot,
-    targetReturnRate,
+    runtimeStrategy,
     targetStock,
-    totalSplitCount,
+  ]);
+
+  const status = useMemo<MultiSplitExecutionStatus>(() => {
+    if (!hasMultiSplitStrategy) {
+      return 'idle';
+    }
+
+    if (runtimeStrategy == null) {
+      return 'invalid_strategy';
+    }
+
+    if (!isDailyBuyAmountValid) {
+      return 'invalid_amount';
+    }
+
+    if (networkSnapshot != null) {
+      return 'ready';
+    }
+
+    if (snapshotFetchStatus === 'error') {
+      return 'fetch_error';
+    }
+
+    return 'loading';
+  }, [
+    hasMultiSplitStrategy,
+    isDailyBuyAmountValid,
+    networkSnapshot,
+    runtimeStrategy,
+    snapshotFetchStatus,
+  ]);
+
+  const executionData = useMemo(() => {
+    if (
+      status !== 'ready' ||
+      runtimeStrategy == null ||
+      networkSnapshot == null
+    ) {
+      return null;
+    }
+
+    return calculateMultiSplitGuideState({
+      trades: tradeInputs,
+      strategy: runtimeStrategy,
+      oneTimeAmount: dailyBuyAmount,
+      feeRate: portfolio.feeRate ?? DEFAULT_PORTFOLIO_FEE_RATE,
+      snapshot: networkSnapshot,
+    });
+  }, [
+    dailyBuyAmount,
+    networkSnapshot,
+    portfolio.feeRate,
+    runtimeStrategy,
+    status,
     tradeInputs,
   ]);
 
-  return {
-    currentRound,
-    multiSplitPhase,
-    isInQuarterMode: isQuarterMode === true,
-    isInQuarterModeByT: multiSplitPhase === 'quarter',
-    quarterStopLossData,
-    multiSplitExecutionData,
-    multiSplitInsufficientAmount,
-  };
+  return useMemo(
+    () => ({
+      executionData,
+      status,
+    }),
+    [executionData, status],
+  );
 }

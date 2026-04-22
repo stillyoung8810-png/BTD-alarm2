@@ -13,7 +13,6 @@ interface PersistPortfolioTradeMutationInput {
   portfolioId: string;
   trades: Trade[];
   vrSnapshot?: VrSnapshot;
-  isQuarterMode: boolean;
 }
 
 interface PersistPortfolioClosureInput {
@@ -60,7 +59,6 @@ interface PortfolioRecordPayload {
   closed_at: string | null;
   final_sell_amount: number | null;
   alarm_config: AlarmConfig | null;
-  is_quarter_mode: boolean;
   vr_snapshot: VrSnapshot | null;
 }
 
@@ -180,7 +178,6 @@ export async function persistPortfolioTradeMutationSafe({
   portfolioId,
   trades,
   vrSnapshot,
-  isQuarterMode,
 }: PersistPortfolioTradeMutationInput): Promise<ServiceResult<null>> {
   try {
     const { error } = await supabase
@@ -188,7 +185,6 @@ export async function persistPortfolioTradeMutationSafe({
       .update({
         trades,
         vr_snapshot: vrSnapshot ?? null,
-        is_quarter_mode: isQuarterMode,
       })
       .eq('id', portfolioId);
 

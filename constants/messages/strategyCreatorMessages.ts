@@ -61,14 +61,59 @@ export interface StrategyCreatorMessageSet {
     targetStock: string;
     targetReturnRate: string;
     totalSplitCount: string;
+    baseLocRatio: string;
+    mainTakeProfitRatioPct: string;
+    intermediateTakeProfitRatioPct: string;
+    riskCutRatioPct: string;
+    rsiConditionLabel: string;
+    rsiConditionHelper: string;
+    alignmentConditionLabel: string;
+    alignmentConditionHelper: string;
+    criterionGroupLabel: string;
+    budgetGroupLabel: string;
+    rsiCriteria: {
+      rsi30: string;
+      rsi40: string;
+      rsi50: string;
+    };
+    alignmentCriteria: {
+      ma5_20: string;
+      ma20_60: string;
+      ma60_120: string;
+    };
+    budgetPresets: {
+      loc70: string;
+      balanced: string;
+      moc70: string;
+    };
     leveragedRecommended: string;
   };
   noStopMultiSplit: {
     targetStock: string;
-    lowLocBudgetRatio: string;
-    highLocPremiumPct: string;
+    baseLocRatio: string;
     takeProfitPct: string;
     totalSplitCount: string;
+    rsiConditionLabel: string;
+    rsiConditionHelper: string;
+    alignmentConditionLabel: string;
+    alignmentConditionHelper: string;
+    criterionGroupLabel: string;
+    budgetGroupLabel: string;
+    rsiCriteria: {
+      rsi30: string;
+      rsi40: string;
+      rsi50: string;
+    };
+    alignmentCriteria: {
+      ma5_20: string;
+      ma20_60: string;
+      ma60_120: string;
+    };
+    budgetPresets: {
+      loc70: string;
+      balanced: string;
+      moc70: string;
+    };
   };
   meta: {
     portfolioName: string;
@@ -84,7 +129,7 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
       strategySelect: '전략 엔진 선택',
       maBase: '이평선 기본 설정',
       maSections: '구간별 진입 설정',
-      multiSplitConfig: '다분할 매매법 설정',
+      multiSplitConfig: '스마트 스플릿 설정',
       noStopMultiSplitConfig: '무손절 다분할 설정',
       vrBandConfig: 'VR 밴드 설정',
       strategyMeta: '포트폴리오 메타 정보',
@@ -106,12 +151,13 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
         description: '구간별 종목과 RSI/부분익절 규칙을 설정합니다.',
       },
       multi_split: {
-        title: '다분할 매매법',
-        description: '목표 수익률과 총 분할 횟수로 자동 주문 구조를 만듭니다.',
+        title: '스마트 스플릿',
+        description:
+          '현금 사용률과 조건부 LOC/MOC 프리셋을 기반으로 매매 가이드를 구성합니다.',
       },
       no_stop_multi_split: {
         title: '무손절 다분할',
-        description: 'LOC 예산 배분과 프리미엄 규칙을 사용합니다.',
+        description: '기본 LOC 비율과 조건별 프리셋 규칙을 설정합니다.',
       },
       vr_band: {
         title: '타겟 밸류 채널',
@@ -154,14 +200,62 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
       targetStock: '대상 종목',
       targetReturnRate: '목표 수익률 (A %)',
       totalSplitCount: '총 분할 횟수 (a회)',
+      baseLocRatio: '기본 LOC 비율 (%)',
+      mainTakeProfitRatioPct: '메인 익절 비중 (%)',
+      intermediateTakeProfitRatioPct: '중간 익절 비중 (자동 계산)',
+      riskCutRatioPct: '리스크 컷 비중 (%)',
+      rsiConditionLabel: 'RSI 조건',
+      rsiConditionHelper:
+        'RSI 조건이 충족되면 저장된 프리셋으로 LOC/MOC 비율을 덮어씁니다.',
+      alignmentConditionLabel: '정배열 조건',
+      alignmentConditionHelper:
+        '선택한 이평 조합이 정배열일 때만 조건부 예산 프리셋을 적용합니다.',
+      criterionGroupLabel: '판정 기준',
+      budgetGroupLabel: '예산 프리셋',
+      rsiCriteria: {
+        rsi30: '공격적 (RSI < 30)',
+        rsi40: '보통 (RSI < 40)',
+        rsi50: '방어적 (RSI < 50)',
+      },
+      alignmentCriteria: {
+        ma5_20: '5/20 이평',
+        ma20_60: '20/60 이평',
+        ma60_120: '60/120 이평',
+      },
+      budgetPresets: {
+        loc70: '방어 위주 (LOC 70%)',
+        balanced: '균형 (LOC 50%)',
+        moc70: '추격 위주 (MOC 70%)',
+      },
       leveragedRecommended: '레버리지 ETF 권장',
     },
     noStopMultiSplit: {
       targetStock: '대상 종목',
-      lowLocBudgetRatio: '저가 LOC 예산 비율 (%)',
-      highLocPremiumPct: '고가 LOC 프리미엄 (%)[체결 보장용]',
+      baseLocRatio: '평단가 매수 비율 (LOC 주문) (%)',
       takeProfitPct: '익절 목표 수익률 (%)',
       totalSplitCount: '총 분할 횟수',
+      rsiConditionLabel: 'RSI 조건',
+      rsiConditionHelper: 'RSI 조건이 충족되면 선택한 프리셋 비율로 LOC/MOC 비중을 조정해요.',
+      alignmentConditionLabel: '정배열 조건',
+      alignmentConditionHelper:
+        '선택한 이평 조합이 정배열일 때만 조건부 예산 프리셋을 적용해요.',
+      criterionGroupLabel: '판정 기준',
+      budgetGroupLabel: '예산 프리셋',
+      rsiCriteria: {
+        rsi30: '공격적 (RSI < 30)',
+        rsi40: '보통 (RSI < 40)',
+        rsi50: '방어적 (RSI < 50)',
+      },
+      alignmentCriteria: {
+        ma5_20: '5/20 이평',
+        ma20_60: '20/60 이평',
+        ma60_120: '60/120 이평',
+      },
+      budgetPresets: {
+        loc70: '방어 위주 (LOC 70%)',
+        balanced: '균형 (LOC 50%)',
+        moc70: '추격 위주 (MOC 70%)',
+      },
     },
     meta: {
       portfolioName: '포트폴리오 이름',
@@ -175,7 +269,7 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
       strategySelect: 'Select Strategy Engine',
       maBase: 'Moving Average Base Settings',
       maSections: 'Section Entry Settings',
-      multiSplitConfig: 'Multi-Split Settings',
+      multiSplitConfig: 'Smart Split Settings',
       noStopMultiSplitConfig: 'No-Stop Multi-Split Settings',
       vrBandConfig: 'VR Band Settings',
       strategyMeta: 'Portfolio Meta Information',
@@ -197,12 +291,13 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
         description: 'Configure section stocks, RSI, and partial profit rules.',
       },
       multi_split: {
-        title: 'Multi-Split',
-        description: 'Generate an order structure from target return and split count.',
+        title: 'Smart Split',
+        description:
+          'Build execution guidance from cash usage and conditional LOC/MOC presets.',
       },
       no_stop_multi_split: {
         title: 'No-Stop Multi-Split',
-        description: 'Use LOC budget ratio and premium rules.',
+        description: 'Configure the base LOC ratio and conditional preset rules.',
       },
       vr_band: {
         title: 'Target Value Channel',
@@ -251,14 +346,64 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
       targetStock: 'Target Stock',
       targetReturnRate: 'Target Return Rate (A %)',
       totalSplitCount: 'Total Split Count (a)',
+      baseLocRatio: 'Base LOC Ratio (%)',
+      mainTakeProfitRatioPct: 'Main Take-Profit Ratio (%)',
+      intermediateTakeProfitRatioPct:
+        'Intermediate Take-Profit Ratio (Derived)',
+      riskCutRatioPct: 'Risk Cut Ratio (%)',
+      rsiConditionLabel: 'RSI Condition',
+      rsiConditionHelper:
+        'When the RSI condition is met, override the LOC/MOC ratio with the saved preset.',
+      alignmentConditionLabel: 'Alignment Condition',
+      alignmentConditionHelper:
+        'Apply the conditional budget preset only when the selected MA pair is aligned.',
+      criterionGroupLabel: 'Criterion Preset',
+      budgetGroupLabel: 'Budget Preset',
+      rsiCriteria: {
+        rsi30: 'Aggressive (RSI < 30)',
+        rsi40: 'Moderate (RSI < 40)',
+        rsi50: 'Defensive (RSI < 50)',
+      },
+      alignmentCriteria: {
+        ma5_20: 'MA 5/20',
+        ma20_60: 'MA 20/60',
+        ma60_120: 'MA 60/120',
+      },
+      budgetPresets: {
+        loc70: 'Defense Bias (LOC 70%)',
+        balanced: 'Balanced (LOC 50%)',
+        moc70: 'Chasing Bias (MOC 70%)',
+      },
       leveragedRecommended: 'Leveraged ETF Recommended',
     },
     noStopMultiSplit: {
       targetStock: 'Target Stock',
-      lowLocBudgetRatio: 'Low LOC Budget Ratio (%)',
-      highLocPremiumPct: 'High LOC Premium (%) [guaranteed fill]',
+      baseLocRatio: 'Average Price LOC Ratio (%)',
       takeProfitPct: 'Take Profit (%)',
       totalSplitCount: 'Total Split Count',
+      rsiConditionLabel: 'RSI Condition',
+      rsiConditionHelper:
+        'When the RSI condition is met, apply the selected LOC/MOC preset ratio.',
+      alignmentConditionLabel: 'Alignment Condition',
+      alignmentConditionHelper:
+        'Apply the conditional budget preset only when the selected MA pair is aligned.',
+      criterionGroupLabel: 'Criterion Preset',
+      budgetGroupLabel: 'Budget Preset',
+      rsiCriteria: {
+        rsi30: 'Aggressive (RSI < 30)',
+        rsi40: 'Moderate (RSI < 40)',
+        rsi50: 'Defensive (RSI < 50)',
+      },
+      alignmentCriteria: {
+        ma5_20: 'MA 5/20',
+        ma20_60: 'MA 20/60',
+        ma60_120: 'MA 60/120',
+      },
+      budgetPresets: {
+        loc70: 'Defense Bias (LOC 70%)',
+        balanced: 'Balanced (LOC 50%)',
+        moc70: 'Chasing Bias (MOC 70%)',
+      },
     },
     meta: {
       portfolioName: 'Portfolio Name',

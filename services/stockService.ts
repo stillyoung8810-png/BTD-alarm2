@@ -1,10 +1,16 @@
 import { supabase } from "./supabase";
-import { StockData } from "../types";
+import type {
+  IndicatorRequirements,
+  NoStopIndicatorSnapshot,
+  NoStopMovingAveragePeriod,
+  StockData,
+} from "../types";
 import {
-  db,
+  getIndicatorSnapshotCache,
   getStockMetadata,
   getStockPrices,
   initDatabase,
+  saveIndicatorSnapshotCache,
   saveStockPrices,
   StockMetadata,
   StockPriceRecord,
@@ -14,8 +20,10 @@ import {
 import { AVAILABLE_STOCKS, PAID_STOCKS } from "../constants";
 import { calculateMA, calculateRSI, calculateRollingIndicators } from "../utils/technicalIndicators";
 import { LATEST_TRADE_DATE_KEY } from "../utils/marketUtils";
+import { EMPTY_PRICE_HISTORY_ERROR } from "../supabase/functions/_shared/noStopMultiSplitShared.ts";
 import {
   createServiceError,
+  DEFAULT_FETCH_TIMEOUT_MS,
   failResult,
   isRecord,
   normalizeErrorMessage,
@@ -34,18 +42,62 @@ interface SupabaseStockRow {
 
 // 주가/지표 관련 디버그 로그 토글 (필요할 때만 true로 변경)
 const DEBUG_STOCK_LOG = false;
+const NO_STOP_SERVICE_DEBUG_PREFIX = '[NoStopDebug:Service]';
+const IS_NO_STOP_SERVICE_DEBUG_ENABLED =
+  import.meta.env.DEV && import.meta.env.MODE !== 'test';
 const DEFAULT_RSI = 50;
 const DEFAULT_MA = 0;
 const STOCK_SNAPSHOT_FETCH_LIMIT = 2;
 const STOCK_FULL_LOAD_LIMIT = 240;
-const MIN_INDICATOR_HISTORY = 120;
-const INDICATOR_DB_READ_LIMIT = 200;
+const MIN_RSI_HISTORY = 15;
+const INDEXED_DB_INIT_TIMEOUT_MS = DEFAULT_FETCH_TIMEOUT_MS;
+const PRICE_ONLY_INDICATOR_REQUIREMENTS: IndicatorRequirements = {
+  needsRsi: false,
+  maPeriods: [],
+};
+const STOCK_DATA_INDICATOR_REQUIREMENTS: IndicatorRequirements = {
+  needsRsi: true,
+  maPeriods: [20, 60, 120],
+};
 interface StockQueryOptions {
   signal?: AbortSignal;
 }
 
+function logNoStopServiceDebug(
+  level: 'info' | 'warn',
+  event: string,
+  payload: Record<string, unknown>,
+): void {
+  if (!IS_NO_STOP_SERVICE_DEBUG_ENABLED) {
+    return;
+  }
+
+  const message = `${NO_STOP_SERVICE_DEBUG_PREFIX} ${event}`;
+  if (level === 'warn') {
+    console.warn(message, payload);
+    return;
+  }
+
+  console.info(message, payload);
+}
+
 /** 글로벌 기준 거래일을 결정하는 대표 종목 */
 const REFERENCE_SYMBOL = "QQQ";
+
+type IndicatorSnapshotCacheEntry = {
+  snapshot: NoStopIndicatorSnapshot;
+  sourceLastUpdated: string;
+};
+
+type TechnicalIndicatorResult = Pick<
+  NoStopIndicatorSnapshot,
+  "rsi" | "maByPeriod"
+>;
+
+const indicatorSnapshotMemoryCache = new Map<
+  string,
+  IndicatorSnapshotCacheEntry
+>();
 
 function isAbortLikeError(error: unknown): boolean {
   if (error instanceof DOMException) {
@@ -70,6 +122,338 @@ function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) {
     throw createAbortError();
   }
+}
+
+function normalizeTickerSymbol(symbol: string): string {
+  return symbol.trim().toUpperCase();
+}
+
+function isSupportedMovingAveragePeriod(
+  value: number,
+): value is NoStopMovingAveragePeriod {
+  return value === 5 || value === 20 || value === 60 || value === 120;
+}
+
+function normalizeIndicatorRequirements(
+  requirements: IndicatorRequirements,
+): IndicatorRequirements {
+  const maPeriods = Array.from(
+    new Set(
+      requirements.maPeriods.filter((period) =>
+        isSupportedMovingAveragePeriod(period),
+      ),
+    ),
+  ).sort((left, right) => left - right);
+
+  return {
+    needsRsi: requirements.needsRsi === true,
+    maPeriods,
+  };
+}
+
+function cloneIndicatorSnapshot(
+  snapshot: NoStopIndicatorSnapshot,
+): NoStopIndicatorSnapshot {
+  return {
+    currentPrice: snapshot.currentPrice,
+    ...(snapshot.rsi !== undefined ? { rsi: snapshot.rsi } : {}),
+    ...(snapshot.maByPeriod != null
+      ? { maByPeriod: { ...snapshot.maByPeriod } }
+      : {}),
+  };
+}
+
+function buildRequestedMovingAverageMap(args: {
+  latestRecord: StockPriceRecord;
+  prices: number[];
+  requirements: IndicatorRequirements;
+}): Partial<Record<NoStopMovingAveragePeriod, number>> {
+  const maByPeriod: Partial<Record<NoStopMovingAveragePeriod, number>> = {};
+
+  for (const period of args.requirements.maPeriods) {
+    if (args.prices.length < period) {
+      continue;
+    }
+
+    const storedValue = readStoredMovingAverage(args.latestRecord, period);
+    if (storedValue != null && storedValue > 0) {
+      maByPeriod[period] = storedValue;
+      continue;
+    }
+
+    const calculatedValue = calculateMA(args.prices, period);
+    if (calculatedValue > 0) {
+      maByPeriod[period] = calculatedValue;
+    }
+  }
+
+  return maByPeriod;
+}
+
+function readRequestedRsi(args: {
+  latestRecord: StockPriceRecord;
+  prices: number[];
+  requirements: IndicatorRequirements;
+}): number | undefined {
+  if (!args.requirements.needsRsi) {
+    return undefined;
+  }
+
+  if (args.prices.length < MIN_RSI_HISTORY) {
+    return undefined;
+  }
+
+  if (args.latestRecord.rsi != null && args.latestRecord.rsi >= 0) {
+    return args.latestRecord.rsi;
+  }
+
+  const calculatedRsi = calculateRSI(args.prices);
+  return Number.isFinite(calculatedRsi) ? calculatedRsi : undefined;
+}
+
+function getRequiredHistoryCount(requirements: IndicatorRequirements): number {
+  const maxPeriod =
+    requirements.maPeriods.length > 0
+      ? Math.max(...requirements.maPeriods)
+      : 1;
+  const rsiHistoryCount = requirements.needsRsi ? MIN_RSI_HISTORY : 1;
+
+  return Math.max(1, maxPeriod, rsiHistoryCount);
+}
+
+function readCurrentPriceFromRecords(records: StockPriceRecord[]): number {
+  if (records.length === 0) {
+    throw new Error(EMPTY_PRICE_HISTORY_ERROR);
+  }
+
+  const latestRecord = records[records.length - 1];
+  const currentPrice = latestRecord?.close ?? 0;
+  if (!Number.isFinite(currentPrice) || currentPrice <= 0) {
+    throw new Error(EMPTY_PRICE_HISTORY_ERROR);
+  }
+
+  return currentPrice;
+}
+
+function extractRecentTradingDaysFromRecords(
+  records: StockPriceRecord[],
+  days: number,
+): string[] {
+  if (days <= 0 || records.length === 0) {
+    return [];
+  }
+
+  const uniqueRecentDays = new Set<string>();
+  const sortedRecords = [...records].sort((left, right) =>
+    right.date.localeCompare(left.date),
+  );
+
+  for (const record of sortedRecords) {
+    if (record.date.length === 0) {
+      continue;
+    }
+
+    uniqueRecentDays.add(record.date);
+    if (uniqueRecentDays.size >= days) {
+      break;
+    }
+  }
+
+  return Array.from(uniqueRecentDays);
+}
+
+function readTechnicalIndicatorsFromRecords(
+  records: StockPriceRecord[],
+  requirements: IndicatorRequirements,
+): TechnicalIndicatorResult {
+  if (records.length === 0) {
+    throw new Error(EMPTY_PRICE_HISTORY_ERROR);
+  }
+
+  const latestRecord = records[records.length - 1];
+  const prices = records.map((record) => record.close);
+  const normalizedRequirements = normalizeIndicatorRequirements(requirements);
+  const indicators: TechnicalIndicatorResult = {};
+  const rsi = readRequestedRsi({
+    latestRecord,
+    prices,
+    requirements: normalizedRequirements,
+  });
+  const maByPeriod = buildRequestedMovingAverageMap({
+    latestRecord,
+    prices,
+    requirements: normalizedRequirements,
+  });
+
+  if (rsi !== undefined) {
+    indicators.rsi = rsi;
+  }
+
+  if (Object.keys(maByPeriod).length > 0) {
+    indicators.maByPeriod = maByPeriod;
+  }
+
+  return indicators;
+}
+
+export function buildIndicatorRequirementCacheKey(args: {
+  symbol: string;
+  requirements: IndicatorRequirements;
+}): string {
+  const normalizedSymbol = normalizeTickerSymbol(args.symbol);
+  const normalizedRequirements = normalizeIndicatorRequirements(
+    args.requirements,
+  );
+
+  return [
+    normalizedSymbol,
+    normalizedRequirements.needsRsi ? "rsi:1" : "rsi:0",
+    `ma:${normalizedRequirements.maPeriods.join(",")}`,
+  ].join("|");
+}
+
+function readIndicatorSnapshotFromMemoryCache(
+  cacheKey: string,
+  sourceLastUpdated: string,
+): NoStopIndicatorSnapshot | null {
+  const cachedEntry = indicatorSnapshotMemoryCache.get(cacheKey);
+  if (cachedEntry == null) {
+    return null;
+  }
+
+  if (cachedEntry.sourceLastUpdated !== sourceLastUpdated) {
+    indicatorSnapshotMemoryCache.delete(cacheKey);
+    return null;
+  }
+
+  return cloneIndicatorSnapshot(cachedEntry.snapshot);
+}
+
+function writeIndicatorSnapshotToMemoryCache(args: {
+  cacheKey: string;
+  snapshot: NoStopIndicatorSnapshot;
+  sourceLastUpdated: string;
+}): void {
+  indicatorSnapshotMemoryCache.set(args.cacheKey, {
+    snapshot: cloneIndicatorSnapshot(args.snapshot),
+    sourceLastUpdated: args.sourceLastUpdated,
+  });
+}
+
+function clearIndicatorSnapshotMemoryCacheBySymbol(symbol: string): void {
+  const normalizedSymbol = normalizeTickerSymbol(symbol);
+
+  for (const cacheKey of indicatorSnapshotMemoryCache.keys()) {
+    if (cacheKey.startsWith(`${normalizedSymbol}|`)) {
+      indicatorSnapshotMemoryCache.delete(cacheKey);
+    }
+  }
+}
+
+async function withOperationTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
+
+  try {
+    return await Promise.race<T>([
+      operation,
+      new Promise<T>((_, reject) => {
+        timeoutId = globalThis.setTimeout(() => {
+          reject(createAbortError());
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId != null) {
+      globalThis.clearTimeout(timeoutId);
+    }
+  }
+}
+
+async function isIndicatorSnapshotDatabaseReady(): Promise<boolean> {
+  try {
+    await withOperationTimeout(initDatabase(), INDEXED_DB_INIT_TIMEOUT_MS);
+    return true;
+  } catch (error) {
+    console.error(
+      '[stockService] IndexedDB unavailable for indicator snapshot fetch:',
+      error,
+    );
+    return false;
+  }
+}
+
+async function persistFetchedPriceHistory(args: {
+  isDatabaseReady: boolean;
+  symbol: string;
+  records: StockPriceRecord[];
+  latestTradeDate: string;
+}): Promise<void> {
+  clearIndicatorSnapshotMemoryCacheBySymbol(args.symbol);
+
+  if (!args.isDatabaseReady) {
+    return;
+  }
+
+  try {
+    await saveStockPrices(args.records);
+    await updateStockMetadata(
+      args.symbol,
+      args.latestTradeDate,
+      args.records.length,
+    );
+  } catch (error) {
+    console.error(
+      `[stockService] Failed to persist price history (${args.symbol}):`,
+      error,
+    );
+  }
+}
+
+async function persistIndicatorSnapshotCache(args: {
+  isDatabaseReady: boolean;
+  cacheKey: string;
+  symbol: string;
+  requirements: IndicatorRequirements;
+  snapshot: NoStopIndicatorSnapshot;
+  sourceLastUpdated: string;
+}): Promise<void> {
+  if (!args.isDatabaseReady) {
+    return;
+  }
+
+  try {
+    await saveIndicatorSnapshotCache({
+      cacheKey: args.cacheKey,
+      symbol: args.symbol,
+      requirements: args.requirements,
+      snapshot: args.snapshot,
+      sourceLastUpdated: args.sourceLastUpdated,
+    });
+  } catch (error) {
+    console.error(
+      `[stockService] Failed to persist indicator snapshot (${args.cacheKey}):`,
+      error,
+    );
+  }
+}
+
+function mapIndicatorSnapshotToStockData(args: {
+  symbol: string;
+  snapshot: NoStopIndicatorSnapshot;
+}): StockData {
+  return {
+    symbol: args.symbol,
+    price: args.snapshot.currentPrice,
+    change: 0,
+    changePercent: 0,
+    rsi: args.snapshot.rsi ?? DEFAULT_RSI,
+    ma20: args.snapshot.maByPeriod?.[20] ?? DEFAULT_MA,
+    ma60: args.snapshot.maByPeriod?.[60] ?? DEFAULT_MA,
+    ma120: args.snapshot.maByPeriod?.[120] ?? DEFAULT_MA,
+  };
 }
 
 function createStockQueryServiceError(
@@ -254,6 +638,125 @@ function readStoredMovingAverage(
   }
 }
 
+async function fetchPriceHistoryFromSupabase(args: {
+  symbol: string;
+  limit: number;
+  options?: StockQueryOptions;
+}): Promise<StockPriceRecord[]> {
+  let query = supabase
+    .from("stock_prices")
+    .select("close, trade_date")
+    .eq("symbol", args.symbol)
+    .order("trade_date", { ascending: false })
+    .limit(args.limit);
+
+  if (args.options?.signal != null) {
+    query = query.abortSignal(args.options.signal);
+  }
+
+  const { data, error } = await query;
+  throwIfAborted(args.options?.signal);
+
+  if (error != null) {
+    if (isAbortLikeError(error)) {
+      throw createAbortError();
+    }
+    throw error;
+  }
+
+  const decodedRows = decodeSupabaseStockRows(data);
+  if (decodedRows == null) {
+    return [];
+  }
+
+  return toStockPriceRecords(args.symbol, decodedRows)
+    .filter((record) => record.date.length > 0 && record.close > 0)
+    .sort((left, right) => left.date.localeCompare(right.date));
+}
+
+async function getOrFetchPriceHistoryForRequirements(
+  symbol: string,
+  requirements: IndicatorRequirements,
+  options: StockQueryOptions = {},
+  isDatabaseReady: boolean = true,
+): Promise<{
+  records: StockPriceRecord[];
+  latestTradeDate: string;
+  source: "indexeddb" | "supabase";
+}> {
+  throwIfAborted(options.signal);
+
+  const normalizedRequirements = normalizeIndicatorRequirements(requirements);
+  const requiredHistoryCount = getRequiredHistoryCount(normalizedRequirements);
+  const localRecords = isDatabaseReady
+    ? await getStockPrices(symbol, requiredHistoryCount)
+    : [];
+  const latestLocalTradeDate = localRecords[localRecords.length - 1]?.date ?? "";
+  logNoStopServiceDebug('info', 'history-local-check', {
+    symbol,
+    requiredHistoryCount,
+    localRecordCount: localRecords.length,
+    latestLocalTradeDate,
+    isDatabaseReady,
+  });
+
+  if (
+    localRecords.length >= requiredHistoryCount &&
+    latestLocalTradeDate.length > 0
+  ) {
+    logNoStopServiceDebug('info', 'history-local-hit', {
+      symbol,
+      requiredHistoryCount,
+      localRecordCount: localRecords.length,
+      latestLocalTradeDate,
+    });
+    return {
+      records: localRecords,
+      latestTradeDate: latestLocalTradeDate,
+      source: "indexeddb",
+    };
+  }
+
+  logNoStopServiceDebug('info', 'history-supabase-start', {
+    symbol,
+    requiredHistoryCount,
+    limit: Math.max(requiredHistoryCount, STOCK_SNAPSHOT_FETCH_LIMIT),
+  });
+  const fetchedRecords = await fetchPriceHistoryFromSupabase({
+    symbol,
+    limit: Math.max(requiredHistoryCount, STOCK_SNAPSHOT_FETCH_LIMIT),
+    options,
+  });
+
+  if (fetchedRecords.length === 0) {
+    throw new Error(EMPTY_PRICE_HISTORY_ERROR);
+  }
+
+  const latestTradeDate =
+    fetchedRecords[fetchedRecords.length - 1]?.date ?? "";
+  if (latestTradeDate.length === 0) {
+    throw new Error(EMPTY_PRICE_HISTORY_ERROR);
+  }
+
+  logNoStopServiceDebug('info', 'history-supabase-success', {
+    symbol,
+    recordCount: fetchedRecords.length,
+    latestTradeDate,
+  });
+  await persistFetchedPriceHistory({
+    isDatabaseReady,
+    symbol,
+    records: fetchedRecords,
+    latestTradeDate,
+  });
+
+  return {
+    records: fetchedRecords,
+    latestTradeDate,
+    source: "supabase",
+  };
+}
+
 /**
  * 주가 데이터를 가져옵니다 (IndexedDB 우선 사용)
  * IndexedDB에 데이터가 없으면 Supabase에서 가져와서 저장
@@ -269,7 +772,7 @@ export const fetchStockPrices = async (
     new Set(
       symbols
         .filter((s) => s && typeof s === "string")
-        .map((s) => s.trim())
+        .map((s) => normalizeTickerSymbol(s))
         .filter((s) => s.length > 0),
     ),
   );
@@ -341,18 +844,39 @@ export const fetchStockPrices = async (
       throwIfAborted(signal);
 
       const rows = fetchedMap[symbol] ?? [];
-      const baseData = mapRowsToStockData(symbol, rows);
-      const indicators = await calculateTechnicalIndicators(symbol, [20, 60, 120], options);
+      results[symbol] = mapRowsToStockData(symbol, rows);
+    }),
+  );
+
+  await Promise.all(
+    validSymbols.map(async (symbol) => {
       throwIfAborted(signal);
 
-      if (indicators != null) {
-        baseData.rsi = indicators.rsi;
-        baseData.ma20 = indicators.ma[20] ?? DEFAULT_MA;
-        baseData.ma60 = indicators.ma[60] ?? DEFAULT_MA;
-        baseData.ma120 = indicators.ma[120] ?? DEFAULT_MA;
+      const baseData = results[symbol];
+      if (baseData == null || baseData.price <= 0) {
+        return;
       }
 
-      results[symbol] = baseData;
+      const snapshotResult = await fetchIndicatorAwareSnapshot(
+        symbol,
+        STOCK_DATA_INDICATOR_REQUIREMENTS,
+        options,
+      );
+      throwIfAborted(signal);
+
+      if (!snapshotResult.ok || snapshotResult.data == null) {
+        return;
+      }
+
+      results[symbol] = {
+        ...baseData,
+        ...mapIndicatorSnapshotToStockData({
+          symbol,
+          snapshot: snapshotResult.data,
+        }),
+        change: baseData.change,
+        changePercent: baseData.changePercent,
+      };
     }),
   );
 
@@ -429,10 +953,220 @@ export const fetchStockPrice = async (
   return prices[symbol] || null;
 };
 
+export async function fetchIndicatorAwareSnapshot(
+  symbol: string,
+  requirements: IndicatorRequirements,
+  options: StockQueryOptions = {},
+): Promise<ServiceResult<NoStopIndicatorSnapshot | null>> {
+  const trimmedSymbol = normalizeTickerSymbol(symbol);
+  if (trimmedSymbol.length === 0) {
+    return failResult(
+      null,
+      createServiceError("INVALID_INPUT", "stock_symbol_required", {
+        context: { symbol: trimmedSymbol },
+      }),
+      { symbol: trimmedSymbol },
+    );
+  }
+
+  const normalizedRequirements = normalizeIndicatorRequirements(requirements);
+  const cacheKey = buildIndicatorRequirementCacheKey({
+    symbol: trimmedSymbol,
+    requirements: normalizedRequirements,
+  });
+  logNoStopServiceDebug('info', 'snapshot-enter', {
+    symbol: trimmedSymbol,
+    cacheKey,
+    requirements: normalizedRequirements,
+  });
+
+  try {
+    const isDatabaseReady = await isIndicatorSnapshotDatabaseReady();
+    logNoStopServiceDebug('info', 'snapshot-db-ready', {
+      symbol: trimmedSymbol,
+      cacheKey,
+      isDatabaseReady,
+    });
+    const metadata = isDatabaseReady
+      ? await getStockMetadata(trimmedSymbol)
+      : null;
+    const sourceLastUpdated = metadata?.lastUpdated ?? "";
+    logNoStopServiceDebug('info', 'snapshot-metadata', {
+      symbol: trimmedSymbol,
+      cacheKey,
+      sourceLastUpdated,
+      dataCount: metadata?.dataCount ?? 0,
+    });
+
+    if (sourceLastUpdated.length > 0) {
+      const memorySnapshot = readIndicatorSnapshotFromMemoryCache(
+        cacheKey,
+        sourceLastUpdated,
+      );
+      if (memorySnapshot != null) {
+        logNoStopServiceDebug('info', 'snapshot-memory-hit', {
+          symbol: trimmedSymbol,
+          cacheKey,
+          currentPrice: memorySnapshot.currentPrice,
+        });
+        return okResult(memorySnapshot, {
+          symbol: trimmedSymbol,
+          cacheKey,
+          source: "memory",
+        });
+      }
+
+      const dbSnapshot = await getIndicatorSnapshotCache(
+        cacheKey,
+        sourceLastUpdated,
+      );
+      if (dbSnapshot != null) {
+        const snapshot = cloneIndicatorSnapshot({
+          currentPrice: dbSnapshot.currentPrice,
+          ...(dbSnapshot.rsi !== undefined ? { rsi: dbSnapshot.rsi } : {}),
+          ...(dbSnapshot.maByPeriod != null
+            ? { maByPeriod: dbSnapshot.maByPeriod }
+            : {}),
+        });
+
+        writeIndicatorSnapshotToMemoryCache({
+          cacheKey,
+          snapshot,
+          sourceLastUpdated,
+        });
+        logNoStopServiceDebug('info', 'snapshot-indexeddb-hit', {
+          symbol: trimmedSymbol,
+          cacheKey,
+          currentPrice: snapshot.currentPrice,
+        });
+
+        return okResult(snapshot, {
+          symbol: trimmedSymbol,
+          cacheKey,
+          source: "indexeddb",
+        });
+      }
+    }
+
+    const { records, latestTradeDate, source } =
+      await getOrFetchPriceHistoryForRequirements(
+        trimmedSymbol,
+        normalizedRequirements,
+        options,
+        isDatabaseReady,
+      );
+    logNoStopServiceDebug('info', 'snapshot-history-ready', {
+      symbol: trimmedSymbol,
+      cacheKey,
+      source,
+      recordCount: records.length,
+      latestTradeDate,
+    });
+    const currentPrice = readCurrentPriceFromRecords(records);
+    const technicalIndicators =
+      (await calculateTechnicalIndicators(
+        trimmedSymbol,
+        normalizedRequirements,
+        options,
+        records,
+      )) ?? {};
+    logNoStopServiceDebug('info', 'snapshot-indicators-ready', {
+      symbol: trimmedSymbol,
+      cacheKey,
+      currentPrice,
+      hasRsi: technicalIndicators.rsi !== undefined,
+      maPeriods: Object.keys(technicalIndicators.maByPeriod ?? {}),
+    });
+
+    const snapshot = cloneIndicatorSnapshot({
+      currentPrice,
+      ...(technicalIndicators.rsi !== undefined
+        ? { rsi: technicalIndicators.rsi }
+        : {}),
+      ...(technicalIndicators.maByPeriod != null
+        ? { maByPeriod: technicalIndicators.maByPeriod }
+        : {}),
+    });
+
+    writeIndicatorSnapshotToMemoryCache({
+      cacheKey,
+      snapshot,
+      sourceLastUpdated: latestTradeDate,
+    });
+    await persistIndicatorSnapshotCache({
+      isDatabaseReady,
+      cacheKey,
+      symbol: trimmedSymbol,
+      requirements: normalizedRequirements,
+      snapshot,
+      sourceLastUpdated: latestTradeDate,
+    });
+
+    logNoStopServiceDebug('info', 'snapshot-success', {
+      symbol: trimmedSymbol,
+      cacheKey,
+      source,
+      currentPrice: snapshot.currentPrice,
+    });
+    return okResult(snapshot, {
+      symbol: trimmedSymbol,
+      cacheKey,
+      source,
+    });
+  } catch (error: unknown) {
+    const isEmptyHistoryError =
+      error instanceof Error &&
+      error.message === EMPTY_PRICE_HISTORY_ERROR;
+    const isAbortError = isAbortLikeError(error);
+    logNoStopServiceDebug('warn', 'snapshot-failure', {
+      symbol: trimmedSymbol,
+      cacheKey,
+      isEmptyHistoryError,
+      isAbortError,
+      error:
+        error instanceof Error
+          ? {
+              name: error.name,
+              message: error.message,
+            }
+          : String(error),
+    });
+
+    return failResult(
+      null,
+      createServiceError(
+        isEmptyHistoryError
+          ? "NOT_FOUND"
+          : isAbortError
+            ? "TIMEOUT"
+            : "NETWORK",
+        isEmptyHistoryError
+          ? "indicator_snapshot_price_history_not_found"
+          : normalizeErrorMessage(
+              error,
+              "indicator_snapshot_fetch_failed",
+            ),
+        {
+          retryable: !isEmptyHistoryError,
+          cause: error,
+          context: {
+            symbol: trimmedSymbol,
+            cacheKey,
+          },
+        },
+      ),
+      {
+        symbol: trimmedSymbol,
+        cacheKey,
+      },
+    );
+  }
+}
+
 export async function fetchLatestStockSnapshot(
   symbol: string,
 ): Promise<ServiceResult<StockData>> {
-  const trimmedSymbol = symbol.trim();
+  const trimmedSymbol = normalizeTickerSymbol(symbol);
   if (trimmedSymbol.length === 0) {
     return failResult(
       createEmptyStockData(trimmedSymbol),
@@ -444,18 +1178,52 @@ export async function fetchLatestStockSnapshot(
   }
 
   try {
-    const snapshot = await fetchStockPrice(trimmedSymbol);
-    if (snapshot == null) {
+    const snapshotResult = await fetchIndicatorAwareSnapshot(
+      trimmedSymbol,
+      PRICE_ONLY_INDICATOR_REQUIREMENTS,
+    );
+    if (!snapshotResult.ok) {
       return failResult(
         createEmptyStockData(trimmedSymbol),
-        createServiceError('NOT_FOUND', 'stock_snapshot_not_found', {
+        snapshotResult.error,
+        snapshotResult.context,
+      );
+    }
+
+    if (snapshotResult.data == null) {
+      return failResult(
+        createEmptyStockData(trimmedSymbol),
+        createServiceError("NOT_FOUND", "stock_snapshot_not_found", {
           context: { symbol: trimmedSymbol },
         }),
         { symbol: trimmedSymbol },
       );
     }
 
-    return okResult(snapshot, { symbol: trimmedSymbol });
+    const latestRecords = await getStockPrices(
+      trimmedSymbol,
+      STOCK_SNAPSHOT_FETCH_LIMIT,
+    );
+    const baseData =
+      latestRecords.length > 0
+        ? mapDbRecordsToStockData(trimmedSymbol, latestRecords)
+        : createEmptyStockData(trimmedSymbol);
+
+    return okResult(
+      {
+        ...baseData,
+        ...mapIndicatorSnapshotToStockData({
+          symbol: trimmedSymbol,
+          snapshot: snapshotResult.data,
+        }),
+        change: baseData.change,
+        changePercent: baseData.changePercent,
+      },
+      {
+        symbol: trimmedSymbol,
+        source: "requirement-aware",
+      },
+    );
   } catch (error: unknown) {
     return failResult(
       createEmptyStockData(trimmedSymbol),
@@ -532,16 +1300,48 @@ export async function getRecentTradingDaysFromDbSafe(
   try {
     const recentTradingDays = await getRecentTradingDaysFromDb(trimmedSymbol, days);
     if (recentTradingDays.length === 0) {
-      return failResult(
-        [],
-        createServiceError('NOT_FOUND', 'recent_trading_days_not_found', {
-          context: { symbol: trimmedSymbol, days },
-        }),
-        { symbol: trimmedSymbol, days },
+      const isDatabaseReady = await isIndicatorSnapshotDatabaseReady();
+      const fetchedRecords = await fetchPriceHistoryFromSupabase({
+        symbol: trimmedSymbol,
+        limit: Math.max(days, STOCK_SNAPSHOT_FETCH_LIMIT),
+      });
+      const fetchedRecentTradingDays = extractRecentTradingDaysFromRecords(
+        fetchedRecords,
+        days,
       );
+
+      if (fetchedRecentTradingDays.length === 0) {
+        return failResult(
+          [],
+          createServiceError('NOT_FOUND', 'recent_trading_days_not_found', {
+            context: { symbol: trimmedSymbol, days },
+          }),
+          { symbol: trimmedSymbol, days },
+        );
+      }
+
+      const latestTradeDate = fetchedRecentTradingDays[0] ?? '';
+      if (latestTradeDate.length > 0) {
+        await persistFetchedPriceHistory({
+          isDatabaseReady,
+          symbol: trimmedSymbol,
+          records: fetchedRecords,
+          latestTradeDate,
+        });
+      }
+
+      return okResult(fetchedRecentTradingDays, {
+        symbol: trimmedSymbol,
+        days,
+        source: 'supabase',
+      });
     }
 
-    return okResult(recentTradingDays, { symbol: trimmedSymbol, days });
+    return okResult(recentTradingDays, {
+      symbol: trimmedSymbol,
+      days,
+      source: 'indexeddb',
+    });
   } catch (error: unknown) {
     return failResult(
       [],
@@ -817,6 +1617,7 @@ const calculateAndSaveIndicators = async (
   }));
 
   await saveStockPrices(updatedRecords);
+  clearIndicatorSnapshotMemoryCacheBySymbol(symbol);
 };
 
 /**
@@ -907,11 +1708,12 @@ export const updateLatestStockData = async (symbol: string): Promise<void> => {
  */
 export const calculateTechnicalIndicators = async (
   symbol: string,
-  maPeriods: number[] = [20, 60, 120],
+  requirements: IndicatorRequirements = STOCK_DATA_INDICATOR_REQUIREMENTS,
   options: StockQueryOptions = {},
-): Promise<{ ma: Record<number, number>; rsi: number } | null> => {
+  preloadedRecords?: StockPriceRecord[],
+): Promise<TechnicalIndicatorResult | null> => {
   const { signal } = options;
-  const trimmedSymbol = symbol?.trim();
+  const trimmedSymbol = normalizeTickerSymbol(symbol ?? "");
   if (!trimmedSymbol) {
     console.warn("Invalid symbol provided to calculateTechnicalIndicators");
     return null;
@@ -920,92 +1722,28 @@ export const calculateTechnicalIndicators = async (
   throwIfAborted(signal);
 
   try {
-    // IndexedDB에서 데이터 가져오기
-    const dbRecords = await getStockPrices(trimmedSymbol, INDICATOR_DB_READ_LIMIT);
-
-    if (dbRecords.length >= MIN_INDICATOR_HISTORY) {
-      // IndexedDB에 충분한 데이터가 있으면 사용
-      const latestRecord = dbRecords[dbRecords.length - 1];
-
-      // 이미 계산된 지표가 있으면 사용
-      if (
-        latestRecord.ma20 && latestRecord.ma60 && latestRecord.ma120 &&
-        latestRecord.rsi
-      ) {
-        return {
-          ma: {
-            20: latestRecord.ma20,
-            60: latestRecord.ma60,
-            120: latestRecord.ma120,
-          },
-          rsi: latestRecord.rsi,
-        };
-      }
-
-      // 계산된 지표가 없으면 일괄 계산 후 저장
-      await calculateAndSaveIndicators(trimmedSymbol, dbRecords);
-
-      // 저장된 최신 레코드에서 결과 반환
-      const savedRecords = await getStockPrices(trimmedSymbol, INDICATOR_DB_READ_LIMIT);
-      const latest = savedRecords[savedRecords.length - 1];
-      const prices = savedRecords.map((r) => r.close);
-      const ma: Record<number, number> = {};
-      for (const period of maPeriods) {
-        ma[period] = readStoredMovingAverage(latest, period) ?? calculateMA(prices, period);
-      }
-
-      return { ma, rsi: latest?.rsi ?? calculateRSI(prices) };
+    const normalizedRequirements = normalizeIndicatorRequirements(requirements);
+    if (
+      !normalizedRequirements.needsRsi &&
+      normalizedRequirements.maPeriods.length === 0
+    ) {
+      return {};
     }
 
-    // IndexedDB에 데이터가 부족하면 Supabase에서 가져오기
-    console.log(
-      `[calculateTechnicalIndicators] ${trimmedSymbol}: IndexedDB 데이터 부족, Supabase에서 가져오기`,
+    const records =
+      preloadedRecords ??
+      (
+        await getOrFetchPriceHistoryForRequirements(
+          trimmedSymbol,
+          normalizedRequirements,
+          options,
+        )
+      ).records;
+
+    return readTechnicalIndicatorsFromRecords(
+      records,
+      normalizedRequirements,
     );
-
-    let query = supabase
-      .from("stock_prices")
-      .select("close, trade_date")
-      .eq("symbol", trimmedSymbol)
-      .order("trade_date", { ascending: true })
-      .limit(STOCK_FULL_LOAD_LIMIT);
-
-    if (signal != null) {
-      query = query.abortSignal(signal);
-    }
-
-    const { data, error } = await query;
-    throwIfAborted(signal);
-
-    const decodedRows = decodeSupabaseStockRows(data);
-    if (error || decodedRows == null) {
-      if (isAbortLikeError(error)) {
-        throw createAbortError();
-      }
-      console.error("Error fetching price history for", symbol, error);
-      return null;
-    }
-
-    const records = toStockPriceRecords(trimmedSymbol, decodedRows)
-      .filter((record) => record.date.length > 0 && record.close > 0);
-
-    if (records.length === 0) return null;
-
-    // calculateAndSaveIndicators가 롤링 윈도우로 모든 지표를 계산 + 저장
-    throwIfAborted(signal);
-    await calculateAndSaveIndicators(trimmedSymbol, records);
-    const latestDate = records[records.length - 1]?.date || "";
-    await updateStockMetadata(trimmedSymbol, latestDate, records.length);
-    throwIfAborted(signal);
-
-    // 최종 결과 생성
-    const prices = records.map((r) => r.close);
-    const ma: Record<number, number> = {};
-    for (const period of maPeriods) {
-      ma[period] = calculateMA(prices, period);
-    }
-    const rsi = calculateRSI(prices);
-
-    return { ma, rsi };
   } catch (err) {
     if (isAbortLikeError(err)) {
       throw createAbortError();

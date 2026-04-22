@@ -3,9 +3,11 @@ import { Calendar, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { CUSTOM_GRADIENT_LOGOS, PAID_STOCKS } from '../constants';
 import {
   getTradeMessages,
-  type TradeMessageSet,
 } from '../constants/messages/tradeMessages';
+import { useMultiSplitExecution } from '../hooks/useMultiSplitExecution';
 import { useNoStopMultiSplitExecution } from '../hooks/useNoStopMultiSplitExecution';
+import { buildMultiSplitExecutionSummaryLines } from '../supabase/functions/_shared/multiSplitExecutionMessages.ts';
+import { buildNoStopExecutionSummaryLines } from '../supabase/functions/_shared/noStopExecutionMessages.ts';
 import type { AppLang, Portfolio, Trade } from '../types';
 import { calculateHoldings } from '../utils/portfolioCalculations';
 import { areStrictPositiveFiniteScalars } from '../utils/financialScalarGuards';
@@ -74,9 +76,10 @@ interface TradeExecutionModalViewProps {
   quantityRaw: string;
   feeOverrideRaw: string;
   isMoc: boolean;
+  isSmartSplit: boolean;
   isNoStopMultiSplit: boolean;
-  noStopGuideTitle: string;
-  noStopGuideLines: string[];
+  strategyGuideTitle: string;
+  strategyGuideLines: string[];
   mocSellTitle: string;
   mocSellDescription: string;
   feePreviewText: string;
@@ -116,6 +119,10 @@ function getTradeExecutionBuyStocks(portfolio: Portfolio): string[] {
     return getUniqueStocks([portfolio.strategy.noStopMultiSplit.targetStock]);
   }
 
+  if (portfolio.strategy.multiSplit != null) {
+    return getUniqueStocks([portfolio.strategy.multiSplit.targetStock]);
+  }
+
   return getUniqueStocks([
     portfolio.strategy.ma1.stock,
     portfolio.strategy.ma2.stock,
@@ -152,43 +159,38 @@ function buildCalendarDayKeys(monthKey: string): Array<string | null> {
   return days;
 }
 
-function buildNoStopGuideLines(
-  copy: TradeMessageSet,
-  executionData: ReturnType<typeof useNoStopMultiSplitExecution>['executionData'],
-  takeProfitPct: number,
-): string[] {
-  if (executionData == null) {
-    return [];
+function buildStrategyGuideLines(args: {
+  lang: AppLang;
+  isSmartSplit: boolean;
+  isNoStopMultiSplit: boolean;
+  multiSplitExecutionData: ReturnType<typeof useMultiSplitExecution>['executionData'];
+  noStopExecutionData: ReturnType<typeof useNoStopMultiSplitExecution>['executionData'];
+}): string[] {
+  if (args.isSmartSplit) {
+    if (args.multiSplitExecutionData == null) {
+      return [];
+    }
+
+    return buildMultiSplitExecutionSummaryLines({
+      lang: args.lang,
+      execution: args.multiSplitExecutionData,
+    });
   }
 
-  if (executionData.isFirstBuy) {
-    return [copy.helper.noStopFirstBuyHint];
+  if (args.isNoStopMultiSplit) {
+    if (args.noStopExecutionData == null) {
+      return [];
+    }
+
+    return buildNoStopExecutionSummaryLines({
+      lang: args.lang,
+      execution: args.noStopExecutionData,
+      formatPrice: (price) => formatUsd(price),
+      formatQuantity: (quantity) => formatShareQuantity(quantity, 0),
+    });
   }
 
-  const lines: string[] = [];
-
-  if (executionData.lowLoc != null) {
-    lines.push(
-      `${copy.helper.lowLoc}: ${formatUsd(executionData.lowLoc.price)} / ${formatShareQuantity(executionData.lowLoc.quantity)}${copy.helper.sharesUnit}`,
-    );
-  }
-
-  if (executionData.highLoc != null) {
-    lines.push(
-      `${copy.helper.highLoc}: ${formatUsd(executionData.highLoc.price)} / ${formatShareQuantity(executionData.highLoc.quantity)}${copy.helper.sharesUnit}`,
-    );
-    lines.push(copy.helper.noStopGuaranteedDailyFill);
-  }
-
-  if (executionData.isSplitComplete) {
-    lines.push(copy.helper.noStopSplitComplete);
-  }
-
-  if (executionData.takeProfit != null) {
-    lines.push(copy.helper.noStopTakeProfitTarget(takeProfitPct));
-  }
-
-  return lines;
+  return [];
 }
 
 export default function TradeExecutionModal({
@@ -198,12 +200,13 @@ export default function TradeExecutionModal({
   onSave,
 }: TradeExecutionModalProps): React.ReactElement {
   const copy = getTradeMessages(lang);
+  const multiSplitExecution = useMultiSplitExecution(portfolio, lang);
   const noStopExecution = useNoStopMultiSplitExecution(portfolio, lang);
 
   const buyStocks = useMemo(() => getTradeExecutionBuyStocks(portfolio), [portfolio]);
   const sellableStocks = useMemo(() => getSellableStocks(portfolio), [portfolio]);
+  const isSmartSplit = portfolio.strategy.multiSplit != null;
   const isNoStopMultiSplit = portfolio.strategy.noStopMultiSplit != null;
-  const takeProfitPct = portfolio.strategy.noStopMultiSplit?.takeProfitPct ?? 0;
 
   const [tradeType, setTradeType] = useState<Trade['type']>('buy');
   const [selectedStockRaw, setSelectedStockRaw] = useState('');
@@ -249,9 +252,22 @@ export default function TradeExecutionModal({
     fee: resolvedFee,
   });
 
-  const noStopGuideLines = useMemo(
-    () => buildNoStopGuideLines(copy, noStopExecution.executionData, takeProfitPct),
-    [copy, noStopExecution.executionData, takeProfitPct],
+  const strategyGuideLines = useMemo(
+    () =>
+      buildStrategyGuideLines({
+        lang,
+        isSmartSplit,
+        isNoStopMultiSplit,
+        multiSplitExecutionData: multiSplitExecution.executionData,
+        noStopExecutionData: noStopExecution.executionData,
+      }),
+    [
+      lang,
+      isSmartSplit,
+      isNoStopMultiSplit,
+      multiSplitExecution.executionData,
+      noStopExecution.executionData,
+    ],
   );
 
   let validationMessage: string | null = null;
@@ -402,9 +418,10 @@ export default function TradeExecutionModal({
       quantityRaw={quantityRaw}
       feeOverrideRaw={feeOverrideRaw}
       isMoc={isMoc}
+      isSmartSplit={isSmartSplit}
       isNoStopMultiSplit={isNoStopMultiSplit}
-      noStopGuideTitle={copy.helper.noStopGuideTitle}
-      noStopGuideLines={noStopGuideLines}
+      strategyGuideTitle={copy.helper.strategyGuideTitle}
+      strategyGuideLines={strategyGuideLines}
       mocSellTitle={copy.helper.mocSellTitle}
       mocSellDescription={copy.helper.mocSellDescription}
       feePreviewText={formatUsd(feePreview.totalFee, 4)}
@@ -465,9 +482,10 @@ const TradeExecutionModalView = React.memo(function TradeExecutionModalView({
   quantityRaw,
   feeOverrideRaw,
   isMoc,
+  isSmartSplit,
   isNoStopMultiSplit,
-  noStopGuideTitle,
-  noStopGuideLines,
+  strategyGuideTitle,
+  strategyGuideLines,
   mocSellTitle,
   mocSellDescription,
   feePreviewText,
@@ -522,7 +540,8 @@ const TradeExecutionModalView = React.memo(function TradeExecutionModalView({
   );
 
   const dateLabel = tradeType === 'buy' ? buyDateLabel : sellDateLabel;
-  const shouldShowMocToggle = tradeType === 'sell' && !isNoStopMultiSplit;
+  const shouldShowMocToggle =
+    tradeType === 'sell' && !isNoStopMultiSplit && !isSmartSplit;
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
@@ -594,13 +613,13 @@ const TradeExecutionModalView = React.memo(function TradeExecutionModalView({
             </div>
           ) : null}
 
-          {isNoStopMultiSplit && noStopGuideLines.length > 0 ? (
+          {(isNoStopMultiSplit || isSmartSplit) && strategyGuideLines.length > 0 ? (
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="mb-3 text-[11px] font-black uppercase tracking-widest text-slate-600">
-                {noStopGuideTitle}
+                {strategyGuideTitle}
               </div>
               <div className="space-y-2 text-sm font-bold text-slate-800">
-                {noStopGuideLines.map((line) => (
+                {strategyGuideLines.map((line) => (
                   <div key={line}>{line}</div>
                 ))}
               </div>

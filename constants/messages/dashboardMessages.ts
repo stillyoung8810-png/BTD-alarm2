@@ -31,16 +31,7 @@ export interface DashboardMessageSet {
     noHoldings: string;
     insufficientAmount: string;
     checkingSection: string;
-    mocSellLabel: string;
     sharesUnit: string;
-    startQuarterStopLoss: string;
-    firstBuyAmountLabel: string;
-    avgPriceTimesPointNineMinusOffset: string;
-    avgPriceTimesPointNine: string;
-    locBuy1: string;
-    locBuy2: string;
-    locSell: string;
-    limitSell: string;
     section: string;
     buy: string;
     sectionWatchBothNotMet: string;
@@ -48,10 +39,8 @@ export interface DashboardMessageSet {
     sectionWatchRsiNotMet: string;
     sectionPartialProfit: string;
     strategyPreparing: string;
-    noStopSplitComplete: string;
-    noStopTakeProfitTarget: string;
-    lowLoc: string;
-    highLoc: string;
+    multiSplitProgressBarAriaLabel: string;
+    noStopProgressBarAriaLabel: string;
   };
 }
 
@@ -81,7 +70,7 @@ export const DASHBOARD_MESSAGES: Record<AppLang, DashboardMessageSet> = {
       '보유 주식을 모두 매도해야 종료가 가능해요.',
     strategyName: {
       vr_band: '타겟 밸류 채널',
-      multi_split: '다분할 매매법',
+      multi_split: '스마트 스플릿',
       no_stop_multi_split: '다분할 매매법(무손절)',
       ma_interval: '이평선 구간매수',
     },
@@ -91,16 +80,7 @@ export const DASHBOARD_MESSAGES: Record<AppLang, DashboardMessageSet> = {
       insufficientAmount:
         '알림: 1회 매수금이 부족하여 주문을 생성할 수 없습니다. 설정을 확인해 주세요.',
       checkingSection: '구간 확인 중…',
-      mocSellLabel: 'MOC 매도',
       sharesUnit: '주',
-      startQuarterStopLoss: 'MOC 매도 하여 쿼터 손절 모드 시작하세요',
-      firstBuyAmountLabel: '1회 매수금',
-      avgPriceTimesPointNineMinusOffset: '현재 평균 단가 × 0.9 - 0.01',
-      avgPriceTimesPointNine: '현재 평균 단가 × 0.9',
-      locBuy1: 'LOC 매수1',
-      locBuy2: 'LOC 매수2',
-      locSell: 'LOC 매도',
-      limitSell: '지정가 매도',
       section: '구간',
       buy: '매수',
       sectionWatchBothNotMet: '관망 (정배열 미충족, RSI 조건 미충족)',
@@ -108,11 +88,8 @@ export const DASHBOARD_MESSAGES: Record<AppLang, DashboardMessageSet> = {
       sectionWatchRsiNotMet: '관망 (RSI 조건 미충족)',
       sectionPartialProfit: '중간익절',
       strategyPreparing: '전략 준비 중',
-      noStopSplitComplete:
-        '분할 매수가 모두 완료되었습니다. 추가 매수 없이 보유(존버)와 익절만 수행합니다.',
-      noStopTakeProfitTarget: '익절 목표',
-      lowLoc: '저가 LOC',
-      highLoc: '고가 LOC',
+      multiSplitProgressBarAriaLabel: '스마트 스플릿 현금 사용률',
+      noStopProgressBarAriaLabel: '무손절 전략 진행률',
     },
   },
   en: {
@@ -140,7 +117,7 @@ export const DASHBOARD_MESSAGES: Record<AppLang, DashboardMessageSet> = {
       'You need to sell all held shares before closing the strategy.',
     strategyName: {
       vr_band: 'Target Value Channel',
-      multi_split: 'Multi-Split Trading',
+      multi_split: 'Smart Split',
       no_stop_multi_split: 'No-Stop Multi-Split',
       ma_interval: 'MA Interval Buying',
     },
@@ -150,17 +127,7 @@ export const DASHBOARD_MESSAGES: Record<AppLang, DashboardMessageSet> = {
       insufficientAmount:
         'Notice: 1st buy amount is too low to place orders. Please check your settings.',
       checkingSection: 'Checking section…',
-      mocSellLabel: 'MOC Sell',
       sharesUnit: 'shares',
-      startQuarterStopLoss:
-        'Start quarter stop-loss mode by executing MOC sell',
-      firstBuyAmountLabel: '1st Buy Amount',
-      avgPriceTimesPointNineMinusOffset: 'Avg Price × 0.9 - 0.01',
-      avgPriceTimesPointNine: 'Avg Price × 0.9',
-      locBuy1: 'LOC Buy 1',
-      locBuy2: 'LOC Buy 2',
-      locSell: 'LOC Sell',
-      limitSell: 'Limit Sell',
       section: 'Section',
       buy: 'Buy',
       sectionWatchBothNotMet: 'Watch (alignment not met, RSI not met)',
@@ -168,11 +135,8 @@ export const DASHBOARD_MESSAGES: Record<AppLang, DashboardMessageSet> = {
       sectionWatchRsiNotMet: 'Watch (RSI not met)',
       sectionPartialProfit: 'Partial profit',
       strategyPreparing: 'Strategy preparing',
-      noStopSplitComplete:
-        'All split buys are complete. Hold and wait for take profit without additional buys.',
-      noStopTakeProfitTarget: 'Take-profit target',
-      lowLoc: 'Low LOC',
-      highLoc: 'High LOC',
+      multiSplitProgressBarAriaLabel: 'Smart Split cash usage',
+      noStopProgressBarAriaLabel: 'No-stop strategy progress',
     },
   },
 };

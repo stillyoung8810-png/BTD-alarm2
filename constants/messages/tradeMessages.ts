@@ -44,14 +44,7 @@ export interface TradeMessageSet {
     mocSellDescription: string;
     manualFeeOverrideHint: string;
     executingTrade: string;
-    noStopGuideTitle: string;
-    noStopFirstBuyHint: string;
-    noStopGuaranteedDailyFill: string;
-    noStopSplitComplete: string;
-    noStopTakeProfitTarget: (takeProfitPct: number) => string;
-    lowLoc: string;
-    highLoc: string;
-    sharesUnit: string;
+    strategyGuideTitle: string;
   };
   aria: {
     closeModal: string;
@@ -112,22 +105,11 @@ export const TRADE_MESSAGES: Record<AppLang, TradeMessageSet> = {
         `예상 정산 금액 ${settlementText} 이(가) 일일 예산 ${budgetText} 을 초과합니다. 저장은 막지 않지만, 사용자가 확인하고 진행해야 합니다.`,
       mocSellTitle: 'MOC 매도',
       mocSellDescription:
-        '쿼터 손절 모드를 시작하는 보유량 25% 종가 매도입니다.',
+        '장 마감 종가 기준으로 매도 체결을 기록합니다.',
       manualFeeOverrideHint:
         '직접 수수료를 입력하면 자동 계산값 대신 그 값을 저장합니다.',
       executingTrade: '체결 저장 중...',
-      noStopGuideTitle: '전략 실행 가이드',
-      noStopFirstBuyHint:
-        '무손절 전략의 첫 매수는 장중 언제든 입력할 수 있습니다.',
-      noStopGuaranteedDailyFill:
-        '고가 LOC는 해당 거래일 내 체결 보장이 전제됩니다.',
-      noStopSplitComplete:
-        '모든 분할 매수가 완료되었습니다. 추가 매수 없이 익절 가격만 기다립니다.',
-      noStopTakeProfitTarget: (takeProfitPct) =>
-        `평단 대비 +${takeProfitPct}% 전량 지정가 매도`,
-      lowLoc: '저가 LOC',
-      highLoc: '고가 LOC',
-      sharesUnit: '주',
+      strategyGuideTitle: '전략 실행 가이드',
     },
     aria: {
       closeModal: '매매 입력 모달 닫기',
@@ -189,22 +171,11 @@ export const TRADE_MESSAGES: Record<AppLang, TradeMessageSet> = {
         `Estimated settlement ${settlementText} exceeds the daily budget ${budgetText}. Saving remains non-blocking, but the user must acknowledge the risk.`,
       mocSellTitle: 'MOC Sell',
       mocSellDescription:
-        'Closes 25% of current holdings at the market close to start quarter stop-loss mode.',
+        'Records the sell execution at the market close price.',
       manualFeeOverrideHint:
         'If you enter a manual fee, it overrides the calculated fee.',
       executingTrade: 'Saving trade...',
-      noStopGuideTitle: 'Strategy Execution Guide',
-      noStopFirstBuyHint:
-        'For the first no-stop trade, users may buy anytime during market hours.',
-      noStopGuaranteedDailyFill:
-        'High LOC assumes same-day execution certainty.',
-      noStopSplitComplete:
-        'All split buys are complete. Hold the position and wait for take profit only.',
-      noStopTakeProfitTarget: (takeProfitPct) =>
-        `Full limit sell at avg price +${takeProfitPct}%`,
-      lowLoc: 'Low LOC',
-      highLoc: 'High LOC',
-      sharesUnit: ' shares',
+      strategyGuideTitle: 'Strategy Execution Guide',
     },
     aria: {
       closeModal: 'Close trade modal',

@@ -143,7 +143,6 @@ const TabContentComponent: React.FC<TabContentProps> = (props) => {
             portfolios={activePortfolios}
             onClosePortfolio={onClosePortfolio}
             onDeletePortfolio={onDeletePortfolio}
-            onUpdatePortfolio={onUpdatePortfolio}
             onOpenCreator={onRequestOpenCreator}
             onOpenAlarm={onOpenAlarm}
             onOpenDetails={onOpenDetails}

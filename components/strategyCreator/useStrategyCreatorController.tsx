@@ -16,8 +16,23 @@ import {
 } from '@/constants/vrConstants';
 import type { AppLang, Portfolio, VrBandStrategyParams } from '@/types';
 import {
+  ALIGNMENT_PERIODS_BY_PRESET,
+  BUDGET_LOC_RATIO_BY_PRESET,
+  DEFAULT_MULTI_SPLIT_BASE_LOC_RATIO,
+  DEFAULT_MULTI_SPLIT_MAIN_TAKE_PROFIT_RATIO_PCT,
+  DEFAULT_MULTI_SPLIT_RISK_CUT_RATIO_PCT,
+  MULTI_SPLIT_ALIGNMENT_PERIODS_BY_PRESET,
+  MULTI_SPLIT_BUDGET_LOC_RATIO_BY_PRESET,
+  MULTI_SPLIT_RSI_THRESHOLD_BY_PRESET,
+  RSI_THRESHOLD_BY_PRESET,
   buildPortfolioDraftFromWizardState,
   hasDuplicatedSectionStocks,
+  type MultiSplitBudgetPresetId,
+  type MultiSplitMaPresetId,
+  type MultiSplitRsiPresetId,
+  type NoStopBudgetPresetId,
+  type NoStopMaPresetId,
+  type NoStopRsiPresetId,
   safeNumber,
   sanitizeVrBandWidthPercent,
   safeTrim,
@@ -44,6 +59,14 @@ const MAX_TARGET_RETURN_RATE = 30;
 const MIN_TOTAL_SPLIT_COUNT = 20;
 const MAX_TOTAL_SPLIT_COUNT = 80;
 const MIN_PERCENT_INPUT = 0;
+const DEFAULT_NO_STOP_BASE_LOC_RATIO = 50;
+const DEFAULT_NO_STOP_TAKE_PROFIT_PCT = 10;
+const DEFAULT_MULTI_SPLIT_RSI_PRESET: MultiSplitRsiPresetId = 'rsi40';
+const DEFAULT_MULTI_SPLIT_ALIGNMENT_PRESET: MultiSplitMaPresetId = 'ma20_60';
+const DEFAULT_MULTI_SPLIT_BUDGET_PRESET: MultiSplitBudgetPresetId = 'balanced';
+const DEFAULT_NO_STOP_RSI_PRESET: NoStopRsiPresetId = 'rsi40';
+const DEFAULT_NO_STOP_ALIGNMENT_PRESET: NoStopMaPresetId = 'ma20_60';
+const DEFAULT_NO_STOP_BUDGET_PRESET: NoStopBudgetPresetId = 'balanced';
 
 interface UseStrategyCreatorControllerParams {
   lang: AppLang;
@@ -91,13 +114,35 @@ function buildInitialWizardState(): StrategyWizardDraftInput {
       targetStock: DEFAULT_MULTI_SPLIT_STOCK,
       targetReturnRate: STRATEGY_DEFAULTS.TARGET_RETURN_PERCENT,
       totalSplitCount: STRATEGY_DEFAULTS.TOTAL_SPLIT_COUNT,
+      baseLocRatio: DEFAULT_MULTI_SPLIT_BASE_LOC_RATIO,
+      mainTakeProfitRatioPct: DEFAULT_MULTI_SPLIT_MAIN_TAKE_PROFIT_RATIO_PCT,
+      riskCutRatioPct: DEFAULT_MULTI_SPLIT_RISK_CUT_RATIO_PCT,
+      rsiCondition: {
+        isEnabled: false,
+        criterionPreset: DEFAULT_MULTI_SPLIT_RSI_PRESET,
+        budgetPreset: DEFAULT_MULTI_SPLIT_BUDGET_PRESET,
+      },
+      alignmentCondition: {
+        isEnabled: false,
+        criterionPreset: DEFAULT_MULTI_SPLIT_ALIGNMENT_PRESET,
+        budgetPreset: DEFAULT_MULTI_SPLIT_BUDGET_PRESET,
+      },
     },
     noStopMultiSplit: {
       targetStock: DEFAULT_MULTI_SPLIT_STOCK,
-      lowLocBudgetRatio: 50,
-      highLocPremiumPct: 15,
-      takeProfitPct: 10,
+      baseLocRatio: DEFAULT_NO_STOP_BASE_LOC_RATIO,
+      takeProfitPct: DEFAULT_NO_STOP_TAKE_PROFIT_PCT,
       totalSplitCount: STRATEGY_DEFAULTS.TOTAL_SPLIT_COUNT,
+      rsiCondition: {
+        isEnabled: false,
+        criterionPreset: DEFAULT_NO_STOP_RSI_PRESET,
+        budgetPreset: DEFAULT_NO_STOP_BUDGET_PRESET,
+      },
+      alignmentCondition: {
+        isEnabled: false,
+        criterionPreset: DEFAULT_NO_STOP_ALIGNMENT_PRESET,
+        budgetPreset: DEFAULT_NO_STOP_BUDGET_PRESET,
+      },
     },
     vrBand: {
       vrMode: 'lump_sum',
@@ -153,6 +198,46 @@ const EMPTY_VR_BAND_DRAFT: NonNullable<StrategyWizardDraftInput['vrBand']> = {
   poolUsagePct: 50,
   deltaCash: 0,
   cycleWeeks: VR_CYCLE.DEFAULT_WEEKS,
+};
+
+const EMPTY_MULTI_SPLIT_DRAFT: NonNullable<
+  StrategyWizardDraftInput['multiSplit']
+> = {
+  targetStock: DEFAULT_MULTI_SPLIT_STOCK,
+  targetReturnRate: STRATEGY_DEFAULTS.TARGET_RETURN_PERCENT,
+  totalSplitCount: STRATEGY_DEFAULTS.TOTAL_SPLIT_COUNT,
+  baseLocRatio: DEFAULT_MULTI_SPLIT_BASE_LOC_RATIO,
+  mainTakeProfitRatioPct: DEFAULT_MULTI_SPLIT_MAIN_TAKE_PROFIT_RATIO_PCT,
+  riskCutRatioPct: DEFAULT_MULTI_SPLIT_RISK_CUT_RATIO_PCT,
+  rsiCondition: {
+    isEnabled: false,
+    criterionPreset: DEFAULT_MULTI_SPLIT_RSI_PRESET,
+    budgetPreset: DEFAULT_MULTI_SPLIT_BUDGET_PRESET,
+  },
+  alignmentCondition: {
+    isEnabled: false,
+    criterionPreset: DEFAULT_MULTI_SPLIT_ALIGNMENT_PRESET,
+    budgetPreset: DEFAULT_MULTI_SPLIT_BUDGET_PRESET,
+  },
+};
+
+const EMPTY_NO_STOP_MULTI_SPLIT_DRAFT: NonNullable<
+  StrategyWizardDraftInput['noStopMultiSplit']
+> = {
+  targetStock: DEFAULT_MULTI_SPLIT_STOCK,
+  baseLocRatio: DEFAULT_NO_STOP_BASE_LOC_RATIO,
+  takeProfitPct: DEFAULT_NO_STOP_TAKE_PROFIT_PCT,
+  totalSplitCount: STRATEGY_DEFAULTS.TOTAL_SPLIT_COUNT,
+  rsiCondition: {
+    isEnabled: false,
+    criterionPreset: DEFAULT_NO_STOP_RSI_PRESET,
+    budgetPreset: DEFAULT_NO_STOP_BUDGET_PRESET,
+  },
+  alignmentCondition: {
+    isEnabled: false,
+    criterionPreset: DEFAULT_NO_STOP_ALIGNMENT_PRESET,
+    budgetPreset: DEFAULT_NO_STOP_BUDGET_PRESET,
+  },
 };
 
 function clampNumber(value: number, min: number, max: number): number {
@@ -381,12 +466,77 @@ export function useStrategyCreatorController({
     [],
   );
 
+  const updateMultiSplit = useCallback(
+    (patch: Partial<NonNullable<StrategyWizardDraftInput['multiSplit']>>) => {
+      setWizardState((previous) => ({
+        ...previous,
+        multiSplit: {
+          ...(previous.multiSplit ?? EMPTY_MULTI_SPLIT_DRAFT),
+          ...patch,
+        },
+      }));
+    },
+    [],
+  );
+
   const updateVrBand = useCallback(
     (patch: Partial<NonNullable<StrategyWizardDraftInput['vrBand']>>) => {
       setWizardState((previous) => ({
         ...previous,
         vrBand: {
           ...(previous.vrBand ?? EMPTY_VR_BAND_DRAFT),
+          ...patch,
+        },
+      }));
+    },
+    [],
+  );
+
+  const updateMultiSplitCondition = useCallback(
+    (
+      key: 'rsiCondition' | 'alignmentCondition',
+      patch: Partial<
+        NonNullable<NonNullable<StrategyWizardDraftInput['multiSplit']>[typeof key]>
+      >,
+    ) => {
+      setWizardState((previous) => {
+        const currentDraft = previous.multiSplit ?? EMPTY_MULTI_SPLIT_DRAFT;
+        const fallbackCondition =
+          key === 'rsiCondition'
+            ? {
+                isEnabled: false,
+                criterionPreset: DEFAULT_MULTI_SPLIT_RSI_PRESET,
+                budgetPreset: DEFAULT_MULTI_SPLIT_BUDGET_PRESET,
+              }
+            : {
+                isEnabled: false,
+                criterionPreset: DEFAULT_MULTI_SPLIT_ALIGNMENT_PRESET,
+                budgetPreset: DEFAULT_MULTI_SPLIT_BUDGET_PRESET,
+              };
+
+        return {
+          ...previous,
+          multiSplit: {
+            ...currentDraft,
+            [key]: {
+              ...(currentDraft[key] ?? fallbackCondition),
+              ...patch,
+            },
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  const updateNoStopMultiSplit = useCallback(
+    (
+      patch: Partial<NonNullable<StrategyWizardDraftInput['noStopMultiSplit']>>,
+    ) => {
+      setWizardState((previous) => ({
+        ...previous,
+        noStopMultiSplit: {
+          ...(previous.noStopMultiSplit ?? EMPTY_NO_STOP_MULTI_SPLIT_DRAFT),
           ...patch,
         },
       }));
@@ -559,16 +709,12 @@ export function useStrategyCreatorController({
         MIN_TARGET_RETURN_RATE,
         MAX_TARGET_RETURN_RATE,
       );
-      setWizardState((previous) => ({
-        ...previous,
-        multiSplit: {
-          ...previous.multiSplit,
-          targetReturnRate: committedValue,
-        },
-      }));
+      updateMultiSplit({
+        targetReturnRate: committedValue,
+      });
       return committedValue;
     },
-    [],
+    [updateMultiSplit],
   );
 
   const handleMultiSplitTotalCountChange = useCallback((value: string) => {
@@ -577,71 +723,138 @@ export function useStrategyCreatorController({
       MIN_TOTAL_SPLIT_COUNT,
       MAX_TOTAL_SPLIT_COUNT,
     );
-    setWizardState((previous) => ({
-      ...previous,
-      multiSplit: {
-        ...previous.multiSplit,
-        totalSplitCount: committedValue,
-      },
-    }));
+    updateMultiSplit({
+      totalSplitCount: committedValue,
+    });
     return committedValue;
-  }, []);
+  }, [updateMultiSplit]);
 
   const handleMultiSplitTargetStockChange = useCallback((value: string) => {
-    setWizardState((previous) => ({
-      ...previous,
-      multiSplit: {
-        ...previous.multiSplit,
-        targetStock: value,
-      },
-    }));
-  }, []);
+    updateMultiSplit({ targetStock: value });
+  }, [updateMultiSplit]);
+
+  const handleMultiSplitBaseLocRatioChange = useCallback(
+    (value: string) => {
+      const committedValue = clampNumber(
+        safeNumber(value, DEFAULT_MULTI_SPLIT_BASE_LOC_RATIO),
+        MIN_PERCENT_INPUT,
+        100,
+      );
+      updateMultiSplit({
+        baseLocRatio: committedValue,
+      });
+      return committedValue;
+    },
+    [updateMultiSplit],
+  );
+
+  const handleMultiSplitMainTakeProfitRatioPctChange = useCallback(
+    (value: string) => {
+      const committedValue = clampNumber(
+        safeNumber(value, DEFAULT_MULTI_SPLIT_MAIN_TAKE_PROFIT_RATIO_PCT),
+        1,
+        100,
+      );
+      updateMultiSplit({
+        mainTakeProfitRatioPct: committedValue,
+      });
+      return committedValue;
+    },
+    [updateMultiSplit],
+  );
+
+  const handleMultiSplitRiskCutRatioPctChange = useCallback(
+    (value: string) => {
+      const committedValue = clampNumber(
+        safeNumber(value, DEFAULT_MULTI_SPLIT_RISK_CUT_RATIO_PCT),
+        MIN_PERCENT_INPUT,
+        100,
+      );
+      updateMultiSplit({
+        riskCutRatioPct: committedValue,
+      });
+      return committedValue;
+    },
+    [updateMultiSplit],
+  );
+
+  const handleMultiSplitRsiConditionEnabledChange = useCallback(
+    (value: boolean) => {
+      updateMultiSplitCondition('rsiCondition', { isEnabled: value });
+    },
+    [updateMultiSplitCondition],
+  );
+
+  const handleMultiSplitRsiCriterionPresetChange = useCallback(
+    (value: MultiSplitRsiPresetId) => {
+      updateMultiSplitCondition('rsiCondition', {
+        criterionPreset: value,
+      });
+    },
+    [updateMultiSplitCondition],
+  );
+
+  const handleMultiSplitRsiBudgetPresetChange = useCallback(
+    (value: MultiSplitBudgetPresetId) => {
+      updateMultiSplitCondition('rsiCondition', {
+        budgetPreset: value,
+      });
+    },
+    [updateMultiSplitCondition],
+  );
+
+  const handleMultiSplitAlignmentConditionEnabledChange = useCallback(
+    (value: boolean) => {
+      updateMultiSplitCondition('alignmentCondition', { isEnabled: value });
+    },
+    [updateMultiSplitCondition],
+  );
+
+  const handleMultiSplitAlignmentCriterionPresetChange = useCallback(
+    (value: MultiSplitMaPresetId) => {
+      updateMultiSplitCondition('alignmentCondition', {
+        criterionPreset: value,
+      });
+    },
+    [updateMultiSplitCondition],
+  );
+
+  const handleMultiSplitAlignmentBudgetPresetChange = useCallback(
+    (value: MultiSplitBudgetPresetId) => {
+      updateMultiSplitCondition('alignmentCondition', {
+        budgetPreset: value,
+      });
+    },
+    [updateMultiSplitCondition],
+  );
 
   const handleNoStopTargetStockChange = useCallback((value: string) => {
-    setWizardState((previous) => ({
-      ...previous,
-      noStopMultiSplit: {
-        ...previous.noStopMultiSplit,
-        targetStock: value,
-      },
-    }));
-  }, []);
+    updateNoStopMultiSplit({ targetStock: value });
+  }, [updateNoStopMultiSplit]);
 
-  const handleNoStopLowLocBudgetRatioChange = useCallback((value: string) => {
-    const committedValue = clampNumber(safeNumber(value, 50), MIN_PERCENT_INPUT, 100);
-    setWizardState((previous) => ({
-      ...previous,
-      noStopMultiSplit: {
-        ...previous.noStopMultiSplit,
-        lowLocBudgetRatio: committedValue,
-      },
-    }));
+  const handleNoStopBaseLocRatioChange = useCallback((value: string) => {
+    const committedValue = clampNumber(
+      safeNumber(value, DEFAULT_NO_STOP_BASE_LOC_RATIO),
+      MIN_PERCENT_INPUT,
+      100,
+    );
+    updateNoStopMultiSplit({
+      baseLocRatio: committedValue,
+    });
     return committedValue;
-  }, []);
-
-  const handleNoStopHighLocPremiumPctChange = useCallback((value: string) => {
-    const committedValue = clampNumber(safeNumber(value, 15), MIN_PERCENT_INPUT, 100);
-    setWizardState((previous) => ({
-      ...previous,
-      noStopMultiSplit: {
-        ...previous.noStopMultiSplit,
-        highLocPremiumPct: committedValue,
-      },
-    }));
-    return committedValue;
-  }, []);
+  }, [updateNoStopMultiSplit]);
 
   const handleNoStopTakeProfitPctChange = useCallback((value: string) => {
-    const committedValue = clampNumber(safeNumber(value, 10), MIN_PERCENT_INPUT, 100);
-    setWizardState((previous) => ({
-      ...previous,
-      noStopMultiSplit: {
-        ...previous.noStopMultiSplit,
-        takeProfitPct: committedValue,
-      },
-    }));
+    const committedValue = clampNumber(
+      safeNumber(value, DEFAULT_NO_STOP_TAKE_PROFIT_PCT),
+      MIN_PERCENT_INPUT,
+      100,
+    );
+    updateNoStopMultiSplit({
+      takeProfitPct: committedValue,
+    });
     return committedValue;
-  }, []);
+  }, [updateNoStopMultiSplit]);
 
   const handleNoStopTotalSplitCountChange = useCallback((value: string) => {
     const committedValue = clampNumber(
@@ -649,15 +862,161 @@ export function useStrategyCreatorController({
       MIN_TOTAL_SPLIT_COUNT,
       MAX_TOTAL_SPLIT_COUNT,
     );
-    setWizardState((previous) => ({
-      ...previous,
-      noStopMultiSplit: {
-        ...previous.noStopMultiSplit,
-        totalSplitCount: committedValue,
-      },
-    }));
+    updateNoStopMultiSplit({
+      totalSplitCount: committedValue,
+    });
     return committedValue;
-  }, []);
+  }, [updateNoStopMultiSplit]);
+
+  const handleNoStopRsiConditionEnabledChange = useCallback(
+    (value: boolean) => {
+      setWizardState((previous) => {
+        const currentDraft =
+          previous.noStopMultiSplit ?? EMPTY_NO_STOP_MULTI_SPLIT_DRAFT;
+
+        return {
+          ...previous,
+          noStopMultiSplit: {
+            ...currentDraft,
+            rsiCondition: {
+              ...(currentDraft.rsiCondition ?? {
+                isEnabled: false,
+                criterionPreset: DEFAULT_NO_STOP_RSI_PRESET,
+                budgetPreset: DEFAULT_NO_STOP_BUDGET_PRESET,
+              }),
+              isEnabled: value,
+            },
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  const handleNoStopRsiCriterionPresetChange = useCallback(
+    (value: NoStopRsiPresetId) => {
+      setWizardState((previous) => {
+        const currentDraft =
+          previous.noStopMultiSplit ?? EMPTY_NO_STOP_MULTI_SPLIT_DRAFT;
+
+        return {
+          ...previous,
+          noStopMultiSplit: {
+            ...currentDraft,
+            rsiCondition: {
+              ...(currentDraft.rsiCondition ?? {
+                isEnabled: false,
+                criterionPreset: DEFAULT_NO_STOP_RSI_PRESET,
+                budgetPreset: DEFAULT_NO_STOP_BUDGET_PRESET,
+              }),
+              criterionPreset: value,
+            },
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  const handleNoStopRsiBudgetPresetChange = useCallback(
+    (value: NoStopBudgetPresetId) => {
+      setWizardState((previous) => {
+        const currentDraft =
+          previous.noStopMultiSplit ?? EMPTY_NO_STOP_MULTI_SPLIT_DRAFT;
+
+        return {
+          ...previous,
+          noStopMultiSplit: {
+            ...currentDraft,
+            rsiCondition: {
+              ...(currentDraft.rsiCondition ?? {
+                isEnabled: false,
+                criterionPreset: DEFAULT_NO_STOP_RSI_PRESET,
+                budgetPreset: DEFAULT_NO_STOP_BUDGET_PRESET,
+              }),
+              budgetPreset: value,
+            },
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  const handleNoStopAlignmentConditionEnabledChange = useCallback(
+    (value: boolean) => {
+      setWizardState((previous) => {
+        const currentDraft =
+          previous.noStopMultiSplit ?? EMPTY_NO_STOP_MULTI_SPLIT_DRAFT;
+
+        return {
+          ...previous,
+          noStopMultiSplit: {
+            ...currentDraft,
+            alignmentCondition: {
+              ...(currentDraft.alignmentCondition ?? {
+                isEnabled: false,
+                criterionPreset: DEFAULT_NO_STOP_ALIGNMENT_PRESET,
+                budgetPreset: DEFAULT_NO_STOP_BUDGET_PRESET,
+              }),
+              isEnabled: value,
+            },
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  const handleNoStopAlignmentCriterionPresetChange = useCallback(
+    (value: NoStopMaPresetId) => {
+      setWizardState((previous) => {
+        const currentDraft =
+          previous.noStopMultiSplit ?? EMPTY_NO_STOP_MULTI_SPLIT_DRAFT;
+
+        return {
+          ...previous,
+          noStopMultiSplit: {
+            ...currentDraft,
+            alignmentCondition: {
+              ...(currentDraft.alignmentCondition ?? {
+                isEnabled: false,
+                criterionPreset: DEFAULT_NO_STOP_ALIGNMENT_PRESET,
+                budgetPreset: DEFAULT_NO_STOP_BUDGET_PRESET,
+              }),
+              criterionPreset: value,
+            },
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  const handleNoStopAlignmentBudgetPresetChange = useCallback(
+    (value: NoStopBudgetPresetId) => {
+      setWizardState((previous) => {
+        const currentDraft =
+          previous.noStopMultiSplit ?? EMPTY_NO_STOP_MULTI_SPLIT_DRAFT;
+
+        return {
+          ...previous,
+          noStopMultiSplit: {
+            ...currentDraft,
+            alignmentCondition: {
+              ...(currentDraft.alignmentCondition ?? {
+                isEnabled: false,
+                criterionPreset: DEFAULT_NO_STOP_ALIGNMENT_PRESET,
+                budgetPreset: DEFAULT_NO_STOP_BUDGET_PRESET,
+              }),
+              budgetPreset: value,
+            },
+          },
+        };
+      });
+    },
+    [],
+  );
 
   const handleVrModeChange = useCallback(
     (value: VrBandStrategyParams['vrMode']) => {
@@ -851,6 +1210,78 @@ export function useStrategyCreatorController({
       ma1?.stock,
       ma2?.stock,
     ],
+  );
+
+  const multiSplitBudgetOptions = useMemo(
+    () =>
+      (
+        Object.keys(
+          MULTI_SPLIT_BUDGET_LOC_RATIO_BY_PRESET,
+        ) as MultiSplitBudgetPresetId[]
+      ).map((presetId) => ({
+        id: presetId,
+        label: copy.multiSplit.budgetPresets[presetId],
+      })),
+    [copy.multiSplit.budgetPresets],
+  );
+
+  const multiSplitRsiCriterionOptions = useMemo(
+    () =>
+      (
+        Object.keys(
+          MULTI_SPLIT_RSI_THRESHOLD_BY_PRESET,
+        ) as MultiSplitRsiPresetId[]
+      ).map((presetId) => ({
+        id: presetId,
+        label: copy.multiSplit.rsiCriteria[presetId],
+      })),
+    [copy.multiSplit.rsiCriteria],
+  );
+
+  const multiSplitAlignmentCriterionOptions = useMemo(
+    () =>
+      (
+        Object.keys(
+          MULTI_SPLIT_ALIGNMENT_PERIODS_BY_PRESET,
+        ) as MultiSplitMaPresetId[]
+      ).map((presetId) => ({
+        id: presetId,
+        label: copy.multiSplit.alignmentCriteria[presetId],
+      })),
+    [copy.multiSplit.alignmentCriteria],
+  );
+
+  const noStopBudgetOptions = useMemo(
+    () =>
+      (Object.keys(BUDGET_LOC_RATIO_BY_PRESET) as NoStopBudgetPresetId[]).map(
+        (presetId) => ({
+          id: presetId,
+          label: copy.noStopMultiSplit.budgetPresets[presetId],
+        }),
+      ),
+    [copy],
+  );
+
+  const noStopRsiCriterionOptions = useMemo(
+    () =>
+      (Object.keys(RSI_THRESHOLD_BY_PRESET) as NoStopRsiPresetId[]).map(
+        (presetId) => ({
+          id: presetId,
+          label: copy.noStopMultiSplit.rsiCriteria[presetId],
+        }),
+      ),
+    [copy],
+  );
+
+  const noStopAlignmentCriterionOptions = useMemo(
+    () =>
+      (Object.keys(ALIGNMENT_PERIODS_BY_PRESET) as NoStopMaPresetId[]).map(
+        (presetId) => ({
+          id: presetId,
+          label: copy.noStopMultiSplit.alignmentCriteria[presetId],
+        }),
+      ),
+    [copy],
   );
 
   const stepHandlers = useMemo(
@@ -1083,31 +1514,97 @@ export function useStrategyCreatorController({
       wizardState.multiSplit?.totalSplitCount,
       STRATEGY_DEFAULTS.TOTAL_SPLIT_COUNT,
     ),
+    multiSplitBaseLocRatio: safeNumber(
+      wizardState.multiSplit?.baseLocRatio,
+      DEFAULT_MULTI_SPLIT_BASE_LOC_RATIO,
+    ),
+    multiSplitMainTakeProfitRatioPct: safeNumber(
+      wizardState.multiSplit?.mainTakeProfitRatioPct,
+      DEFAULT_MULTI_SPLIT_MAIN_TAKE_PROFIT_RATIO_PCT,
+    ),
+    multiSplitIntermediateTakeProfitRatioPct:
+      100 -
+      safeNumber(
+        wizardState.multiSplit?.mainTakeProfitRatioPct,
+        DEFAULT_MULTI_SPLIT_MAIN_TAKE_PROFIT_RATIO_PCT,
+      ),
+    multiSplitRiskCutRatioPct: safeNumber(
+      wizardState.multiSplit?.riskCutRatioPct,
+      DEFAULT_MULTI_SPLIT_RISK_CUT_RATIO_PCT,
+    ),
+    multiSplitBudgetOptions,
+    multiSplitRsiCriterionOptions,
+    multiSplitAlignmentCriterionOptions,
+    isMultiSplitRsiConditionEnabled:
+      wizardState.multiSplit?.rsiCondition?.isEnabled === true,
+    selectedMultiSplitRsiCriterionPreset:
+      wizardState.multiSplit?.rsiCondition?.criterionPreset ??
+      DEFAULT_MULTI_SPLIT_RSI_PRESET,
+    selectedMultiSplitRsiBudgetPreset:
+      wizardState.multiSplit?.rsiCondition?.budgetPreset ??
+      DEFAULT_MULTI_SPLIT_BUDGET_PRESET,
+    isMultiSplitAlignmentConditionEnabled:
+      wizardState.multiSplit?.alignmentCondition?.isEnabled === true,
+    selectedMultiSplitAlignmentCriterionPreset:
+      wizardState.multiSplit?.alignmentCondition?.criterionPreset ??
+      DEFAULT_MULTI_SPLIT_ALIGNMENT_PRESET,
+    selectedMultiSplitAlignmentBudgetPreset:
+      wizardState.multiSplit?.alignmentCondition?.budgetPreset ??
+      DEFAULT_MULTI_SPLIT_BUDGET_PRESET,
     handleMultiSplitTargetStockChange,
     handleTargetReturnRateChange,
     handleMultiSplitTotalCountChange,
+    handleMultiSplitBaseLocRatioChange,
+    handleMultiSplitMainTakeProfitRatioPctChange,
+    handleMultiSplitRiskCutRatioPctChange,
+    handleMultiSplitRsiConditionEnabledChange,
+    handleMultiSplitRsiCriterionPresetChange,
+    handleMultiSplitRsiBudgetPresetChange,
+    handleMultiSplitAlignmentConditionEnabledChange,
+    handleMultiSplitAlignmentCriterionPresetChange,
+    handleMultiSplitAlignmentBudgetPresetChange,
     noStopTargetStock: safeTrim(wizardState.noStopMultiSplit?.targetStock),
-    noStopLowLocBudgetRatio: safeNumber(
-      wizardState.noStopMultiSplit?.lowLocBudgetRatio,
-      50,
-    ),
-    noStopHighLocPremiumPct: safeNumber(
-      wizardState.noStopMultiSplit?.highLocPremiumPct,
-      15,
+    noStopBaseLocRatio: safeNumber(
+      wizardState.noStopMultiSplit?.baseLocRatio,
+      DEFAULT_NO_STOP_BASE_LOC_RATIO,
     ),
     noStopTakeProfitPct: safeNumber(
       wizardState.noStopMultiSplit?.takeProfitPct,
-      10,
+      DEFAULT_NO_STOP_TAKE_PROFIT_PCT,
     ),
     noStopTotalSplitCount: safeNumber(
       wizardState.noStopMultiSplit?.totalSplitCount,
       STRATEGY_DEFAULTS.TOTAL_SPLIT_COUNT,
     ),
+    noStopBudgetOptions,
+    noStopRsiCriterionOptions,
+    noStopAlignmentCriterionOptions,
+    isNoStopRsiConditionEnabled:
+      wizardState.noStopMultiSplit?.rsiCondition?.isEnabled === true,
+    selectedNoStopRsiCriterionPreset:
+      wizardState.noStopMultiSplit?.rsiCondition?.criterionPreset ??
+      DEFAULT_NO_STOP_RSI_PRESET,
+    selectedNoStopRsiBudgetPreset:
+      wizardState.noStopMultiSplit?.rsiCondition?.budgetPreset ??
+      DEFAULT_NO_STOP_BUDGET_PRESET,
+    isNoStopAlignmentConditionEnabled:
+      wizardState.noStopMultiSplit?.alignmentCondition?.isEnabled === true,
+    selectedNoStopAlignmentCriterionPreset:
+      wizardState.noStopMultiSplit?.alignmentCondition?.criterionPreset ??
+      DEFAULT_NO_STOP_ALIGNMENT_PRESET,
+    selectedNoStopAlignmentBudgetPreset:
+      wizardState.noStopMultiSplit?.alignmentCondition?.budgetPreset ??
+      DEFAULT_NO_STOP_BUDGET_PRESET,
     handleNoStopTargetStockChange,
-    handleNoStopLowLocBudgetRatioChange,
-    handleNoStopHighLocPremiumPctChange,
+    handleNoStopBaseLocRatioChange,
     handleNoStopTakeProfitPctChange,
     handleNoStopTotalSplitCountChange,
+    handleNoStopRsiConditionEnabledChange,
+    handleNoStopRsiCriterionPresetChange,
+    handleNoStopRsiBudgetPresetChange,
+    handleNoStopAlignmentConditionEnabledChange,
+    handleNoStopAlignmentCriterionPresetChange,
+    handleNoStopAlignmentBudgetPresetChange,
     vrShowErrors: isVrShowErrors,
     vrMode: wizardState.vrBand?.vrMode ?? 'lump_sum',
     vrInitialCapital: safeNumber(

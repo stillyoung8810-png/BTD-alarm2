@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { VR_BAND_WIDTH_PCT } from '@/constants/vrConstants';
 import { buildPortfolioDraftFromWizardState } from './utils';
+import { sanitizeVrBandWidthPercent } from './utils';
 
 describe('StrategyCreator VR draft building', () => {
   it('VR 포트폴리오 초안은 루트 feeRate는 퍼센트로, vrBand.feeRate는 소수로 유지한다', () => {
@@ -91,9 +93,6 @@ describe('StrategyCreator VR draft building', () => {
     expect(withdrawResult.portfolio.strategy.vrBand?.deltaCash).toBe(50);
   });
 });
-import { describe, expect, it } from 'vitest';
-import { VR_BAND_WIDTH_PCT } from '@/constants/vrConstants';
-import { sanitizeVrBandWidthPercent } from './utils';
 
 describe('sanitizeVrBandWidthPercent', () => {
   it('빈 값은 기본값으로 되돌린다', () => {

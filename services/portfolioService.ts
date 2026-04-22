@@ -13,7 +13,7 @@ const PORTFOLIOS_CACHE_KEY = 'my_portfolios';
 export const PORTFOLIO_FETCH_TIMEOUT_MS = 10_000;
 const EMPTY_PORTFOLIOS: Portfolio[] = [];
 const PORTFOLIO_SELECT_FIELDS =
-  'id, created_at, name, daily_buy_amount, start_date, fee_rate, is_closed, closed_at, final_sell_amount, trades, strategy, alarm_config, is_quarter_mode, user_id, vr_snapshot';
+  'id, created_at, name, daily_buy_amount, start_date, fee_rate, is_closed, closed_at, final_sell_amount, trades, strategy, alarm_config, user_id, vr_snapshot';
 
 function buildPortfolioCacheKey(userId: string): string {
   return `${PORTFOLIOS_CACHE_KEY}_${userId}`;

@@ -7,6 +7,7 @@ export type MultiSplitExecutionMessageId =
   | 'multiSplit.cashUsage'
   | 'multiSplit.locBuy'
   | 'multiSplit.mocBuy'
+  | 'multiSplit.noHoldings'
   | 'multiSplit.mainTakeProfit'
   | 'multiSplit.intermediateTakeProfit'
   | 'multiSplit.riskCut'
@@ -19,6 +20,7 @@ export const MULTI_SPLIT_EXECUTION_MESSAGE_IDS = {
   cashUsage: 'multiSplit.cashUsage',
   locBuy: 'multiSplit.locBuy',
   mocBuy: 'multiSplit.mocBuy',
+  noHoldings: 'multiSplit.noHoldings',
   mainTakeProfit: 'multiSplit.mainTakeProfit',
   intermediateTakeProfit: 'multiSplit.intermediateTakeProfit',
   riskCut: 'multiSplit.riskCut',
@@ -44,6 +46,7 @@ const MULTI_SPLIT_EXECUTION_MESSAGES: Record<
     'multiSplit.cashUsage': '현금 사용률',
     'multiSplit.locBuy': '평단가 매수 (LOC)',
     'multiSplit.mocBuy': '분할 매수 (MOC)',
+    'multiSplit.noHoldings': '보유 수량이 없습니다.',
     'multiSplit.mainTakeProfit': '메인 익절',
     'multiSplit.intermediateTakeProfit': '중간 익절',
     'multiSplit.riskCut': '리스크 컷',
@@ -56,6 +59,7 @@ const MULTI_SPLIT_EXECUTION_MESSAGES: Record<
     'multiSplit.cashUsage': 'Cash Usage',
     'multiSplit.locBuy': 'Average-price buy (LOC)',
     'multiSplit.mocBuy': 'Split buy (MOC)',
+    'multiSplit.noHoldings': 'There is no holding quantity.',
     'multiSplit.mainTakeProfit': 'Main take profit',
     'multiSplit.intermediateTakeProfit': 'Intermediate take profit',
     'multiSplit.riskCut': 'Risk cut',
@@ -68,7 +72,7 @@ const MULTI_SPLIT_EXECUTION_MESSAGES: Record<
 
 export type MultiSplitExecutionSummaryData = Pick<
   MultiSplitGuideState,
-  'cashUsagePct' | 'displayLocBuy' | 'displayMocBuy' | 'sellGuide'
+  'cashUsagePct' | 'currentQuantity' | 'displayLocBuy' | 'displayMocBuy' | 'sellGuide'
 >;
 
 export interface MultiSplitProgressVm {
@@ -187,10 +191,14 @@ export function buildMultiSplitExecutionSummaryLines(args: {
   });
   const lines = [progressVm.labelText];
 
-  if (
-    args.execution.displayLocBuy != null &&
-    args.execution.displayLocBuy.quantity > 0
-  ) {
+  if (args.execution.currentQuantity <= 0) {
+    lines.push(
+      messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.noHoldings],
+    );
+    return lines;
+  }
+
+  if (args.execution.displayLocBuy != null) {
     lines.push(
       formatPriceQuantityLine({
         template: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.priceQuantity],
@@ -202,10 +210,7 @@ export function buildMultiSplitExecutionSummaryLines(args: {
     );
   }
 
-  if (
-    args.execution.displayMocBuy != null &&
-    args.execution.displayMocBuy.quantity > 0
-  ) {
+  if (args.execution.displayMocBuy != null) {
     lines.push(
       formatQuantityLine({
         template: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.quantityOnly],
@@ -216,41 +221,41 @@ export function buildMultiSplitExecutionSummaryLines(args: {
     );
   }
 
-  if (args.execution.sellGuide.mainTakeProfitQty > 0) {
+  if (args.execution.sellGuide.displayMainTakeProfit != null) {
     lines.push(
-      formatQuantityLine({
-        template: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.quantityOnly],
+      formatPriceQuantityLine({
+        template: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.priceQuantity],
         label: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.mainTakeProfit],
-        quantity: args.execution.sellGuide.mainTakeProfitQty,
+        price: args.execution.sellGuide.displayMainTakeProfit.price,
+        quantity: args.execution.sellGuide.displayMainTakeProfit.quantity,
         sharesUnit,
       }),
     );
   }
 
-  if (args.execution.sellGuide.intermediateTakeProfitQty > 0) {
+  if (args.execution.sellGuide.displayIntermediateTakeProfit != null) {
     lines.push(
-      formatQuantityLine({
-        template: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.quantityOnly],
+      formatPriceQuantityLine({
+        template: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.priceQuantity],
         label:
           messages[
             MULTI_SPLIT_EXECUTION_MESSAGE_IDS.intermediateTakeProfit
           ],
-        quantity: args.execution.sellGuide.intermediateTakeProfitQty,
+        price: args.execution.sellGuide.displayIntermediateTakeProfit.price,
+        quantity: args.execution.sellGuide.displayIntermediateTakeProfit.quantity,
         sharesUnit,
       }),
     );
   }
 
-  if (args.execution.sellGuide.riskCutQty > 0) {
-    lines.push(
-      formatQuantityLine({
-        template: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.quantityOnly],
-        label: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.riskCut],
-        quantity: args.execution.sellGuide.riskCutQty,
-        sharesUnit,
-      }),
-    );
-  }
+  lines.push(
+    formatQuantityLine({
+      template: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.quantityOnly],
+      label: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.riskCut],
+      quantity: args.execution.sellGuide.riskCutQty,
+      sharesUnit,
+    }),
+  );
 
   return lines;
 }

@@ -42,9 +42,6 @@ interface SupabaseStockRow {
 
 // 주가/지표 관련 디버그 로그 토글 (필요할 때만 true로 변경)
 const DEBUG_STOCK_LOG = false;
-const NO_STOP_SERVICE_DEBUG_PREFIX = '[NoStopDebug:Service]';
-const IS_NO_STOP_SERVICE_DEBUG_ENABLED =
-  import.meta.env.DEV && import.meta.env.MODE !== 'test';
 const DEFAULT_RSI = 50;
 const DEFAULT_MA = 0;
 const STOCK_SNAPSHOT_FETCH_LIMIT = 2;
@@ -61,24 +58,6 @@ const STOCK_DATA_INDICATOR_REQUIREMENTS: IndicatorRequirements = {
 };
 interface StockQueryOptions {
   signal?: AbortSignal;
-}
-
-function logNoStopServiceDebug(
-  level: 'info' | 'warn',
-  event: string,
-  payload: Record<string, unknown>,
-): void {
-  if (!IS_NO_STOP_SERVICE_DEBUG_ENABLED) {
-    return;
-  }
-
-  const message = `${NO_STOP_SERVICE_DEBUG_PREFIX} ${event}`;
-  if (level === 'warn') {
-    console.warn(message, payload);
-    return;
-  }
-
-  console.info(message, payload);
 }
 
 /** 글로벌 기준 거래일을 결정하는 대표 종목 */
@@ -692,24 +671,11 @@ async function getOrFetchPriceHistoryForRequirements(
     ? await getStockPrices(symbol, requiredHistoryCount)
     : [];
   const latestLocalTradeDate = localRecords[localRecords.length - 1]?.date ?? "";
-  logNoStopServiceDebug('info', 'history-local-check', {
-    symbol,
-    requiredHistoryCount,
-    localRecordCount: localRecords.length,
-    latestLocalTradeDate,
-    isDatabaseReady,
-  });
 
   if (
     localRecords.length >= requiredHistoryCount &&
     latestLocalTradeDate.length > 0
   ) {
-    logNoStopServiceDebug('info', 'history-local-hit', {
-      symbol,
-      requiredHistoryCount,
-      localRecordCount: localRecords.length,
-      latestLocalTradeDate,
-    });
     return {
       records: localRecords,
       latestTradeDate: latestLocalTradeDate,
@@ -717,11 +683,6 @@ async function getOrFetchPriceHistoryForRequirements(
     };
   }
 
-  logNoStopServiceDebug('info', 'history-supabase-start', {
-    symbol,
-    requiredHistoryCount,
-    limit: Math.max(requiredHistoryCount, STOCK_SNAPSHOT_FETCH_LIMIT),
-  });
   const fetchedRecords = await fetchPriceHistoryFromSupabase({
     symbol,
     limit: Math.max(requiredHistoryCount, STOCK_SNAPSHOT_FETCH_LIMIT),
@@ -738,11 +699,6 @@ async function getOrFetchPriceHistoryForRequirements(
     throw new Error(EMPTY_PRICE_HISTORY_ERROR);
   }
 
-  logNoStopServiceDebug('info', 'history-supabase-success', {
-    symbol,
-    recordCount: fetchedRecords.length,
-    latestTradeDate,
-  });
   await persistFetchedPriceHistory({
     isDatabaseReady,
     symbol,
@@ -974,29 +930,13 @@ export async function fetchIndicatorAwareSnapshot(
     symbol: trimmedSymbol,
     requirements: normalizedRequirements,
   });
-  logNoStopServiceDebug('info', 'snapshot-enter', {
-    symbol: trimmedSymbol,
-    cacheKey,
-    requirements: normalizedRequirements,
-  });
 
   try {
     const isDatabaseReady = await isIndicatorSnapshotDatabaseReady();
-    logNoStopServiceDebug('info', 'snapshot-db-ready', {
-      symbol: trimmedSymbol,
-      cacheKey,
-      isDatabaseReady,
-    });
     const metadata = isDatabaseReady
       ? await getStockMetadata(trimmedSymbol)
       : null;
     const sourceLastUpdated = metadata?.lastUpdated ?? "";
-    logNoStopServiceDebug('info', 'snapshot-metadata', {
-      symbol: trimmedSymbol,
-      cacheKey,
-      sourceLastUpdated,
-      dataCount: metadata?.dataCount ?? 0,
-    });
 
     if (sourceLastUpdated.length > 0) {
       const memorySnapshot = readIndicatorSnapshotFromMemoryCache(
@@ -1004,11 +944,6 @@ export async function fetchIndicatorAwareSnapshot(
         sourceLastUpdated,
       );
       if (memorySnapshot != null) {
-        logNoStopServiceDebug('info', 'snapshot-memory-hit', {
-          symbol: trimmedSymbol,
-          cacheKey,
-          currentPrice: memorySnapshot.currentPrice,
-        });
         return okResult(memorySnapshot, {
           symbol: trimmedSymbol,
           cacheKey,
@@ -1034,11 +969,6 @@ export async function fetchIndicatorAwareSnapshot(
           snapshot,
           sourceLastUpdated,
         });
-        logNoStopServiceDebug('info', 'snapshot-indexeddb-hit', {
-          symbol: trimmedSymbol,
-          cacheKey,
-          currentPrice: snapshot.currentPrice,
-        });
 
         return okResult(snapshot, {
           symbol: trimmedSymbol,
@@ -1055,13 +985,6 @@ export async function fetchIndicatorAwareSnapshot(
         options,
         isDatabaseReady,
       );
-    logNoStopServiceDebug('info', 'snapshot-history-ready', {
-      symbol: trimmedSymbol,
-      cacheKey,
-      source,
-      recordCount: records.length,
-      latestTradeDate,
-    });
     const currentPrice = readCurrentPriceFromRecords(records);
     const technicalIndicators =
       (await calculateTechnicalIndicators(
@@ -1070,13 +993,6 @@ export async function fetchIndicatorAwareSnapshot(
         options,
         records,
       )) ?? {};
-    logNoStopServiceDebug('info', 'snapshot-indicators-ready', {
-      symbol: trimmedSymbol,
-      cacheKey,
-      currentPrice,
-      hasRsi: technicalIndicators.rsi !== undefined,
-      maPeriods: Object.keys(technicalIndicators.maByPeriod ?? {}),
-    });
 
     const snapshot = cloneIndicatorSnapshot({
       currentPrice,
@@ -1102,12 +1018,6 @@ export async function fetchIndicatorAwareSnapshot(
       sourceLastUpdated: latestTradeDate,
     });
 
-    logNoStopServiceDebug('info', 'snapshot-success', {
-      symbol: trimmedSymbol,
-      cacheKey,
-      source,
-      currentPrice: snapshot.currentPrice,
-    });
     return okResult(snapshot, {
       symbol: trimmedSymbol,
       cacheKey,
@@ -1118,19 +1028,6 @@ export async function fetchIndicatorAwareSnapshot(
       error instanceof Error &&
       error.message === EMPTY_PRICE_HISTORY_ERROR;
     const isAbortError = isAbortLikeError(error);
-    logNoStopServiceDebug('warn', 'snapshot-failure', {
-      symbol: trimmedSymbol,
-      cacheKey,
-      isEmptyHistoryError,
-      isAbortError,
-      error:
-        error instanceof Error
-          ? {
-              name: error.name,
-              message: error.message,
-            }
-          : String(error),
-    });
 
     return failResult(
       null,

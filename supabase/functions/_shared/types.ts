@@ -86,6 +86,7 @@ export interface MultiSplitAlignmentRule {
 export interface MultiSplitStrategy {
   targetStock: string;
   targetReturnRate: number;
+  intermediateReturnRate: number;
   totalSplitCount: number;
   baseLocRatio: number;
   mainTakeProfitRatioPct: number;

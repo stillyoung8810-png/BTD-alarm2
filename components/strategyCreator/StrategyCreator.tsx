@@ -159,6 +159,9 @@ export default function StrategyCreator({
             }}
             targetStockLabel={controller.copy.multiSplit.targetStock}
             targetReturnRateLabel={controller.copy.multiSplit.targetReturnRate}
+            intermediateReturnRateLabel={
+              controller.copy.multiSplit.intermediateReturnRate
+            }
             totalSplitCountLabel={controller.copy.multiSplit.totalSplitCount}
             baseLocRatioLabel={controller.copy.multiSplit.baseLocRatio}
             mainTakeProfitRatioPctLabel={
@@ -168,6 +171,9 @@ export default function StrategyCreator({
               controller.copy.multiSplit.intermediateTakeProfitRatioPct
             }
             riskCutRatioPctLabel={controller.copy.multiSplit.riskCutRatioPct}
+            riskCutRatioPctHelper={
+              controller.copy.multiSplit.riskCutRatioPctHelper
+            }
             rsiConditionLabel={controller.copy.multiSplit.rsiConditionLabel}
             rsiConditionHelper={controller.copy.multiSplit.rsiConditionHelper}
             alignmentConditionLabel={
@@ -187,6 +193,9 @@ export default function StrategyCreator({
             stockOptions={controller.stockOptions}
             targetStock={controller.multiSplitTargetStock}
             targetReturnRate={controller.multiSplitTargetReturnRate}
+            intermediateReturnRate={
+              controller.multiSplitIntermediateReturnRate
+            }
             totalSplitCount={controller.multiSplitTotalSplitCount}
             baseLocRatio={controller.multiSplitBaseLocRatio}
             mainTakeProfitRatioPct={controller.multiSplitMainTakeProfitRatioPct}
@@ -210,6 +219,9 @@ export default function StrategyCreator({
             }
             onTargetStockChange={controller.handleMultiSplitTargetStockChange}
             onTargetReturnRateChange={controller.handleTargetReturnRateChange}
+            onIntermediateReturnRateChange={
+              controller.handleMultiSplitIntermediateReturnRateChange
+            }
             onTotalSplitCountChange={controller.handleMultiSplitTotalCountChange}
             onBaseLocRatioChange={controller.handleMultiSplitBaseLocRatioChange}
             onMainTakeProfitRatioPctChange={

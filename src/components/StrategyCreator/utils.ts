@@ -18,6 +18,10 @@ import {
   createInitialVrSnapshot,
   sanitizeVrCycleWeeks,
 } from '@/utils/vrBandStrategy';
+import {
+  DEFAULT_MULTI_SPLIT_INTERMEDIATE_RETURN_RATE_PCT,
+  normalizeMultiSplitReturnRates,
+} from '@/utils/multiSplitCalc';
 
 const PERCENT_DENOMINATOR = 100;
 const SECTION_TWO_SPLIT_COUNT = 1;
@@ -111,6 +115,7 @@ export interface MaIntervalWizardDraftInput {
 export interface MultiSplitWizardDraftInput {
   targetStock?: string;
   targetReturnRate?: number;
+  intermediateReturnRate?: number;
   totalSplitCount?: number;
   baseLocRatio?: number;
   mainTakeProfitRatioPct?: number;
@@ -389,9 +394,20 @@ function buildMultiSplitStrategy(
 ): StrategyBuildResult {
   const draft = wizardState.multiSplit;
   const targetStock = safeTrim(draft?.targetStock);
+  const normalizedReturnRates = normalizeMultiSplitReturnRates({
+    targetReturnRate: safeNumber(
+      draft?.targetReturnRate,
+      STRATEGY_DEFAULTS.TARGET_RETURN_PERCENT,
+    ),
+    intermediateReturnRate: safeNumber(
+      draft?.intermediateReturnRate,
+      DEFAULT_MULTI_SPLIT_INTERMEDIATE_RETURN_RATE_PCT,
+    ),
+  });
   const runtimeMultiSplitStrategy: MultiSplitStrategy = {
     targetStock,
-    targetReturnRate: safeNumber(draft?.targetReturnRate),
+    targetReturnRate: normalizedReturnRates.targetReturnRate,
+    intermediateReturnRate: normalizedReturnRates.intermediateReturnRate,
     totalSplitCount: safeNumber(draft?.totalSplitCount),
     baseLocRatio: safeNumber(
       draft?.baseLocRatio,

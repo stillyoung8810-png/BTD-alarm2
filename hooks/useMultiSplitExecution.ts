@@ -28,6 +28,8 @@ import { areStrictPositiveFiniteScalars } from '../utils/financialScalarGuards';
 import {
   calculateMultiSplitGuideState,
   collectIndicatorRequirements,
+  DEFAULT_MULTI_SPLIT_INTERMEDIATE_RETURN_RATE_PCT,
+  normalizeMultiSplitReturnRates,
   type MultiSplitGuideState,
 } from '../utils/multiSplitCalc';
 import {
@@ -175,6 +177,9 @@ function buildMultiSplitRuntimeStrategy(
 
   const targetStock = readTrimmedString(strategy, 'targetStock');
   const targetReturnRate = readFiniteNumber(strategy, 'targetReturnRate');
+  const intermediateReturnRate =
+    readFiniteNumber(strategy, 'intermediateReturnRate') ??
+    DEFAULT_MULTI_SPLIT_INTERMEDIATE_RETURN_RATE_PCT;
   const totalSplitCount = readFiniteNumber(strategy, 'totalSplitCount');
   const baseLocRatio = readFiniteNumber(strategy, 'baseLocRatio');
   const mainTakeProfitRatioPct = readFiniteNumber(
@@ -197,10 +202,15 @@ function buildMultiSplitRuntimeStrategy(
 
   const rsiRule = readRsiRule(strategy);
   const alignmentRule = readAlignmentRule(strategy);
+  const normalizedReturnRates = normalizeMultiSplitReturnRates({
+    targetReturnRate,
+    intermediateReturnRate,
+  });
 
   return {
     targetStock,
-    targetReturnRate,
+    targetReturnRate: normalizedReturnRates.targetReturnRate,
+    intermediateReturnRate: normalizedReturnRates.intermediateReturnRate,
     totalSplitCount,
     baseLocRatio,
     mainTakeProfitRatioPct,

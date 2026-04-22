@@ -111,3 +111,41 @@ describe('sanitizeVrBandWidthPercent', () => {
     expect(sanitizeVrBandWidthPercent(25)).toBe(25);
   });
 });
+
+describe('StrategyCreator smart split draft building', () => {
+  it('Smart Split 수익률 A/B는 저장 직전에 허용 범위로 클램프한다', () => {
+    const result = buildPortfolioDraftFromWizardState({
+      selectedStrategy: 'multi_split',
+      wizardState: {
+        meta: {
+          name: 'smart split portfolio',
+          startDate: '2026-04-13',
+          dailyBuyAmount: 100,
+          feeRatePercent: 0.25,
+        },
+        multiSplit: {
+          targetStock: 'TQQQ',
+          targetReturnRate: 300,
+          intermediateReturnRate: -2,
+          totalSplitCount: 40,
+          baseLocRatio: 50,
+          mainTakeProfitRatioPct: 65,
+          riskCutRatioPct: 20,
+          rsiCondition: {
+            isEnabled: false,
+            criterionPreset: 'rsi40',
+            budgetPreset: 'balanced',
+          },
+          alignmentCondition: {
+            isEnabled: false,
+            criterionPreset: 'ma20_60',
+            budgetPreset: 'balanced',
+          },
+        },
+      },
+    });
+
+    expect(result.portfolio.strategy.multiSplit?.targetReturnRate).toBe(100);
+    expect(result.portfolio.strategy.multiSplit?.intermediateReturnRate).toBe(1);
+  });
+});

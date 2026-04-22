@@ -59,6 +59,7 @@ function createMultiSplitStrategy(
   return {
     targetStock: overrides.targetStock ?? 'AAPL',
     targetReturnRate: overrides.targetReturnRate ?? 10,
+    intermediateReturnRate: overrides.intermediateReturnRate ?? 5,
     totalSplitCount: overrides.totalSplitCount ?? 10,
     baseLocRatio: overrides.baseLocRatio ?? 50,
     mainTakeProfitRatioPct: overrides.mainTakeProfitRatioPct ?? 60,
@@ -192,12 +193,14 @@ describe('multi-split cross validation', () => {
       isFirstBuy: false,
       isSeedExhausted: false,
       appliedLocRatioPct: 70,
-      displayLocBuy: { price: 100, quantity: 7 },
-      displayMocBuy: { quantity: 2 },
+      displayLocBuy: { price: 100, quantity: 1 },
+      displayMocBuy: { quantity: 0 },
       sellGuide: {
         mainTakeProfitQty: 6,
         intermediateTakeProfitQty: 4,
         riskCutQty: 2,
+        displayMainTakeProfit: { price: 110, quantity: 6 },
+        displayIntermediateTakeProfit: { price: 105, quantity: 4 },
       },
     };
     const portfolio = createPortfolio();
@@ -215,19 +218,48 @@ describe('multi-split cross validation', () => {
 
     expect(summaryLines).toEqual([
       '현금 사용률: 50%',
-      '평단가 매수 (LOC): $100.00 / 7주',
-      '분할 매수 (MOC): 2주',
-      '메인 익절: 6주',
-      '중간 익절: 4주',
+      '평단가 매수 (LOC): $100.00 / 1주',
+      '분할 매수 (MOC): 0주',
+      '메인 익절: $110.00 / 6주',
+      '중간 익절: $105.00 / 4주',
       '리스크 컷: 2주',
     ]);
     expect(clientBlock).toBe(serverBlock);
     expect(clientBlock).toContain('- 스마트 스플릿');
     expect(clientBlock).toContain('- 현금 사용률: 50%');
-    expect(clientBlock).toContain('- 평단가 매수 (LOC): $100.00 / 7주');
-    expect(clientBlock).toContain('- 분할 매수 (MOC): 2주');
-    expect(clientBlock).toContain('- 메인 익절: 6주');
-    expect(clientBlock).toContain('- 중간 익절: 4주');
+    expect(clientBlock).toContain('- 평단가 매수 (LOC): $100.00 / 1주');
+    expect(clientBlock).toContain('- 분할 매수 (MOC): 0주');
+    expect(clientBlock).toContain('- 메인 익절: $110.00 / 6주');
+    expect(clientBlock).toContain('- 중간 익절: $105.00 / 4주');
     expect(clientBlock).toContain('- 리스크 컷: 2주');
+  });
+
+  it('보유 수량이 없으면 익절 라인 대신 무보유 안내 한 줄만 출력한다', () => {
+    const executionData: MultiSplitGuideState = {
+      cashUsagePct: 0,
+      totalInvested: 0,
+      totalSeed: 2000,
+      remainingBudget: 2000,
+      currentQuantity: 0,
+      avgPrice: 0,
+      isFirstBuy: true,
+      isSeedExhausted: false,
+      appliedLocRatioPct: 50,
+      sellGuide: {
+        mainTakeProfitQty: 0,
+        intermediateTakeProfitQty: 0,
+        riskCutQty: 0,
+      },
+    };
+
+    expect(
+      buildMultiSplitExecutionSummaryLines({
+        lang: 'ko',
+        execution: executionData,
+      }),
+    ).toEqual([
+      '현금 사용률: 0%',
+      '보유 수량이 없습니다.',
+    ]);
   });
 });

@@ -128,6 +128,11 @@ export const MIN_RISK_CUT_RATIO_PCT = 0;
 export const MAX_RISK_CUT_RATIO_PCT = 100;
 export const MIN_LOC_RATIO_PCT = 0;
 export const MAX_LOC_RATIO_PCT = 100;
+export const DEFAULT_MULTI_SPLIT_INTERMEDIATE_RETURN_RATE_PCT = 5;
+export const MIN_MAIN_RETURN_RATE_PCT = 10;
+export const MAX_MAIN_RETURN_RATE_PCT = 100;
+export const MIN_INTERMEDIATE_RETURN_RATE_PCT = 1;
+export const MAX_INTERMEDIATE_RETURN_RATE_PCT = 10;
 const MIN_VALID_UNIT_COST = Number.EPSILON;
 
 export interface MultiSplitRsiConditionPresetDraft<TCriterion extends string> {
@@ -145,6 +150,12 @@ export interface MultiSplitDisplayQuantityOnlyOrder {
   quantity: number;
 }
 
+export interface NormalizedMultiSplitReturnRates {
+  targetReturnRate: number;
+  intermediateReturnRate: number;
+  didClamp: boolean;
+}
+
 export interface MultiSplitBuyGuide {
   appliedLocRatioPct: number;
   displayLocBuy?: MultiSplitDisplayOrder;
@@ -155,6 +166,8 @@ export interface MultiSplitSellGuide {
   mainTakeProfitQty: number;
   intermediateTakeProfitQty: number;
   riskCutQty: number;
+  displayMainTakeProfit?: MultiSplitDisplayOrder;
+  displayIntermediateTakeProfit?: MultiSplitDisplayOrder;
 }
 
 export interface MultiSplitGuideState {
@@ -192,6 +205,90 @@ export function validatePercentRange(args: {
       `${args.context}.${args.name} must be <= ${args.max}. Received: ${args.value}`,
     );
   }
+}
+
+export function validateMultiSplitReturnRates(args: {
+  targetReturnRate: number;
+  intermediateReturnRate: number;
+  context: string;
+}): void {
+  validatePercentRange({
+    name: 'targetReturnRate',
+    value: args.targetReturnRate,
+    min: MIN_MAIN_RETURN_RATE_PCT,
+    max: MAX_MAIN_RETURN_RATE_PCT,
+    context: args.context,
+  });
+  validatePercentRange({
+    name: 'intermediateReturnRate',
+    value: args.intermediateReturnRate,
+    min: MIN_INTERMEDIATE_RETURN_RATE_PCT,
+    max: MAX_INTERMEDIATE_RETURN_RATE_PCT,
+    context: args.context,
+  });
+}
+
+function clampFiniteNumberToRange(args: {
+  value: number;
+  min: number;
+  max: number;
+  context: string;
+}): { value: number; didClamp: boolean } {
+  validateFinancialArgs(
+    {
+      min: args.min,
+      max: args.max,
+    },
+    {
+      min: { min: 0 },
+      max: { strictPositive: true },
+    },
+    args.context,
+  );
+
+  if (!Number.isFinite(args.value)) {
+    throw new Error(
+      `${args.context}.value must be a finite number. Received: ${args.value}`,
+    );
+  }
+
+  if (args.min > args.max) {
+    throw new Error(
+      `${args.context}.min must be <= max. Received: ${args.min} > ${args.max}`,
+    );
+  }
+
+  const clampedValue = Math.min(args.max, Math.max(args.min, args.value));
+  return {
+    value: clampedValue,
+    didClamp: clampedValue !== args.value,
+  };
+}
+
+export function normalizeMultiSplitReturnRates(args: {
+  targetReturnRate: number;
+  intermediateReturnRate: number;
+}): NormalizedMultiSplitReturnRates {
+  const normalizedTargetReturnRate = clampFiniteNumberToRange({
+    value: args.targetReturnRate,
+    min: MIN_MAIN_RETURN_RATE_PCT,
+    max: MAX_MAIN_RETURN_RATE_PCT,
+    context: 'normalizeMultiSplitReturnRates.targetReturnRate',
+  });
+  const normalizedIntermediateReturnRate = clampFiniteNumberToRange({
+    value: args.intermediateReturnRate,
+    min: MIN_INTERMEDIATE_RETURN_RATE_PCT,
+    max: MAX_INTERMEDIATE_RETURN_RATE_PCT,
+    context: 'normalizeMultiSplitReturnRates.intermediateReturnRate',
+  });
+
+  return {
+    targetReturnRate: normalizedTargetReturnRate.value,
+    intermediateReturnRate: normalizedIntermediateReturnRate.value,
+    didClamp:
+      normalizedTargetReturnRate.didClamp ||
+      normalizedIntermediateReturnRate.didClamp,
+  };
 }
 
 export function floorSafeQuantity(value: number): number {
@@ -377,10 +474,6 @@ export function buildDisplayOrder(
   }
 
   const safeQuantity = Math.max(0, floorSafeQuantity(quantity));
-  if (safeQuantity <= 0) {
-    return undefined;
-  }
-
   return {
     price: roundMoney(price),
     quantity: safeQuantity,
@@ -389,19 +482,57 @@ export function buildDisplayOrder(
 
 export function buildDisplayQuantityOnlyOrder(
   quantity: number,
-): MultiSplitDisplayQuantityOnlyOrder | undefined {
+): MultiSplitDisplayQuantityOnlyOrder {
   const safeQuantity = Math.max(0, floorSafeQuantity(quantity));
-  if (safeQuantity <= 0) {
-    return undefined;
-  }
 
   return {
     quantity: safeQuantity,
   };
 }
 
+function buildTakeProfitPrice(args: {
+  avgPrice: number;
+  returnRate: number;
+  context: string;
+}): number {
+  validateFinancialArgs(
+    {
+      avgPrice: args.avgPrice,
+      returnRate: args.returnRate,
+    },
+    {
+      avgPrice: { strictPositive: true },
+      returnRate: { min: 0 },
+    },
+    args.context,
+  );
+
+  return roundMoney(
+    args.avgPrice * (1 + args.returnRate / PERCENT_DENOMINATOR),
+  );
+}
+
+function buildTakeProfitDisplayOrder(args: {
+  avgPrice: number;
+  returnRate: number;
+  quantity: number;
+  context: string;
+}): MultiSplitDisplayOrder | undefined {
+  if (args.avgPrice <= MIN_VALID_UNIT_COST) {
+    return undefined;
+  }
+
+  const takeProfitPrice = buildTakeProfitPrice({
+    avgPrice: args.avgPrice,
+    returnRate: args.returnRate,
+    context: args.context,
+  });
+
+  return buildDisplayOrder(takeProfitPrice, args.quantity);
+}
+
 export function calculateMultiSplitBuyGuide(args: {
-  remainingBudget: number;
+  buyTrancheBudget: number;
   feeRate: number;
   avgPrice: number;
   snapshot: MultiSplitIndicatorSnapshot;
@@ -409,13 +540,13 @@ export function calculateMultiSplitBuyGuide(args: {
 }): MultiSplitBuyGuide {
   validateFinancialArgs(
     {
-      remainingBudget: args.remainingBudget,
+      buyTrancheBudget: args.buyTrancheBudget,
       feeRate: args.feeRate,
       avgPrice: args.avgPrice,
       currentPrice: args.snapshot.currentPrice,
     },
     {
-      remainingBudget: { min: 0 },
+      buyTrancheBudget: { min: 0 },
       feeRate: { min: 0 },
       avgPrice: { strictPositive: true },
       currentPrice: { strictPositive: true },
@@ -441,13 +572,13 @@ export function calculateMultiSplitBuyGuide(args: {
     };
   }
   const baseLocBudget =
-    args.remainingBudget * (appliedLocRatioPct / PERCENT_DENOMINATOR);
-  const baseMocBudget = Math.max(0, args.remainingBudget - baseLocBudget);
+    args.buyTrancheBudget * (appliedLocRatioPct / PERCENT_DENOMINATOR);
+  const baseMocBudget = Math.max(0, args.buyTrancheBudget - baseLocBudget);
   // floorSafeQuantity -> floorToNonNegativeInt already adds Number.EPSILON,
   // so integer-share boundaries like 0.3 / 0.1 ~= 2.9999999999999996 do not drop a share.
   const finalMocQty = floorSafeQuantity(baseMocBudget / mocUnitCost);
   const usedMocCost = finalMocQty * mocUnitCost;
-  const remainingForLoc = Math.max(0, args.remainingBudget - usedMocCost);
+  const remainingForLoc = Math.max(0, args.buyTrancheBudget - usedMocCost);
   const finalLocQty = floorSafeQuantity(remainingForLoc / locUnitCost);
 
   return {
@@ -459,6 +590,9 @@ export function calculateMultiSplitBuyGuide(args: {
 
 export function calculateMultiSplitSellGuide(args: {
   currentQuantity: number;
+  avgPrice: number;
+  targetReturnRate: number;
+  intermediateReturnRate: number;
   mainTakeProfitRatioPct: number;
   riskCutRatioPct: number;
 }): MultiSplitSellGuide {
@@ -483,6 +617,11 @@ export function calculateMultiSplitSellGuide(args: {
     value: args.riskCutRatioPct,
     min: MIN_RISK_CUT_RATIO_PCT,
     max: MAX_RISK_CUT_RATIO_PCT,
+    context: 'calculateMultiSplitSellGuide',
+  });
+  validateMultiSplitReturnRates({
+    targetReturnRate: args.targetReturnRate,
+    intermediateReturnRate: args.intermediateReturnRate,
     context: 'calculateMultiSplitSellGuide',
   });
 
@@ -513,6 +652,18 @@ export function calculateMultiSplitSellGuide(args: {
     mainTakeProfitQty,
     intermediateTakeProfitQty,
     riskCutQty,
+    displayMainTakeProfit: buildTakeProfitDisplayOrder({
+      avgPrice: args.avgPrice,
+      returnRate: args.targetReturnRate,
+      quantity: mainTakeProfitQty,
+      context: 'calculateMultiSplitSellGuide.displayMainTakeProfit',
+    }),
+    displayIntermediateTakeProfit: buildTakeProfitDisplayOrder({
+      avgPrice: args.avgPrice,
+      returnRate: args.intermediateReturnRate,
+      quantity: intermediateTakeProfitQty,
+      context: 'calculateMultiSplitSellGuide.displayIntermediateTakeProfit',
+    }),
   };
 }
 
@@ -523,6 +674,19 @@ export function calculateMultiSplitGuideState(args: {
   feeRate: number;
   snapshot: MultiSplitIndicatorSnapshot;
 }): MultiSplitGuideState {
+  const normalizedReturnRates = normalizeMultiSplitReturnRates({
+    targetReturnRate: isFiniteNumber(args.strategy.targetReturnRate)
+      ? args.strategy.targetReturnRate
+      : MIN_MAIN_RETURN_RATE_PCT,
+    intermediateReturnRate: isFiniteNumber(args.strategy.intermediateReturnRate)
+      ? args.strategy.intermediateReturnRate
+      : DEFAULT_MULTI_SPLIT_INTERMEDIATE_RETURN_RATE_PCT,
+  });
+  validateMultiSplitReturnRates({
+    targetReturnRate: normalizedReturnRates.targetReturnRate,
+    intermediateReturnRate: normalizedReturnRates.intermediateReturnRate,
+    context: 'calculateMultiSplitGuideState',
+  });
   validateFinancialArgs(
     {
       oneTimeAmount: args.oneTimeAmount,
@@ -565,6 +729,9 @@ export function calculateMultiSplitGuideState(args: {
   );
   const sellGuide = calculateMultiSplitSellGuide({
     currentQuantity,
+    avgPrice,
+    targetReturnRate: normalizedReturnRates.targetReturnRate,
+    intermediateReturnRate: normalizedReturnRates.intermediateReturnRate,
     mainTakeProfitRatioPct: args.strategy.mainTakeProfitRatioPct,
     riskCutRatioPct: args.strategy.riskCutRatioPct,
   });
@@ -586,8 +753,14 @@ export function calculateMultiSplitGuideState(args: {
     return baseState;
   }
 
+  // remainingBudget은 전체 시드 잔액(totalSeed - 투입 원가)이지만, LOC/MOC는 매 회차마다
+  // 1회 매수금(oneTimeAmount) 한도 내에서만 집행·표시되어야 한다(마지막 회차만 잔액 미만 가능).
+  const buyTrancheBudget = roundMoney(
+    Math.min(args.oneTimeAmount, remainingBudget),
+  );
+
   const buyGuide = calculateMultiSplitBuyGuide({
-    remainingBudget,
+    buyTrancheBudget,
     feeRate: args.feeRate,
     avgPrice,
     snapshot: args.snapshot,

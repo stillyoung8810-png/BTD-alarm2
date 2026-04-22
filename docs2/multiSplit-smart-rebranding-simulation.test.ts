@@ -211,13 +211,8 @@ describe('multiSplit smart rebranding simulation', () => {
     });
 
     expect(state.appliedLocRatioPct).toBe(70);
-    expect(state.displayLocBuy).toEqual({
-      price: 100,
-      quantity: 10,
-    });
-    expect(state.displayMocBuy).toEqual({
-      quantity: 4,
-    });
+    expect(state.displayLocBuy).toBeUndefined();
+    expect(state.displayMocBuy).toBeUndefined();
   });
 
   it('keeps integer-share guidance intact at floating-point boundaries without losing one share', () => {
@@ -232,7 +227,7 @@ describe('multiSplit smart rebranding simulation', () => {
 
     expect(
       calculateMultiSplitBuyGuideSim({
-        remainingBudget: 0.3,
+        buyTrancheBudget: 0.3,
         feeRate: 0,
         avgPrice: 0.1,
         snapshot: {
@@ -270,7 +265,7 @@ describe('multiSplit smart rebranding simulation', () => {
   it('returns empty buy guidance when corrupted near-zero unit costs would create an unsafe division path', () => {
     expect(
       calculateMultiSplitBuyGuideSim({
-        remainingBudget: 1000,
+        buyTrancheBudget: 1000,
         feeRate: 0,
         avgPrice: Number.EPSILON / 2,
         snapshot: {

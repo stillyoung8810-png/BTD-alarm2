@@ -5,6 +5,7 @@ import {
   calculateMultiSplitCashUsagePct,
   calculateMultiSplitGuideState,
   calculateMultiSplitSellGuide,
+  normalizeMultiSplitReturnRates,
   resolveAppliedLocRatio,
   type TradeInput,
 } from './multiSplitCalc';
@@ -32,6 +33,7 @@ function makeSmartSplitStrategy(
   return {
     targetStock: overrides.targetStock ?? 'AAPL',
     targetReturnRate: overrides.targetReturnRate ?? 10,
+    intermediateReturnRate: overrides.intermediateReturnRate ?? 5,
     totalSplitCount: overrides.totalSplitCount ?? 10,
     baseLocRatio: overrides.baseLocRatio ?? 50,
     mainTakeProfitRatioPct: overrides.mainTakeProfitRatioPct ?? 60,
@@ -138,10 +140,25 @@ describe('calculateMultiSplitCashUsagePct', () => {
   });
 });
 
+describe('normalizeMultiSplitReturnRates', () => {
+  it('스마트 스플릿 수익률 A/B를 허용 범위로 클램프하고 보정 여부를 반환한다', () => {
+    expect(
+      normalizeMultiSplitReturnRates({
+        targetReturnRate: 300,
+        intermediateReturnRate: -2,
+      }),
+    ).toEqual({
+      targetReturnRate: 100,
+      intermediateReturnRate: 1,
+      didClamp: true,
+    });
+  });
+});
+
 describe('calculateMultiSplitBuyGuide', () => {
   it('MOC를 먼저 배정한 뒤 남은 예산으로 LOC 수량을 계산한다', () => {
     const result = calculateMultiSplitBuyGuide({
-      remainingBudget: 1000,
+      buyTrancheBudget: 1000,
       feeRate: 0.25,
       avgPrice: 80,
       snapshot: makeIndicatorSnapshot({
@@ -166,7 +183,7 @@ describe('calculateMultiSplitBuyGuide', () => {
 
   it('평단가가 near-zero 로 손상되면 분모 계산으로 진입하지 않는다', () => {
     const result = calculateMultiSplitBuyGuide({
-      remainingBudget: 1000,
+      buyTrancheBudget: 1000,
       feeRate: 0.25,
       avgPrice: Number.EPSILON / 2,
       snapshot: makeIndicatorSnapshot({
@@ -186,6 +203,9 @@ describe('calculateMultiSplitSellGuide', () => {
     expect(
       calculateMultiSplitSellGuide({
         currentQuantity: 5,
+        avgPrice: 100,
+        targetReturnRate: 10,
+        intermediateReturnRate: 5,
         mainTakeProfitRatioPct: 50,
         riskCutRatioPct: 20,
       }),
@@ -193,6 +213,14 @@ describe('calculateMultiSplitSellGuide', () => {
       mainTakeProfitQty: 3,
       intermediateTakeProfitQty: 2,
       riskCutQty: 1,
+      displayMainTakeProfit: {
+        price: 110,
+        quantity: 3,
+      },
+      displayIntermediateTakeProfit: {
+        price: 105,
+        quantity: 2,
+      },
     });
   });
 });
@@ -236,16 +264,58 @@ describe('calculateMultiSplitGuideState', () => {
       appliedLocRatioPct: 70,
       displayLocBuy: {
         price: 100,
-        quantity: 7,
+        quantity: 1,
       },
       displayMocBuy: {
-        quantity: 2,
+        quantity: 0,
       },
       sellGuide: {
         mainTakeProfitQty: 6,
         intermediateTakeProfitQty: 4,
         riskCutQty: 2,
+        displayMainTakeProfit: {
+          price: 110,
+          quantity: 6,
+        },
+        displayIntermediateTakeProfit: {
+          price: 105,
+          quantity: 4,
+        },
       },
     });
+  });
+
+  it('남은 시드가 커도 LOC/MOC 수량은 1회 매수금 범위를 넘지 않는다', () => {
+    const result = calculateMultiSplitGuideState({
+      trades: [
+        makeTrade({
+          type: 'buy',
+          stock: 'TQQQ',
+          price: 55,
+          quantity: 3,
+          fee: 0,
+        }),
+      ],
+      strategy: makeSmartSplitStrategy({
+        targetStock: 'TQQQ',
+        baseLocRatio: 50,
+        totalSplitCount: 100,
+      }),
+      oneTimeAmount: 200,
+      feeRate: 0.25,
+      snapshot: makeIndicatorSnapshot({
+        currentPrice: 55,
+        rsi: 50,
+      }),
+    });
+
+    expect(result.totalSeed).toBe(20_000);
+    expect(result.remainingBudget).toBeGreaterThan(1000);
+
+    const locQty = result.displayLocBuy?.quantity ?? 0;
+    const mocQty = result.displayMocBuy?.quantity ?? 0;
+    const locUnit = 55 * (1 + 0.25 / 100);
+    const mocUnit = 55 * 1.15;
+    expect(locQty * locUnit + mocQty * mocUnit).toBeLessThanOrEqual(200 + 1e-6);
   });
 });

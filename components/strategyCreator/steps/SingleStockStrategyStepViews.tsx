@@ -17,6 +17,7 @@ function LabeledNumberField(props: {
   value: number;
   onCommit: (value: string) => number;
   allowDecimal?: boolean;
+  helperText?: string;
 }): React.ReactElement {
   const inputId = React.useId();
 
@@ -32,6 +33,9 @@ function LabeledNumberField(props: {
         allowDecimal={props.allowDecimal}
         className={STRATEGY_CREATOR_STYLES.textInput}
       />
+      {props.helperText != null && props.helperText.trim().length > 0 ? (
+        <p className={MICROCOPY_TEXT_CLASS_NAME}>{props.helperText}</p>
+      ) : null}
     </div>
   );
 }
@@ -198,11 +202,13 @@ export function MultiSplitConfigStepView({
   dropdownInfoModalLabels,
   targetStockLabel,
   targetReturnRateLabel,
+  intermediateReturnRateLabel,
   totalSplitCountLabel,
   baseLocRatioLabel,
   mainTakeProfitRatioPctLabel,
   intermediateTakeProfitRatioPctLabel,
   riskCutRatioPctLabel,
+  riskCutRatioPctHelper,
   rsiConditionLabel,
   rsiConditionHelper,
   alignmentConditionLabel,
@@ -216,6 +222,7 @@ export function MultiSplitConfigStepView({
   stockOptions,
   targetStock,
   targetReturnRate,
+  intermediateReturnRate,
   totalSplitCount,
   baseLocRatio,
   mainTakeProfitRatioPct,
@@ -229,6 +236,7 @@ export function MultiSplitConfigStepView({
   selectedAlignmentBudgetPreset,
   onTargetStockChange,
   onTargetReturnRateChange,
+  onIntermediateReturnRateChange,
   onTotalSplitCountChange,
   onBaseLocRatioChange,
   onMainTakeProfitRatioPctChange,
@@ -268,6 +276,11 @@ export function MultiSplitConfigStepView({
             onCommit={onTargetReturnRateChange}
           />
           <LabeledNumberField
+            label={intermediateReturnRateLabel}
+            value={intermediateReturnRate}
+            onCommit={onIntermediateReturnRateChange}
+          />
+          <LabeledNumberField
             label={totalSplitCountLabel}
             value={totalSplitCount}
             onCommit={onTotalSplitCountChange}
@@ -281,6 +294,7 @@ export function MultiSplitConfigStepView({
             label={riskCutRatioPctLabel}
             value={riskCutRatioPct}
             onCommit={onRiskCutRatioPctChange}
+            helperText={riskCutRatioPctHelper}
           />
         </div>
 

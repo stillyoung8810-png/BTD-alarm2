@@ -60,11 +60,14 @@ export interface StrategyCreatorMessageSet {
   multiSplit: {
     targetStock: string;
     targetReturnRate: string;
+    intermediateReturnRate: string;
     totalSplitCount: string;
     baseLocRatio: string;
     mainTakeProfitRatioPct: string;
     intermediateTakeProfitRatioPct: string;
     riskCutRatioPct: string;
+    riskCutRatioPctHelper: string;
+    outOfRangeToast: string;
     rsiConditionLabel: string;
     rsiConditionHelper: string;
     alignmentConditionLabel: string;
@@ -199,11 +202,14 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
     multiSplit: {
       targetStock: '대상 종목',
       targetReturnRate: '목표 수익률 (A %)',
+      intermediateReturnRate: '중간 익절 수익률 (B %)',
       totalSplitCount: '총 분할 횟수 (a회)',
-      baseLocRatio: '기본 LOC 비율 (%)',
+      baseLocRatio: '평단가 매수 비율 (LOC 주문) (%)',
       mainTakeProfitRatioPct: '메인 익절 비중 (%)',
       intermediateTakeProfitRatioPct: '중간 익절 비중 (자동 계산)',
       riskCutRatioPct: '리스크 컷 비중 (%)',
+      riskCutRatioPctHelper: '현금 소진시, 손절할 보유 물량 비율',
+      outOfRangeToast: '설정 범위를 벗어 났어요.',
       rsiConditionLabel: 'RSI 조건',
       rsiConditionHelper:
         'RSI 조건이 충족되면 저장된 프리셋으로 LOC/MOC 비율을 덮어씁니다.',
@@ -345,12 +351,15 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
     multiSplit: {
       targetStock: 'Target Stock',
       targetReturnRate: 'Target Return Rate (A %)',
+      intermediateReturnRate: 'Intermediate Take-Profit Return (B %)',
       totalSplitCount: 'Total Split Count (a)',
-      baseLocRatio: 'Base LOC Ratio (%)',
+      baseLocRatio: 'Average Price Buy Ratio (LOC Order) (%)',
       mainTakeProfitRatioPct: 'Main Take-Profit Ratio (%)',
       intermediateTakeProfitRatioPct:
         'Intermediate Take-Profit Ratio (Derived)',
       riskCutRatioPct: 'Risk Cut Ratio (%)',
+      riskCutRatioPctHelper: 'Ratio of holdings to cut when cash is exhausted.',
+      outOfRangeToast: 'The value is outside the allowed range.',
       rsiConditionLabel: 'RSI Condition',
       rsiConditionHelper:
         'When the RSI condition is met, override the LOC/MOC ratio with the saved preset.',

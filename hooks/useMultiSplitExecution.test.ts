@@ -70,6 +70,7 @@ function createMultiSplitStrategy(
   return {
     targetStock: overrides.targetStock ?? 'AAPL',
     targetReturnRate: overrides.targetReturnRate ?? 10,
+    intermediateReturnRate: overrides.intermediateReturnRate ?? 5,
     totalSplitCount: overrides.totalSplitCount ?? 10,
     baseLocRatio: overrides.baseLocRatio ?? 50,
     mainTakeProfitRatioPct: overrides.mainTakeProfitRatioPct ?? 60,

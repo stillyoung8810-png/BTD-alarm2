@@ -147,11 +147,13 @@ export interface MultiSplitConfigStepViewProps {
   dropdownInfoModalLabels: DropdownInfoModalLabels;
   targetStockLabel: string;
   targetReturnRateLabel: string;
+  intermediateReturnRateLabel: string;
   totalSplitCountLabel: string;
   baseLocRatioLabel: string;
   mainTakeProfitRatioPctLabel: string;
   intermediateTakeProfitRatioPctLabel: string;
   riskCutRatioPctLabel: string;
+  riskCutRatioPctHelper: string;
   rsiConditionLabel: string;
   rsiConditionHelper: string;
   alignmentConditionLabel: string;
@@ -165,6 +167,7 @@ export interface MultiSplitConfigStepViewProps {
   stockOptions: readonly StrategyStockOption[];
   targetStock: string;
   targetReturnRate: number;
+  intermediateReturnRate: number;
   totalSplitCount: number;
   baseLocRatio: number;
   mainTakeProfitRatioPct: number;
@@ -178,6 +181,7 @@ export interface MultiSplitConfigStepViewProps {
   selectedAlignmentBudgetPreset: MultiSplitBudgetPresetId;
   onTargetStockChange: (value: string) => void;
   onTargetReturnRateChange: (value: string) => number;
+  onIntermediateReturnRateChange: (value: string) => number;
   onTotalSplitCountChange: (value: string) => number;
   onBaseLocRatioChange: (value: string) => number;
   onMainTakeProfitRatioPctChange: (value: string) => number;

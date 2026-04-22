@@ -14,7 +14,12 @@ import {
   VR_CYCLE,
   getVrDeltaCashInputValidationReason,
 } from '@/constants/vrConstants';
+import { showErrorToast } from '@/components/tds-adapter/showErrorToast';
 import type { AppLang, Portfolio, VrBandStrategyParams } from '@/types';
+import {
+  DEFAULT_MULTI_SPLIT_INTERMEDIATE_RETURN_RATE_PCT,
+  normalizeMultiSplitReturnRates,
+} from '@/utils/multiSplitCalc';
 import {
   ALIGNMENT_PERIODS_BY_PRESET,
   BUDGET_LOC_RATIO_BY_PRESET,
@@ -54,8 +59,6 @@ const DEFAULT_MULTI_SPLIT_STOCK = 'TQQQ';
 const DEFAULT_REFERENCE_STOCK = 'QQQ';
 const MAX_MA_PERIOD = 250;
 const MIN_MA_PERIOD = 1;
-const MIN_TARGET_RETURN_RATE = 5;
-const MAX_TARGET_RETURN_RATE = 30;
 const MIN_TOTAL_SPLIT_COUNT = 20;
 const MAX_TOTAL_SPLIT_COUNT = 80;
 const MIN_PERCENT_INPUT = 0;
@@ -113,6 +116,7 @@ function buildInitialWizardState(): StrategyWizardDraftInput {
     multiSplit: {
       targetStock: DEFAULT_MULTI_SPLIT_STOCK,
       targetReturnRate: STRATEGY_DEFAULTS.TARGET_RETURN_PERCENT,
+      intermediateReturnRate: DEFAULT_MULTI_SPLIT_INTERMEDIATE_RETURN_RATE_PCT,
       totalSplitCount: STRATEGY_DEFAULTS.TOTAL_SPLIT_COUNT,
       baseLocRatio: DEFAULT_MULTI_SPLIT_BASE_LOC_RATIO,
       mainTakeProfitRatioPct: DEFAULT_MULTI_SPLIT_MAIN_TAKE_PROFIT_RATIO_PCT,
@@ -205,6 +209,7 @@ const EMPTY_MULTI_SPLIT_DRAFT: NonNullable<
 > = {
   targetStock: DEFAULT_MULTI_SPLIT_STOCK,
   targetReturnRate: STRATEGY_DEFAULTS.TARGET_RETURN_PERCENT,
+  intermediateReturnRate: DEFAULT_MULTI_SPLIT_INTERMEDIATE_RETURN_RATE_PCT,
   totalSplitCount: STRATEGY_DEFAULTS.TOTAL_SPLIT_COUNT,
   baseLocRatio: DEFAULT_MULTI_SPLIT_BASE_LOC_RATIO,
   mainTakeProfitRatioPct: DEFAULT_MULTI_SPLIT_MAIN_TAKE_PROFIT_RATIO_PCT,
@@ -702,19 +707,69 @@ export function useStrategyCreatorController({
     });
   }, []);
 
+  const commitMultiSplitReturnRates = useCallback(
+    (patch: {
+      targetReturnRate?: number;
+      intermediateReturnRate?: number;
+    }) => {
+      const currentTargetReturnRate = safeNumber(
+        wizardState.multiSplit?.targetReturnRate,
+        STRATEGY_DEFAULTS.TARGET_RETURN_PERCENT,
+      );
+      const currentIntermediateReturnRate = safeNumber(
+        wizardState.multiSplit?.intermediateReturnRate,
+        DEFAULT_MULTI_SPLIT_INTERMEDIATE_RETURN_RATE_PCT,
+      );
+      const normalizedReturnRates = normalizeMultiSplitReturnRates({
+        targetReturnRate:
+          patch.targetReturnRate ?? currentTargetReturnRate,
+        intermediateReturnRate:
+          patch.intermediateReturnRate ?? currentIntermediateReturnRate,
+      });
+
+      updateMultiSplit({
+        targetReturnRate: normalizedReturnRates.targetReturnRate,
+        intermediateReturnRate: normalizedReturnRates.intermediateReturnRate,
+      });
+
+      if (normalizedReturnRates.didClamp) {
+        showErrorToast(copy.multiSplit.outOfRangeToast);
+      }
+
+      return normalizedReturnRates;
+    },
+    [
+      copy.multiSplit.outOfRangeToast,
+      updateMultiSplit,
+      wizardState.multiSplit?.intermediateReturnRate,
+      wizardState.multiSplit?.targetReturnRate,
+    ],
+  );
+
   const handleTargetReturnRateChange = useCallback(
     (value: string) => {
-      const committedValue = clampNumber(
-        safeNumber(value, STRATEGY_DEFAULTS.TARGET_RETURN_PERCENT),
-        MIN_TARGET_RETURN_RATE,
-        MAX_TARGET_RETURN_RATE,
-      );
-      updateMultiSplit({
-        targetReturnRate: committedValue,
+      const normalizedReturnRates = commitMultiSplitReturnRates({
+        targetReturnRate: safeNumber(
+          value,
+          STRATEGY_DEFAULTS.TARGET_RETURN_PERCENT,
+        ),
       });
-      return committedValue;
+      return normalizedReturnRates.targetReturnRate;
     },
-    [updateMultiSplit],
+    [commitMultiSplitReturnRates],
+  );
+
+  const handleMultiSplitIntermediateReturnRateChange = useCallback(
+    (value: string) => {
+      const normalizedReturnRates = commitMultiSplitReturnRates({
+        intermediateReturnRate: safeNumber(
+          value,
+          DEFAULT_MULTI_SPLIT_INTERMEDIATE_RETURN_RATE_PCT,
+        ),
+      });
+      return normalizedReturnRates.intermediateReturnRate;
+    },
+    [commitMultiSplitReturnRates],
   );
 
   const handleMultiSplitTotalCountChange = useCallback((value: string) => {
@@ -1510,6 +1565,10 @@ export function useStrategyCreatorController({
       wizardState.multiSplit?.targetReturnRate,
       STRATEGY_DEFAULTS.TARGET_RETURN_PERCENT,
     ),
+    multiSplitIntermediateReturnRate: safeNumber(
+      wizardState.multiSplit?.intermediateReturnRate,
+      DEFAULT_MULTI_SPLIT_INTERMEDIATE_RETURN_RATE_PCT,
+    ),
     multiSplitTotalSplitCount: safeNumber(
       wizardState.multiSplit?.totalSplitCount,
       STRATEGY_DEFAULTS.TOTAL_SPLIT_COUNT,
@@ -1553,6 +1612,7 @@ export function useStrategyCreatorController({
       DEFAULT_MULTI_SPLIT_BUDGET_PRESET,
     handleMultiSplitTargetStockChange,
     handleTargetReturnRateChange,
+    handleMultiSplitIntermediateReturnRateChange,
     handleMultiSplitTotalCountChange,
     handleMultiSplitBaseLocRatioChange,
     handleMultiSplitMainTakeProfitRatioPctChange,

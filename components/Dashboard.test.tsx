@@ -124,6 +124,7 @@ function createPortfolio(overrides: Partial<Portfolio> = {}): Portfolio {
       multiSplit: {
         targetStock: 'AAPL',
         targetReturnRate: 10,
+        intermediateReturnRate: 5,
         totalSplitCount: 4,
         baseLocRatio: 50,
         mainTakeProfitRatioPct: 60,
@@ -153,12 +154,14 @@ function createDefaultMultiSplitHookResult(
       isFirstBuy: false,
       isSeedExhausted: false,
       appliedLocRatioPct: 70,
-      displayLocBuy: { price: 100, quantity: 7 },
-      displayMocBuy: { quantity: 2 },
+      displayLocBuy: { price: 100, quantity: 1 },
+      displayMocBuy: { quantity: 0 },
       sellGuide: {
         mainTakeProfitQty: 6,
         intermediateTakeProfitQty: 4,
         riskCutQty: 2,
+        displayMainTakeProfit: { price: 110, quantity: 6 },
+        displayIntermediateTakeProfit: { price: 105, quantity: 4 },
       },
     };
 
@@ -243,12 +246,14 @@ describe('Dashboard multi-split execution rendering', () => {
           isFirstBuy: false,
           isSeedExhausted: false,
           appliedLocRatioPct: 70,
-          displayLocBuy: { price: 100, quantity: 7 },
-          displayMocBuy: { quantity: 2 },
+          displayLocBuy: { price: 100, quantity: 1 },
+          displayMocBuy: { quantity: 0 },
           sellGuide: {
             mainTakeProfitQty: 6,
             intermediateTakeProfitQty: 4,
             riskCutQty: 2,
+            displayMainTakeProfit: { price: 110, quantity: 6 },
+            displayIntermediateTakeProfit: { price: 105, quantity: 4 },
           },
         },
       }),
@@ -265,16 +270,16 @@ describe('Dashboard multi-split execution rendering', () => {
       ),
     ).toBeInTheDocument();
     expect(
-      within(executionCard).getByText('평단가 매수 (LOC): $100.00 / 7주'),
+      within(executionCard).getByText('평단가 매수 (LOC): $100.00 / 1주'),
     ).toBeInTheDocument();
     expect(
-      within(executionCard).getByText('분할 매수 (MOC): 2주'),
+      within(executionCard).getByText('분할 매수 (MOC): 0주'),
     ).toBeInTheDocument();
     expect(
-      within(executionCard).getByText('메인 익절: 6주'),
+      within(executionCard).getByText('메인 익절: $110.00 / 6주'),
     ).toBeInTheDocument();
     expect(
-      within(executionCard).getByText('중간 익절: 4주'),
+      within(executionCard).getByText('중간 익절: $105.00 / 4주'),
     ).toBeInTheDocument();
     expect(
       within(executionCard).getByText('리스크 컷: 2주'),

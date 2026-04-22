@@ -461,7 +461,7 @@ export function buildDisplayQuantityOnlyOrderSim(
 }
 
 export function calculateMultiSplitBuyGuideSim(args: {
-  remainingBudget: number;
+  buyTrancheBudget: number;
   feeRate: number;
   avgPrice: number;
   snapshot: MultiSplitIndicatorSnapshotSim;
@@ -469,13 +469,13 @@ export function calculateMultiSplitBuyGuideSim(args: {
 }): MultiSplitBuyGuideSim {
   validateFinancialArgs(
     {
-      remainingBudget: args.remainingBudget,
+      buyTrancheBudget: args.buyTrancheBudget,
       feeRate: args.feeRate,
       avgPrice: args.avgPrice,
       currentPrice: args.snapshot.currentPrice,
     },
     {
-      remainingBudget: { min: 0 },
+      buyTrancheBudget: { min: 0 },
       feeRate: { min: 0 },
       avgPrice: { strictPositive: true },
       currentPrice: { strictPositive: true },
@@ -503,13 +503,13 @@ export function calculateMultiSplitBuyGuideSim(args: {
     };
   }
   const baseLocBudget =
-    args.remainingBudget * (appliedLocRatioPct / PERCENT_DENOMINATOR);
-  const baseMocBudget = Math.max(0, args.remainingBudget - baseLocBudget);
+    args.buyTrancheBudget * (appliedLocRatioPct / PERCENT_DENOMINATOR);
+  const baseMocBudget = Math.max(0, args.buyTrancheBudget - baseLocBudget);
   // floorSafeQuantitySim -> floorToNonNegativeInt already adds Number.EPSILON,
   // so integer-share boundaries like 0.3 / 0.1 ~= 2.9999999999999996 do not drop a share.
   const finalMocQty = floorSafeQuantitySim(baseMocBudget / mocUnitCost);
   const usedMocCost = finalMocQty * mocUnitCost;
-  const remainingForLoc = Math.max(0, args.remainingBudget - usedMocCost);
+  const remainingForLoc = Math.max(0, args.buyTrancheBudget - usedMocCost);
   const finalLocQty = floorSafeQuantitySim(remainingForLoc / locUnitCost);
 
   return {
@@ -654,8 +654,12 @@ export function calculateMultiSplitGuideStateSim(args: {
     return baseState;
   }
 
+  const buyTrancheBudget = roundMoney(
+    Math.min(args.oneTimeAmount, remainingBudget),
+  );
+
   const buyGuide = calculateMultiSplitBuyGuideSim({
-    remainingBudget,
+    buyTrancheBudget,
     feeRate: args.feeRate,
     avgPrice,
     snapshot: args.snapshot,

@@ -28,9 +28,6 @@ const EMPTY_INDICATOR_REQUIREMENTS: IndicatorRequirements = {
   maPeriods: [],
 };
 const NO_STOP_SNAPSHOT_FETCH_TIMEOUT_MS = DEFAULT_FETCH_TIMEOUT_MS;
-const NO_STOP_DEBUG_LOG_PREFIX = '[NoStopDebug]';
-const IS_NO_STOP_DEBUG_LOG_ENABLED =
-  import.meta.env.DEV && import.meta.env.MODE !== 'test';
 
 const NO_STOP_LOC_RATIO_PRESET_VALUES = [70, 50, 30] as const;
 const NO_STOP_RSI_THRESHOLD_PRESET_VALUES = [30, 40, 50] as const;
@@ -67,24 +64,6 @@ export interface NoStopMultiSplitHookResult {
   currentRound: number;
   executionData: NoStopMultiSplitHookExecutionData | null;
   status: NoStopMultiSplitExecutionStatus;
-}
-
-function logNoStopDebug(
-  level: 'info' | 'warn',
-  event: string,
-  payload: Record<string, unknown>,
-): void {
-  if (!IS_NO_STOP_DEBUG_LOG_ENABLED) {
-    return;
-  }
-
-  const message = `${NO_STOP_DEBUG_LOG_PREFIX} ${event}`;
-  if (level === 'warn') {
-    console.warn(message, payload);
-    return;
-  }
-
-  console.info(message, payload);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -307,7 +286,6 @@ export function useNoStopMultiSplitExecution(
   const networkErrorMsgRef = useRef(networkErrorMsg);
   const requestIdRef = useRef(0);
   const previousCacheKeyRef = useRef<string | undefined>(undefined);
-  const lastDebugSignatureRef = useRef('');
   const [networkSnapshot, setNetworkSnapshot] =
     useState<NoStopIndicatorSnapshot | null>(null);
   const [snapshotFetchStatus, setSnapshotFetchStatus] =
@@ -330,14 +308,6 @@ export function useNoStopMultiSplitExecution(
       setSnapshotFetchStatus((previous) =>
         previous !== 'idle' ? 'idle' : previous,
       );
-      logNoStopDebug('warn', 'fetch-reset', {
-        portfolioId: portfolio.id,
-        portfolioName: portfolio.name,
-        indicatorCacheKey,
-        targetStock,
-        isNoStopMultiSplit,
-        isDailyBuyAmountValid,
-      });
       return;
     }
 
@@ -351,26 +321,7 @@ export function useNoStopMultiSplitExecution(
     const shouldReuseResolvedSnapshot =
       !shouldStartFetch && networkSnapshot != null;
     if (shouldReuseResolvedSnapshot) {
-      logNoStopDebug('info', 'fetch-skip', {
-        portfolioId: portfolio.id,
-        portfolioName: portfolio.name,
-        indicatorCacheKey: nextCacheKey,
-        previousCacheKey: previousCacheKey ?? null,
-        targetStock,
-        reason: 'same_cache_key_with_snapshot',
-      });
       return;
-    }
-
-    if (!shouldStartFetch) {
-      logNoStopDebug('info', 'fetch-restart', {
-        portfolioId: portfolio.id,
-        portfolioName: portfolio.name,
-        indicatorCacheKey: nextCacheKey,
-        previousCacheKey: previousCacheKey ?? null,
-        targetStock,
-        reason: 'same_cache_key_without_snapshot',
-      });
     }
 
     previousCacheKeyRef.current = nextCacheKey;
@@ -387,16 +338,6 @@ export function useNoStopMultiSplitExecution(
     };
 
     const runFetch = async () => {
-      logNoStopDebug('info', 'fetch-start', {
-        portfolioId: portfolio.id,
-        portfolioName: portfolio.name,
-        noStopStatus: 'loading',
-        indicatorCacheKey: nextCacheKey,
-        previousCacheKey: previousCacheKey ?? null,
-        targetStock,
-        requirements: fetchIndicatorRequirements,
-      });
-
       try {
         const snapshotResult = await fetchIndicatorAwareSnapshot(
           targetStock,
@@ -422,21 +363,6 @@ export function useNoStopMultiSplitExecution(
           }
           setNetworkSnapshot((previous) => (previous !== null ? null : previous));
           setSnapshotFetchStatus('error');
-          logNoStopDebug('warn', 'fetch-failed', {
-            portfolioId: portfolio.id,
-            portfolioName: portfolio.name,
-            noStopStatus: 'fetch_error',
-            indicatorCacheKey: nextCacheKey,
-            targetStock,
-            resultOk: snapshotResult.ok,
-            errorCode: snapshotResult.ok ? null : snapshotResult.error.code,
-            errorMessage: snapshotResult.ok ? null : snapshotResult.error.message,
-            isSnapshotInvalid,
-            currentPrice:
-              snapshotResult.ok && snapshotResult.data != null
-                ? snapshotResult.data.currentPrice
-                : null,
-          });
           if (requestIdRef.current !== requestId) {
             return;
           }
@@ -454,34 +380,12 @@ export function useNoStopMultiSplitExecution(
 
         setSnapshotFetchStatus('ready');
         setNetworkSnapshot(snapshotData);
-        logNoStopDebug('info', 'fetch-success', {
-          portfolioId: portfolio.id,
-          portfolioName: portfolio.name,
-          noStopStatus: 'ready',
-          indicatorCacheKey: nextCacheKey,
-          targetStock,
-          currentPrice: snapshotData.currentPrice,
-        });
       } catch (error: unknown) {
         if (requestIdRef.current !== requestId) {
           return;
         }
         setNetworkSnapshot((previous) => (previous !== null ? null : previous));
         setSnapshotFetchStatus('error');
-        logNoStopDebug('warn', 'fetch-exception', {
-          portfolioId: portfolio.id,
-          portfolioName: portfolio.name,
-          noStopStatus: 'fetch_error',
-          indicatorCacheKey: nextCacheKey,
-          targetStock,
-          error:
-            error instanceof Error
-              ? {
-                  name: error.name,
-                  message: error.message,
-                }
-              : String(error),
-        });
         if (requestIdRef.current !== requestId) {
           return;
         }
@@ -564,50 +468,6 @@ export function useNoStopMultiSplitExecution(
     runtimeStrategy,
     status,
     tradeInputs,
-  ]);
-
-  useEffect(() => {
-    if (!hasNoStopStrategy) {
-      return;
-    }
-
-    const debugSignature = [
-      portfolio.id,
-      status,
-      snapshotFetchStatus,
-      indicatorCacheKey,
-      targetStock,
-      String(networkSnapshot?.currentPrice ?? ''),
-    ].join('|');
-    if (lastDebugSignatureRef.current === debugSignature) {
-      return;
-    }
-
-    lastDebugSignatureRef.current = debugSignature;
-    logNoStopDebug('info', 'state', {
-      portfolioId: portfolio.id,
-      portfolioName: portfolio.name,
-      noStopStatus: status,
-      snapshotFetchStatus,
-      indicatorCacheKey,
-      targetStock,
-      currentPrice: networkSnapshot?.currentPrice ?? null,
-      dailyBuyAmount,
-      isDailyBuyAmountValid,
-      hasRuntimeStrategy: runtimeStrategy != null,
-    });
-  }, [
-    dailyBuyAmount,
-    hasNoStopStrategy,
-    indicatorCacheKey,
-    isDailyBuyAmountValid,
-    networkSnapshot?.currentPrice,
-    portfolio.id,
-    portfolio.name,
-    runtimeStrategy,
-    snapshotFetchStatus,
-    status,
-    targetStock,
   ]);
 
   const noStopState = useMemo(() => {

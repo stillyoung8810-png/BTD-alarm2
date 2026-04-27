@@ -30,10 +30,6 @@ const getAuthHeaders = async (): Promise<Record<string, string>> => {
     console.warn('[Gemini] getSession error:', error);
   }
   if (session?.access_token) {
-    console.debug(
-      '[Gemini] using auth header for user session. exp:',
-      session.expires_at,
-    );
     return {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${session.access_token}`,

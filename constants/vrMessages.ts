@@ -1,5 +1,9 @@
 import type { AppLang } from '../types';
 import type { VrBandStrategyParams } from '../types';
+import { getStrategyNames } from '../supabase/functions/_shared/strategyNames.ts';
+
+const STRATEGY_NAMES_KO = getStrategyNames('ko');
+const STRATEGY_NAMES_EN = getStrategyNames('en');
 
 /** VR 타입 배지 모드. VrBandStrategyParams에서 추출. */
 export type VrMode = VrBandStrategyParams['vrMode'];
@@ -147,10 +151,10 @@ export const VR_CREATOR_LABELS: Record<
   }
 > = {
   ko: {
-    strategyTitle: '타겟 밸류 채널',
+    strategyTitle: STRATEGY_NAMES_KO.vr_band,
     strategyDesc:
       '성장하는 목표 채널(Channel)을 설정하고, 주가가 채널을 벗어날 때마다 자동으로 비중을 조절해 안정성을 높입니다.',
-    sectionTitle: '타겟 밸류 채널 설정',
+    sectionTitle: `${STRATEGY_NAMES_KO.vr_band} 설정`,
     modeLabel: '운용 방식 선택',
     modes: {
       lump_sum: '거치식',
@@ -177,10 +181,10 @@ export const VR_CREATOR_LABELS: Record<
     back: '이전',
   },
   en: {
-    strategyTitle: 'Target Value Channel',
+    strategyTitle: STRATEGY_NAMES_EN.vr_band,
     strategyDesc:
       'Set a growing target channel and automatically adjust your position when the price deviates, enhancing stability.',
-    sectionTitle: 'Target Value Channel Settings',
+    sectionTitle: `${STRATEGY_NAMES_EN.vr_band} Settings`,
     modeLabel: 'Select Operation Mode',
     modes: {
       lump_sum: 'Lump-sum',

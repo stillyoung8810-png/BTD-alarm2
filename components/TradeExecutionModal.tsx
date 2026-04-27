@@ -4,8 +4,8 @@ import { CUSTOM_GRADIENT_LOGOS, PAID_STOCKS } from '../constants';
 import {
   getTradeMessages,
 } from '../constants/messages/tradeMessages';
-import { useMultiSplitExecution } from '../hooks/useMultiSplitExecution';
-import { useNoStopMultiSplitExecution } from '../hooks/useNoStopMultiSplitExecution';
+import type { MultiSplitHookResult } from '../hooks/useMultiSplitExecution';
+import type { NoStopMultiSplitHookResult } from '../hooks/useNoStopMultiSplitExecution';
 import { buildMultiSplitExecutionSummaryLines } from '../supabase/functions/_shared/multiSplitExecutionMessages.ts';
 import { buildNoStopExecutionSummaryLines } from '../supabase/functions/_shared/noStopExecutionMessages.ts';
 import type { AppLang, Portfolio, Trade } from '../types';
@@ -41,8 +41,14 @@ const MAX_SHARE_DECIMAL_PLACES = 4;
 interface TradeExecutionModalProps {
   lang: AppLang;
   portfolio: Portfolio;
+  guideData?: TradeExecutionGuideData;
   onClose: () => void;
   onSave: (trade: Trade) => Promise<void> | void;
+}
+
+export interface TradeExecutionGuideData {
+  multiSplitExecutionData?: MultiSplitHookResult['executionData'];
+  noStopExecutionData?: NoStopMultiSplitHookResult['executionData'];
 }
 
 interface TradeExecutionModalViewProps {
@@ -163,8 +169,8 @@ function buildStrategyGuideLines(args: {
   lang: AppLang;
   isSmartSplit: boolean;
   isNoStopMultiSplit: boolean;
-  multiSplitExecutionData: ReturnType<typeof useMultiSplitExecution>['executionData'];
-  noStopExecutionData: ReturnType<typeof useNoStopMultiSplitExecution>['executionData'];
+  multiSplitExecutionData?: MultiSplitHookResult['executionData'];
+  noStopExecutionData?: NoStopMultiSplitHookResult['executionData'];
 }): string[] {
   if (args.isSmartSplit) {
     if (args.multiSplitExecutionData == null) {
@@ -196,12 +202,11 @@ function buildStrategyGuideLines(args: {
 export default function TradeExecutionModal({
   lang,
   portfolio,
+  guideData,
   onClose,
   onSave,
 }: TradeExecutionModalProps): React.ReactElement {
   const copy = getTradeMessages(lang);
-  const multiSplitExecution = useMultiSplitExecution(portfolio, lang);
-  const noStopExecution = useNoStopMultiSplitExecution(portfolio, lang);
 
   const buyStocks = useMemo(() => getTradeExecutionBuyStocks(portfolio), [portfolio]);
   const sellableStocks = useMemo(() => getSellableStocks(portfolio), [portfolio]);
@@ -258,15 +263,15 @@ export default function TradeExecutionModal({
         lang,
         isSmartSplit,
         isNoStopMultiSplit,
-        multiSplitExecutionData: multiSplitExecution.executionData,
-        noStopExecutionData: noStopExecution.executionData,
+        multiSplitExecutionData: guideData?.multiSplitExecutionData,
+        noStopExecutionData: guideData?.noStopExecutionData,
       }),
     [
       lang,
       isSmartSplit,
       isNoStopMultiSplit,
-      multiSplitExecution.executionData,
-      noStopExecution.executionData,
+      guideData?.multiSplitExecutionData,
+      guideData?.noStopExecutionData,
     ],
   );
 

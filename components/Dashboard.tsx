@@ -31,12 +31,12 @@ import VrOrderModal from './VrOrderModal';
 import VrPortfolioSummary from './VrPortfolioSummary';
 import PortfolioCardActions from './portfolio/PortfolioCardActions';
 import { TDSButton, TDSList, TDSListRow } from './tds';
+import type { TradeExecutionGuideData } from './TradeExecutionModal';
 import { useTossApp } from '../contexts/TossAppContext';
 import {
   buildPortfolioMetricsSnapshot,
   determineActiveSection,
-  calculateHoldings,
-  getMaPeriods,
+  calculateHoldingsFromTrades,
 } from '../utils/portfolioCalculations';
 import { fetchStockPriceHistory, fetchStockPrices } from '../services/stockService';
 import { calculateMA } from '../utils/technicalIndicators';
@@ -86,7 +86,7 @@ interface DashboardProps {
     id: string,
     activeSection?: 1 | 2 | 3,
   ) => Promise<void> | void;
-  onOpenExecution: (id: string) => void;
+  onOpenExecution: (id: string, guideData?: TradeExecutionGuideData) => void;
   onOpenAIImage: (id: string) => void;
   totalValuation: number;
   totalValuationChange: number;
@@ -111,7 +111,10 @@ interface DashboardPortfolioCardHostProps {
     portfolioId: string,
     activeSection?: 1 | 2 | 3,
   ) => void | Promise<void>;
-  onOpenExecution: (portfolioId: string) => void;
+  onOpenExecution: (
+    portfolioId: string,
+    guideData?: TradeExecutionGuideData,
+  ) => void;
   onOpenAIImage: (portfolioId: string) => void;
   onDailyExecutionBlock?: (id: string, block: string | null) => void;
 }
@@ -132,29 +135,53 @@ const MA_PROPERTY_MAP: Record<StandardMaPeriod, keyof StockData> = {
   120: 'ma120',
 };
 
+type PartialProfitSectionConfig =
+  | Strategy['ma1']
+  | Strategy['ma2']
+  | Strategy['ma3'];
+
 interface MaAnalysisInputs {
   baseStock: string;
   priceMap: Record<string, StockData>;
   baseHistory: Array<{ price: number }> | null;
 }
 
+interface MaAnalysisViewModel {
+  strategy: Pick<Strategy, 'ma0' | 'ma1' | 'ma2' | 'ma3'>;
+  trades: Portfolio['trades'];
+}
+
 function isStandardMaPeriod(period: number): period is StandardMaPeriod {
   return (STANDARD_MA_PERIODS as readonly number[]).includes(period);
 }
 
+function isPartialProfitPriceRequired(
+  config: PartialProfitSectionConfig | undefined,
+): boolean {
+  return (
+    config?.takePartialProfit === true &&
+    config.partialProfitTargetPct != null &&
+    config.partialProfitTargetPct > 0 &&
+    typeof config.stock === 'string' &&
+    config.stock.trim().length > 0
+  );
+}
+
 async function loadMaAnalysisInputs(
-  portfolio: Portfolio,
+  viewModel: MaAnalysisViewModel,
   options: { signal?: AbortSignal } = {},
 ): Promise<MaAnalysisInputs> {
-  const baseStock = portfolio.strategy.ma0.stock;
+  const baseStock = viewModel.strategy.ma0.stock;
+  const partialProfitSymbols = [
+    viewModel.strategy.ma1,
+    viewModel.strategy.ma2,
+    viewModel.strategy.ma3,
+  ]
+    .filter(isPartialProfitPriceRequired)
+    .map((config) => config.stock);
   const symbols = Array.from(
     new Set(
-      [
-        baseStock,
-        portfolio.strategy.ma1.stock,
-        portfolio.strategy.ma2.stock,
-        portfolio.strategy.ma3.stock,
-      ].filter(
+      [baseStock, ...partialProfitSymbols].filter(
         (symbol): symbol is string =>
           typeof symbol === 'string' && symbol.trim().length > 0,
       ),
@@ -162,7 +189,7 @@ async function loadMaAnalysisInputs(
   );
 
   const priceMap = await fetchStockPrices(symbols, options);
-  const { maAPeriod, maBPeriod } = getMaPeriods(portfolio);
+  const { maAPeriod, maBPeriod } = getMaPeriodsFromStrategy(viewModel.strategy);
   const shouldLoadHistory =
     !isStandardMaPeriod(maAPeriod) || !isStandardMaPeriod(maBPeriod);
 
@@ -211,8 +238,52 @@ function getMaValueFromLoadedData(
   return calculateMA(prices.slice(-period), period);
 }
 
+function getMaPeriodsFromStrategy(
+  strategy: Pick<Strategy, 'ma0' | 'ma1' | 'ma2' | 'ma3'>,
+): { maAPeriod: number; maBPeriod: number } {
+  const ma1 = strategy.ma1 as { period?: number };
+  const ma2 = strategy.ma2 as { period2?: number };
+  const ma3 = strategy.ma3 as { period?: number };
+
+  return {
+    maAPeriod: strategy.ma0.maAPeriod ?? ma1.period ?? 20,
+    maBPeriod: strategy.ma0.maBPeriod ?? ma3.period ?? ma2.period2 ?? 60,
+  };
+}
+
+function buildMaAnalysisKey(
+  strategy: Pick<Strategy, 'ma0' | 'ma1' | 'ma2' | 'ma3'>,
+): string {
+  const ma1 = strategy.ma1 as { period?: number };
+  const ma2 = strategy.ma2 as { period2?: number };
+  const ma3 = strategy.ma3 as { period?: number };
+
+  return [
+    strategy.ma0.stock,
+    strategy.ma0.rsiEnabled ? 1 : 0,
+    strategy.ma0.alignmentEnabled ? 1 : 0,
+    strategy.ma0.maAPeriod ?? '',
+    strategy.ma0.maBPeriod ?? '',
+    strategy.ma1.stock,
+    strategy.ma1.rsiThreshold ?? '',
+    strategy.ma1.takePartialProfit ? 1 : 0,
+    strategy.ma1.partialProfitTargetPct ?? '',
+    ma1.period ?? '',
+    strategy.ma2.stock,
+    strategy.ma2.rsiThreshold ?? '',
+    strategy.ma2.takePartialProfit ? 1 : 0,
+    strategy.ma2.partialProfitTargetPct ?? '',
+    ma2.period2 ?? '',
+    strategy.ma3.stock,
+    strategy.ma3.rsiThreshold ?? '',
+    strategy.ma3.takePartialProfit ? 1 : 0,
+    strategy.ma3.partialProfitTargetPct ?? '',
+    ma3.period ?? '',
+  ].join('|');
+}
+
 function determineActiveSectionFromLoadedData(
-  portfolio: Portfolio,
+  viewModel: MaAnalysisViewModel,
   inputs: MaAnalysisInputs,
 ): 1 | 2 | 3 | null {
   const baseData = inputs.priceMap[inputs.baseStock];
@@ -222,7 +293,9 @@ function determineActiveSectionFromLoadedData(
     return null;
   }
 
-  const { maAPeriod, maBPeriod } = getMaPeriods(portfolio);
+  const { maAPeriod, maBPeriod } = getMaPeriodsFromStrategy(
+    viewModel.strategy,
+  );
   const maA = getMaValueFromLoadedData(
     maAPeriod,
     baseData,
@@ -355,8 +428,7 @@ interface DashboardHeaderVm {
 interface PortfolioExecutionSummaryInput {
   lang: AppLang;
   copy: DashboardMessageSet;
-  strategyKind: DashboardStrategyKind;
-  strategy: Strategy;
+  strategy: Pick<Strategy, 'ma1' | 'ma2' | 'ma3'>;
   trades: Portfolio['trades'];
   vrSnapshot: Portfolio['vrSnapshot'];
   vrSettings: Portfolio['strategy']['vrBand'] | null;
@@ -372,11 +444,6 @@ interface PortfolioExecutionSummaryInput {
   maAlignmentNotMet: boolean;
   vrCycleHeaderLabel: string | null;
 }
-
-type PartialProfitSectionConfig =
-  | Strategy['ma1']
-  | Strategy['ma2']
-  | Strategy['ma3'];
 
 function getPortfolioStrategyKind(
   portfolio: Portfolio,
@@ -418,7 +485,7 @@ function renderStrategyIcon(
 function collectPartialProfitLine(input: {
   section: 1 | 2 | 3;
   config: PartialProfitSectionConfig | undefined;
-  holdings: ReturnType<typeof calculateHoldings>;
+  holdings: ReturnType<typeof calculateHoldingsFromTrades>;
   prices: Awaited<ReturnType<typeof fetchStockPrices>>;
 }): MaPartialProfitLine | null {
   return collectSharedMaPartialProfitLine(input);
@@ -655,25 +722,6 @@ function renderNoStopExecutionSummary(
   });
 }
 
-function buildPortfolioExecutionSummary(
-  input: PortfolioExecutionSummaryInput,
-): React.ReactNode {
-  switch (input.strategyKind) {
-    case 'vr_band':
-      return renderVrExecutionSummary(input);
-    case 'multi_split':
-      return renderMultiSplitExecutionSummary(input);
-    case 'no_stop_multi_split':
-      return renderNoStopExecutionSummary(input);
-    case 'ma_interval':
-      return renderMaExecutionSummary(input);
-    default: {
-      const exhaustiveCheck: never = input.strategyKind;
-      return exhaustiveCheck;
-    }
-  }
-}
-
 export function DashboardPortfolioCardHost({
   lang,
   portfolio,
@@ -713,13 +761,17 @@ export function DashboardPortfolioCardHost({
   const [maActiveSection, setMaActiveSection] = useState<1 | 2 | 3 | null>(
     null,
   );
-  const [maBlockVersion, setMaBlockVersion] = useState(0);
+  const [isMaAnalysisReady, setIsMaAnalysisReady] = useState(false);
   const [maPartialProfitLines, setMaPartialProfitLines] = useState<
     MaPartialProfitLine[]
   >([]);
   const [maRsiNotMet, setMaRsiNotMet] = useState(false);
   const [maAlignmentNotMet, setMaAlignmentNotMet] = useState(false);
   const [isVrOrderModalOpen, setIsVrOrderModalOpen] = useState(false);
+  const lastDailyExecutionBlockRef = useRef<{
+    portfolioId: string;
+    block: string | null;
+  } | null>(null);
 
   const { safeBuyOrders, safeSellOrders } = useVrOrders(portfolio.vrSnapshot);
 
@@ -727,6 +779,19 @@ export function DashboardPortfolioCardHost({
   const isNoStopMultiSplitStrategy =
     portfolio.strategy.noStopMultiSplit != null;
   const isVrStrategy = vrSettings != null;
+  const maAnalysisKey = buildMaAnalysisKey(portfolio.strategy);
+  const maAnalysisVm = useMemo<MaAnalysisViewModel>(
+    () => ({
+      strategy: {
+        ma0: portfolio.strategy.ma0,
+        ma1: portfolio.strategy.ma1,
+        ma2: portfolio.strategy.ma2,
+        ma3: portfolio.strategy.ma3,
+      },
+      trades: portfolio.trades,
+    }),
+    [maAnalysisKey, portfolio.trades],
+  );
 
   const ma0Ticker =
     portfolio.strategy.multiSplit?.targetStock ||
@@ -744,6 +809,7 @@ export function DashboardPortfolioCardHost({
       setMaRsiNotMet(false);
       setMaAlignmentNotMet(false);
       setMaPartialProfitLines([]);
+      setIsMaAnalysisReady(false);
       return;
     }
 
@@ -752,7 +818,7 @@ export function DashboardPortfolioCardHost({
 
     const runAnalysis = async () => {
       try {
-        const inputs = await loadMaAnalysisInputs(portfolio, {
+        const inputs = await loadMaAnalysisInputs(maAnalysisVm, {
           signal: abortController.signal,
         });
 
@@ -760,10 +826,15 @@ export function DashboardPortfolioCardHost({
           return;
         }
 
-        const nextSection = determineActiveSectionFromLoadedData(portfolio, inputs);
+        const nextSection = determineActiveSectionFromLoadedData(
+          maAnalysisVm,
+          inputs,
+        );
         const prices = inputs.priceMap;
         const baseData = inputs.priceMap[inputs.baseStock];
-        const { maAPeriod, maBPeriod } = getMaPeriods(portfolio);
+        const { maAPeriod, maBPeriod } = getMaPeriodsFromStrategy(
+          maAnalysisVm.strategy,
+        );
         const maA = getMaValueFromLoadedData(
           maAPeriod,
           baseData,
@@ -779,26 +850,23 @@ export function DashboardPortfolioCardHost({
           previous === nextSection ? previous : nextSection,
         );
 
-        if (nextSection != null) {
-          setMaBlockVersion((previous) => previous + 1);
-        }
-
         if (nextSection !== 1 && nextSection !== 2 && nextSection !== 3) {
           setMaRsiNotMet(false);
           setMaAlignmentNotMet(false);
           setMaPartialProfitLines([]);
+          setIsMaAnalysisReady((previous) => (previous ? previous : true));
           return;
         }
 
-        const ma0 = portfolio.strategy.ma0;
-        const ma1 = portfolio.strategy.ma1;
-        const ma2 = portfolio.strategy.ma2;
-        const ma3 = portfolio.strategy.ma3;
+        const ma0 = maAnalysisVm.strategy.ma0;
+        const ma1 = maAnalysisVm.strategy.ma1;
+        const ma2 = maAnalysisVm.strategy.ma2;
+        const ma3 = maAnalysisVm.strategy.ma3;
         const baseStock = ma0.stock;
 
         setMaRsiNotMet(
           calculateMaRsiNotMet({
-            strategy: portfolio.strategy,
+            strategy: maAnalysisVm.strategy,
             section: nextSection,
             currentRsi: prices[baseStock]?.rsi,
           }),
@@ -812,7 +880,7 @@ export function DashboardPortfolioCardHost({
           }),
         );
 
-        const holdings = calculateHoldings(portfolio);
+        const holdings = calculateHoldingsFromTrades(maAnalysisVm.trades);
         const nextLines = [
           collectPartialProfitLine({
             section: 1,
@@ -849,6 +917,7 @@ export function DashboardPortfolioCardHost({
 
           return nextLines;
         });
+        setIsMaAnalysisReady((previous) => (previous ? previous : true));
       } catch (error: unknown) {
         if (isAbortLikeError(error) || !isMounted) {
           return;
@@ -864,7 +933,12 @@ export function DashboardPortfolioCardHost({
       isMounted = false;
       abortController.abort();
     };
-  }, [portfolio, isMultiSplitStrategy, isNoStopMultiSplitStrategy, isVrStrategy]);
+  }, [
+    isMultiSplitStrategy,
+    isNoStopMultiSplitStrategy,
+    isVrStrategy,
+    maAnalysisVm,
+  ]);
 
   useEffect(() => {
     let isMounted = true;
@@ -913,6 +987,15 @@ export function DashboardPortfolioCardHost({
     }
 
     if (!isAlarmEnabled) {
+      const lastBlock = lastDailyExecutionBlockRef.current;
+      if (lastBlock?.portfolioId === portfolioId && lastBlock.block === null) {
+        return;
+      }
+
+      lastDailyExecutionBlockRef.current = {
+        portfolioId,
+        block: null,
+      };
       onDailyExecutionBlock(portfolioId, null);
       return;
     }
@@ -935,7 +1018,7 @@ export function DashboardPortfolioCardHost({
       !isMultiSplitStrategy &&
       !isNoStopMultiSplitStrategy &&
       !isVrStrategy &&
-      maBlockVersion === 0
+      !isMaAnalysisReady
     ) {
       return;
     }
@@ -963,6 +1046,15 @@ export function DashboardPortfolioCardHost({
           : maAlignmentNotMet,
     });
 
+    const lastBlock = lastDailyExecutionBlockRef.current;
+    if (lastBlock?.portfolioId === portfolioId && lastBlock.block === block) {
+      return;
+    }
+
+    lastDailyExecutionBlockRef.current = {
+      portfolioId,
+      block,
+    };
     onDailyExecutionBlock(portfolioId, block);
   }, [
     onDailyExecutionBlock,
@@ -977,59 +1069,146 @@ export function DashboardPortfolioCardHost({
     maPartialProfitLines,
     maRsiNotMet,
     maAlignmentNotMet,
-    maBlockVersion,
+    isMaAnalysisReady,
     isMultiSplitStrategy,
     isNoStopMultiSplitStrategy,
     isVrStrategy,
   ]);
 
-  const executionSummary = useMemo(
-    () =>
-      buildPortfolioExecutionSummary({
+  const vrExecutionSummary = useMemo(
+    () => {
+      if (strategyKind !== 'vr_band') {
+        return null;
+      }
+
+      return renderVrExecutionSummary({
         lang,
         copy,
-        strategyKind,
-        strategy: portfolio.strategy,
         trades: portfolio.trades,
         vrSnapshot: portfolio.vrSnapshot,
         vrSettings,
-        multiSplitExecutionData,
-        multiSplitStatus,
-        noStopStatus,
-        noStopExecutionData,
-        maActiveSection,
-        maPartialProfitLines,
-        maRsiNotMet,
-        maAlignmentNotMet,
         vrCycleHeaderLabel,
-      }),
+      });
+    },
     [
       lang,
       copy,
       strategyKind,
-      portfolio.strategy,
       portfolio.trades,
       portfolio.vrSnapshot,
       vrSettings,
+      vrCycleHeaderLabel,
+    ],
+  );
+
+  const multiSplitExecutionSummary = useMemo(
+    () => {
+      if (strategyKind !== 'multi_split') {
+        return null;
+      }
+
+      return renderMultiSplitExecutionSummary({
+        lang,
+        copy,
+        multiSplitExecutionData,
+        multiSplitStatus,
+      });
+    },
+    [
+      lang,
+      copy,
+      strategyKind,
       multiSplitExecutionData,
       multiSplitStatus,
+    ],
+  );
+
+  const noStopExecutionSummary = useMemo(
+    () => {
+      if (strategyKind !== 'no_stop_multi_split') {
+        return null;
+      }
+
+      return renderNoStopExecutionSummary({
+        lang,
+        copy,
+        noStopStatus,
+        noStopExecutionData,
+      });
+    },
+    [
+      lang,
+      copy,
+      strategyKind,
       noStopStatus,
       noStopExecutionData,
+    ],
+  );
+
+  const maExecutionSummary = useMemo(
+    () => {
+      if (strategyKind !== 'ma_interval') {
+        return null;
+      }
+
+      return renderMaExecutionSummary({
+        copy,
+        strategy: maAnalysisVm.strategy,
+        maActiveSection,
+        maPartialProfitLines,
+        maRsiNotMet,
+        maAlignmentNotMet,
+      });
+    },
+    [
+      copy,
+      strategyKind,
+      maAnalysisVm,
       maActiveSection,
       maPartialProfitLines,
       maRsiNotMet,
       maAlignmentNotMet,
-      vrCycleHeaderLabel,
     ],
   );
+
+  const executionSummary = useMemo(() => {
+    switch (strategyKind) {
+      case 'vr_band':
+        return vrExecutionSummary;
+      case 'multi_split':
+        return multiSplitExecutionSummary;
+      case 'no_stop_multi_split':
+        return noStopExecutionSummary;
+      case 'ma_interval':
+        return maExecutionSummary;
+      default: {
+        const exhaustiveCheck: never = strategyKind;
+        return exhaustiveCheck;
+      }
+    }
+  }, [
+    strategyKind,
+    vrExecutionSummary,
+    multiSplitExecutionSummary,
+    noStopExecutionSummary,
+    maExecutionSummary,
+  ]);
 
   const handleOpenDetails = useCallback(() => {
     onOpenDetails(portfolioId);
   }, [onOpenDetails, portfolioId]);
 
   const handleOpenExecution = useCallback(() => {
-    onOpenExecution(portfolioId);
-  }, [onOpenExecution, portfolioId]);
+    onOpenExecution(portfolioId, {
+      multiSplitExecutionData: multiSplitExecutionData ?? undefined,
+      noStopExecutionData: noStopExecutionData ?? undefined,
+    });
+  }, [
+    multiSplitExecutionData,
+    noStopExecutionData,
+    onOpenExecution,
+    portfolioId,
+  ]);
 
   const isOpeningQuickInputRef = useRef(false);
 
@@ -1040,7 +1219,19 @@ export function DashboardPortfolioCardHost({
     isOpeningQuickInputRef.current = true;
 
     try {
-      const activeSection = await determineActiveSection(portfolio);
+      const activeSection =
+        maActiveSection === 1 ||
+        maActiveSection === 2 ||
+        maActiveSection === 3
+          ? maActiveSection
+          : await determineActiveSection({
+              ...portfolio,
+              strategy: {
+                ...portfolio.strategy,
+                ...maAnalysisVm.strategy,
+              },
+              trades: maAnalysisVm.trades,
+            });
       await Promise.resolve(
         onOpenQuickInput(portfolioId, activeSection ?? undefined),
       );
@@ -1053,7 +1244,14 @@ export function DashboardPortfolioCardHost({
     } finally {
       isOpeningQuickInputRef.current = false;
     }
-  }, [copy.systemError, onOpenQuickInput, portfolio, portfolioId]);
+  }, [
+    copy.systemError,
+    maActiveSection,
+    maAnalysisVm,
+    onOpenQuickInput,
+    portfolio,
+    portfolioId,
+  ]);
 
   const handleCloseVrOrders = useCallback(() => {
     setIsVrOrderModalOpen(false);
@@ -1642,8 +1840,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   );
 
   const handleOpenExecution = useCallback(
-    (portfolioId: string) => {
-      onOpenExecution(portfolioId);
+    (portfolioId: string, guideData?: TradeExecutionGuideData) => {
+      onOpenExecution(portfolioId, guideData);
     },
     [onOpenExecution],
   );

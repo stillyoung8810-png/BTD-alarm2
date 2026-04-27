@@ -91,7 +91,6 @@ export const ensureValidSession = async (): Promise<boolean> => {
     }
     
     if (!session) {
-      console.log('[Supabase] No active session');
       return false;
     }
     
@@ -102,15 +101,12 @@ export const ensureValidSession = async (): Promise<boolean> => {
       const timeUntilExpiry = expiresAt - now;
       
       if (timeUntilExpiry < 300) { // 5분 이내
-        console.log('[Supabase] Session expiring soon, attempting refresh...');
         const { error: refreshError } = await supabase.auth.refreshSession();
         
         if (refreshError) {
           console.error('[Supabase] Session refresh failed:', refreshError);
           return false;
         }
-        
-        console.log('[Supabase] Session refreshed successfully');
       }
     }
     
@@ -128,7 +124,6 @@ export const ensureValidSession = async (): Promise<boolean> => {
 export const clearAuthStorage = (): void => {
   try {
     clearSupabaseAuthStorage();
-    console.log('[Supabase] Cleared auth storage (adapter chain)');
   } catch (e) {
     console.warn('[Supabase] Failed to clear auth storage:', e);
   }

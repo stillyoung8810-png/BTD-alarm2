@@ -2,6 +2,7 @@ import type { Portfolio, PortfolioRow, VrSnapshot } from './types.ts';
 import { getVrDeltaCashForNextV } from './types.ts';
 import { roundMoney } from './financialMath.ts';
 import { LEGACY_FEE_RATE_PCT } from './vrConstants.ts';
+import { mapWithConcurrency } from './asyncBatch.ts';
 import {
   calculateBands,
   calculateCycleIndexFromDates,
@@ -13,6 +14,7 @@ import {
 } from './vrBandStrategy.ts';
 
 const ZERO_AMOUNT = 0;
+const VR_REFRESH_UPDATE_CHUNK_SIZE = 25;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object';
@@ -190,23 +192,21 @@ export async function processVrRefreshBatch(
 ): Promise<void> {
   const now = deps.now ?? new Date();
 
-  await Promise.allSettled(
-    rows.map(async (row) => {
-      try {
-        const portfolio = mapPortfolioRowForRefresh(row);
-        if (!portfolio?.strategy.vrBand) return;
+  await mapWithConcurrency(rows, VR_REFRESH_UPDATE_CHUNK_SIZE, async (row) => {
+    try {
+      const portfolio = mapPortfolioRowForRefresh(row);
+      if (!portfolio?.strategy.vrBand) return;
 
-        const targetCycleIndex = calculateNextCycleIndexForPortfolio(portfolio, now);
-        if (targetCycleIndex === null) return;
+      const targetCycleIndex = calculateNextCycleIndexForPortfolio(portfolio, now);
+      if (targetCycleIndex === null) return;
 
-        await deps.refreshPortfolio(
-          portfolio,
-          String(row.id ?? ''),
-          targetCycleIndex,
-        );
-      } catch (error) {
-        console.error(`[VR_Batch_Error] Failed portfolio ${row.id}:`, error);
-      }
-    }),
-  );
+      await deps.refreshPortfolio(
+        portfolio,
+        String(row.id ?? ''),
+        targetCycleIndex,
+      );
+    } catch (error) {
+      console.error(`[VR_Batch_Error] Failed portfolio ${row.id}:`, error);
+    }
+  });
 }

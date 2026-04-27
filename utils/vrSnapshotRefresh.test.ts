@@ -34,6 +34,8 @@ const BASE_VR_NUMBERS = {
   poolUsageRateBuy: 0.5,
   cycleWeeks: 1,
 } as const;
+const EXPECTED_REFRESH_CHUNK_SIZE = 25;
+const ROW_COUNT_EXCEEDING_CHUNK_SIZE = EXPECTED_REFRESH_CHUNK_SIZE + 1;
 
 function createVrParams(
   mode: VrBandStrategyParams['vrMode'],
@@ -371,6 +373,35 @@ describe('VR snapshot refresh scheduler core', () => {
       { portfolioId: 'portfolio-ok-1', targetCycleIndex: 1 },
       { portfolioId: 'portfolio-ok-2', targetCycleIndex: 1 },
     ]);
+  });
+
+  it('배치 갱신은 청크 단위로 update 동시성을 제한한다', async () => {
+    // Why: 사이클 전환 배치가 모든 포트폴리오 update를 한 번에 열면 DB 연결과 쓰기 부하가 순간적으로 폭증합니다.
+    const params = createVrParams('lump_sum', 0, { cycleWeeks: 1 });
+    const rows = Array.from(
+      { length: ROW_COUNT_EXCEEDING_CHUNK_SIZE },
+      (_unused, rowIndex) =>
+        createPortfolioRow(params, { id: `portfolio-${rowIndex + 1}` }),
+    );
+    let activeRefreshes = 0;
+    let maxActiveRefreshes = 0;
+    const refreshOrder: string[] = [];
+
+    await processVrRefreshBatch(rows, {
+      now: new Date('2026-04-20T16:00:00Z'),
+      refreshPortfolio: async (_portfolio, portfolioId) => {
+        activeRefreshes += 1;
+        maxActiveRefreshes = Math.max(maxActiveRefreshes, activeRefreshes);
+        refreshOrder.push(portfolioId);
+
+        await Promise.resolve();
+        activeRefreshes -= 1;
+      },
+    });
+
+    expect(maxActiveRefreshes).toBe(EXPECTED_REFRESH_CHUNK_SIZE);
+    expect(refreshOrder).toHaveLength(ROW_COUNT_EXCEEDING_CHUNK_SIZE);
+    expect(refreshOrder[EXPECTED_REFRESH_CHUNK_SIZE]).toBe('portfolio-26');
   });
 
   it('뉴욕 DST 시작 경계에서도 logical date는 하루를 건너뛰지 않고 정확히 1일 전진한다', () => {

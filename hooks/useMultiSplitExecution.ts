@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { showErrorToast } from '../components/tds-adapter/showErrorToast';
 import { APP_SHELL_MESSAGES } from '../constants/messages/appShellMessages';
 import { DEFAULT_FETCH_TIMEOUT_MS } from '../services/serviceUtils';
@@ -258,23 +258,30 @@ export function useMultiSplitExecution(
     () => indicatorRequirements,
     [indicatorCacheKey],
   );
+  const networkErrorMsg = APP_SHELL_MESSAGES[lang].dailySummaryNetworkError;
+  const networkErrorMsgRef = useRef(networkErrorMsg);
   const requestIdRef = useRef(0);
-  const previousCacheKeyRef = useRef<string>('');
+  const previousCacheKeyRef = useRef<string | undefined>(undefined);
+  const resolvedSnapshotCacheKeyRef = useRef<string | null>(null);
   const [networkSnapshot, setNetworkSnapshot] =
     useState<MultiSplitIndicatorSnapshot | null>(null);
   const [snapshotFetchStatus, setSnapshotFetchStatus] =
     useState<SnapshotFetchStatus>('idle');
 
+  useLayoutEffect(() => {
+    networkErrorMsgRef.current = networkErrorMsg;
+  }, [networkErrorMsg]);
+
   useEffect(() => {
     if (
       !hasMultiSplitStrategy ||
-      runtimeStrategy == null ||
       targetStock === '' ||
       indicatorCacheKey === '' ||
       !isDailyBuyAmountValid
     ) {
       requestIdRef.current += 1;
-      previousCacheKeyRef.current = '';
+      previousCacheKeyRef.current = undefined;
+      resolvedSnapshotCacheKeyRef.current = null;
       setNetworkSnapshot((previous) => (previous !== null ? null : previous));
       setSnapshotFetchStatus((previous) =>
         previous !== 'idle' ? 'idle' : previous,
@@ -282,14 +289,16 @@ export function useMultiSplitExecution(
       return;
     }
 
+    const nextCacheKey = indicatorCacheKey;
     const shouldReuseResolvedSnapshot =
-      previousCacheKeyRef.current === indicatorCacheKey &&
-      networkSnapshot != null;
+      previousCacheKeyRef.current === nextCacheKey &&
+      resolvedSnapshotCacheKeyRef.current === nextCacheKey;
     if (shouldReuseResolvedSnapshot) {
       return;
     }
 
-    previousCacheKeyRef.current = indicatorCacheKey;
+    previousCacheKeyRef.current = nextCacheKey;
+    resolvedSnapshotCacheKeyRef.current = null;
     setNetworkSnapshot((previous) => (previous !== null ? null : previous));
     setSnapshotFetchStatus('loading');
 
@@ -326,14 +335,16 @@ export function useMultiSplitExecution(
         if (!snapshotResult.ok || isSnapshotInvalid) {
           setNetworkSnapshot((previous) => (previous !== null ? null : previous));
           setSnapshotFetchStatus('error');
+          resolvedSnapshotCacheKeyRef.current = null;
           if (requestIdRef.current === requestId) {
-            showErrorToast(APP_SHELL_MESSAGES[lang].dailySummaryNetworkError);
+            showErrorToast(networkErrorMsgRef.current);
           }
           return;
         }
 
-        setNetworkSnapshot(snapshotResult.data);
+        resolvedSnapshotCacheKeyRef.current = nextCacheKey;
         setSnapshotFetchStatus('ready');
+        setNetworkSnapshot(snapshotResult.data);
       } catch {
         if (requestIdRef.current !== requestId) {
           return;
@@ -341,7 +352,8 @@ export function useMultiSplitExecution(
 
         setNetworkSnapshot((previous) => (previous !== null ? null : previous));
         setSnapshotFetchStatus('error');
-        showErrorToast(APP_SHELL_MESSAGES[lang].dailySummaryNetworkError);
+        resolvedSnapshotCacheKeyRef.current = null;
+        showErrorToast(networkErrorMsgRef.current);
       } finally {
         clearFetchTimeout();
       }
@@ -359,9 +371,6 @@ export function useMultiSplitExecution(
     hasMultiSplitStrategy,
     indicatorCacheKey,
     isDailyBuyAmountValid,
-    lang,
-    networkSnapshot,
-    runtimeStrategy,
     targetStock,
   ]);
 

@@ -160,7 +160,10 @@ export async function buildPortfolioMetricsSnapshot(
     ),
   );
 
-  const priceMap = await fetchStockPrices(symbols, options);
+  const priceMap = await fetchStockPrices(symbols, {
+    ...options,
+    mode: 'price-only',
+  });
   const currentValuation = holdings.reduce((sum, holding) => {
     const currentPrice = priceMap[holding.stock]?.price ?? 0;
     return sum + holding.quantity * currentPrice;
@@ -182,7 +185,7 @@ export const calculateCurrentValuation = async (portfolio: Portfolio): Promise<n
   if (holdings.length === 0) return 0;
 
   const symbols = holdings.map(h => h.stock);
-  const stockPrices = await fetchStockPrices(symbols);
+  const stockPrices = await fetchStockPrices(symbols, { mode: 'price-only' });
 
   let totalValuation = 0;
   holdings.forEach(holding => {
@@ -281,27 +284,6 @@ export function getMaPeriods(portfolio: Portfolio): { maAPeriod: number; maBPeri
     maAPeriod: s.ma0.maAPeriod ?? ma1.period ?? 20,
     maBPeriod: s.ma0.maBPeriod ?? ma3.period ?? ma2.period2 ?? 60,
   };
-}
-
-/**
- * 정배열 판정용 단기(maA)·장기(maB) 이평선 값을 반환합니다.
- * 백테스트와 동일: 정배열 = maA > maB. Dashboard에서 maAlignmentNotMet 계산용.
- */
-export async function getMAValuesForAlignment(portfolio: Portfolio): Promise<{ maA: number; maB: number }> {
-  const ma0Stock = portfolio.strategy.ma0.stock;
-  const stockPrices = await fetchStockPrices([ma0Stock]);
-  const baseData = stockPrices[ma0Stock];
-  const { maAPeriod, maBPeriod } = getMaPeriods(portfolio);
-  const needsHistory = [maAPeriod, maBPeriod].some((p) => !STANDARD_MA_PERIODS.includes(p));
-  let historyCache: Array<{ price: number }> | null = null;
-  if (needsHistory) {
-    const maxPeriod = Math.max(maAPeriod, maBPeriod, 120);
-    const history = await fetchStockPriceHistory(ma0Stock, maxPeriod + 30);
-    historyCache = history.map((h) => ({ price: h.price }));
-  }
-  const maA = await getMAForBaseStock(ma0Stock, maAPeriod, baseData, historyCache);
-  const maB = await getMAForBaseStock(ma0Stock, maBPeriod, baseData, historyCache);
-  return { maA, maB };
 }
 
 /**

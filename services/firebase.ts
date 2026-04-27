@@ -34,7 +34,6 @@ if (typeof window !== 'undefined' && getApps().length === 0) {
       console.warn('Firebase env is incomplete. Skipping app initialization.');
     } else {
       app = initializeApp(firebaseConfig);
-      console.log('Firebase initialized successfully');
     }
   } catch (error) {
     console.error('Firebase initialization error:', error);

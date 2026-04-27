@@ -47,6 +47,9 @@ vi.mock('../services/supabase', () => ({
 
 import {
   buildIndicatorRequirementCacheKey,
+  fetchStockPrices,
+  fetchStockPricesWithPrev,
+  fetchStockPriceHistory,
   fetchIndicatorAwareSnapshot,
   getRecentTradingDaysFromDbSafe,
 } from '../services/stockService';
@@ -161,6 +164,25 @@ describe('stockService requirement-aware cache', () => {
     expect(supabaseFrom).not.toHaveBeenCalled();
   });
 
+  it('동일한 indicator snapshot 요청은 in-flight 요청을 재사용한다', async () => {
+    const [firstResult, secondResult] = await Promise.all([
+      fetchIndicatorAwareSnapshot(' tqqq ', {
+        needsRsi: false,
+        maPeriods: [5],
+      }),
+      fetchIndicatorAwareSnapshot('TQQQ', {
+        needsRsi: false,
+        maPeriods: [5],
+      }),
+    ]);
+
+    expect(firstResult.ok).toBe(true);
+    expect(secondResult.ok).toBe(true);
+    expect(getIndicatorSnapshotCache).toHaveBeenCalledTimes(1);
+    expect(getStockPrices).toHaveBeenCalledTimes(1);
+    expect(saveIndicatorSnapshotCache).toHaveBeenCalledTimes(1);
+  });
+
   it('IndexedDB 초기화 실패 시에도 Supabase 스냅샷 계산으로 폴백한다', async () => {
     const consoleErrorSpy = vi
       .spyOn(console, 'error')
@@ -260,5 +282,71 @@ describe('stockService requirement-aware cache', () => {
     );
     expect(updateStockMetadata).toHaveBeenCalledWith('TQQQ', '2026-01-05', 5);
     expect(supabaseFrom).toHaveBeenCalledWith('stock_prices');
+  });
+
+  it('price-only 가격 조회는 표준 지표 스냅샷을 추가로 요청하지 않는다', async () => {
+    const result = await fetchStockPrices(['TQQQ'], { mode: 'price-only' });
+
+    expect(result.TQQQ?.price).toBe(119);
+    expect(getStockPrices).toHaveBeenCalledTimes(1);
+    expect(getIndicatorSnapshotCache).not.toHaveBeenCalled();
+    expect(supabaseFrom).not.toHaveBeenCalled();
+  });
+
+  it('동일한 price-only 가격 조회는 in-flight 요청을 재사용한다', async () => {
+    const [firstResult, secondResult] = await Promise.all([
+      fetchStockPrices([' tqqq '], { mode: 'price-only' }),
+      fetchStockPrices(['TQQQ'], { mode: 'price-only' }),
+    ]);
+
+    expect(firstResult.TQQQ?.price).toBe(119);
+    expect(secondResult.TQQQ?.price).toBe(119);
+    expect(getStockPrices).toHaveBeenCalledTimes(1);
+    expect(getIndicatorSnapshotCache).not.toHaveBeenCalled();
+  });
+
+  it('동일한 가격 이력 조회는 in-flight 요청을 재사용한다', async () => {
+    const [firstHistory, secondHistory] = await Promise.all([
+      fetchStockPriceHistory(' tqqq ', 20),
+      fetchStockPriceHistory('TQQQ', 20),
+    ]);
+
+    expect(firstHistory).toHaveLength(20);
+    expect(secondHistory).toHaveLength(20);
+    expect(firstHistory[19]?.price).toBe(119);
+    expect(secondHistory[19]?.price).toBe(119);
+    expect(getStockPrices).toHaveBeenCalledTimes(1);
+  });
+
+  it('전일가 조회는 심볼별 최신 2개 행만 요청한다', async () => {
+    const requestedSymbols: string[] = [];
+    const requestedLimits: number[] = [];
+
+    supabaseFrom.mockImplementation(() => {
+      const limit = vi.fn((limitValue: number) => {
+        requestedLimits.push(limitValue);
+        return Promise.resolve({
+          data: [
+            createSupabaseRow(20, 120),
+            createSupabaseRow(19, 110),
+          ],
+          error: null,
+        });
+      });
+      const order = vi.fn().mockReturnValue({ limit });
+      const eq = vi.fn((_column: string, symbol: string) => {
+        requestedSymbols.push(symbol);
+        return { order };
+      });
+      const select = vi.fn().mockReturnValue({ eq });
+      return { select };
+    });
+
+    const result = await fetchStockPricesWithPrev(['tqqq', 'qqq', 'TQQQ']);
+
+    expect(requestedSymbols).toEqual(['TQQQ', 'QQQ']);
+    expect(requestedLimits).toEqual([2, 2]);
+    expect(result.TQQQ).toEqual({ current: 120, previous: 110 });
+    expect(result.QQQ).toEqual({ current: 120, previous: 110 });
   });
 });

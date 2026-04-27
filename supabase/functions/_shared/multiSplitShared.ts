@@ -61,6 +61,20 @@ function floorToNonNegativeInt(value: number): number {
   return Math.max(0, Math.floor(value + Number.EPSILON));
 }
 
+export function getChronologicalTrades(trades: TradeInput[]): TradeInput[] {
+  return trades
+    .map((trade, index) => ({ trade, index }))
+    .sort((left, right) => {
+      const dateOrder = left.trade.date.localeCompare(right.trade.date);
+      if (dateOrder !== 0) {
+        return dateOrder;
+      }
+
+      return left.index - right.index;
+    })
+    .map(({ trade }) => trade);
+}
+
 export function calcHoldings(trades: TradeInput[]): HoldingsResult[] {
   const map: Record<
     string,
@@ -705,7 +719,11 @@ export function calculateMultiSplitGuideState(args: {
     'calculateMultiSplitGuideState',
   );
 
-  const targetHolding = findTargetHolding(args.trades, args.strategy.targetStock);
+  const chronologicalTrades = getChronologicalTrades(args.trades);
+  const targetHolding = findTargetHolding(
+    chronologicalTrades,
+    args.strategy.targetStock,
+  );
   const totalInvested = roundMoney(Math.max(0, targetHolding?.totalCost ?? 0));
   const currentQuantity = Math.max(0, targetHolding?.quantity ?? 0);
   const avgPrice = Math.max(0, targetHolding?.avgPrice ?? 0);

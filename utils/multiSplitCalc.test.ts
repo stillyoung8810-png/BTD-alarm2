@@ -5,6 +5,7 @@ import {
   calculateMultiSplitCashUsagePct,
   calculateMultiSplitGuideState,
   calculateMultiSplitSellGuide,
+  getChronologicalTrades,
   normalizeMultiSplitReturnRates,
   resolveAppliedLocRatio,
   type TradeInput,
@@ -56,6 +57,34 @@ function makeIndicatorSnapshot(
 describe('calcHoldings', () => {
   it('빈 거래 목록이면 빈 배열을 반환한다', () => {
     expect(calcHoldings([])).toEqual([]);
+  });
+
+  it('거래 날짜를 오름차순으로 정렬하되 같은 날짜의 입력 순서는 보존한다', () => {
+    const sameDayFirst = makeTrade({
+      type: 'buy',
+      stock: 'AAPL',
+      date: '2026-01-15',
+      price: 100,
+      quantity: 1,
+    });
+    const sameDaySecond = makeTrade({
+      type: 'sell',
+      stock: 'AAPL',
+      date: '2026-01-15',
+      price: 101,
+      quantity: 1,
+    });
+    const laterTrade = makeTrade({
+      type: 'buy',
+      stock: 'AAPL',
+      date: '2026-04-15',
+      price: 110,
+      quantity: 1,
+    });
+
+    expect(
+      getChronologicalTrades([laterTrade, sameDayFirst, sameDaySecond]),
+    ).toEqual([sameDayFirst, sameDaySecond, laterTrade]);
   });
 
   it('부분 매도 후 평균 단가와 실현손익을 유지한다', () => {
@@ -226,6 +255,44 @@ describe('calculateMultiSplitSellGuide', () => {
 });
 
 describe('calculateMultiSplitGuideState', () => {
+  it('최신순 저장 거래 배열도 시간순으로 정렬해 보유 장부를 계산한다', () => {
+    const result = calculateMultiSplitGuideState({
+      trades: [
+        makeTrade({
+          type: 'sell',
+          stock: 'AAPL',
+          date: '2026-04-15',
+          price: 110,
+          quantity: 4,
+          fee: 0,
+        }),
+        makeTrade({
+          type: 'buy',
+          stock: 'AAPL',
+          date: '2026-01-15',
+          price: 100,
+          quantity: 10,
+          fee: 0,
+        }),
+      ],
+      strategy: makeSmartSplitStrategy({
+        targetStock: 'AAPL',
+        baseLocRatio: 50,
+      }),
+      oneTimeAmount: 200,
+      feeRate: 0.25,
+      snapshot: makeIndicatorSnapshot({
+        currentPrice: 110,
+      }),
+    });
+
+    expect(result.currentQuantity).toBe(6);
+    expect(result.totalInvested).toBe(600);
+    expect(result.avgPrice).toBe(100);
+    expect(result.isFirstBuy).toBe(false);
+    expect(result.isDataError).toBe(false);
+  });
+
   it('보유 수량과 스냅샷을 합성해 Smart Split 가이드를 한 번에 계산한다', () => {
     const result = calculateMultiSplitGuideState({
       trades: [

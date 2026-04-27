@@ -1,4 +1,8 @@
 import type { AppLang } from '@/types';
+import { getStrategyNames } from '../../supabase/functions/_shared/strategyNames.ts';
+
+const STRATEGY_NAMES_KO = getStrategyNames('ko');
+const STRATEGY_NAMES_EN = getStrategyNames('en');
 
 export interface CommonMessageSet {
   save: string;
@@ -48,7 +52,7 @@ export const COMMON_MESSAGES: Record<AppLang, CommonMessageSet> = {
     longMaPeriod: '장기 이평 기간',
     periodicWithdrawal: '주기별 인출금',
     createStrategy: '전략 생성',
-    setupDescription: '이평선 구간 전략의 기본값을 설정합니다.',
+    setupDescription: `${STRATEGY_NAMES_KO.ma_interval}의 기본값을 설정합니다.`,
     saveAriaLabel: '전략 저장',
     namePlaceholder: '예: 나스닥 적립식',
     saveFailed: '저장 중 오류가 발생했습니다.',
@@ -86,7 +90,7 @@ export const COMMON_MESSAGES: Record<AppLang, CommonMessageSet> = {
     periodicWithdrawal: 'Periodic Withdrawal',
     createStrategy: 'Create Strategy',
     setupDescription:
-      'Configure defaults for the moving-average interval strategy.',
+      `Configure defaults for the ${STRATEGY_NAMES_EN.ma_interval} strategy.`,
     saveAriaLabel: 'Save strategy',
     namePlaceholder: 'e.g. Nasdaq accumulation',
     saveFailed: 'Failed to save.',

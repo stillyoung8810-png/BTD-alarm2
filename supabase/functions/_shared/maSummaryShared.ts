@@ -1,7 +1,6 @@
 import type {
   Portfolio,
   Strategy,
-  VrBandStrategyParams,
 } from './types.ts';
 import {
   buildMultiSplitExecutionSummaryLines,
@@ -11,6 +10,9 @@ import {
   buildNoStopExecutionSummaryLines,
   type NoStopExecutionSummaryData,
 } from './noStopExecutionMessages.ts';
+import { getMaExecutionMessages } from './maExecutionMessages.ts';
+import { getVrExecutionMessages } from './vrExecutionMessages.ts';
+import { getStrategyNames } from './strategyNames.ts';
 
 export type Lang = 'ko' | 'en';
 
@@ -44,59 +46,6 @@ export interface MaSnapshotLike {
 
 export const DEFAULT_MA_RSI_FALLBACK = 50;
 
-const STRINGS: Record<
-  Lang,
-  {
-    strategyMultiSplit: string;
-    strategyNoStopMultiSplit: string;
-    strategyMa: string;
-    strategyVrBand: string;
-    alarmTimes: string;
-    noOrder: string;
-    section: string;
-    buy: string;
-    sectionProfit: string;
-    sectionPartialProfit: string;
-    sectionWatchRsiNotMet: string;
-    sectionWatchAlignmentNotMet: string;
-    sectionWatchBothNotMet: string;
-    sharesUnit: string;
-  }
-> = {
-  ko: {
-    strategyMultiSplit: '스마트 스플릿',
-    strategyNoStopMultiSplit: '다분할 매매법(무손절)',
-    strategyMa: '이평선 구간매수',
-    strategyVrBand: '타겟 밸류 채널',
-    alarmTimes: '알람 시간',
-    noOrder: '오늘 주문 요약은 앱에서 확인해 주세요.',
-    section: '구간',
-    buy: '매수',
-    sectionProfit: '익절',
-    sectionPartialProfit: '중간익절',
-    sectionWatchRsiNotMet: '관망 (RSI 조건 미충족)',
-    sectionWatchAlignmentNotMet: '관망 (정배열 미충족)',
-    sectionWatchBothNotMet: '관망 (정배열 미충족, RSI 조건 미충족)',
-    sharesUnit: '주',
-  },
-  en: {
-    strategyMultiSplit: 'Smart Split',
-    strategyNoStopMultiSplit: 'No-Stop Multi-Split',
-    strategyMa: 'Moving Average Strategy',
-    strategyVrBand: 'Target Value Channel',
-    alarmTimes: 'Alarm times',
-    noOrder: "Please check today's orders in the app.",
-    section: 'Section',
-    buy: 'Buy',
-    sectionProfit: 'Take profit',
-    sectionPartialProfit: 'Partial profit',
-    sectionWatchRsiNotMet: 'Watch (RSI not met)',
-    sectionWatchAlignmentNotMet: 'Watch (alignment not met)',
-    sectionWatchBothNotMet: 'Watch (alignment not met, RSI not met)',
-    sharesUnit: 'shares',
-  },
-};
-
 function formatCurrency(value: number | null | undefined): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '$0.00';
   return `$${value.toLocaleString('en-US', {
@@ -105,38 +54,52 @@ function formatCurrency(value: number | null | undefined): string {
   })}`;
 }
 
-function getVrModeLabel(
-  vrMode: VrBandStrategyParams['vrMode'],
-  lang: Lang,
-): string {
-  switch (vrMode) {
-    case 'lump_sum':
-      return lang === 'ko' ? '거치식' : 'Lump-sum';
-    case 'accumulate':
-      return lang === 'ko' ? '적립식' : 'Accumulate';
-    case 'withdraw':
-      return lang === 'ko' ? '인출식' : 'Withdraw';
+function getStrategyLabel(portfolio: Portfolio, lang: Lang): string {
+  const names = getStrategyNames(lang);
+
+  if (portfolio.strategy.vrBand) {
+    return names.vr_band;
+  }
+  if (portfolio.strategy.multiSplit) {
+    return names.multi_split;
+  }
+  if (portfolio.strategy.noStopMultiSplit) {
+    return names.no_stop_multi_split;
+  }
+  return names.ma_interval;
+}
+
+function getMaSectionStock(portfolio: Portfolio, section: 1 | 2 | 3): string {
+  switch (section) {
+    case 1:
+      return portfolio.strategy.ma1?.stock ?? '';
+    case 2:
+      return portfolio.strategy.ma2?.stock ?? '';
+    case 3:
+      return portfolio.strategy.ma3?.stock ?? '';
     default: {
-      const exhaustiveCheck: never = vrMode;
+      const exhaustiveCheck: never = section;
       return exhaustiveCheck;
     }
   }
 }
 
-function getStrategyLabel(
+function isMaPartialProfitEnabled(
   portfolio: Portfolio,
-  strings: Record<keyof (typeof STRINGS)['ko'], string>,
-): string {
-  if (portfolio.strategy.vrBand) {
-    return strings.strategyVrBand;
+  section: 1 | 2 | 3,
+): boolean {
+  switch (section) {
+    case 1:
+      return portfolio.strategy.ma1?.takePartialProfit === true;
+    case 2:
+      return portfolio.strategy.ma2?.takePartialProfit === true;
+    case 3:
+      return portfolio.strategy.ma3?.takePartialProfit === true;
+    default: {
+      const exhaustiveCheck: never = section;
+      return exhaustiveCheck;
+    }
   }
-  if (portfolio.strategy.multiSplit) {
-    return strings.strategyMultiSplit;
-  }
-  if (portfolio.strategy.noStopMultiSplit) {
-    return strings.strategyNoStopMultiSplit;
-  }
-  return strings.strategyMa;
 }
 
 function formatVrBandBlock(
@@ -144,45 +107,35 @@ function formatVrBandBlock(
   lang: Lang,
   options: { vrMaxBuyStep?: number },
 ): string {
-  const s = STRINGS[lang] ?? STRINGS.ko;
+  const messages = getVrExecutionMessages(lang);
   const snapshot = portfolio.vrSnapshot;
 
   if (!snapshot) {
-    const pending =
-      lang === 'ko'
-        ? 'TVC 전략 데이터를 계산하는 중입니다. 첫 매수를 T값 안에서 진행해 주세요.'
-        : 'Calculating TVC strategy data. Please execute your first buy within the T value.';
-    return `- ${pending}`;
+    return `- ${messages.pendingHint}`;
   }
 
   const lines: string[] = [];
   const vrMode = portfolio.strategy.vrBand?.vrMode;
 
   if (vrMode) {
-    lines.push(`[${getVrModeLabel(vrMode, lang)}]`);
+    lines.push(`[${messages.modeLabel[vrMode]}]`);
   }
 
   const { currentV, pool, bandLow, bandHigh } = snapshot;
-  lines.push(`- T: ${formatCurrency(currentV)}`);
-  lines.push(`- Pool: ${formatCurrency(pool)}`);
+  lines.push(`- ${messages.targetValue}: ${formatCurrency(currentV)}`);
+  lines.push(`- ${messages.pool}: ${formatCurrency(pool)}`);
   if (typeof bandLow === 'number' && typeof bandHigh === 'number') {
-    lines.push(`- Band: ${bandLow.toFixed(2)} ~ ${bandHigh.toFixed(2)}`);
+    lines.push(
+      `- ${messages.band}: ${formatCurrency(bandLow)} ~ ${formatCurrency(bandHigh)}`,
+    );
   }
 
   const maxStep = options.vrMaxBuyStep ?? 0;
   if (maxStep > 0) {
-    const hint =
-      lang === 'ko'
-        ? `예약 매수는 표의 ${maxStep}번까지 주문하세요`
-        : `Place reserve buy orders up to row ${maxStep}.`;
-    lines.push(`- ${hint}`);
+    lines.push(`- ${messages.maxBuyHint(maxStep)}`);
   }
 
-  const readyHint =
-    lang === 'ko'
-      ? 'TVC 전략 룰에 따라 예약 주문표를 참고하여 매매하세요.'
-      : 'Follow the TVC strategy rules using the reservation order table.';
-  lines.push(`- ${readyHint}`);
+  lines.push(`- ${messages.readyHint}`);
 
   return lines.join('\n');
 }
@@ -320,7 +273,7 @@ export function formatPortfolioDailyExecutionBlock(
   lang: Lang,
   options: DailyExecutionBlockOptions,
 ): string {
-  const s = STRINGS[lang] ?? STRINGS.ko;
+  const messages = getMaExecutionMessages(lang);
   const hours = (portfolio.alarmconfig?.selectedHours ?? []).join(', ');
   const lines: string[] = [];
   const portfolioName = portfolio?.name ?? '';
@@ -329,9 +282,9 @@ export function formatPortfolioDailyExecutionBlock(
   const isNoStopMultiSplit = portfolio.strategy.noStopMultiSplit != null;
 
   lines.push(`📌 ${portfolioName}`);
-  lines.push(`- ${getStrategyLabel(portfolio, s)}`);
+  lines.push(`- ${getStrategyLabel(portfolio, lang)}`);
   const tzLabel = portfolio.alarmconfig?.timezone || 'Asia/Seoul';
-  lines.push(`- ${s.alarmTimes} (${tzLabel}): ${hours || '-'}`);
+  lines.push(`- ${messages.alarmTimes} (${tzLabel}): ${hours || '-'}`);
 
   if (isVrBand) {
     const vrBlock = formatVrBandBlock(portfolio, lang, {
@@ -357,64 +310,52 @@ export function formatPortfolioDailyExecutionBlock(
     if (maActiveSection === 1 || maActiveSection === 2 || maActiveSection === 3) {
       if (effectiveAlignmentNot && effectiveRsiNot) {
         lines.push(
-          `- ${s.section} ${maActiveSection}: ${s.sectionWatchBothNotMet}`,
+          `- ${messages.section} ${maActiveSection}: ${messages.sectionWatchBothNotMet}`,
         );
       } else if (effectiveAlignmentNot) {
         lines.push(
-          `- ${s.section} ${maActiveSection}: ${s.sectionWatchAlignmentNotMet}`,
+          `- ${messages.section} ${maActiveSection}: ${messages.sectionWatchAlignmentNotMet}`,
         );
       } else if (effectiveRsiNot) {
         lines.push(
-          `- ${s.section} ${maActiveSection}: ${s.sectionWatchRsiNotMet}`,
+          `- ${messages.section} ${maActiveSection}: ${messages.sectionWatchRsiNotMet}`,
         );
       } else {
-        const stock =
-          maActiveSection === 1
-            ? (portfolio.strategy.ma1?.stock ?? '')
-            : maActiveSection === 2
-              ? (portfolio.strategy.ma2?.stock ?? '')
-              : (portfolio.strategy.ma3?.stock ?? '');
-        if (stock) lines.push(`- ${s.section} ${maActiveSection}: ${stock} ${s.buy}`);
+        const stock = getMaSectionStock(portfolio, maActiveSection);
+        if (stock) {
+          lines.push(
+            `- ${messages.section} ${maActiveSection}: ${stock} ${messages.buy}`,
+          );
+        }
       }
     }
 
     if (maPartialProfitLines && maPartialProfitLines.length > 0) {
-      const ma1 = portfolio.strategy.ma1;
-      const ma2 = portfolio.strategy.ma2;
-      const ma3 = portfolio.strategy.ma3;
-
       maPartialProfitLines.forEach(({ section, stock, quantity }) => {
         if (section !== 1 && section !== 2 && section !== 3) return;
 
-        const takeEnabled =
-          section === 1
-            ? ma1?.takePartialProfit
-            : section === 2
-              ? ma2?.takePartialProfit
-              : ma3?.takePartialProfit;
-
-        if (!takeEnabled) return;
+        if (!isMaPartialProfitEnabled(portfolio, section)) return;
 
         const roundedQuantity = Math.round(quantity);
         if (roundedQuantity > 0 && stock) {
           lines.push(
-            `- ${s.section} ${section} ${s.sectionPartialProfit}: ${stock} ${roundedQuantity}${s.sharesUnit}`,
+            `- ${messages.section} ${section} ${messages.sectionPartialProfit}: ${stock} ${roundedQuantity}${messages.sharesUnit}`,
           );
         }
       });
     }
 
-    lines.push(`- ${s.noOrder}`);
+    lines.push(`- ${messages.noOrder}`);
     return lines.join('\n');
   }
 
-  const unit = s.sharesUnit;
+  const unit = messages.sharesUnit;
 
   if (isNoStopMultiSplit) {
     const data = options.noStopMultiSplitExecutionData;
 
     if (data == null) {
-      lines.push(`- ${s.noOrder}`);
+      lines.push(`- ${messages.noOrder}`);
       return lines.join('\n');
     }
 
@@ -430,7 +371,7 @@ export function formatPortfolioDailyExecutionBlock(
   }
 
   if (options.multiSplitExecutionData == null) {
-    lines.push(`- ${s.noOrder}`);
+    lines.push(`- ${messages.noOrder}`);
     return lines.join('\n');
   }
 
@@ -440,42 +381,6 @@ export function formatPortfolioDailyExecutionBlock(
   });
   lines.push(...multiSplitLines.map((line) => `- ${line}`));
   return lines.join('\n');
-}
-
-export function collectMaPartialProfitLines(
-  portfolio: Portfolio,
-  maPartialProfitLines: { section: 1 | 2 | 3; stock: string; quantity: number }[],
-): string[] {
-  const ma1 = portfolio.strategy.ma1;
-  const ma2 = portfolio.strategy.ma2;
-  const ma3 = portfolio.strategy.ma3;
-
-  return maPartialProfitLines.reduce<string[]>((lines, { section, stock, quantity }) => {
-    if (section !== 1 && section !== 2 && section !== 3) {
-      return lines;
-    }
-
-    const takeEnabled =
-      section === 1
-        ? ma1?.takePartialProfit
-        : section === 2
-          ? ma2?.takePartialProfit
-          : ma3?.takePartialProfit;
-
-    if (!takeEnabled) {
-      return lines;
-    }
-
-    const roundedQuantity = Math.round(quantity);
-    if (roundedQuantity > 0 && stock) {
-      const s = STRINGS.ko;
-      lines.push(
-        `- ${s.section} ${section} ${s.sectionPartialProfit}: ${stock} ${roundedQuantity}${s.sharesUnit}`,
-      );
-    }
-
-    return lines;
-  }, []);
 }
 
 export type { PartialProfitStrategyConfig };

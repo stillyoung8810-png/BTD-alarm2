@@ -121,7 +121,9 @@ export function usePortfolioDetailsController({
 
     let isCancelled = false;
 
-    fetchStockPrices(holdings.map((holding) => holding.stock))
+    fetchStockPrices(holdings.map((holding) => holding.stock), {
+      mode: 'price-only',
+    })
       .then((prices) => {
         if (isCancelled) {
           return;

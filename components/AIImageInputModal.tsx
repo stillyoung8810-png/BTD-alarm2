@@ -178,14 +178,10 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
           .filter((s): s is string => !!s)
           .map((s) => s.toUpperCase().trim());
 
-        console.log('[AIImageInputModal] Gemini raw result:', result.trades);
-        console.log('[AIImageInputModal] Strategy stocks (tickers):', strategyStocks);
-
         const allowedSet = new Set(strategyStocks);
         const filteredTrades = result.trades.filter((r) =>
           allowedSet.has(r.stock.toUpperCase().trim())
         );
-        console.log('[AIImageInputModal] Filtered trades:', filteredTrades);
 
         if (filteredTrades.length > 0) {
           setRecognizedTrades(filteredTrades);

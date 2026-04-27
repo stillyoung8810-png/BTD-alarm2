@@ -1,4 +1,9 @@
 
+import { getStrategyNames } from './supabase/functions/_shared/strategyNames.ts';
+
+const STRATEGY_NAMES_KO = getStrategyNames('ko');
+const STRATEGY_NAMES_EN = getStrategyNames('en');
+
 export const AVAILABLE_STOCKS = [
   'SPY', 'SSO', 'UPRO', 'QQQ', 'QLD', 'TQQQ', 'SQQQ', 'SOXX', 'USD', 'SOXL', 'STRC',
   'TSLA', 'NVDA', 'GOOGL', 'PLTR', 'COIN', 'MSTR', 'BMNR',
@@ -164,11 +169,11 @@ export const I18N = {
     backtest: "백테스트",
     backtestSubtitle: "과거 2년 데이터를 통해 내 전략의 수익과 위험을 검증하세요.",
     backtestPeriod: "백테스트 기간",
-    strategyMaTitle: "이평선 구간매수",
+    strategyMaTitle: STRATEGY_NAMES_KO.ma_interval,
     strategyMaDesc: "이평선과 RSI를 결합한 고급 구간 대응 전략",
-    strategyMultiSplitTitle: "다분할 매매법",
+    strategyMultiSplitTitle: STRATEGY_NAMES_KO.multi_split,
     strategyMultiSplitDesc: "목표 수익률 기반의 체계적 가변 분할 매수",
-    strategyNoStopMultiSplitTitle: "다분할 매매법(무손절)",
+    strategyNoStopMultiSplitTitle: STRATEGY_NAMES_KO.no_stop_multi_split,
     strategyNoStopMultiSplitDesc: "손절 없이 평단가 LOC와 고가 LOC로 나누어 기계적으로 매수하는 공격적 전략",
     backtestParamsTitle: "백테스트 파라미터 설정",
     backtestParamsSubtitle: "SIMULATION SETTINGS",
@@ -212,10 +217,6 @@ export const I18N = {
     lowLoc: "저가 LOC",
     highLoc: "고가 LOC",
     mocSell: "MOC 매도",
-    noStopFirstBuyHint: "첫 매수는 장중 아무 때나, 자유롭게 매수해 주세요.",
-    noStopSplitComplete: "분할 매수가 모두 완료되었습니다. 추가 매수 없이 보유(존버)와 익절만 수행합니다.",
-    noStopTakeProfitTarget: "익절 목표",
-    noStopGuaranteedDailyFill: "매일 체결 보장용",
     sharesUnit: "주",
     noOrder: "오늘 주문 요약은 앱에서 확인해 주세요.",
     alarmSettingsLabel: "알람 설정",
@@ -333,11 +334,11 @@ export const I18N = {
     backtest: "Backtest",
     backtestSubtitle: "Verify your strategy's profit and risk using the past 2 years of data.",
     backtestPeriod: "Backtest Period",
-    strategyMaTitle: "Moving Average Interval",
+    strategyMaTitle: STRATEGY_NAMES_EN.ma_interval,
     strategyMaDesc: "Advanced interval strategy combining MAs and RSI",
-    strategyMultiSplitTitle: "Multi-Split Strategy",
+    strategyMultiSplitTitle: STRATEGY_NAMES_EN.multi_split,
     strategyMultiSplitDesc: "Systematic variable split buying based on target return",
-    strategyNoStopMultiSplitTitle: "No-Stop Multi-Split",
+    strategyNoStopMultiSplitTitle: STRATEGY_NAMES_EN.no_stop_multi_split,
     strategyNoStopMultiSplitDesc: "Aggressive split-buy strategy that keeps buying with avg-price and premium LOC orders without stop-loss",
     backtestParamsTitle: "Backtest Parameter Settings",
     backtestParamsSubtitle: "SIMULATION SETTINGS",
@@ -381,10 +382,6 @@ export const I18N = {
     lowLoc: "Low LOC",
     highLoc: "High LOC",
     mocSell: "MOC Sell",
-    noStopFirstBuyHint: "For your first buy, feel free to buy anytime during market hours.",
-    noStopSplitComplete: "All split buys are complete. Hold and wait for take profit without additional buys.",
-    noStopTakeProfitTarget: "Take-profit target",
-    noStopGuaranteedDailyFill: "For guaranteed daily fill",
     sharesUnit: "shares",
     noOrder: "Please check today's orders in the app.",
     alarmSettingsLabel: "Alarm settings",

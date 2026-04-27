@@ -5,9 +5,6 @@ import type {
   NoStopMovingAveragePeriod,
 } from '../types';
 
-// IndexedDB 디버그 로그 토글 (필요할 때만 true로 변경)
-const DEBUG_DB_LOG = false;
-
 /**
  * 주가 데이터 인터페이스
  * IndexedDB에 저장되는 주가 데이터 구조
@@ -108,9 +105,6 @@ export const db = new StockDatabase();
 export const initDatabase = async (): Promise<void> => {
   try {
     await db.open();
-    if (DEBUG_DB_LOG) {
-      console.log('[IndexedDB] 데이터베이스 초기화 완료');
-    }
   } catch (error) {
     console.error('[IndexedDB] 데이터베이스 초기화 실패:', error);
     throw error;
@@ -197,7 +191,6 @@ export const saveStockPrices = async (
       },
     );
 
-    console.log(`[IndexedDB] ${records.length}개 주가 데이터 저장 완료`);
   } catch (error) {
     console.error('[IndexedDB] 주가 데이터 저장 실패:', error);
     throw error;
@@ -324,7 +317,6 @@ export const deleteStockData = async (symbol: string): Promise<void> => {
     await db.stockPrices.where('symbol').equals(symbol).delete();
     await db.stockMetadata.where('symbol').equals(symbol).delete();
     await deleteIndicatorSnapshotCacheBySymbol(symbol);
-    console.log(`[IndexedDB] ${symbol} 데이터 삭제 완료`);
   } catch (error) {
     console.error(`[IndexedDB] 데이터 삭제 실패 (${symbol}):`, error);
     throw error;
@@ -339,7 +331,6 @@ export const clearAllStockData = async (): Promise<void> => {
     await db.stockPrices.clear();
     await db.stockMetadata.clear();
     await db.indicatorSnapshots.clear();
-    console.log('[IndexedDB] 모든 주가 데이터 삭제 완료');
   } catch (error) {
     console.error('[IndexedDB] 데이터 삭제 실패:', error);
     throw error;

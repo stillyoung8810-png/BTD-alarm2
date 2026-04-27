@@ -21,12 +21,18 @@ interface EdgeSelectResult<Row> {
   error: unknown;
 }
 
+interface EdgePortfolioSelectFilter {
+  eq(column: 'is_closed', value: boolean): EdgePortfolioSelectFilter;
+  not(
+    column: 'strategy->vrBand',
+    operator: 'is',
+    value: null,
+  ): EdgePortfolioSelectFilter;
+  range(from: number, to: number): Promise<EdgeSelectResult<PortfolioRow>>;
+}
+
 interface EdgePortfoliosGateway {
-  select(columns: string): {
-    eq(column: 'is_closed', value: boolean): {
-      range(from: number, to: number): Promise<EdgeSelectResult<PortfolioRow>>;
-    };
-  };
+  select(columns: string): EdgePortfolioSelectFilter;
   update(payload: { vr_snapshot: VrSnapshot }): {
     eq(column: 'id', value: string): Promise<EdgeMutationResult>;
   };
@@ -58,7 +64,7 @@ async function refreshVrSnapshotForPortfolio(
 
 const PAGE_SIZE = 1000;
 const SELECT_COLUMNS =
-  'id, user_id, name, daily_buy_amount, fee_rate, strategy, trades, alarm_config, is_closed, vr_snapshot, start_date';
+  'id, name, daily_buy_amount, fee_rate, strategy, trades, alarm_config, is_closed, vr_snapshot, start_date';
 
 export async function processAllVrPortfolios(supabase: EdgeSupabase): Promise<void> {
   let offset = 0;
@@ -69,6 +75,8 @@ export async function processAllVrPortfolios(supabase: EdgeSupabase): Promise<vo
       .from('portfolios')
       .select(SELECT_COLUMNS)
       .eq('is_closed', false)
+      // DB 단계에서 TVC 포트폴리오만 가져와 비-TVC row egress를 제거합니다.
+      .not('strategy->vrBand', 'is', null)
       .range(offset, offset + PAGE_SIZE - 1);
 
     if (error) throw error;

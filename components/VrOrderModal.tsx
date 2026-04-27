@@ -134,10 +134,17 @@ function renderCellContent(
   return defaultCellContent(order, { id: col.id, format: col.format });
 }
 
+function getOrderRowKey(tabId: TabId, order: OrderLevel): string {
+  const bufferSuffix = order.isBuffer ? 'buffer' : 'main';
+  return `${tabId}-${order.step}-${bufferSuffix}`;
+}
+
 function VrOrderTable({
+  tabId,
   orders,
   labels,
 }: {
+  tabId: TabId;
   orders: OrderLevel[];
   labels: LabelsLang;
 }) {
@@ -157,15 +164,14 @@ function VrOrderTable({
           </tr>
         </thead>
         <tbody>
-          {orders.map((order, idx) => {
-            const safeKey = `${order.step ?? 'invalid'}-${order.price ?? 'invalid'}-${idx}`;
+          {orders.map((order) => {
             const rowClass = order.isBuffer
               ? 'text-gray-400 dark:text-gray-500'
               : 'text-slate-800 dark:text-slate-200';
             const isCurrentState = order.step === STEP_CURRENT_STATE;
             return (
               <tr
-                key={safeKey}
+                key={getOrderRowKey(tabId, order)}
                 className={`border-b border-slate-100 dark:border-white/5 ${rowClass} ${
                   isCurrentState ? 'bg-blue-50/50 dark:bg-blue-900/20' : ''
                 }`}
@@ -277,7 +283,7 @@ export default function VrOrderModal({
         </div>
 
         <div className="flex-1 p-4 sm:p-6 min-h-[12rem] overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full">
-          <VrOrderTable orders={orders} labels={t} />
+          <VrOrderTable tabId={activeTab} orders={orders} labels={t} />
         </div>
       </div>
     </div>

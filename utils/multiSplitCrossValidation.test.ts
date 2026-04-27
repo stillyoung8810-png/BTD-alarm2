@@ -13,6 +13,7 @@ import {
   type MultiSplitGuideState,
 } from '../supabase/functions/_shared/multiSplitShared.ts';
 import { buildMultiSplitExecutionSummaryLines } from '../supabase/functions/_shared/multiSplitExecutionMessages.ts';
+import { getStrategyName } from '../supabase/functions/_shared/strategyNames.ts';
 import { formatPortfolioDailyExecutionBlock } from './dailyExecutionSummary';
 import { formatPortfolioDailyExecutionBlock as formatServerDailyExecutionBlock } from '../supabase/functions/_shared/maSummaryShared.ts';
 import { useMultiSplitExecution } from '../hooks/useMultiSplitExecution';
@@ -226,7 +227,7 @@ describe('multi-split cross validation', () => {
       '중간 익절: $105.00 / 4주',
     ]);
     expect(clientBlock).toBe(serverBlock);
-    expect(clientBlock).toContain('- 스마트 스플릿');
+    expect(clientBlock).toContain(`- ${getStrategyName('ko', 'multi_split')}`);
     expect(clientBlock).toContain('- 현금 사용률: 50%');
     expect(clientBlock).toContain('- 평단가 매수 (LOC): $100.00 / 1주');
     expect(clientBlock).toContain('- 분할 매수 (MOC): 0주');

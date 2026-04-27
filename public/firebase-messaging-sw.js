@@ -24,8 +24,6 @@ const messaging = firebase.messaging();
 
 // 4. 백그라운드 메시지 처리
 messaging.onBackgroundMessage((payload) => {
-  console.log('[firebase-messaging-sw.js] 백그라운드 메시지 수신:', payload);
-
   const notificationTitle = payload.notification?.title || 'BTD 알림';
   const notificationOptions = {
     body: payload.notification?.body || '',

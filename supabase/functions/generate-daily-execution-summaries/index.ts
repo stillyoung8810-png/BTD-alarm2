@@ -1,7 +1,13 @@
 // 배포: supabase functions deploy generate-daily-execution-summaries --no-verify-jwt
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getEffectiveSubscriptionState } from "../../../server/src/services/paymentFulfillment.ts";
+import {
+  createClient,
+  type SupabaseClient,
+} from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  getEffectiveSubscriptionState,
+  type SubscriptionProfileSnapshot,
+} from "../../../server/src/services/paymentFulfillment.ts";
 import type {
   IndicatorRequirements,
   NoStopIndicatorSnapshot,
@@ -9,7 +15,6 @@ import type {
   Portfolio,
   PortfolioRow,
   Strategy,
-  UserProfileRow,
 } from "../_shared/types.ts";
 import {
   calculateMaAlignmentNotMet,
@@ -31,10 +36,10 @@ import {
   calculateNoStopExecution,
   collectIndicatorRequirements as collectNoStopIndicatorRequirements,
   EMPTY_PRICE_HISTORY_ERROR,
-  type NoStopMultiSplitExecutionData,
   type NoStopIndicatorMathPort,
 } from "../_shared/noStopMultiSplitShared.ts";
 import { roundMoney } from "../_shared/financialMath.ts";
+import { mapWithConcurrency } from "../_shared/asyncBatch.ts";
 
 interface Holdings {
   stock: string;
@@ -48,9 +53,35 @@ interface StockHistory {
   dates: string[];
 }
 
+type StockHistoryInflightCache = Map<string, Promise<StockHistory>>;
+type SnapshotInflightCache = Map<string, Promise<NoStopIndicatorSnapshot>>;
+type DailyExecutionSupabaseClient = SupabaseClient;
+
+interface DailyExecutionCacheContext {
+  historyCache: Map<string, StockHistory>;
+  historyInflightCache: StockHistoryInflightCache;
+  snapshotCache: Map<string, NoStopIndicatorSnapshot>;
+  snapshotInflightCache: SnapshotInflightCache;
+}
+
+interface DailyExecutionSummaryUpsertRow {
+  user_id: string;
+  summary_date: string;
+  summary_text: string;
+  lang: Lang;
+  updated_at: string;
+}
+
 interface StockPriceRow {
   close: number | string | null;
   trade_date: string | null;
+}
+
+interface UserProfileRow extends SubscriptionProfileSnapshot {
+  id?: string;
+  telegram_enabled?: boolean | null;
+  telegram_chat_id?: string | null;
+  preferred_language?: string | null;
 }
 
 type PartialProfitStrategyConfig =
@@ -60,6 +91,9 @@ type PartialProfitStrategyConfig =
 
 const REQUIREMENT_AWARE_MA_PERIODS = [5, 20, 60, 120] as const;
 const PORTFOLIO_USER_CHUNK = 200;
+const SUMMARY_BUILD_CONCURRENCY = 5;
+const STOCK_HISTORY_PRELOAD_CONCURRENCY = 5;
+const STOCK_HISTORY_PRELOAD_MAX_ROWS = 260;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const RSI_HISTORY_WINDOW = 15;
 const MIN_HISTORY_WINDOW = 1;
@@ -142,6 +176,10 @@ function getRequiredHistoryCount(requirements: IndicatorRequirements): number {
   return Math.max(minimumRsiWindow, maximumMaWindow);
 }
 
+function buildStockHistoryCacheKey(symbol: string, limit: number): string {
+  return `${normalizeTickerSymbol(symbol)}:${limit}`;
+}
+
 function isRequirementAwareMaPeriod(
   period: number,
 ): period is NoStopMovingAveragePeriod {
@@ -175,8 +213,282 @@ function toStockPriceRows(raw: unknown): StockPriceRow[] {
   }, []);
 }
 
+function createStockHistoryFromRows(rows: readonly StockPriceRow[]): StockHistory {
+  const prices = rows
+    .map((row) => Number(row.close ?? 0))
+    .filter((price) => price > 0);
+  const dates = rows
+    .map((row) => String(row.trade_date ?? ""))
+    .filter(Boolean);
+
+  return { prices, dates };
+}
+
+function normalizeHistoryLimit(limit: number): number {
+  if (!Number.isFinite(limit)) {
+    return MIN_HISTORY_WINDOW;
+  }
+
+  return Math.max(MIN_HISTORY_WINDOW, Math.ceil(limit));
+}
+
+function addStockHistoryRequirement(
+  requirementsBySymbol: Map<string, Set<number>>,
+  symbol: string,
+  limit: number,
+): void {
+  const normalizedSymbol = normalizeTickerSymbol(symbol);
+  if (normalizedSymbol.length === 0) {
+    return;
+  }
+
+  const safeLimit = normalizeHistoryLimit(limit);
+  const limits = requirementsBySymbol.get(normalizedSymbol) ?? new Set<number>();
+  limits.add(safeLimit);
+  requirementsBySymbol.set(normalizedSymbol, limits);
+}
+
+function addIndicatorHistoryRequirement(
+  requirementsBySymbol: Map<string, Set<number>>,
+  symbol: string,
+  requirements: IndicatorRequirements,
+): void {
+  const normalizedRequirements = normalizeIndicatorRequirements(requirements);
+  addStockHistoryRequirement(
+    requirementsBySymbol,
+    symbol,
+    getRequiredHistoryCount(normalizedRequirements),
+  );
+}
+
+function addMaPeriodHistoryRequirements(
+  requirementsBySymbol: Map<string, Set<number>>,
+  symbol: string,
+  period: number,
+): void {
+  if (isRequirementAwareMaPeriod(period)) {
+    addIndicatorHistoryRequirement(requirementsBySymbol, symbol, {
+      needsRsi: false,
+      maPeriods: [period],
+    });
+  }
+
+  addStockHistoryRequirement(
+    requirementsBySymbol,
+    symbol,
+    Math.max(period + 30, 120),
+  );
+}
+
+function addMaPortfolioHistoryRequirements(
+  requirementsBySymbol: Map<string, Set<number>>,
+  portfolio: Portfolio,
+): void {
+  const ma0Stock = portfolio.strategy.ma0.stock;
+  const { maAPeriod, maBPeriod } = getMaPeriods(portfolio);
+
+  addIndicatorHistoryRequirement(
+    requirementsBySymbol,
+    ma0Stock,
+    PRICE_ONLY_REQUIREMENTS,
+  );
+  if (portfolio.strategy.ma0.rsiEnabled === true) {
+    addIndicatorHistoryRequirement(
+      requirementsBySymbol,
+      ma0Stock,
+      RSI_ONLY_REQUIREMENTS,
+    );
+  }
+  addMaPeriodHistoryRequirements(requirementsBySymbol, ma0Stock, maAPeriod);
+  addMaPeriodHistoryRequirements(requirementsBySymbol, ma0Stock, maBPeriod);
+
+  const partialProfitConfigs = [
+    portfolio.strategy.ma1,
+    portfolio.strategy.ma2,
+    portfolio.strategy.ma3,
+  ] as const;
+  for (const config of partialProfitConfigs) {
+    if (
+      config?.takePartialProfit === true &&
+      config.partialProfitTargetPct != null &&
+      config.partialProfitTargetPct > 0
+    ) {
+      addIndicatorHistoryRequirement(
+        requirementsBySymbol,
+        config.stock,
+        PRICE_ONLY_REQUIREMENTS,
+      );
+    }
+  }
+}
+
+function collectStockHistoryRequirements(
+  portfolios: readonly Portfolio[],
+): Map<string, Set<number>> {
+  const requirementsBySymbol = new Map<string, Set<number>>();
+
+  for (const portfolio of portfolios) {
+    if (portfolio.strategy.vrBand) {
+      continue;
+    }
+
+    if (portfolio.strategy.multiSplit) {
+      addIndicatorHistoryRequirement(
+        requirementsBySymbol,
+        portfolio.strategy.multiSplit.targetStock,
+        collectMultiSplitIndicatorRequirements(portfolio.strategy.multiSplit),
+      );
+      continue;
+    }
+
+    if (portfolio.strategy.noStopMultiSplit) {
+      addIndicatorHistoryRequirement(
+        requirementsBySymbol,
+        portfolio.strategy.noStopMultiSplit.targetStock,
+        collectNoStopIndicatorRequirements(portfolio.strategy.noStopMultiSplit),
+      );
+      continue;
+    }
+
+    addMaPortfolioHistoryRequirements(requirementsBySymbol, portfolio);
+  }
+
+  return requirementsBySymbol;
+}
+
+async function preloadStockHistoryCache(
+  supabase: DailyExecutionSupabaseClient,
+  cache: Map<string, StockHistory>,
+  requirementsBySymbol: Map<string, Set<number>>,
+): Promise<void> {
+  if (requirementsBySymbol.size === 0) {
+    return;
+  }
+
+  const symbols = Array.from(requirementsBySymbol.keys());
+  if (symbols.length === 0) {
+    return;
+  }
+
+  const preloadRequests = symbols
+    .map((symbol) => {
+      const limits = Array.from(requirementsBySymbol.get(symbol) ?? [])
+        .map(normalizeHistoryLimit)
+        .filter((limit) => limit <= STOCK_HISTORY_PRELOAD_MAX_ROWS);
+      if (limits.length === 0) {
+        return null;
+      }
+
+      return {
+        symbol,
+        limits,
+        maxLimit: Math.min(
+          Math.max(...limits),
+          STOCK_HISTORY_PRELOAD_MAX_ROWS,
+        ),
+      };
+    })
+    .filter(
+      (request): request is {
+        symbol: string;
+        limits: number[];
+        maxLimit: number;
+      } => request != null,
+    );
+
+  await mapWithConcurrency(
+    preloadRequests,
+    STOCK_HISTORY_PRELOAD_CONCURRENCY,
+    async ({ symbol, limits, maxLimit }) => {
+      const { data, error } = await supabase
+        .from("stock_prices")
+        .select("close, trade_date")
+        .eq("symbol", symbol)
+        .order("trade_date", { ascending: false })
+        .limit(maxLimit);
+
+      if (error) {
+        console.error("Stock history preload failed:", { symbol, error });
+        return;
+      }
+
+      const descendingRows = toStockPriceRows(data ?? []);
+      if (descendingRows.length === 0) {
+        return;
+      }
+
+      const sortedLimits = Array.from(new Set(limits)).sort(
+        (left, right) => left - right,
+      );
+      for (const limit of sortedLimits) {
+        const rowsForLimit = descendingRows.slice(0, limit).reverse();
+        cache.set(
+          buildStockHistoryCacheKey(symbol, limit),
+          createStockHistoryFromRows(rowsForLimit),
+        );
+      }
+    },
+  );
+}
+
+interface MaSectionAnalysis {
+  section: 1 | 2 | 3 | null;
+  maA: number;
+  maB: number;
+}
+
+function createEmptyMaSectionAnalysis(): MaSectionAnalysis {
+  return {
+    section: null,
+    maA: 0,
+    maB: 0,
+  };
+}
+
+function isAlarmConfig(value: unknown): value is NonNullable<Portfolio["alarmconfig"]> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.enabled === "boolean" &&
+    Array.isArray(record.selectedHours) &&
+    record.selectedHours.every((hour) => typeof hour === "string")
+  );
+}
+
+function isVrSnapshot(value: unknown): value is NonNullable<Portfolio["vrSnapshot"]> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  const numericKeys = [
+    "currentV",
+    "pool",
+    "shares",
+    "avgPrice",
+    "bandLow",
+    "bandHigh",
+  ] as const;
+  return (
+    numericKeys.every((key) =>
+      typeof record[key] === "number" && Number.isFinite(record[key])
+    ) &&
+    Array.isArray(record.buyOrders) &&
+    Array.isArray(record.sellOrders)
+  );
+}
+
 function mapPortfolioRow(row: PortfolioRow): Portfolio | null {
   if (!row || !row.strategy) return null;
+  const alarmconfig =
+    row.alarm_config ??
+      (isAlarmConfig(row.alarmconfig) ? row.alarmconfig : undefined);
+  const vrSnapshot =
+    row.vr_snapshot ?? (isVrSnapshot(row.vrSnapshot) ? row.vrSnapshot : undefined);
+
   return {
     id: typeof row.id === "string" ? row.id : "",
     name: row.name ?? "",
@@ -186,8 +498,8 @@ function mapPortfolioRow(row: PortfolioRow): Portfolio | null {
     strategy: row.strategy,
     trades: Array.isArray(row.trades) ? row.trades : [],
     isClosed: row.is_closed ?? false,
-    alarmconfig: row.alarm_config ?? row.alarmconfig ?? undefined,
-    vrSnapshot: row.vr_snapshot ?? row.vrSnapshot ?? undefined,
+    alarmconfig,
+    vrSnapshot,
   };
 }
 
@@ -264,46 +576,60 @@ function calculateRSI(prices: number[], period = 14): number {
 }
 
 async function getStockHistory(
-  supabase: ReturnType<typeof createClient>,
+  supabase: DailyExecutionSupabaseClient,
   cache: Map<string, StockHistory>,
+  inflightCache: StockHistoryInflightCache,
   symbol: string,
   limit: number,
 ): Promise<StockHistory> {
   const key = normalizeTickerSymbol(symbol);
-  const cached = cache.get(key);
-  if (cached && cached.prices.length >= limit) {
+  const safeLimit = normalizeHistoryLimit(limit);
+  const cacheKey = buildStockHistoryCacheKey(key, safeLimit);
+  const cached = cache.get(cacheKey);
+  if (cached) {
     return cached;
   }
 
-  const { data, error } = await supabase
-    .from("stock_prices")
-    .select("close, trade_date")
-    .eq("symbol", key)
-    .order("trade_date", { ascending: false })
-    .limit(limit);
-
-  if (error || !data || data.length === 0) {
-    const empty = { prices: [], dates: [] };
-    cache.set(key, empty);
-    return empty;
+  const inflight = inflightCache.get(cacheKey);
+  if (inflight) {
+    return inflight;
   }
 
-  const rows = toStockPriceRows([...data].reverse());
-  const prices = rows
-    .map((row) => Number(row.close ?? 0))
-    .filter((price) => price > 0);
-  const dates = rows
-    .map((row) => String(row.trade_date ?? ""))
-    .filter(Boolean);
-  const history = { prices, dates };
-  cache.set(key, history);
-  return history;
+  const request = (async (): Promise<StockHistory> => {
+    const { data, error } = await supabase
+      .from("stock_prices")
+      .select("close, trade_date")
+      .eq("symbol", key)
+      .order("trade_date", { ascending: false })
+      .limit(safeLimit);
+
+    if (error || !data || data.length === 0) {
+      const empty = { prices: [], dates: [] };
+      if (!cache.has(cacheKey)) {
+        cache.set(cacheKey, empty);
+      }
+      return empty;
+    }
+
+    const history = createStockHistoryFromRows(toStockPriceRows([...data].reverse()));
+    cache.set(cacheKey, history);
+    return history;
+  })();
+
+  inflightCache.set(cacheKey, request);
+  try {
+    return await request;
+  } finally {
+    inflightCache.delete(cacheKey);
+  }
 }
 
 async function getStockSnapshot(
-  supabase: ReturnType<typeof createClient>,
+  supabase: DailyExecutionSupabaseClient,
   historyCache: Map<string, StockHistory>,
+  historyInflightCache: StockHistoryInflightCache,
   snapshotCache: Map<string, NoStopIndicatorSnapshot>,
+  snapshotInflightCache: SnapshotInflightCache,
   symbol: string,
   requirements: IndicatorRequirements = PRICE_ONLY_REQUIREMENTS,
 ): Promise<NoStopIndicatorSnapshot> {
@@ -315,24 +641,36 @@ async function getStockSnapshot(
   });
   const cached = snapshotCache.get(cacheKey);
   if (cached) return cached;
+  const inflight = snapshotInflightCache.get(cacheKey);
+  if (inflight) return inflight;
 
-  const history = await getStockHistory(
-    supabase,
-    historyCache,
-    normalizedSymbol,
-    getRequiredHistoryCount(normalizedRequirements),
-  );
-  const sharedMath: NoStopIndicatorMathPort = {
-    calculateMA: (prices, period) => calculateMA(prices, period),
-    calculateRSI: (prices) => calculateRSI(prices),
-  };
-  const snapshot = buildSummaryIndicatorSnapshot({
-    prices: history.prices,
-    requirements: normalizedRequirements,
-    sharedMath,
-  });
-  snapshotCache.set(cacheKey, snapshot);
-  return snapshot;
+  const request = (async (): Promise<NoStopIndicatorSnapshot> => {
+    const history = await getStockHistory(
+      supabase,
+      historyCache,
+      historyInflightCache,
+      normalizedSymbol,
+      getRequiredHistoryCount(normalizedRequirements),
+    );
+    const sharedMath: NoStopIndicatorMathPort = {
+      calculateMA: (prices, period) => calculateMA(prices, period),
+      calculateRSI: (prices) => calculateRSI(prices),
+    };
+    const snapshot = buildSummaryIndicatorSnapshot({
+      prices: history.prices,
+      requirements: normalizedRequirements,
+      sharedMath,
+    });
+    snapshotCache.set(cacheKey, snapshot);
+    return snapshot;
+  })();
+
+  snapshotInflightCache.set(cacheKey, request);
+  try {
+    return await request;
+  } finally {
+    snapshotInflightCache.delete(cacheKey);
+  }
 }
 
 function computeMAFromHistory(history: number[], period: number): number {
@@ -341,17 +679,18 @@ function computeMAFromHistory(history: number[], period: number): number {
 }
 
 async function getMAForBaseStock(
-  supabase: ReturnType<typeof createClient>,
-  historyCache: Map<string, StockHistory>,
-  snapshotCache: Map<string, NoStopIndicatorSnapshot>,
+  supabase: DailyExecutionSupabaseClient,
+  cacheContext: DailyExecutionCacheContext,
   symbol: string,
   period: number,
 ): Promise<number> {
   if (isRequirementAwareMaPeriod(period)) {
     const snapshot = await getStockSnapshot(
       supabase,
-      historyCache,
-      snapshotCache,
+      cacheContext.historyCache,
+      cacheContext.historyInflightCache,
+      cacheContext.snapshotCache,
+      cacheContext.snapshotInflightCache,
       symbol,
       {
         needsRsi: false,
@@ -366,7 +705,8 @@ async function getMAForBaseStock(
 
   const history = await getStockHistory(
     supabase,
-    historyCache,
+    cacheContext.historyCache,
+    cacheContext.historyInflightCache,
     symbol,
     Math.max(period + 30, 120),
   );
@@ -377,40 +717,32 @@ async function getMAForBaseStock(
   return computeMAFromHistory(history.prices, period);
 }
 
-async function getMAValuesForAlignment(
-  supabase: ReturnType<typeof createClient>,
-  historyCache: Map<string, StockHistory>,
-  snapshotCache: Map<string, NoStopIndicatorSnapshot>,
-  portfolio: Portfolio,
-): Promise<{ maA: number; maB: number }> {
-  const ma0Stock = portfolio.strategy.ma0.stock;
-  const { maAPeriod, maBPeriod } = getMaPeriods(portfolio);
-  const maA = await getMAForBaseStock(supabase, historyCache, snapshotCache, ma0Stock, maAPeriod);
-  const maB = await getMAForBaseStock(supabase, historyCache, snapshotCache, ma0Stock, maBPeriod);
-  return { maA, maB };
-}
-
 async function determineActiveSection(
-  supabase: ReturnType<typeof createClient>,
-  historyCache: Map<string, StockHistory>,
-  snapshotCache: Map<string, NoStopIndicatorSnapshot>,
+  supabase: DailyExecutionSupabaseClient,
+  cacheContext: DailyExecutionCacheContext,
   portfolio: Portfolio,
-): Promise<1 | 2 | 3 | null> {
+): Promise<MaSectionAnalysis> {
   const ma0Stock = portfolio.strategy.ma0.stock;
   const snapshot = await getStockSnapshot(
     supabase,
-    historyCache,
-    snapshotCache,
+    cacheContext.historyCache,
+    cacheContext.historyInflightCache,
+    cacheContext.snapshotCache,
+    cacheContext.snapshotInflightCache,
     ma0Stock,
   );
   const ma0Price = snapshot.currentPrice;
-  if (!ma0Price) return null;
+  if (!ma0Price) return createEmptyMaSectionAnalysis();
 
   const { maAPeriod, maBPeriod } = getMaPeriods(portfolio);
-  const maA = await getMAForBaseStock(supabase, historyCache, snapshotCache, ma0Stock, maAPeriod);
-  const maB = await getMAForBaseStock(supabase, historyCache, snapshotCache, ma0Stock, maBPeriod);
+  const maA = await getMAForBaseStock(supabase, cacheContext, ma0Stock, maAPeriod);
+  const maB = await getMAForBaseStock(supabase, cacheContext, ma0Stock, maBPeriod);
 
-  return determineMaActiveSectionFromValues(ma0Price, maA, maB);
+  return {
+    section: determineMaActiveSectionFromValues(ma0Price, maA, maB),
+    maA,
+    maB,
+  };
 }
 
 function toMultiSplitTradeInputs(trades: Portfolio["trades"]): TradeInput[] {
@@ -432,9 +764,8 @@ function joinDailyExecutionBlocks(blocks: string[]): string {
 }
 
 async function buildPortfolioBlock(
-  supabase: ReturnType<typeof createClient>,
-  historyCache: Map<string, StockHistory>,
-  snapshotCache: Map<string, NoStopIndicatorSnapshot>,
+  supabase: DailyExecutionSupabaseClient,
+  cacheContext: DailyExecutionCacheContext,
   portfolio: Portfolio,
   lang: Lang,
 ): Promise<string | null> {
@@ -466,8 +797,10 @@ async function buildPortfolioBlock(
       const requirements = collectMultiSplitIndicatorRequirements(strategy);
       const indicatorSnapshot = await getStockSnapshot(
         supabase,
-        historyCache,
-        snapshotCache,
+        cacheContext.historyCache,
+        cacheContext.historyInflightCache,
+        cacheContext.snapshotCache,
+        cacheContext.snapshotInflightCache,
         strategy.targetStock,
         requirements,
       );
@@ -489,8 +822,10 @@ async function buildPortfolioBlock(
       const requirements = collectNoStopIndicatorRequirements(strategy);
       const indicatorSnapshot = await getStockSnapshot(
         supabase,
-        historyCache,
-        snapshotCache,
+        cacheContext.historyCache,
+        cacheContext.historyInflightCache,
+        cacheContext.snapshotCache,
+        cacheContext.snapshotInflightCache,
         strategy.targetStock,
         requirements,
       );
@@ -507,7 +842,7 @@ async function buildPortfolioBlock(
         snapshot: indicatorSnapshot,
         strategy,
       });
-      const noStopExecutionData: NoStopMultiSplitExecutionData = {
+      const noStopExecutionData = {
         currentRound,
         progressPct: execution.progressPct,
         isFirstBuy: execution.isFirstBuy,
@@ -522,12 +857,12 @@ async function buildPortfolioBlock(
       });
     }
 
-    const section = await determineActiveSection(
+    const maAnalysis = await determineActiveSection(
       supabase,
-      historyCache,
-      snapshotCache,
+      cacheContext,
       portfolio,
     );
+    const { section } = maAnalysis;
     let maRsiNotMet = false;
     let maAlignmentNotMet = false;
     let maPartialProfitLines: {
@@ -538,32 +873,31 @@ async function buildPortfolioBlock(
 
     if (section === 1 || section === 2 || section === 3) {
       const ma0 = portfolio.strategy.ma0;
-      const baseStock = ma0.stock;
-      const baseSnapshot = await getStockSnapshot(
-        supabase,
-        historyCache,
-        snapshotCache,
-        baseStock,
-        RSI_ONLY_REQUIREMENTS,
-      );
+      let currentRsi: number | undefined;
+      if (ma0.rsiEnabled === true) {
+        const baseSnapshot = await getStockSnapshot(
+          supabase,
+          cacheContext.historyCache,
+          cacheContext.historyInflightCache,
+          cacheContext.snapshotCache,
+          cacheContext.snapshotInflightCache,
+          ma0.stock,
+          RSI_ONLY_REQUIREMENTS,
+        );
+        currentRsi = baseSnapshot.rsi;
+      }
 
       maRsiNotMet = calculateMaRsiNotMet({
         strategy: portfolio.strategy,
         section,
-        currentRsi: baseSnapshot.rsi,
+        currentRsi,
       });
 
       if (ma0.alignmentEnabled) {
-        const { maA, maB } = await getMAValuesForAlignment(
-          supabase,
-          historyCache,
-          snapshotCache,
-          portfolio,
-        );
         maAlignmentNotMet = calculateMaAlignmentNotMet({
           isAlignmentEnabled: ma0.alignmentEnabled,
-          maA,
-          maB,
+          maA: maAnalysis.maA,
+          maB: maAnalysis.maB,
         });
       }
 
@@ -583,8 +917,10 @@ async function buildPortfolioBlock(
 
         const priceSnapshot = await getStockSnapshot(
           supabase,
-          historyCache,
-          snapshotCache,
+          cacheContext.historyCache,
+          cacheContext.historyInflightCache,
+          cacheContext.snapshotCache,
+          cacheContext.snapshotInflightCache,
           config.stock,
         );
         const nextLine = collectMaPartialProfitLine({
@@ -630,7 +966,7 @@ async function buildPortfolioBlock(
 }
 
 async function fetchPortfoliosForUsers(
-  supabase: ReturnType<typeof createClient>,
+  supabase: DailyExecutionSupabaseClient,
   userIds: string[],
 ): Promise<PortfolioRow[]> {
   const results: PortfolioRow[] = [];
@@ -650,6 +986,51 @@ async function fetchPortfoliosForUsers(
     }
   }
   return results;
+}
+
+async function buildUserSummaryRow(
+  supabase: DailyExecutionSupabaseClient,
+  cacheContext: DailyExecutionCacheContext,
+  profile: UserProfileRow & { id: string },
+  portfoliosByUser: Map<string, Portfolio[]>,
+  summaryDate: string,
+): Promise<DailyExecutionSummaryUpsertRow | null> {
+  const userPortfolios = portfoliosByUser.get(profile.id) ?? [];
+  if (userPortfolios.length === 0) return null;
+
+  const lang = normalizeLang(profile.preferred_language);
+  const blocks: string[] = [];
+
+  for (const portfolio of userPortfolios) {
+    let block: string | null = null;
+    try {
+      block = await buildPortfolioBlock(
+        supabase,
+        cacheContext,
+        portfolio,
+        lang,
+      );
+    } catch (error) {
+      console.error("Failed to build daily execution block:", {
+        userId: profile.id,
+        portfolioId: portfolio.id,
+        portfolioName: portfolio.name,
+        error,
+      });
+    }
+    if (block) blocks.push(block);
+  }
+
+  const summary = joinDailyExecutionBlocks(blocks);
+  if (!summary || summary.trim().length === 0) return null;
+
+  return {
+    user_id: profile.id,
+    summary_date: summaryDate,
+    summary_text: summary,
+    lang,
+    updated_at: new Date().toISOString(),
+  };
 }
 
 serve(async (_req) => {
@@ -692,12 +1073,15 @@ serve(async (_req) => {
       });
     }
 
-    const eligibleProfiles = (profiles ?? []).filter(
-      (profile): profile is UserProfileRow & { id: string } =>
-        shouldSendTelegram(profile) &&
-        typeof profile.id === "string" &&
-        profile.id.trim() !== "",
-    );
+    const eligibleProfiles: Array<UserProfileRow & { id: string }> = [];
+    for (const profile of profiles ?? []) {
+      if (!shouldSendTelegram(profile)) continue;
+      if (typeof profile.id !== "string" || profile.id.trim() === "") continue;
+      eligibleProfiles.push({
+        ...profile,
+        id: profile.id,
+      });
+    }
     if (eligibleProfiles.length === 0) {
       return new Response(JSON.stringify({ success: true, users: 0, upserted: 0 }), {
         status: 200,
@@ -709,6 +1093,7 @@ serve(async (_req) => {
     const portfolioRows = await fetchPortfoliosForUsers(supabase, userIds);
 
     const portfoliosByUser = new Map<string, Portfolio[]>();
+    const activePortfolios: Portfolio[] = [];
     for (const row of portfolioRows) {
       if (typeof row.user_id !== "string" || row.user_id.trim() === "") {
         continue;
@@ -716,6 +1101,7 @@ serve(async (_req) => {
 
       const portfolio = mapPortfolioRow(row);
       if (!portfolio) continue;
+      activePortfolios.push(portfolio);
       const userId = row.user_id;
       if (!portfoliosByUser.has(userId)) {
         portfoliosByUser.set(userId, []);
@@ -723,48 +1109,37 @@ serve(async (_req) => {
       portfoliosByUser.get(userId)?.push(portfolio);
     }
 
-    const historyCache = new Map<string, StockHistory>();
-    const snapshotCache = new Map<string, NoStopIndicatorSnapshot>();
+    const cacheContext: DailyExecutionCacheContext = {
+      historyCache: new Map<string, StockHistory>(),
+      historyInflightCache: new Map<string, Promise<StockHistory>>(),
+      snapshotCache: new Map<string, NoStopIndicatorSnapshot>(),
+      snapshotInflightCache: new Map<string, Promise<NoStopIndicatorSnapshot>>(),
+    };
+    await preloadStockHistoryCache(
+      supabase,
+      cacheContext.historyCache,
+      collectStockHistoryRequirements(activePortfolios),
+    );
     const summaryDate = getCurrentKSTDateString();
-    const upsertRows: Array<{ user_id: string; summary_date: string; summary_text: string; lang: Lang; updated_at: string }> = [];
+    const upsertRows: DailyExecutionSummaryUpsertRow[] = [];
 
-    for (const profile of eligibleProfiles) {
-      const userPortfolios = portfoliosByUser.get(profile.id) ?? [];
-      if (userPortfolios.length === 0) continue;
-      const lang = normalizeLang(profile.preferred_language);
+    const summaryRows = await mapWithConcurrency(
+      eligibleProfiles,
+      SUMMARY_BUILD_CONCURRENCY,
+      (profile) =>
+        buildUserSummaryRow(
+          supabase,
+          cacheContext,
+          profile,
+          portfoliosByUser,
+          summaryDate,
+        ),
+    );
 
-      const blocks: string[] = [];
-      for (const portfolio of userPortfolios) {
-        let block: string | null = null;
-        try {
-          block = await buildPortfolioBlock(
-            supabase,
-            historyCache,
-            snapshotCache,
-            portfolio,
-            lang,
-          );
-        } catch (error) {
-          console.error("Failed to build daily execution block:", {
-            userId: profile.id,
-            portfolioId: portfolio.id,
-            portfolioName: portfolio.name,
-            error,
-          });
-        }
-        if (block) blocks.push(block);
+    for (const row of summaryRows) {
+      if (row != null) {
+        upsertRows.push(row);
       }
-
-      const summary = joinDailyExecutionBlocks(blocks);
-      if (!summary || summary.trim().length === 0) continue;
-
-      upsertRows.push({
-        user_id: profile.id,
-        summary_date: summaryDate,
-        summary_text: summary,
-        lang,
-        updated_at: new Date().toISOString(),
-      });
     }
 
     if (upsertRows.length > 0) {

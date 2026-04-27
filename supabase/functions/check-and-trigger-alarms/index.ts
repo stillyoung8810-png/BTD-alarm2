@@ -3,6 +3,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { DateTime } from "npm:luxon";
+import { mapWithConcurrency } from "../_shared/asyncBatch.ts";
 import type { PortfolioRow } from "../_shared/types.ts";
 
 interface SendAlarmPayload {
@@ -12,15 +13,26 @@ interface SendAlarmPayload {
   data?: Record<string, string>;
 }
 
-// 간단한 sleep 유틸 (배치 간 딜레이용)
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+type AlarmCandidate = {
+  user_id: string;
+  time_local: string;
+  timezone: string;
+  local_date: string;
+};
+
+type SentAlarmRow = {
+  user_id: string | null;
+  time_local: string | null;
+  timezone: string | null;
+  local_date: string | null;
+};
 
 /** 크론 주기(분). 이 구간만큼 과거 시간을 검사하고, sent_alarms로 중복 발송을 막습니다. */
 const WINDOW_MINUTES = 10;
 
 const DEFAULT_TIMEZONE = "Asia/Seoul";
+const SEND_ALARM_CONCURRENCY = 30;
+const SEND_ALARM_BATCH_DELAY_MS = 200;
 
 type TimeWindow = {
   times: string[];
@@ -41,6 +53,82 @@ function getTimeWindow(zone: string): TimeWindow {
   return { times, localDate, isWeekend, nowLabel: now.toFormat("HH:mm") };
 }
 
+function toSentAlarmKey(candidate: AlarmCandidate): string {
+  return `${candidate.user_id}|${candidate.timezone}|${candidate.local_date}|${candidate.time_local}`;
+}
+
+function getUniqueCandidateValues(
+  candidates: readonly AlarmCandidate[],
+  selectValue: (candidate: AlarmCandidate) => string,
+): string[] {
+  return Array.from(
+    new Set(
+      candidates
+        .map(selectValue)
+        .filter((value) => value.trim().length > 0),
+    ),
+  );
+}
+
+async function fetchAlreadySentAlarmKeys(
+  supabase: ReturnType<typeof createClient>,
+  candidates: readonly AlarmCandidate[],
+): Promise<Set<string>> {
+  if (candidates.length === 0) {
+    return new Set<string>();
+  }
+
+  const userIds = getUniqueCandidateValues(
+    candidates,
+    (candidate) => candidate.user_id,
+  );
+  const localDates = getUniqueCandidateValues(
+    candidates,
+    (candidate) => candidate.local_date,
+  );
+  const timezones = getUniqueCandidateValues(
+    candidates,
+    (candidate) => candidate.timezone,
+  );
+  const localTimes = getUniqueCandidateValues(
+    candidates,
+    (candidate) => candidate.time_local,
+  );
+
+  if (
+    userIds.length === 0 ||
+    localDates.length === 0 ||
+    timezones.length === 0 ||
+    localTimes.length === 0
+  ) {
+    return new Set<string>();
+  }
+
+  // N개 timezone/date 그룹 조회를 후보군 전체 1회 bulk query로 압축합니다.
+  const { data: sentRows, error: sentError } = await supabase
+    .from("sent_alarms")
+    .select("user_id, time_local, timezone, local_date")
+    .in("user_id", userIds)
+    .in("local_date", localDates)
+    .in("timezone", timezones)
+    .in("time_local", localTimes);
+
+  if (sentError) {
+    throw sentError;
+  }
+
+  return new Set(
+    (sentRows ?? []).map((row: SentAlarmRow) =>
+      toSentAlarmKey({
+        user_id: String(row.user_id ?? ""),
+        time_local: String(row.time_local ?? ""),
+        timezone: String(row.timezone ?? ""),
+        local_date: String(row.local_date ?? ""),
+      }),
+    ),
+  );
+}
+
 // Edge Function 호출 URL (공식: https://<project>.supabase.co/functions/v1/<함수명>)
 function getSendAlarmUrl(supabaseUrl: string): string {
   if (!supabaseUrl) return "";
@@ -53,7 +141,11 @@ serve(async (_req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     // Dashboard에서 internal_alarm_secret 으로 넣어도 동작하도록 둘 다 확인 (대소문자 구분 없이)
-    const internalAlarmSecret = (Deno.env.get("INTERNAL_ALARM_SECRET") ?? Deno.env.get("internal_alarm_secret"))?.trim() || "";
+    const internalAlarmSecret =
+      (
+        Deno.env.get("INTERNAL_ALARM_SECRET") ??
+        Deno.env.get("internal_alarm_secret")
+      )?.trim() || "";
 
     if (!supabaseUrl || !serviceKey) {
       console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
@@ -84,7 +176,6 @@ serve(async (_req) => {
     }
 
     if (!portfolios || portfolios.length === 0) {
-      console.log("No portfolios with alarm_config found.");
       return new Response(
         JSON.stringify({ success: true, triggeredUsers: 0, sent: 0 }),
         { status: 200, headers: { "Content-Type": "application/json" } },
@@ -93,13 +184,15 @@ serve(async (_req) => {
 
     // 과거 WINDOW_MINUTES분 구간 중 selectedHours에 포함된 후보 수집
     const candidateKeys = new Set<string>();
-    const candidateList: { user_id: string; time_local: string; timezone: string; local_date: string }[] = [];
+    const candidateList: AlarmCandidate[] = [];
 
     (portfolios as PortfolioRow[]).forEach((row) => {
       if (!row.user_id || !row.alarm_config) return;
       const cfg = row.alarm_config;
       const enabled = cfg.enabled === true;
-      const selectedHours = Array.isArray(cfg.selectedHours) ? cfg.selectedHours : [];
+      const selectedHours = Array.isArray(cfg.selectedHours)
+        ? cfg.selectedHours
+        : [];
       if (!enabled) return;
       const timezone = (cfg.timezone ?? DEFAULT_TIMEZONE).trim() || DEFAULT_TIMEZONE;
       const cached = timeWindowCache.get(timezone) ?? getTimeWindow(timezone);
@@ -121,53 +214,28 @@ serve(async (_req) => {
     });
 
     if (candidateList.length === 0) {
-      console.log("No (user, time) candidates in window.");
       return new Response(
         JSON.stringify({ success: true, triggeredUsers: 0, sent: 0 }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
     }
 
-    const alreadySentKeys = new Set<string>();
-    const grouped = new Map<string, { timezone: string; local_date: string; users: Set<string>; times: Set<string> }>();
-    candidateList.forEach((c) => {
-      const key = `${c.timezone}|${c.local_date}`;
-      if (!grouped.has(key)) {
-        grouped.set(key, {
-          timezone: c.timezone,
-          local_date: c.local_date,
-          users: new Set<string>(),
-          times: new Set<string>(),
-        });
-      }
-      const group = grouped.get(key)!;
-      group.users.add(c.user_id);
-      group.times.add(c.time_local);
-    });
-
-    for (const group of grouped.values()) {
-      const userIds = [...group.users];
-      const times = [...group.times];
-      if (userIds.length === 0 || times.length === 0) continue;
-      const { data: alreadySentRows } = await supabase
-        .from("sent_alarms")
-        .select("user_id, time_local, timezone, local_date")
-        .eq("local_date", group.local_date)
-        .eq("timezone", group.timezone)
-        .in("user_id", userIds)
-        .in("time_local", times);
-
-      (alreadySentRows ?? []).forEach((r: { user_id: string; time_local: string; timezone: string; local_date: string }) => {
-        alreadySentKeys.add(`${r.user_id}|${r.timezone}|${r.local_date}|${r.time_local}`);
-      });
-    }
-
-    const toSend = candidateList.filter((c) => !alreadySentKeys.has(`${c.user_id}|${c.timezone}|${c.local_date}|${c.time_local}`));
-    console.log("Candidates:", candidateList.length, "already sent:", alreadySentKeys.size, "to send:", toSend.length);
+    const alreadySentKeys = await fetchAlreadySentAlarmKeys(
+      supabase,
+      candidateList,
+    );
+    const toSend = candidateList.filter(
+      (c) => !alreadySentKeys.has(toSentAlarmKey(c)),
+    );
 
     if (toSend.length === 0) {
       return new Response(
-        JSON.stringify({ success: true, triggeredUsers: 0, sent: 0, skipped: "already_sent" }),
+        JSON.stringify({
+          success: true,
+          triggeredUsers: 0,
+          sent: 0,
+          skipped: "already_sent",
+        }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
     }
@@ -179,79 +247,64 @@ serve(async (_req) => {
     const body = "설정하신 매매 알람 시간입니다. 포트폴리오 전략을 확인해 주세요.";
 
     // 각 (user_id, time_local, timezone) 에 대해 send-alarm 호출
-    const payloads: SendAlarmPayload[] = toSend.map(({ user_id, time_local, timezone, local_date }) => ({
-      user_id,
-      title,
-      body,
-      data: {
-        type: "portfolio_alarm",
-        time_local,
-        timezone,
-        local_date,
-      },
-    }));
+    const payloads: SendAlarmPayload[] = toSend.map(
+      ({ user_id, time_local, timezone, local_date }) => ({
+        user_id,
+        title,
+        body,
+        data: {
+          type: "portfolio_alarm",
+          time_local,
+          timezone,
+          local_date,
+        },
+      }),
+    );
 
-    // 동시성 제한: 너무 많은 send-alarm을 한 번에 호출하지 않도록 배치 처리
-    const BATCH_SIZE = 30;
-    const BATCH_DELAY_MS = 200; // 배치 간 0.2초 간격 (rate limit 완화용)
+    const deliveryResults = await mapWithConcurrency(
+      payloads,
+      SEND_ALARM_CONCURRENCY,
+      async (payload) => {
+        try {
+          const headers: Record<string, string> = {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${serviceKey}`,
+          };
+          if (internalAlarmSecret) {
+            headers["X-Internal-Alarm-Secret"] = internalAlarmSecret;
+          }
+          const res = await fetch(sendAlarmUrl, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(payload),
+          });
 
-    const allResults: PromiseSettledResult<boolean>[] = [];
-
-    for (let i = 0; i < payloads.length; i += BATCH_SIZE) {
-      const batch = payloads.slice(i, i + BATCH_SIZE);
-
-      const batchResults = await Promise.allSettled(
-        batch.map(async (payload) => {
-          try {
-            const headers: Record<string, string> = {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${serviceKey}`,
-            };
-            if (internalAlarmSecret) {
-              headers["X-Internal-Alarm-Secret"] = internalAlarmSecret;
-            }
-            const res = await fetch(sendAlarmUrl, {
-              method: "POST",
-              headers,
-              body: JSON.stringify(payload),
-            });
-
-            if (!res.ok) {
-              const text = await res.text();
-              console.error(
-                `send-alarm failed for user ${payload.user_id}:`,
-                res.status,
-                text,
-              );
-              return false;
-            }
-
-            const json = await res.json();
-            console.log("send-alarm response for user", payload.user_id, json);
-            return true;
-          } catch (err) {
+          if (!res.ok) {
+            const text = await res.text();
             console.error(
-              "Error calling send-alarm for user",
-              payload.user_id,
-              err,
+              `send-alarm failed for user ${payload.user_id}:`,
+              res.status,
+              text,
             );
             return false;
           }
-        }),
-      );
 
-      allResults.push(...batchResults);
+          await res.json();
+          return true;
+        } catch (err) {
+          console.error(
+            "Error calling send-alarm for user",
+            payload.user_id,
+            err,
+          );
+          return false;
+        }
+      },
+      { delayMsBetweenBatches: SEND_ALARM_BATCH_DELAY_MS },
+    );
 
-      // 마지막 배치가 아니면 잠시 대기하여 외부 API rate limit 완화
-      if (i + BATCH_SIZE < payloads.length) {
-        await sleep(BATCH_DELAY_MS);
-      }
-    }
-
-    const successful = allResults.filter(
-      (r) => r.status === "fulfilled" && r.value === true,
-    ).length;
-    const failed = allResults.length - successful;
+    const successful = deliveryResults.filter((isSuccess) => isSuccess).length;
+    const failed = deliveryResults.length - successful;
 
     return new Response(
       JSON.stringify({

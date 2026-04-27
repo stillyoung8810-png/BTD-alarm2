@@ -308,7 +308,6 @@ export async function restorePendingIapOrders(): Promise<void> {
       if (!order?.orderId) {
         continue;
       }
-      console.log('[IAP] 미결 주문 복원 시도:', order.orderId);
       const isGranted = await verifyAndGrantProductOnServer(
         order.orderId,
         TOSS_IAP_FIXED_PLAN_ID,

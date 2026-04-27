@@ -286,6 +286,7 @@ export function useNoStopMultiSplitExecution(
   const networkErrorMsgRef = useRef(networkErrorMsg);
   const requestIdRef = useRef(0);
   const previousCacheKeyRef = useRef<string | undefined>(undefined);
+  const resolvedSnapshotCacheKeyRef = useRef<string | null>(null);
   const [networkSnapshot, setNetworkSnapshot] =
     useState<NoStopIndicatorSnapshot | null>(null);
   const [snapshotFetchStatus, setSnapshotFetchStatus] =
@@ -304,6 +305,7 @@ export function useNoStopMultiSplitExecution(
     ) {
       requestIdRef.current += 1;
       previousCacheKeyRef.current = undefined;
+      resolvedSnapshotCacheKeyRef.current = null;
       setNetworkSnapshot((previous) => (previous !== null ? null : previous));
       setSnapshotFetchStatus((previous) =>
         previous !== 'idle' ? 'idle' : previous,
@@ -319,12 +321,14 @@ export function useNoStopMultiSplitExecution(
       nextCacheKey,
     });
     const shouldReuseResolvedSnapshot =
-      !shouldStartFetch && networkSnapshot != null;
+      !shouldStartFetch &&
+      resolvedSnapshotCacheKeyRef.current === nextCacheKey;
     if (shouldReuseResolvedSnapshot) {
       return;
     }
 
     previousCacheKeyRef.current = nextCacheKey;
+    resolvedSnapshotCacheKeyRef.current = null;
     setNetworkSnapshot((previous) => (previous !== null ? null : previous));
     setSnapshotFetchStatus('loading');
     const requestId = requestIdRef.current + 1;
@@ -363,6 +367,7 @@ export function useNoStopMultiSplitExecution(
           }
           setNetworkSnapshot((previous) => (previous !== null ? null : previous));
           setSnapshotFetchStatus('error');
+          resolvedSnapshotCacheKeyRef.current = null;
           if (requestIdRef.current !== requestId) {
             return;
           }
@@ -378,6 +383,7 @@ export function useNoStopMultiSplitExecution(
           return;
         }
 
+        resolvedSnapshotCacheKeyRef.current = nextCacheKey;
         setSnapshotFetchStatus('ready');
         setNetworkSnapshot(snapshotData);
       } catch (error: unknown) {
@@ -386,6 +392,7 @@ export function useNoStopMultiSplitExecution(
         }
         setNetworkSnapshot((previous) => (previous !== null ? null : previous));
         setSnapshotFetchStatus('error');
+        resolvedSnapshotCacheKeyRef.current = null;
         if (requestIdRef.current !== requestId) {
           return;
         }
@@ -407,9 +414,6 @@ export function useNoStopMultiSplitExecution(
     indicatorCacheKey,
     isDailyBuyAmountValid,
     isNoStopMultiSplit,
-    networkSnapshot,
-    portfolio.id,
-    portfolio.name,
     targetStock,
   ]);
 

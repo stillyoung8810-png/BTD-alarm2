@@ -50,6 +50,25 @@ function createSnapshotResult(
   return okResult(snapshot);
 }
 
+function createDeferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (error: unknown) => void;
+} {
+  let resolvePromise: (value: T) => void = () => {};
+  let rejectPromise: (error: unknown) => void = () => {};
+  const promise = new Promise<T>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+
+  return {
+    promise,
+    resolve: resolvePromise,
+    reject: rejectPromise,
+  };
+}
+
 function createTrade(overrides: Partial<Trade> = {}): Trade {
   return {
     id: overrides.id ?? 'trade-1',
@@ -298,5 +317,51 @@ describe('useMultiSplitExecution', () => {
     });
 
     expect(result.current.executionData).toBe(previousExecutionData);
+  });
+
+  it('언어 변경은 진행 중인 indicator fetch를 재요청하지 않는다', async () => {
+    // Why: 토스트 언어 변경 때문에 AbortController가 실행되면 정상 요청도 끊겨 일별 실행 카드가 불필요하게 흔들립니다.
+    const deferred =
+      createDeferred<ServiceResult<MultiSplitIndicatorSnapshot>>();
+    vi.mocked(fetchIndicatorAwareSnapshot).mockReturnValue(deferred.promise);
+    const snapshot: MultiSplitIndicatorSnapshot = {
+      currentPrice: 110,
+      rsi: 30,
+      maByPeriod: {
+        5: 110,
+        20: 100,
+      },
+    };
+    const portfolio = createPortfolio({
+      trades: [createTrade({ price: 100, quantity: 10, fee: 0 })],
+    });
+
+    const { result, rerender } = renderHook(
+      ({ portfolio: hookPortfolio, lang }: HookProps) =>
+        useMultiSplitExecution(hookPortfolio, lang),
+      {
+        initialProps: {
+          portfolio,
+          lang: 'ko',
+        },
+      },
+    );
+
+    await waitFor(() => {
+      expect(fetchIndicatorAwareSnapshot).toHaveBeenCalledTimes(1);
+    });
+
+    rerender({
+      portfolio,
+      lang: 'en',
+    });
+
+    expect(fetchIndicatorAwareSnapshot).toHaveBeenCalledTimes(1);
+    deferred.resolve(createSnapshotResult(snapshot));
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('ready');
+    });
+    expect(fetchIndicatorAwareSnapshot).toHaveBeenCalledTimes(1);
   });
 });

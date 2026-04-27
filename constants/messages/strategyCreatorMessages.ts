@@ -1,4 +1,8 @@
 import type { AppLang } from '@/types';
+import { getStrategyNames } from '../../supabase/functions/_shared/strategyNames.ts';
+
+const STRATEGY_NAMES_KO = getStrategyNames('ko');
+const STRATEGY_NAMES_EN = getStrategyNames('en');
 
 export interface StrategyCreatorMessageSet {
   titles: {
@@ -143,9 +147,9 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
       strategySelect: '전략 엔진 선택',
       maBase: '이평선 기본 설정',
       maSections: '구간별 진입 설정',
-      multiSplitConfig: '스마트 스플릿 설정',
-      noStopMultiSplitConfig: '무손절 다분할 설정',
-      vrBandConfig: 'TVC 설정',
+      multiSplitConfig: `${STRATEGY_NAMES_KO.multi_split} 설정`,
+      noStopMultiSplitConfig: `${STRATEGY_NAMES_KO.no_stop_multi_split} 설정`,
+      vrBandConfig: `${STRATEGY_NAMES_KO.vr_band} 설정`,
       strategyMeta: '포트폴리오 메타 정보',
     },
     actions: {
@@ -161,22 +165,22 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
     },
     strategyDefinitions: {
       rsi_ma_interval: {
-        title: '이평선 구간 전략',
+        title: STRATEGY_NAMES_KO.rsi_ma_interval,
         description:
           '정해진 룰은 없어요. 이평선을 활용해 나만의 전략을 설계해요. 시장 상황별로 유리한 종목을 다채롭게 공략해 보세요.',
       },
       multi_split: {
-        title: '스마트 스플릿',
+        title: STRATEGY_NAMES_KO.multi_split,
         description:
           '지표에 따른 동적 비중 조절과 분할 익절, 그리고 최후의 손절 방어까지. 적극적 투자 전략이에요.',
       },
       no_stop_multi_split: {
-        title: '무손절 다분할',
+        title: STRATEGY_NAMES_KO.no_stop_multi_split,
         description:
           '내 성향에 맞춰 조건을 설정해요. 계산은 로봇에 맡기고, 유리한 가격에 주식을 차곡차곡 모아가요.',
       },
       vr_band: {
-        title: '타겟 밸류 채널',
+        title: STRATEGY_NAMES_KO.vr_band,
         description:
           '목표 평가금과 가용 현금을 동적으로 리밸런싱하여 안정적인 우상향을 설계해요.',
       },
@@ -299,9 +303,9 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
       strategySelect: 'Select Strategy Engine',
       maBase: 'Moving Average Base Settings',
       maSections: 'Section Entry Settings',
-      multiSplitConfig: 'Smart Split Settings',
-      noStopMultiSplitConfig: 'No-Stop Multi-Split Settings',
-      vrBandConfig: 'TVC Settings',
+      multiSplitConfig: `${STRATEGY_NAMES_EN.multi_split} Settings`,
+      noStopMultiSplitConfig: `${STRATEGY_NAMES_EN.no_stop_multi_split} Settings`,
+      vrBandConfig: `${STRATEGY_NAMES_EN.vr_band} Settings`,
       strategyMeta: 'Portfolio Meta Information',
     },
     actions: {
@@ -317,22 +321,22 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
     },
     strategyDefinitions: {
       rsi_ma_interval: {
-        title: 'MA Interval Strategy',
+        title: STRATEGY_NAMES_EN.rsi_ma_interval,
         description:
           'No one-size-fits-all playbook. Use moving averages to design your own rules, then rotate into the tickers that fit each market regime.',
       },
       multi_split: {
-        title: 'Smart Split',
+        title: STRATEGY_NAMES_EN.multi_split,
         description:
           'Indicator-driven dynamic sizing, staged take-profits, and a final stop-loss backstop—an active investing strategy.',
       },
       no_stop_multi_split: {
-        title: 'No-Stop Multi-Split',
+        title: STRATEGY_NAMES_EN.no_stop_multi_split,
         description:
           'Tune conditions to your style. The robot handles the math while you steadily accumulate shares at favorable prices.',
       },
       vr_band: {
-        title: 'Target Value Channel',
+        title: STRATEGY_NAMES_EN.vr_band,
         description:
           'Dynamically rebalances target value and available cash for steady, stable growth.',
       },

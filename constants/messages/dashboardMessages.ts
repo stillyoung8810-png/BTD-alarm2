@@ -1,4 +1,11 @@
 import type { AppLang } from '@/types';
+import {
+  getDashboardStrategyNames,
+  getStrategyNames,
+} from '../../supabase/functions/_shared/strategyNames.ts';
+
+const STRATEGY_NAMES_KO = getStrategyNames('ko');
+const STRATEGY_NAMES_EN = getStrategyNames('en');
 
 export type DashboardStrategyKind =
   | 'vr_band'
@@ -69,10 +76,7 @@ export const DASHBOARD_MESSAGES: Record<AppLang, DashboardMessageSet> = {
     closeStrategyRequiresNoSharesToast:
       '보유 주식을 모두 매도해야 종료가 가능해요.',
     strategyName: {
-      vr_band: '타겟 밸류 채널',
-      multi_split: '스마트 스플릿',
-      no_stop_multi_split: '다분할 매매법(무손절)',
-      ma_interval: '이평선 구간매수',
+      ...getDashboardStrategyNames('ko'),
     },
     execution: {
       calculating: '계산 중...',
@@ -88,7 +92,7 @@ export const DASHBOARD_MESSAGES: Record<AppLang, DashboardMessageSet> = {
       sectionWatchRsiNotMet: '관망 (RSI 조건 미충족)',
       sectionPartialProfit: '중간익절',
       strategyPreparing: '전략 준비 중',
-      multiSplitProgressBarAriaLabel: '스마트 스플릿 현금 사용률',
+      multiSplitProgressBarAriaLabel: `${STRATEGY_NAMES_KO.multi_split} 현금 사용률`,
       noStopProgressBarAriaLabel: '무손절 전략 진행률',
     },
   },
@@ -116,10 +120,7 @@ export const DASHBOARD_MESSAGES: Record<AppLang, DashboardMessageSet> = {
     closeStrategyRequiresNoSharesToast:
       'You need to sell all held shares before closing the strategy.',
     strategyName: {
-      vr_band: 'Target Value Channel',
-      multi_split: 'Smart Split',
-      no_stop_multi_split: 'No-Stop Multi-Split',
-      ma_interval: 'MA Interval Buying',
+      ...getDashboardStrategyNames('en'),
     },
     execution: {
       calculating: 'Calculating...',
@@ -135,7 +136,7 @@ export const DASHBOARD_MESSAGES: Record<AppLang, DashboardMessageSet> = {
       sectionWatchRsiNotMet: 'Watch (RSI not met)',
       sectionPartialProfit: 'Partial profit',
       strategyPreparing: 'Strategy preparing',
-      multiSplitProgressBarAriaLabel: 'Smart Split cash usage',
+      multiSplitProgressBarAriaLabel: `${STRATEGY_NAMES_EN.multi_split} cash usage`,
       noStopProgressBarAriaLabel: 'No-stop strategy progress',
     },
   },

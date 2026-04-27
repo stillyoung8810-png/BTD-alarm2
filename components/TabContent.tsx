@@ -1,5 +1,6 @@
 import React, { useCallback } from 'react';
 import type { Portfolio } from '@/types';
+import type { TradeExecutionGuideData } from '@/components/TradeExecutionModal';
 import { APP_HASH, APP_SHELL_MESSAGES } from '@/constants/appShellMessages';
 import { resolvePaidTier } from '@/utils/appEntryHelpers';
 
@@ -46,7 +47,7 @@ export interface TabContentProps {
     id: string,
     activeSection: 1 | 2 | 3 | undefined,
   ) => void;
-  onOpenExecution: (id: string) => void;
+  onOpenExecution: (id: string, guideData?: TradeExecutionGuideData) => void;
   onOpenAIImage: (id: string) => void;
   onClosePortfolio: (id: string) => void;
   onDeletePortfolio: (id: string) => Promise<void>;

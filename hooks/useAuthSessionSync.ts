@@ -182,9 +182,7 @@ export function useAuthSessionSync({
       }
 
       if (session.user.id.trim().length > 0) {
-        void saveFCMToken(session.user.id).catch((error: unknown) => {
-          console.debug('[FCM] token save on auth sync:', error);
-        });
+        void saveFCMToken(session.user.id).catch(() => undefined);
       }
 
       if (event === 'PASSWORD_RECOVERY') {

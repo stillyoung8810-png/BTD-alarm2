@@ -2,7 +2,9 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallba
 import { AlarmConfig, AppLang, Portfolio, Trade } from './types';
 import { I18N } from './constants';
 import Footer from './components/Footer';
-import TradeExecutionModal from './components/TradeExecutionModal';
+import TradeExecutionModal, {
+  type TradeExecutionGuideData,
+} from './components/TradeExecutionModal';
 import {
   Result as SettlementResult,
 } from './components/SettlementModals';
@@ -122,7 +124,11 @@ type ModalState =
   | { kind: 'alarm'; portfolioId: string }
   | { kind: 'details'; portfolioId: string }
   | { kind: 'quick_input'; portfolioId: string; activeSection?: QuickInputSection }
-  | { kind: 'trade_execution'; portfolioId: string }
+  | {
+      kind: 'trade_execution';
+      portfolioId: string;
+      guideData?: TradeExecutionGuideData;
+    }
   | { kind: 'ai_image'; portfolioId: string };
 
 function getPrimeableAdRouteKey(activeTab: ActiveTab): AdRouteKey | null {
@@ -532,7 +538,6 @@ const App: React.FC = () => {
         }
 
         lastSavedSummaryRef.current = summaryToSave;
-        console.log('[DailyExecution] summary upserted for', result.summaryDate);
       } catch (error: unknown) {
         showErrorToast(shellCopy.dailySummaryNetworkError);
         console.error('[DailyExecution] upsert failed:', error);
@@ -1032,9 +1037,12 @@ const App: React.FC = () => {
     [],
   );
 
-  const handleOpenExecution = useCallback((portfolioId: string) => {
-    setModalState({ kind: 'trade_execution', portfolioId });
-  }, []);
+  const handleOpenExecution = useCallback(
+    (portfolioId: string, guideData?: TradeExecutionGuideData) => {
+      setModalState({ kind: 'trade_execution', portfolioId, guideData });
+    },
+    [],
+  );
 
   const handleOpenAiImage = useCallback((portfolioId: string) => {
     setModalState({ kind: 'ai_image', portfolioId });
@@ -1580,6 +1588,7 @@ function ActiveModalRenderer({
         <TradeExecutionModal
           lang={lang}
           portfolio={portfolio}
+          guideData={modalState.guideData}
           onClose={onClose}
           onSave={(trade) => {
             void onSaveTrade(portfolio.id, trade);

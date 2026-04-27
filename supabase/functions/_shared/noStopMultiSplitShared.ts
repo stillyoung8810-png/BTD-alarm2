@@ -21,9 +21,15 @@ const MOC_SAFETY_BUFFER_MULTIPLIER = 1.15;
 export const EMPTY_PRICE_HISTORY_ERROR =
   'Price history is empty. Cannot build no-stop indicator snapshot.';
 
+/*******************************************************************************
+ * Legacy 2-LOC order-preview API boundary.
+ *
+ * New production no-stop execution must use calculateNoStopExecution, which
+ * returns displayLowLoc/displayMocBuy and executableLowLoc/executableMocBuy.
+ ******************************************************************************/
+
 /**
- * Legacy order-preview contract kept local to the shared helper layer only.
- * Persisted Strategy.noStopMultiSplit has already migrated to NoStopMultiSplitStrategy.
+ * @deprecated Use the new Waterfall Allocation Engine (calculateNoStopExecution) instead.
  */
 export interface NoStopMultiSplitParams {
   targetStock: string;
@@ -77,6 +83,9 @@ export interface NoStopIndicatorMathPort {
   calculateRSI: (prices: number[]) => number;
 }
 
+/**
+ * @deprecated Use the new Waterfall Allocation Engine (calculateNoStopExecution) instead.
+ */
 export interface NoStopMultiSplitExecutionData {
   currentRound: number;
   isFirstBuy: boolean;
@@ -86,6 +95,9 @@ export interface NoStopMultiSplitExecutionData {
   takeProfit?: NoStopOrderEntry;
 }
 
+/**
+ * @deprecated Use the new Waterfall Allocation Engine (calculateNoStopExecution) instead.
+ */
 export interface NoStopMultiSplitState {
   currentRound: number;
   executionData: NoStopMultiSplitExecutionData;
@@ -527,6 +539,9 @@ export function calcNoStopCurrentRound(
   return roundMoney(totalInvested / oneTimeAmount);
 }
 
+/**
+ * @deprecated Use the new Waterfall Allocation Engine (calculateNoStopExecution) instead.
+ */
 export function calcNoStopMultiSplitOrders(params: {
   trades: TradeInput[];
   oneTimeAmount: number;
@@ -613,6 +628,9 @@ export function calcNoStopMultiSplitOrders(params: {
   return result;
 }
 
+/**
+ * @deprecated Use the new Waterfall Allocation Engine (calculateNoStopExecution) instead.
+ */
 export function calculateNoStopMultiSplitState(params: {
   trades: TradeInput[];
   oneTimeAmount: number;

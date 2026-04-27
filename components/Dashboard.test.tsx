@@ -244,7 +244,9 @@ describe('Dashboard multi-split execution rendering', () => {
           currentQuantity: 10,
           avgPrice: 100,
           isFirstBuy: false,
+          isDataError: false,
           isSeedExhausted: false,
+          isLowBudget: false,
           appliedLocRatioPct: 70,
           displayLocBuy: { price: 100, quantity: 1 },
           displayMocBuy: { quantity: 0 },
@@ -282,8 +284,8 @@ describe('Dashboard multi-split execution rendering', () => {
       within(executionCard).getByText('중간 익절: $105.00 / 4주'),
     ).toBeInTheDocument();
     expect(
-      within(executionCard).getByText('리스크 컷: 2주'),
-    ).toBeInTheDocument();
+      within(executionCard).queryByText('위험 관리 손절: 2주'),
+    ).not.toBeInTheDocument();
     expect(within(executionCard).queryByText(/T = /)).not.toBeInTheDocument();
   });
 

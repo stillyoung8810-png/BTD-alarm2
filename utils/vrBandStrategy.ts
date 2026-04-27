@@ -27,6 +27,10 @@ import {
 /** 부동소수점 오차 방어: 소수점 2자리까지 반올림 (금융 계산 전용). */
 export const toFixedMoney = (val: number): number => roundMoney(val);
 
+const FULL_RATE = 1;
+const PERCENT_DENOMINATOR = 100;
+const RATE_DECIMAL_SCALE = 1_000_000;
+
 /** 통화 표시 전용 (내부 금융 연산은 toFixedMoney). */
 export function formatCurrency(value: number | null | undefined): string {
   if (!isFiniteNumber(value)) return '$0.00';
@@ -292,27 +296,84 @@ export function calculatePoolDelta(
 }
 
 /**
- * V_next = V_current + Pool / G ± |deltaCash|
- * 적립식: +deltaCash, 인출식: -|deltaCash|, 거치식: 0.
+ * 임계값 비교용 비율은 동일 정밀도로 먼저 반올림해 경계 드리프트를 차단한다.
+ */
+function roundRate(value: number): number {
+  const roundedAbsoluteValue =
+    Math.round((Math.abs(value) + Number.EPSILON) * RATE_DECIMAL_SCALE) /
+    RATE_DECIMAL_SCALE;
+
+  if (roundedAbsoluteValue === 0) {
+    return 0;
+  }
+
+  return value < 0 ? -roundedAbsoluteValue : roundedAbsoluteValue;
+}
+
+/**
+ * 일반 구간: V_next = V_current + Pool * (baseGrowthRatePct / 100) + deltaCash
+ * 안전 모드: V_next = V_current * (1 + (baseGrowthRatePct / 100) * CR^2) + deltaCash
+ * CR = pool / V_current, 안전 모드 조건은 CR <= smartBrakeThresholdPct / 100.
  */
 export function calculateNextV(
   currentV: number,
   pool: number,
   params: VrBandStrategyParams
 ): number {
+  const deltaCash = getVrDeltaCashForNextV(params);
+
   validateFinancialArgs(
-    { currentV, pool, G: params.G },
     {
-      currentV: {},
-      pool: {},
-      G: { strictPositive: true },
+      currentV,
+      pool,
+      baseGrowthRatePct: params.baseGrowthRatePct,
+      smartBrakeThresholdPct: params.smartBrakeThresholdPct,
+      deltaCash,
+    },
+    {
+      currentV: { strictPositive: true },
+      pool: { min: 0 },
+      baseGrowthRatePct: { strictPositive: true },
+      smartBrakeThresholdPct: { strictPositive: true },
+      deltaCash: {},
     },
     'calculateNextV'
   );
 
-  const baseDelta = pool / params.G;
-  const deltaCash = getVrDeltaCashForNextV(params);
-  return toFixedMoney(currentV + baseDelta + deltaCash);
+  const baseGrowthRateDecimal = roundRate(
+    params.baseGrowthRatePct / PERCENT_DENOMINATOR,
+  );
+  const smartBrakeThresholdDecimal = roundRate(
+    params.smartBrakeThresholdPct / PERCENT_DENOMINATOR,
+  );
+  const currentCRDecimal = roundRate(pool / currentV);
+
+  if (currentCRDecimal <= smartBrakeThresholdDecimal) {
+    const squaredCurrentCR = roundRate(currentCRDecimal * currentCRDecimal);
+    const safetyGrowthRateDecimal = roundRate(
+      baseGrowthRateDecimal * squaredCurrentCR,
+    );
+    const nextV = roundMoney(
+      currentV * (FULL_RATE + safetyGrowthRateDecimal) + deltaCash,
+    );
+
+    validateFinancialArgs(
+      { nextV },
+      { nextV: { strictPositive: true } },
+      'calculateNextV:nextV',
+    );
+
+    return nextV;
+  }
+
+  const nextV = roundMoney(currentV + pool * baseGrowthRateDecimal + deltaCash);
+  validateFinancialArgs(
+    { nextV },
+    { nextV: { strictPositive: true } },
+    'calculateNextV:nextV',
+  );
+
+  return nextV;
 }
 
 /** 비대칭 밴드 계산: bandLow = V * (1 - bandRateLower), bandHigh = V * (1 + bandRateUpper) */

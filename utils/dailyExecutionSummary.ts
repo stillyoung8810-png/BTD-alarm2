@@ -63,7 +63,7 @@ const STRINGS: Record<Lang, {
     sectionWatchAlignmentNotMet: '관망 (정배열 미충족)',
     sectionWatchBothNotMet: '관망 (정배열 미충족, RSI 조건 미충족)',
     sharesUnit: '주',
-    vrV: 'V (목표 밸류)',
+    vrV: 'T (목표 밸류)',
     vrPool: 'Pool (가상 금고)',
     vrBand: '밴드',
     cyclePeriodFormat: (n, s, e) => `#${n}: ${s} ~ ${e}`,
@@ -72,7 +72,7 @@ const STRINGS: Record<Lang, {
     vrModeWithdraw: '인출식',
     vrMaxBuyHint: (step) => `예약 매수는 표의 ${step}번까지 주문하세요`,
     vrNoOrder: '대기 중인 주문 없음',
-    vrReadyHint: 'VR 밴드 룰에 따라 예약 주문표를 참고하여 매매하세요.',
+    vrReadyHint: 'TVC 전략 룰에 따라 예약 주문표를 참고하여 매매하세요.',
   },
   en: {
     strategyMultiSplit: 'Smart Split',
@@ -89,7 +89,7 @@ const STRINGS: Record<Lang, {
     sectionWatchAlignmentNotMet: 'Watch (alignment not met)',
     sectionWatchBothNotMet: 'Watch (alignment not met, RSI not met)',
     sharesUnit: 'shares',
-    vrV: 'V (Target Value)',
+    vrV: 'T (Target Value)',
     vrPool: 'Pool',
     vrBand: 'Band',
     cyclePeriodFormat: (n, s, e) => `Cycle ${n}: ${s} to ${e}`,
@@ -98,7 +98,7 @@ const STRINGS: Record<Lang, {
     vrModeWithdraw: 'Withdraw',
     vrMaxBuyHint: (step) => `Place reserve buy orders up to row ${step}.`,
     vrNoOrder: 'No pending orders',
-    vrReadyHint: 'Follow the VR band rules using the reservation order table.',
+    vrReadyHint: 'Follow the TVC strategy rules using the reservation order table.',
   },
 };
 

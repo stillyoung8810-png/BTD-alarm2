@@ -28,6 +28,8 @@ const BASE_VR_NUMBERS = {
   bandRateLower: 0.05,
   feeRate: 0.0025,
   G: 4,
+  baseGrowthRatePct: 10,
+  smartBrakeThresholdPct: 25,
   minOrderQty: 1,
   poolUsageRateBuy: 0.5,
   cycleWeeks: 1,
@@ -245,7 +247,7 @@ describe('VR snapshot refresh scheduler core', () => {
     expect(secondRefreshedSnapshot).toBeNull();
   });
 
-  it('accumulate 모드에서는 새 V가 pool/G + deltaCash를 더해 증가하고 밴드가 새 V 기준으로 재정렬된다', () => {
+  it('accumulate 모드에서는 새 V가 정산 전 pool 성장분 + deltaCash를 반영하고 pool도 입금액만큼 증가한다', () => {
     // Why: 적립식 사이클 전환에서 입금액이 빠지면 새 회차 목표가가 낮아지고 이후 주문표 전체가 과소 계산됩니다.
     const params = createVrParams('accumulate', 50);
     const previousSnapshot = createOrdersSnapshot(params, {
@@ -263,13 +265,14 @@ describe('VR snapshot refresh scheduler core', () => {
     const refreshed = buildRefreshedVrSnapshot(portfolio, 1);
 
     expect(refreshed).not.toBeNull();
-    expect(refreshed?.currentV).toBe(700);
-    expect(refreshed?.bandLow).toBe(665);
-    expect(refreshed?.bandHigh).toBe(735);
+    expect(refreshed?.currentV).toBe(610);
+    expect(refreshed?.pool).toBe(650);
+    expect(refreshed?.bandLow).toBe(579.5);
+    expect(refreshed?.bandHigh).toBe(640.5);
     expect(refreshed?.cycleIndex).toBe(1);
   });
 
-  it('withdraw 모드에서는 새 V가 pool/G - deltaCash를 반영해 감소하고 밴드가 새 V 기준으로 재정렬된다', () => {
+  it('withdraw 모드에서는 새 V가 정산 전 pool 성장분 - deltaCash를 반영하고 pool도 출금액만큼 감소한다', () => {
     // Why: 인출식에서 출금액 부호가 잘못되면 V가 오히려 상승해 매수/매도 기준이 완전히 반대로 뒤집힙니다.
     const params = createVrParams('withdraw', 50);
     const previousSnapshot = createOrdersSnapshot(params, {
@@ -287,10 +290,31 @@ describe('VR snapshot refresh scheduler core', () => {
     const refreshed = buildRefreshedVrSnapshot(portfolio, 1);
 
     expect(refreshed).not.toBeNull();
-    expect(refreshed?.currentV).toBe(600);
-    expect(refreshed?.bandLow).toBe(570);
-    expect(refreshed?.bandHigh).toBe(630);
+    expect(refreshed?.currentV).toBe(510);
+    expect(refreshed?.pool).toBe(550);
+    expect(refreshed?.bandLow).toBe(484.5);
+    expect(refreshed?.bandHigh).toBe(535.5);
     expect(refreshed?.cycleIndex).toBe(1);
+  });
+
+  it('withdraw 모드에서 인출액이 현재 pool보다 크면 음수 장부를 만들지 않고 실패한다', () => {
+    // Why: 초과 인출을 허용하면 다음 회차 주문표가 음수 현금을 기준으로 생성되어 장부 전체가 깨집니다.
+    const params = createVrParams('withdraw', 700);
+    const previousSnapshot = createOrdersSnapshot(params, {
+      currentV: 500,
+      pool: 600,
+      shares: 2,
+      bandLow: 475,
+      bandHigh: 525,
+      cycleIndex: 0,
+    });
+    const portfolio = createPortfolio(params, {
+      vrSnapshot: previousSnapshot,
+    });
+
+    expect(() => buildRefreshedVrSnapshot(portfolio, 1)).toThrow(
+      '[VR_Settlement_Error]',
+    );
   });
 
   it('사이클 갱신 시 buyOrders와 sellOrders는 이전 회차 표를 재사용하지 않고 새 밴드 기준으로 완전히 재생성된다', () => {

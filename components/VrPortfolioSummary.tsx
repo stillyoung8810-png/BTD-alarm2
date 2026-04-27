@@ -36,10 +36,10 @@ export default function VrPortfolioSummary({
   const isFlatPosition = vrSnapshot.shares <= 0;
 
   return (
-    <div className="space-y-2" role="region" aria-label={lang === 'ko' ? 'VR 전략 요약' : 'VR Strategy Summary'}>
+    <div className="space-y-2" role="region" aria-label={lang === 'ko' ? '전략 요약' : 'Strategy Summary'}>
       <div className="text-xs font-bold text-slate-700 dark:text-slate-300 space-y-0.5">
-        <div>V: {formatCurrency(vrSnapshot.currentV)}</div>
-        <div>Pool: {formatCurrency(vrSnapshot.pool)}</div>
+        <div>T: {formatCurrency(vrSnapshot.currentV)}</div>
+        <div>Cash: {formatCurrency(vrSnapshot.pool)}</div>
         <div>
           {lang === 'ko' ? '밴드' : 'Band'}: {formatCurrency(vrSnapshot.bandLow)} ~ {formatCurrency(vrSnapshot.bandHigh)}
         </div>

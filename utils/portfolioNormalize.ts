@@ -11,10 +11,12 @@ import type {
   VrBandStrategyParams,
   VrSnapshot,
 } from '../types';
+import { STRATEGY_DEFAULTS } from '../constants/domain/financeRules';
 import {
   DEFAULT_FEE_RATE,
   LEGACY_FEE_RATE_PCT,
   RATE_PRECISION_MULTIPLIER,
+  TVC_LIMITS,
   VR_ROOT_FEE_DECIMAL_HEAL_MAX,
   VR_ROOT_FEE_DECIMAL_MATCH_EPS,
 } from '../constants/vrConstants';
@@ -80,11 +82,25 @@ export function normalizePortfolioData(data: unknown[]): Portfolio[] {
         initialCapital: n(vrRecord.initialCapital),
         bandRateUpper: n(vrRecord.bandRateUpper),
         bandRateLower: n(vrRecord.bandRateLower),
-        G: n(vrRecord.G),
+        G: n(vrRecord.G ?? STRATEGY_DEFAULTS.VR_G_VALUE),
         minOrderQty: n(vrRecord.minOrderQty),
         poolUsageRateBuy: n(vrRecord.poolUsageRateBuy),
         feeRate: n(vrRecord.feeRate ?? DEFAULT_FEE_RATE),
         cycleWeeks,
+        baseGrowthRatePct: Math.max(
+          TVC_LIMITS.BASE_GROWTH_RATE.MIN,
+          n(
+            vrRecord.baseGrowthRatePct ??
+              STRATEGY_DEFAULTS.VR_BASE_GROWTH_RATE_PERCENT,
+          ),
+        ),
+        smartBrakeThresholdPct: Math.max(
+          TVC_LIMITS.SMART_BRAKE_THRESHOLD.MIN,
+          n(
+            vrRecord.smartBrakeThresholdPct ??
+              STRATEGY_DEFAULTS.VR_SMART_BRAKE_THRESHOLD_PERCENT,
+          ),
+        ),
       };
 
       const rawDeltaCash = n(vrRecord.deltaCash);

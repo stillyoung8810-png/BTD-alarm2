@@ -260,7 +260,9 @@ describe('calculateMultiSplitGuideState', () => {
       currentQuantity: 10,
       avgPrice: 100,
       isFirstBuy: false,
+      isDataError: false,
       isSeedExhausted: false,
+      isLowBudget: false,
       appliedLocRatioPct: 70,
       displayLocBuy: {
         price: 100,
@@ -317,5 +319,66 @@ describe('calculateMultiSplitGuideState', () => {
     const locUnit = 55 * (1 + 0.25 / 100);
     const mocUnit = 55 * 1.15;
     expect(locQty * locUnit + mocQty * mocUnit).toBeLessThanOrEqual(200 + 1e-6);
+  });
+
+  it('남은 예산이 1회분보다 작으면 저예산 상태로 매수 가이드를 숨긴다', () => {
+    const result = calculateMultiSplitGuideState({
+      trades: [
+        makeTrade({
+          type: 'buy',
+          stock: 'TQQQ',
+          price: 95,
+          quantity: 100,
+          fee: 0,
+        }),
+      ],
+      strategy: makeSmartSplitStrategy({
+        targetStock: 'TQQQ',
+        totalSplitCount: 10,
+        baseLocRatio: 50,
+      }),
+      oneTimeAmount: 1000,
+      feeRate: 0.25,
+      snapshot: makeIndicatorSnapshot({
+        currentPrice: 90,
+        rsi: 50,
+      }),
+    });
+
+    expect(result.remainingBudget).toBe(500);
+    expect(result.isLowBudget).toBe(true);
+    expect(result.displayLocBuy).toBeUndefined();
+    expect(result.displayMocBuy).toBeUndefined();
+    expect(result.sellGuide.riskCutQty).toBeGreaterThan(0);
+  });
+
+  it('보유 수량이 있는데 평단가가 유효하지 않으면 첫 매수 대신 데이터 오류로 분리한다', () => {
+    const result = calculateMultiSplitGuideState({
+      trades: [
+        makeTrade({
+          type: 'buy',
+          stock: 'BROKEN',
+          price: Number.EPSILON,
+          quantity: 10,
+          fee: 0,
+        }),
+      ],
+      strategy: makeSmartSplitStrategy({
+        targetStock: 'BROKEN',
+        totalSplitCount: 10,
+      }),
+      oneTimeAmount: 1000,
+      feeRate: 0.25,
+      snapshot: makeIndicatorSnapshot({
+        currentPrice: 90,
+        rsi: 50,
+      }),
+    });
+
+    expect(result.currentQuantity).toBe(10);
+    expect(result.isFirstBuy).toBe(false);
+    expect(result.isDataError).toBe(true);
+    expect(result.displayLocBuy).toBeUndefined();
+    expect(result.displayMocBuy).toBeUndefined();
   });
 });

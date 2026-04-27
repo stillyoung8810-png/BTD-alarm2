@@ -1,11 +1,12 @@
 import React from 'react';
 import { DraftNumberInput } from '@/components/common/DraftNumberInput';
+import { STRATEGY_CREATOR_STYLES } from '@/components/strategyCreator/styles';
 import { VrBandStrategyParams } from '../../types';
 import { Orbit, Wallet, Target, Percent } from 'lucide-react';
 import {
   VR_CREATOR_LABELS,
   VR_DELTA_CASH_VALIDATION_MESSAGES,
-  VR_MODE_KEYS,
+  VISIBLE_TVC_VR_MODE_KEYS,
 } from '../../constants/vrMessages';
 import {
   VR_CYCLE,
@@ -15,6 +16,10 @@ import {
 export interface VrBandStrategyFormProps {
   lang: 'ko' | 'en';
   showErrors: boolean;
+  initialTHelper?: string;
+  baseGrowthRatePctHelper?: string;
+  poolUsagePctHelper?: string;
+  smartBrakeThresholdPctHelper?: string;
   vrMode: VrBandStrategyParams['vrMode'];
   onVrModeChange: (mode: VrBandStrategyParams['vrMode']) => void;
   vrInitialCapital: number;
@@ -27,8 +32,10 @@ export interface VrBandStrategyFormProps {
   onVrBandUpperPctChange: (rawValue: string) => number;
   vrBandLowerPct: number;
   onVrBandLowerPctChange: (rawValue: string) => number;
-  vrG: number;
-  onVrGChange: (rawValue: string) => number;
+  vrBaseGrowthRatePct: number;
+  onVrBaseGrowthRatePctChange: (val: string) => number;
+  vrSmartBrakeThresholdPct: number;
+  onVrSmartBrakeThresholdPctChange: (val: string) => number;
   vrPoolUsagePct: number;
   onVrPoolUsagePctChange: (rawValue: string) => number;
   vrDeltaCash: number;
@@ -46,9 +53,20 @@ const VR_ICON_INPUT_CLASS_NAME =
 const VR_ICON_INPUT_SUCCESS_CLASS_NAME =
   'w-full p-4 pl-12 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-white/10 rounded-2xl text-sm font-black text-slate-900 dark:text-slate-50 outline-none focus:ring-2 focus:ring-emerald-500/60 transition-all shadow-sm';
 
+function getVrCreatorModeLabel(
+  modes: Record<VrBandStrategyParams['vrMode'], string>,
+  mode: VrBandStrategyParams['vrMode'],
+): string {
+  return modes[mode];
+}
+
 const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({
   lang,
   showErrors,
+  initialTHelper,
+  baseGrowthRatePctHelper,
+  poolUsagePctHelper,
+  smartBrakeThresholdPctHelper,
   vrMode,
   onVrModeChange,
   vrInitialCapital,
@@ -61,8 +79,10 @@ const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({
   onVrBandUpperPctChange,
   vrBandLowerPct,
   onVrBandLowerPctChange,
-  vrG,
-  onVrGChange,
+  vrBaseGrowthRatePct,
+  onVrBaseGrowthRatePctChange,
+  vrSmartBrakeThresholdPct,
+  onVrSmartBrakeThresholdPctChange,
   vrPoolUsagePct,
   onVrPoolUsagePctChange,
   vrDeltaCash,
@@ -99,15 +119,10 @@ const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({
           <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
             {vrT.modeLabel}
           </label>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {VR_MODE_KEYS.map((mode) => {
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {VISIBLE_TVC_VR_MODE_KEYS.map((mode) => {
               const isActive = vrMode === mode;
-              const rawLabel =
-                mode === 'lump_sum'
-                  ? vrT.modes.lump_sum
-                  : mode === 'accumulate'
-                    ? vrT.modes.accumulate
-                    : vrT.modes.withdraw;
+              const rawLabel = getVrCreatorModeLabel(vrT.modes, mode);
               const [title, subtitleRaw] = rawLabel.split('(');
               const subtitle = subtitleRaw ? `(${subtitleRaw}` : '';
               return (
@@ -184,9 +199,14 @@ const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({
                 ariaLabel={vrT.initialV}
               />
             </div>
+            {initialTHelper != null && initialTHelper.trim().length > 0 ? (
+              <p className={STRATEGY_CREATOR_STYLES.helperText}>
+                {initialTHelper}
+              </p>
+            ) : null}
             {showErrors && (!vrInitialV || vrInitialV <= 0) && (
               <p className="text-[10px] text-red-500 font-medium">
-                {lang === 'ko' ? '초기 V 값은 0보다 커야 합니다.' : 'Initial V must be greater than 0.'}
+                {lang === 'ko' ? '초기 T 값은 0보다 커야 합니다.' : 'Initial T must be greater than 0.'}
               </p>
             )}
           </div>
@@ -244,17 +264,23 @@ const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({
           </div>
 
           <div className="space-y-3">
-            <label htmlFor="vr-g" className={VR_LABEL_CLASS_NAME}>
-              {vrT.G}
+            <label htmlFor="vr-base-growth-rate" className={VR_LABEL_CLASS_NAME}>
+              {vrT.baseGrowthRatePct}
             </label>
             <DraftNumberInput
-              id="vr-g"
-              value={vrG}
-              onCommit={onVrGChange}
+              id="vr-base-growth-rate"
+              value={vrBaseGrowthRatePct}
+              onCommit={onVrBaseGrowthRatePctChange}
               allowDecimal={false}
               className={VR_INPUT_CLASS_NAME}
-              ariaLabel={vrT.G}
+              ariaLabel={vrT.baseGrowthRatePct}
             />
+            {baseGrowthRatePctHelper != null &&
+            baseGrowthRatePctHelper.trim().length > 0 ? (
+              <p className={STRATEGY_CREATOR_STYLES.helperText}>
+                {baseGrowthRatePctHelper}
+              </p>
+            ) : null}
           </div>
 
           <div className="space-y-3">
@@ -272,6 +298,35 @@ const VrBandStrategyForm: React.FC<VrBandStrategyFormProps> = ({
                 ariaLabel={vrT.poolUsage}
               />
             </div>
+            {poolUsagePctHelper != null &&
+            poolUsagePctHelper.trim().length > 0 ? (
+              <p className={STRATEGY_CREATOR_STYLES.helperText}>
+                {poolUsagePctHelper}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="space-y-3">
+            <label
+              htmlFor="vr-smart-brake-threshold"
+              className={VR_LABEL_CLASS_NAME}
+            >
+              {vrT.smartBrakeThresholdPct}
+            </label>
+            <DraftNumberInput
+              id="vr-smart-brake-threshold"
+              value={vrSmartBrakeThresholdPct}
+              onCommit={onVrSmartBrakeThresholdPctChange}
+              allowDecimal={false}
+              className={VR_INPUT_CLASS_NAME}
+              ariaLabel={vrT.smartBrakeThresholdPct}
+            />
+            {smartBrakeThresholdPctHelper != null &&
+            smartBrakeThresholdPctHelper.trim().length > 0 ? (
+              <p className={STRATEGY_CREATOR_STYLES.helperText}>
+                {smartBrakeThresholdPctHelper}
+              </p>
+            ) : null}
           </div>
 
           {vrMode !== 'lump_sum' && (

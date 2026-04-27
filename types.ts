@@ -200,6 +200,8 @@ export interface VrBandStrategyBase {
   poolUsageRateBuy: number;
   /** 리밸런싱 주기(주). 1~12 사이의 정수. */
   cycleWeeks: number;
+  baseGrowthRatePct: number;
+  smartBrakeThresholdPct: number;
 }
 
 /** 적립식: 매 사이클 deltaCash 필수 */

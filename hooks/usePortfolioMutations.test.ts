@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { STRATEGY_DEFAULTS } from '../constants/domain/financeRules';
 import type { Portfolio, Trade, VrBandStrategyParams } from '../types';
 import { createInitialVrSnapshot } from '../utils/vrBandStrategy';
 import { buildTradeDraft } from './usePortfolioMutations';
@@ -13,6 +14,8 @@ const BASE_VR_NUMBERS = {
   minOrderQty: 1,
   poolUsageRateBuy: 0.5,
   cycleWeeks: 1,
+  baseGrowthRatePct: STRATEGY_DEFAULTS.VR_BASE_GROWTH_RATE_PERCENT,
+  smartBrakeThresholdPct: STRATEGY_DEFAULTS.VR_SMART_BRAKE_THRESHOLD_PERCENT,
 } as const;
 
 function createVrParams(

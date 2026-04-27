@@ -31,6 +31,17 @@ export const VR_BAND_WIDTH_PCT = {
   DEFAULT: 5,
 } as const;
 
+export const TVC_LIMITS = {
+  BASE_GROWTH_RATE: {
+    MIN: 1,
+    MAX: 20,
+  },
+  SMART_BRAKE_THRESHOLD: {
+    MIN: 1,
+    MAX: 99,
+  },
+} as const;
+
 /**
  * VR 주기별 입·출금(`deltaCash`) — UI 입력 구간 (USD).
  * 사용자 입력은 0 이상만 허용; 인출 모드에서의 음수 의미는 저장 후 `getVrDeltaCashForNextV`가 부호를 강제한다.

@@ -10,6 +10,7 @@ import {
 import { getCommonMessages } from '@/constants/messages/commonMessages';
 import { getStrategyCreatorMessages } from '@/constants/messages/strategyCreatorMessages';
 import {
+  TVC_LIMITS,
   VR_BAND_WIDTH_PCT,
   VR_CYCLE,
   getVrDeltaCashInputValidationReason,
@@ -32,6 +33,8 @@ import {
   RSI_THRESHOLD_BY_PRESET,
   buildPortfolioDraftFromWizardState,
   hasDuplicatedSectionStocks,
+  normalizeDraftNumberToBounds,
+  type DraftNumberRoundingMode,
   type MultiSplitBudgetPresetId,
   type MultiSplitMaPresetId,
   type MultiSplitRsiPresetId,
@@ -52,9 +55,9 @@ import type {
   StrategyWizardScreen,
 } from './types/ui';
 
-const DEFAULT_SECTION_ONE_STOCK = 'TQQQ';
+const DEFAULT_SECTION_ONE_STOCK = 'QQQ';
 const DEFAULT_SECTION_TWO_STOCK = 'QLD';
-const DEFAULT_SECTION_THREE_STOCK = 'QQQ';
+const DEFAULT_SECTION_THREE_STOCK = 'TQQQ';
 const DEFAULT_MULTI_SPLIT_STOCK = 'TQQQ';
 const DEFAULT_REFERENCE_STOCK = 'QQQ';
 const MAX_MA_PERIOD = 250;
@@ -62,6 +65,9 @@ const MIN_MA_PERIOD = 1;
 const MIN_TOTAL_SPLIT_COUNT = 20;
 const MAX_TOTAL_SPLIT_COUNT = 80;
 const MIN_PERCENT_INPUT = 0;
+const MIN_POSITIVE_INPUT = 1;
+const MAX_PERCENT_INPUT = 100;
+const DEFAULT_VR_MIN_ORDER_QTY = 1;
 const DEFAULT_NO_STOP_BASE_LOC_RATIO = 50;
 const DEFAULT_NO_STOP_TAKE_PROFIT_PCT = 10;
 const DEFAULT_MULTI_SPLIT_RSI_PRESET: MultiSplitRsiPresetId = 'rsi40';
@@ -78,6 +84,22 @@ interface UseStrategyCreatorControllerParams {
   canAccessPaidStocks: boolean;
   maxPortfolios: number;
   currentPortfolioCount: number;
+}
+
+interface DraftNumberRules {
+  fallback: number;
+  min: number;
+  max?: number;
+  roundingMode?: DraftNumberRoundingMode;
+}
+
+interface CommitClampedInputParams {
+  rawValue: string;
+  rules: DraftNumberRules;
+  currentCommittedValue: number;
+  outOfRangeToastMessage: string;
+  invalidFormatToastMessage?: string;
+  updateValue: (value: number) => void;
 }
 
 function buildInitialWizardState(): StrategyWizardDraftInput {
@@ -155,10 +177,13 @@ function buildInitialWizardState(): StrategyWizardDraftInput {
       minOrderQty: 1,
       bandUpperPct: VR_BAND_WIDTH_PCT.DEFAULT,
       bandLowerPct: VR_BAND_WIDTH_PCT.DEFAULT,
-      g: 10,
-      poolUsagePct: 50,
+      g: STRATEGY_DEFAULTS.VR_G_VALUE,
+      poolUsagePct: STRATEGY_DEFAULTS.VR_POOL_USAGE_PCT,
       deltaCash: 0,
       cycleWeeks: VR_CYCLE.DEFAULT_WEEKS,
+      baseGrowthRatePct: STRATEGY_DEFAULTS.VR_BASE_GROWTH_RATE_PERCENT,
+      smartBrakeThresholdPct:
+        STRATEGY_DEFAULTS.VR_SMART_BRAKE_THRESHOLD_PERCENT,
     },
   };
 }
@@ -198,10 +223,12 @@ const EMPTY_VR_BAND_DRAFT: NonNullable<StrategyWizardDraftInput['vrBand']> = {
   minOrderQty: 1,
   bandUpperPct: VR_BAND_WIDTH_PCT.DEFAULT,
   bandLowerPct: VR_BAND_WIDTH_PCT.DEFAULT,
-  g: 10,
-  poolUsagePct: 50,
+  g: STRATEGY_DEFAULTS.VR_G_VALUE,
+  poolUsagePct: STRATEGY_DEFAULTS.VR_POOL_USAGE_PCT,
   deltaCash: 0,
   cycleWeeks: VR_CYCLE.DEFAULT_WEEKS,
+  baseGrowthRatePct: STRATEGY_DEFAULTS.VR_BASE_GROWTH_RATE_PERCENT,
+  smartBrakeThresholdPct: STRATEGY_DEFAULTS.VR_SMART_BRAKE_THRESHOLD_PERCENT,
 };
 
 const EMPTY_MULTI_SPLIT_DRAFT: NonNullable<
@@ -244,18 +271,6 @@ const EMPTY_NO_STOP_MULTI_SPLIT_DRAFT: NonNullable<
     budgetPreset: DEFAULT_NO_STOP_BUDGET_PRESET,
   },
 };
-
-function clampNumber(value: number, min: number, max: number): number {
-  if (value < min) {
-    return min;
-  }
-
-  if (value > max) {
-    return max;
-  }
-
-  return value;
-}
 
 function buildStockOptions(params: {
   baseStocks: readonly string[];
@@ -372,7 +387,6 @@ function buildStrategyDefinitions(
     tier: StrategyTier,
     icon: JSX.Element,
     gradientClassName: string,
-    isLaoerOriginal?: boolean,
   ): StrategyDefinitionViewModel => ({
     id,
     title: copy.strategyDefinitions[id].title,
@@ -381,7 +395,6 @@ function buildStrategyDefinitions(
     tierLabel: copy.tierLabels[tier],
     icon,
     gradientClassName,
-    isLaoerOriginal,
   });
 
   return [
@@ -396,21 +409,18 @@ function buildStrategyDefinitions(
       'FREE',
       <Layers size={24} />,
       'from-emerald-500 to-teal-500',
-      true,
     ),
     createDefinition(
       'no_stop_multi_split',
       'FREE',
       <Layers size={24} />,
       'from-emerald-500 to-green-500',
-      true,
     ),
     createDefinition(
       'vr_band',
       'FREE',
       <Orbit size={24} />,
       'from-indigo-500 to-sky-500',
-      true,
     ),
   ];
 }
@@ -449,14 +459,6 @@ export function useStrategyCreatorController({
     () => buildStrategyDefinitions(copy),
     [copy],
   );
-
-  const shouldShowLaoerCreditBanner =
-    selectedStrategy != null &&
-    strategyDefinitions.some(
-      (definition) =>
-        definition.id === selectedStrategy &&
-        definition.isLaoerOriginal === true,
-    );
 
   const updateMeta = useCallback(
     (patch: Partial<StrategyCreatorMetaDraftInput>) => {
@@ -574,6 +576,52 @@ export function useStrategyCreatorController({
     [],
   );
 
+  const commitClampedInput = useCallback(
+    (params: CommitClampedInputParams): number => {
+      const {
+        rawValue,
+        rules,
+        currentCommittedValue,
+        outOfRangeToastMessage,
+        invalidFormatToastMessage,
+        updateValue,
+      } = params;
+      const normalized = normalizeDraftNumberToBounds({
+        rawValue,
+        ...rules,
+      });
+
+      if (normalized.hasInvalidNumberConfig) {
+        if (import.meta.env.DEV) {
+          console.error('[StrategyCreator] invalid number bounds', rules);
+        }
+        updateValue(normalized.value);
+        return normalized.value;
+      }
+
+      if (normalized.hasInvalidFormat || normalized.isEmptyTemporary) {
+        if (
+          normalized.hasInvalidFormat &&
+          invalidFormatToastMessage !== undefined
+        ) {
+          showErrorToast(invalidFormatToastMessage);
+        }
+        return Number.isFinite(currentCommittedValue)
+          ? currentCommittedValue
+          : normalized.value;
+      }
+
+      updateValue(normalized.value);
+
+      if (normalized.shouldShowOutOfRangeToast) {
+        showErrorToast(outOfRangeToastMessage);
+      }
+
+      return normalized.value;
+    },
+    [],
+  );
+
   const handleSelectStrategy = useCallback((strategy: StrategyType) => {
     setSelectedStrategy(strategy);
     setStep(1);
@@ -639,45 +687,77 @@ export function useStrategyCreatorController({
     });
   }, []);
 
-  const handleMaShortPeriodChange = useCallback((value: string) => {
-    const committedValue = clampNumber(
-      safeNumber(value, STRATEGY_DEFAULTS.MA_SHORT_PERIOD),
-      MIN_MA_PERIOD,
-      MAX_MA_PERIOD,
-    );
-    setWizardState((previous) => {
-      const currentMaInterval =
-        previous.maInterval ?? EMPTY_MA_INTERVAL_DRAFT;
-      return {
-        ...previous,
-        maInterval: {
-          ...currentMaInterval,
-          maAPeriod: committedValue,
+  const handleMaShortPeriodChange = useCallback(
+    (value: string) =>
+      commitClampedInput({
+        rawValue: value,
+        rules: {
+          fallback: STRATEGY_DEFAULTS.MA_SHORT_PERIOD,
+          min: MIN_MA_PERIOD,
+          max: MAX_MA_PERIOD,
+          roundingMode: 'integer',
         },
-      };
-    });
-    return committedValue;
-  }, []);
+        currentCommittedValue: safeNumber(
+          wizardState.maInterval?.maAPeriod,
+          STRATEGY_DEFAULTS.MA_SHORT_PERIOD,
+        ),
+        outOfRangeToastMessage: copy.outOfRangeToast,
+        updateValue: (committedValue) => {
+          setWizardState((previous) => {
+            const currentMaInterval =
+              previous.maInterval ?? EMPTY_MA_INTERVAL_DRAFT;
+            return {
+              ...previous,
+              maInterval: {
+                ...currentMaInterval,
+                maAPeriod: committedValue,
+              },
+            };
+          });
+        },
+      }),
+    [
+      commitClampedInput,
+      copy.outOfRangeToast,
+      wizardState.maInterval?.maAPeriod,
+    ],
+  );
 
-  const handleMaLongPeriodChange = useCallback((value: string) => {
-    const committedValue = clampNumber(
-      safeNumber(value, STRATEGY_DEFAULTS.MA_LONG_PERIOD),
-      MIN_MA_PERIOD,
-      MAX_MA_PERIOD,
-    );
-    setWizardState((previous) => {
-      const currentMaInterval =
-        previous.maInterval ?? EMPTY_MA_INTERVAL_DRAFT;
-      return {
-        ...previous,
-        maInterval: {
-          ...currentMaInterval,
-          maBPeriod: committedValue,
+  const handleMaLongPeriodChange = useCallback(
+    (value: string) =>
+      commitClampedInput({
+        rawValue: value,
+        rules: {
+          fallback: STRATEGY_DEFAULTS.MA_LONG_PERIOD,
+          min: MIN_MA_PERIOD,
+          max: MAX_MA_PERIOD,
+          roundingMode: 'integer',
         },
-      };
-    });
-    return committedValue;
-  }, []);
+        currentCommittedValue: safeNumber(
+          wizardState.maInterval?.maBPeriod,
+          STRATEGY_DEFAULTS.MA_LONG_PERIOD,
+        ),
+        outOfRangeToastMessage: copy.outOfRangeToast,
+        updateValue: (committedValue) => {
+          setWizardState((previous) => {
+            const currentMaInterval =
+              previous.maInterval ?? EMPTY_MA_INTERVAL_DRAFT;
+            return {
+              ...previous,
+              maInterval: {
+                ...currentMaInterval,
+                maBPeriod: committedValue,
+              },
+            };
+          });
+        },
+      }),
+    [
+      commitClampedInput,
+      copy.outOfRangeToast,
+      wizardState.maInterval?.maBPeriod,
+    ],
+  );
 
   const handleRsiEnabledChange = useCallback((value: boolean) => {
     setWizardState((previous) => {
@@ -733,13 +813,13 @@ export function useStrategyCreatorController({
       });
 
       if (normalizedReturnRates.didClamp) {
-        showErrorToast(copy.multiSplit.outOfRangeToast);
+        showErrorToast(copy.outOfRangeToast);
       }
 
       return normalizedReturnRates;
     },
     [
-      copy.multiSplit.outOfRangeToast,
+      copy.outOfRangeToast,
       updateMultiSplit,
       wizardState.multiSplit?.intermediateReturnRate,
       wizardState.multiSplit?.targetReturnRate,
@@ -772,17 +852,32 @@ export function useStrategyCreatorController({
     [commitMultiSplitReturnRates],
   );
 
-  const handleMultiSplitTotalCountChange = useCallback((value: string) => {
-    const committedValue = clampNumber(
-      safeNumber(value, STRATEGY_DEFAULTS.TOTAL_SPLIT_COUNT),
-      MIN_TOTAL_SPLIT_COUNT,
-      MAX_TOTAL_SPLIT_COUNT,
-    );
-    updateMultiSplit({
-      totalSplitCount: committedValue,
-    });
-    return committedValue;
-  }, [updateMultiSplit]);
+  const handleMultiSplitTotalCountChange = useCallback(
+    (value: string) =>
+      commitClampedInput({
+        rawValue: value,
+        rules: {
+          fallback: STRATEGY_DEFAULTS.TOTAL_SPLIT_COUNT,
+          min: MIN_TOTAL_SPLIT_COUNT,
+          max: MAX_TOTAL_SPLIT_COUNT,
+          roundingMode: 'integer',
+        },
+        currentCommittedValue: safeNumber(
+          wizardState.multiSplit?.totalSplitCount,
+          STRATEGY_DEFAULTS.TOTAL_SPLIT_COUNT,
+        ),
+        outOfRangeToastMessage: copy.outOfRangeToast,
+        updateValue: (committedValue) => {
+          updateMultiSplit({ totalSplitCount: committedValue });
+        },
+      }),
+    [
+      commitClampedInput,
+      copy.outOfRangeToast,
+      updateMultiSplit,
+      wizardState.multiSplit?.totalSplitCount,
+    ],
+  );
 
   const handleMultiSplitTargetStockChange = useCallback((value: string) => {
     updateMultiSplit({ targetStock: value });
@@ -790,47 +885,83 @@ export function useStrategyCreatorController({
 
   const handleMultiSplitBaseLocRatioChange = useCallback(
     (value: string) => {
-      const committedValue = clampNumber(
-        safeNumber(value, DEFAULT_MULTI_SPLIT_BASE_LOC_RATIO),
-        MIN_PERCENT_INPUT,
-        100,
-      );
-      updateMultiSplit({
-        baseLocRatio: committedValue,
+      return commitClampedInput({
+        rawValue: value,
+        rules: {
+          fallback: DEFAULT_MULTI_SPLIT_BASE_LOC_RATIO,
+          min: MIN_PERCENT_INPUT,
+          max: MAX_PERCENT_INPUT,
+        },
+        currentCommittedValue: safeNumber(
+          wizardState.multiSplit?.baseLocRatio,
+          DEFAULT_MULTI_SPLIT_BASE_LOC_RATIO,
+        ),
+        outOfRangeToastMessage: copy.outOfRangeToast,
+        updateValue: (committedValue) => {
+          updateMultiSplit({ baseLocRatio: committedValue });
+        },
       });
-      return committedValue;
     },
-    [updateMultiSplit],
+    [
+      commitClampedInput,
+      copy.outOfRangeToast,
+      updateMultiSplit,
+      wizardState.multiSplit?.baseLocRatio,
+    ],
   );
 
   const handleMultiSplitMainTakeProfitRatioPctChange = useCallback(
     (value: string) => {
-      const committedValue = clampNumber(
-        safeNumber(value, DEFAULT_MULTI_SPLIT_MAIN_TAKE_PROFIT_RATIO_PCT),
-        1,
-        100,
-      );
-      updateMultiSplit({
-        mainTakeProfitRatioPct: committedValue,
+      return commitClampedInput({
+        rawValue: value,
+        rules: {
+          fallback: DEFAULT_MULTI_SPLIT_MAIN_TAKE_PROFIT_RATIO_PCT,
+          min: MIN_POSITIVE_INPUT,
+          max: MAX_PERCENT_INPUT,
+        },
+        currentCommittedValue: safeNumber(
+          wizardState.multiSplit?.mainTakeProfitRatioPct,
+          DEFAULT_MULTI_SPLIT_MAIN_TAKE_PROFIT_RATIO_PCT,
+        ),
+        outOfRangeToastMessage: copy.outOfRangeToast,
+        updateValue: (committedValue) => {
+          updateMultiSplit({ mainTakeProfitRatioPct: committedValue });
+        },
       });
-      return committedValue;
     },
-    [updateMultiSplit],
+    [
+      commitClampedInput,
+      copy.outOfRangeToast,
+      updateMultiSplit,
+      wizardState.multiSplit?.mainTakeProfitRatioPct,
+    ],
   );
 
   const handleMultiSplitRiskCutRatioPctChange = useCallback(
     (value: string) => {
-      const committedValue = clampNumber(
-        safeNumber(value, DEFAULT_MULTI_SPLIT_RISK_CUT_RATIO_PCT),
-        MIN_PERCENT_INPUT,
-        100,
-      );
-      updateMultiSplit({
-        riskCutRatioPct: committedValue,
+      return commitClampedInput({
+        rawValue: value,
+        rules: {
+          fallback: DEFAULT_MULTI_SPLIT_RISK_CUT_RATIO_PCT,
+          min: MIN_PERCENT_INPUT,
+          max: MAX_PERCENT_INPUT,
+        },
+        currentCommittedValue: safeNumber(
+          wizardState.multiSplit?.riskCutRatioPct,
+          DEFAULT_MULTI_SPLIT_RISK_CUT_RATIO_PCT,
+        ),
+        outOfRangeToastMessage: copy.outOfRangeToast,
+        updateValue: (committedValue) => {
+          updateMultiSplit({ riskCutRatioPct: committedValue });
+        },
       });
-      return committedValue;
     },
-    [updateMultiSplit],
+    [
+      commitClampedInput,
+      copy.outOfRangeToast,
+      updateMultiSplit,
+      wizardState.multiSplit?.riskCutRatioPct,
+    ],
   );
 
   const handleMultiSplitRsiConditionEnabledChange = useCallback(
@@ -887,41 +1018,84 @@ export function useStrategyCreatorController({
     updateNoStopMultiSplit({ targetStock: value });
   }, [updateNoStopMultiSplit]);
 
-  const handleNoStopBaseLocRatioChange = useCallback((value: string) => {
-    const committedValue = clampNumber(
-      safeNumber(value, DEFAULT_NO_STOP_BASE_LOC_RATIO),
-      MIN_PERCENT_INPUT,
-      100,
-    );
-    updateNoStopMultiSplit({
-      baseLocRatio: committedValue,
-    });
-    return committedValue;
-  }, [updateNoStopMultiSplit]);
+  const handleNoStopBaseLocRatioChange = useCallback(
+    (value: string) =>
+      commitClampedInput({
+        rawValue: value,
+        rules: {
+          fallback: DEFAULT_NO_STOP_BASE_LOC_RATIO,
+          min: MIN_PERCENT_INPUT,
+          max: MAX_PERCENT_INPUT,
+        },
+        currentCommittedValue: safeNumber(
+          wizardState.noStopMultiSplit?.baseLocRatio,
+          DEFAULT_NO_STOP_BASE_LOC_RATIO,
+        ),
+        outOfRangeToastMessage: copy.outOfRangeToast,
+        updateValue: (committedValue) => {
+          updateNoStopMultiSplit({ baseLocRatio: committedValue });
+        },
+      }),
+    [
+      commitClampedInput,
+      copy.outOfRangeToast,
+      updateNoStopMultiSplit,
+      wizardState.noStopMultiSplit?.baseLocRatio,
+    ],
+  );
 
-  const handleNoStopTakeProfitPctChange = useCallback((value: string) => {
-    const committedValue = clampNumber(
-      safeNumber(value, DEFAULT_NO_STOP_TAKE_PROFIT_PCT),
-      MIN_PERCENT_INPUT,
-      100,
-    );
-    updateNoStopMultiSplit({
-      takeProfitPct: committedValue,
-    });
-    return committedValue;
-  }, [updateNoStopMultiSplit]);
+  const handleNoStopTakeProfitPctChange = useCallback(
+    (value: string) =>
+      commitClampedInput({
+        rawValue: value,
+        rules: {
+          fallback: DEFAULT_NO_STOP_TAKE_PROFIT_PCT,
+          min: MIN_PERCENT_INPUT,
+          max: MAX_PERCENT_INPUT,
+        },
+        currentCommittedValue: safeNumber(
+          wizardState.noStopMultiSplit?.takeProfitPct,
+          DEFAULT_NO_STOP_TAKE_PROFIT_PCT,
+        ),
+        outOfRangeToastMessage: copy.outOfRangeToast,
+        updateValue: (committedValue) => {
+          updateNoStopMultiSplit({ takeProfitPct: committedValue });
+        },
+      }),
+    [
+      commitClampedInput,
+      copy.outOfRangeToast,
+      updateNoStopMultiSplit,
+      wizardState.noStopMultiSplit?.takeProfitPct,
+    ],
+  );
 
-  const handleNoStopTotalSplitCountChange = useCallback((value: string) => {
-    const committedValue = clampNumber(
-      safeNumber(value, STRATEGY_DEFAULTS.TOTAL_SPLIT_COUNT),
-      MIN_TOTAL_SPLIT_COUNT,
-      MAX_TOTAL_SPLIT_COUNT,
-    );
-    updateNoStopMultiSplit({
-      totalSplitCount: committedValue,
-    });
-    return committedValue;
-  }, [updateNoStopMultiSplit]);
+  const handleNoStopTotalSplitCountChange = useCallback(
+    (value: string) =>
+      commitClampedInput({
+        rawValue: value,
+        rules: {
+          fallback: STRATEGY_DEFAULTS.TOTAL_SPLIT_COUNT,
+          min: MIN_TOTAL_SPLIT_COUNT,
+          max: MAX_TOTAL_SPLIT_COUNT,
+          roundingMode: 'integer',
+        },
+        currentCommittedValue: safeNumber(
+          wizardState.noStopMultiSplit?.totalSplitCount,
+          STRATEGY_DEFAULTS.TOTAL_SPLIT_COUNT,
+        ),
+        outOfRangeToastMessage: copy.outOfRangeToast,
+        updateValue: (committedValue) => {
+          updateNoStopMultiSplit({ totalSplitCount: committedValue });
+        },
+      }),
+    [
+      commitClampedInput,
+      copy.outOfRangeToast,
+      updateNoStopMultiSplit,
+      wizardState.noStopMultiSplit?.totalSplitCount,
+    ],
+  );
 
   const handleNoStopRsiConditionEnabledChange = useCallback(
     (value: boolean) => {
@@ -1078,6 +1252,60 @@ export function useStrategyCreatorController({
       updateVrBand({ vrMode: value });
     },
     [updateVrBand],
+  );
+
+  const handleVrBaseGrowthRatePctChange = useCallback(
+    (rawValue: string) =>
+      commitClampedInput({
+        rawValue,
+        rules: {
+          fallback: STRATEGY_DEFAULTS.VR_BASE_GROWTH_RATE_PERCENT,
+          min: TVC_LIMITS.BASE_GROWTH_RATE.MIN,
+          max: TVC_LIMITS.BASE_GROWTH_RATE.MAX,
+          roundingMode: 'integer',
+        },
+        currentCommittedValue: safeNumber(
+          wizardState.vrBand?.baseGrowthRatePct,
+          STRATEGY_DEFAULTS.VR_BASE_GROWTH_RATE_PERCENT,
+        ),
+        outOfRangeToastMessage: copy.outOfRangeToast,
+        updateValue: (committedValue) => {
+          updateVrBand({ baseGrowthRatePct: committedValue });
+        },
+      }),
+    [
+      commitClampedInput,
+      copy.outOfRangeToast,
+      updateVrBand,
+      wizardState.vrBand?.baseGrowthRatePct,
+    ],
+  );
+
+  const handleVrSmartBrakeThresholdPctChange = useCallback(
+    (rawValue: string) =>
+      commitClampedInput({
+        rawValue,
+        rules: {
+          fallback: STRATEGY_DEFAULTS.VR_SMART_BRAKE_THRESHOLD_PERCENT,
+          min: TVC_LIMITS.SMART_BRAKE_THRESHOLD.MIN,
+          max: TVC_LIMITS.SMART_BRAKE_THRESHOLD.MAX,
+          roundingMode: 'integer',
+        },
+        currentCommittedValue: safeNumber(
+          wizardState.vrBand?.smartBrakeThresholdPct,
+          STRATEGY_DEFAULTS.VR_SMART_BRAKE_THRESHOLD_PERCENT,
+        ),
+        outOfRangeToastMessage: copy.outOfRangeToast,
+        updateValue: (committedValue) => {
+          updateVrBand({ smartBrakeThresholdPct: committedValue });
+        },
+      }),
+    [
+      commitClampedInput,
+      copy.outOfRangeToast,
+      updateVrBand,
+      wizardState.vrBand?.smartBrakeThresholdPct,
+    ],
   );
 
   const screenIsFinalSubmit = screen === 'strategy_meta';
@@ -1351,37 +1579,58 @@ export function useStrategyCreatorController({
         updateMaSection('ma3', { stock: value });
       },
       handleMa1RsiThresholdChange: (value: string) => {
-        const committedValue = clampNumber(
-          safeNumber(value, STRATEGY_DEFAULTS.RSI_THRESHOLD),
-          0,
-          100,
-        );
-        updateMaSection('ma1', {
-          rsiThreshold: committedValue,
+        return commitClampedInput({
+          rawValue: value,
+          rules: {
+            fallback: STRATEGY_DEFAULTS.RSI_THRESHOLD,
+            min: MIN_PERCENT_INPUT,
+            max: MAX_PERCENT_INPUT,
+          },
+          currentCommittedValue: safeNumber(
+            ma1?.rsiThreshold,
+            STRATEGY_DEFAULTS.RSI_THRESHOLD,
+          ),
+          outOfRangeToastMessage: copy.outOfRangeToast,
+          updateValue: (committedValue) => {
+            updateMaSection('ma1', { rsiThreshold: committedValue });
+          },
         });
-        return committedValue;
       },
       handleMa2RsiThresholdChange: (value: string) => {
-        const committedValue = clampNumber(
-          safeNumber(value, STRATEGY_DEFAULTS.RSI_THRESHOLD),
-          0,
-          100,
-        );
-        updateMaSection('ma2', {
-          rsiThreshold: committedValue,
+        return commitClampedInput({
+          rawValue: value,
+          rules: {
+            fallback: STRATEGY_DEFAULTS.RSI_THRESHOLD,
+            min: MIN_PERCENT_INPUT,
+            max: MAX_PERCENT_INPUT,
+          },
+          currentCommittedValue: safeNumber(
+            ma2?.rsiThreshold,
+            STRATEGY_DEFAULTS.RSI_THRESHOLD,
+          ),
+          outOfRangeToastMessage: copy.outOfRangeToast,
+          updateValue: (committedValue) => {
+            updateMaSection('ma2', { rsiThreshold: committedValue });
+          },
         });
-        return committedValue;
       },
       handleMa3RsiThresholdChange: (value: string) => {
-        const committedValue = clampNumber(
-          safeNumber(value, STRATEGY_DEFAULTS.RSI_THRESHOLD),
-          0,
-          100,
-        );
-        updateMaSection('ma3', {
-          rsiThreshold: committedValue,
+        return commitClampedInput({
+          rawValue: value,
+          rules: {
+            fallback: STRATEGY_DEFAULTS.RSI_THRESHOLD,
+            min: MIN_PERCENT_INPUT,
+            max: MAX_PERCENT_INPUT,
+          },
+          currentCommittedValue: safeNumber(
+            ma3?.rsiThreshold,
+            STRATEGY_DEFAULTS.RSI_THRESHOLD,
+          ),
+          outOfRangeToastMessage: copy.outOfRangeToast,
+          updateValue: (committedValue) => {
+            updateMaSection('ma3', { rsiThreshold: committedValue });
+          },
         });
-        return committedValue;
       },
       handleMa1TakePartialProfitChange: (value: boolean) => {
         updateMaSection('ma1', { takePartialProfit: value });
@@ -1393,37 +1642,58 @@ export function useStrategyCreatorController({
         updateMaSection('ma3', { takePartialProfit: value });
       },
       handleMa1PartialProfitTargetPctChange: (value: string) => {
-        const committedValue = clampNumber(
-          safeNumber(value, STRATEGY_DEFAULTS.PARTIAL_PROFIT_PERCENT),
-          1,
-          100,
-        );
-        updateMaSection('ma1', {
-          partialProfitTargetPct: committedValue,
+        return commitClampedInput({
+          rawValue: value,
+          rules: {
+            fallback: STRATEGY_DEFAULTS.PARTIAL_PROFIT_PERCENT,
+            min: MIN_POSITIVE_INPUT,
+            max: MAX_PERCENT_INPUT,
+          },
+          currentCommittedValue: safeNumber(
+            ma1?.partialProfitTargetPct,
+            STRATEGY_DEFAULTS.PARTIAL_PROFIT_PERCENT,
+          ),
+          outOfRangeToastMessage: copy.outOfRangeToast,
+          updateValue: (committedValue) => {
+            updateMaSection('ma1', { partialProfitTargetPct: committedValue });
+          },
         });
-        return committedValue;
       },
       handleMa2PartialProfitTargetPctChange: (value: string) => {
-        const committedValue = clampNumber(
-          safeNumber(value, STRATEGY_DEFAULTS.PARTIAL_PROFIT_PERCENT),
-          1,
-          100,
-        );
-        updateMaSection('ma2', {
-          partialProfitTargetPct: committedValue,
+        return commitClampedInput({
+          rawValue: value,
+          rules: {
+            fallback: STRATEGY_DEFAULTS.PARTIAL_PROFIT_PERCENT,
+            min: MIN_POSITIVE_INPUT,
+            max: MAX_PERCENT_INPUT,
+          },
+          currentCommittedValue: safeNumber(
+            ma2?.partialProfitTargetPct,
+            STRATEGY_DEFAULTS.PARTIAL_PROFIT_PERCENT,
+          ),
+          outOfRangeToastMessage: copy.outOfRangeToast,
+          updateValue: (committedValue) => {
+            updateMaSection('ma2', { partialProfitTargetPct: committedValue });
+          },
         });
-        return committedValue;
       },
       handleMa3PartialProfitTargetPctChange: (value: string) => {
-        const committedValue = clampNumber(
-          safeNumber(value, STRATEGY_DEFAULTS.PARTIAL_PROFIT_PERCENT),
-          1,
-          100,
-        );
-        updateMaSection('ma3', {
-          partialProfitTargetPct: committedValue,
+        return commitClampedInput({
+          rawValue: value,
+          rules: {
+            fallback: STRATEGY_DEFAULTS.PARTIAL_PROFIT_PERCENT,
+            min: MIN_POSITIVE_INPUT,
+            max: MAX_PERCENT_INPUT,
+          },
+          currentCommittedValue: safeNumber(
+            ma3?.partialProfitTargetPct,
+            STRATEGY_DEFAULTS.PARTIAL_PROFIT_PERCENT,
+          ),
+          outOfRangeToastMessage: copy.outOfRangeToast,
+          updateValue: (committedValue) => {
+            updateMaSection('ma3', { partialProfitTargetPct: committedValue });
+          },
         });
-        return committedValue;
       },
       handleVrInitialCapitalChange: (value: string) => {
         const committedValue = Math.max(
@@ -1446,19 +1716,55 @@ export function useStrategyCreatorController({
         return committedValue;
       },
       handleVrMinOrderQtyChange: (value: string) => {
-        const committedValue = Math.max(1, safeNumber(value, 1));
-        updateVrBand({ minOrderQty: committedValue });
-        return committedValue;
+        return commitClampedInput({
+          rawValue: value,
+          rules: {
+            fallback: DEFAULT_VR_MIN_ORDER_QTY,
+            min: MIN_POSITIVE_INPUT,
+          },
+          currentCommittedValue: safeNumber(
+            wizardState.vrBand?.minOrderQty,
+            DEFAULT_VR_MIN_ORDER_QTY,
+          ),
+          outOfRangeToastMessage: copy.outOfRangeToast,
+          updateValue: (committedValue) => {
+            updateVrBand({ minOrderQty: committedValue });
+          },
+        });
       },
       handleVrBandUpperPctChange: (value: string) => {
-        const committedValue = sanitizeVrBandWidthPercent(value);
-        updateVrBand({ bandUpperPct: committedValue });
-        return committedValue;
+        return commitClampedInput({
+          rawValue: value,
+          rules: {
+            fallback: VR_BAND_WIDTH_PCT.DEFAULT,
+            min: VR_BAND_WIDTH_PCT.MIN,
+            max: VR_BAND_WIDTH_PCT.MAX,
+          },
+          currentCommittedValue: sanitizeVrBandWidthPercent(
+            wizardState.vrBand?.bandUpperPct,
+          ),
+          outOfRangeToastMessage: copy.outOfRangeToast,
+          updateValue: (committedValue) => {
+            updateVrBand({ bandUpperPct: committedValue });
+          },
+        });
       },
       handleVrBandLowerPctChange: (value: string) => {
-        const committedValue = sanitizeVrBandWidthPercent(value);
-        updateVrBand({ bandLowerPct: committedValue });
-        return committedValue;
+        return commitClampedInput({
+          rawValue: value,
+          rules: {
+            fallback: VR_BAND_WIDTH_PCT.DEFAULT,
+            min: VR_BAND_WIDTH_PCT.MIN,
+            max: VR_BAND_WIDTH_PCT.MAX,
+          },
+          currentCommittedValue: sanitizeVrBandWidthPercent(
+            wizardState.vrBand?.bandLowerPct,
+          ),
+          outOfRangeToastMessage: copy.outOfRangeToast,
+          updateValue: (committedValue) => {
+            updateVrBand({ bandLowerPct: committedValue });
+          },
+        });
       },
       handleVrGChange: (value: string) => {
         const committedValue = Math.max(1, safeNumber(value, 10));
@@ -1466,15 +1772,22 @@ export function useStrategyCreatorController({
         return committedValue;
       },
       handleVrPoolUsagePctChange: (value: string) => {
-        const committedValue = clampNumber(
-          safeNumber(value, 50),
-          MIN_PERCENT_INPUT,
-          100,
-        );
-        updateVrBand({
-          poolUsagePct: committedValue,
+        return commitClampedInput({
+          rawValue: value,
+          rules: {
+            fallback: STRATEGY_DEFAULTS.VR_POOL_USAGE_PCT,
+            min: MIN_PERCENT_INPUT,
+            max: MAX_PERCENT_INPUT,
+          },
+          currentCommittedValue: safeNumber(
+            wizardState.vrBand?.poolUsagePct,
+            STRATEGY_DEFAULTS.VR_POOL_USAGE_PCT,
+          ),
+          outOfRangeToastMessage: copy.outOfRangeToast,
+          updateValue: (committedValue) => {
+            updateVrBand({ poolUsagePct: committedValue });
+          },
         });
-        return committedValue;
       },
       handleVrDeltaCashChange: (value: string) => {
         const committedValue = Math.max(0, safeNumber(value, 0));
@@ -1485,7 +1798,22 @@ export function useStrategyCreatorController({
         updateVrBand({ cycleWeeks: value });
       },
     }),
-    [updateMaSection, updateVrBand],
+    [
+      commitClampedInput,
+      copy.outOfRangeToast,
+      ma1?.partialProfitTargetPct,
+      ma1?.rsiThreshold,
+      ma2?.partialProfitTargetPct,
+      ma2?.rsiThreshold,
+      ma3?.partialProfitTargetPct,
+      ma3?.rsiThreshold,
+      updateMaSection,
+      updateVrBand,
+      wizardState.vrBand?.bandLowerPct,
+      wizardState.vrBand?.bandUpperPct,
+      wizardState.vrBand?.minOrderQty,
+      wizardState.vrBand?.poolUsagePct,
+    ],
   );
 
   return {
@@ -1500,7 +1828,6 @@ export function useStrategyCreatorController({
     isSaving,
     errorMessage,
     selectedStrategy,
-    shouldShowLaoerCreditBanner,
     handleBack,
     handleClose: onClose,
     handlePrimaryButtonClick,
@@ -1679,13 +2006,26 @@ export function useStrategyCreatorController({
     vrBandUpperPct: sanitizeVrBandWidthPercent(wizardState.vrBand?.bandUpperPct),
     vrBandLowerPct: sanitizeVrBandWidthPercent(wizardState.vrBand?.bandLowerPct),
     vrG: safeNumber(wizardState.vrBand?.g, 10),
-    vrPoolUsagePct: safeNumber(wizardState.vrBand?.poolUsagePct, 50),
+    vrBaseGrowthRatePct: safeNumber(
+      wizardState.vrBand?.baseGrowthRatePct,
+      STRATEGY_DEFAULTS.VR_BASE_GROWTH_RATE_PERCENT,
+    ),
+    vrSmartBrakeThresholdPct: safeNumber(
+      wizardState.vrBand?.smartBrakeThresholdPct,
+      STRATEGY_DEFAULTS.VR_SMART_BRAKE_THRESHOLD_PERCENT,
+    ),
+    vrPoolUsagePct: safeNumber(
+      wizardState.vrBand?.poolUsagePct,
+      STRATEGY_DEFAULTS.VR_POOL_USAGE_PCT,
+    ),
     vrDeltaCash: safeNumber(wizardState.vrBand?.deltaCash, 0),
     vrCycleWeeks: safeNumber(
       wizardState.vrBand?.cycleWeeks,
       VR_CYCLE.DEFAULT_WEEKS,
     ),
     handleVrModeChange,
+    handleVrBaseGrowthRatePctChange,
+    handleVrSmartBrakeThresholdPctChange,
     handleNameChange,
     handleDailyBuyAmountChange,
     handleFeeRatePercentChange,

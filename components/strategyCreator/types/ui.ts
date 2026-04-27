@@ -38,7 +38,6 @@ export interface StrategyDefinitionViewModel {
   tierLabel: string;
   icon: ReactNode;
   gradientClassName: string;
-  isLaoerOriginal?: boolean;
 }
 
 export interface StrategyCreatorLayoutProps {

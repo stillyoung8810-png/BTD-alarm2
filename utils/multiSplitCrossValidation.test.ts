@@ -191,7 +191,9 @@ describe('multi-split cross validation', () => {
       currentQuantity: 10,
       avgPrice: 100,
       isFirstBuy: false,
+      isDataError: false,
       isSeedExhausted: false,
+      isLowBudget: false,
       appliedLocRatioPct: 70,
       displayLocBuy: { price: 100, quantity: 1 },
       displayMocBuy: { quantity: 0 },
@@ -222,7 +224,6 @@ describe('multi-split cross validation', () => {
       '분할 매수 (MOC): 0주',
       '메인 익절: $110.00 / 6주',
       '중간 익절: $105.00 / 4주',
-      '리스크 컷: 2주',
     ]);
     expect(clientBlock).toBe(serverBlock);
     expect(clientBlock).toContain('- 스마트 스플릿');
@@ -231,10 +232,10 @@ describe('multi-split cross validation', () => {
     expect(clientBlock).toContain('- 분할 매수 (MOC): 0주');
     expect(clientBlock).toContain('- 메인 익절: $110.00 / 6주');
     expect(clientBlock).toContain('- 중간 익절: $105.00 / 4주');
-    expect(clientBlock).toContain('- 리스크 컷: 2주');
+    expect(clientBlock).not.toContain('- 위험 관리 손절: 2주');
   });
 
-  it('보유 수량이 없으면 익절 라인 대신 무보유 안내 한 줄만 출력한다', () => {
+  it('첫 매수 상태이면 매도 라인 대신 첫 매수 안내 한 줄만 출력한다', () => {
     const executionData: MultiSplitGuideState = {
       cashUsagePct: 0,
       totalInvested: 0,
@@ -243,7 +244,9 @@ describe('multi-split cross validation', () => {
       currentQuantity: 0,
       avgPrice: 0,
       isFirstBuy: true,
+      isDataError: false,
       isSeedExhausted: false,
+      isLowBudget: false,
       appliedLocRatioPct: 50,
       sellGuide: {
         mainTakeProfitQty: 0,
@@ -259,7 +262,111 @@ describe('multi-split cross validation', () => {
       }),
     ).toEqual([
       '현금 사용률: 0%',
-      '보유 수량이 없습니다.',
+      '매수 가이드: 첫 매수는 장중 아무 때나, 1회 매수금 기준으로 자유롭게 매수해 주세요.',
+    ]);
+  });
+
+  it('저예산 상태이면 LOC/MOC를 숨기고 매수금 부족과 매도 라인을 함께 출력한다', () => {
+    const executionData: MultiSplitGuideState = {
+      cashUsagePct: 95,
+      totalInvested: 9500,
+      totalSeed: 10000,
+      remainingBudget: 500,
+      currentQuantity: 100,
+      avgPrice: 95,
+      isFirstBuy: false,
+      isDataError: false,
+      isSeedExhausted: false,
+      isLowBudget: true,
+      appliedLocRatioPct: 50,
+      displayLocBuy: { price: 95, quantity: 5 },
+      displayMocBuy: { quantity: 4 },
+      sellGuide: {
+        mainTakeProfitQty: 40,
+        intermediateTakeProfitQty: 60,
+        riskCutQty: 20,
+        displayMainTakeProfit: { price: 104.5, quantity: 40 },
+        displayIntermediateTakeProfit: { price: 99.75, quantity: 60 },
+      },
+    };
+
+    expect(
+      buildMultiSplitExecutionSummaryLines({
+        lang: 'ko',
+        execution: executionData,
+      }),
+    ).toEqual([
+      '현금 사용률: 95%',
+      '매수 가이드: 매수금 부족',
+      '메인 익절: $104.50 / 40주',
+      '중간 익절: $99.75 / 60주',
+      '위험 관리 손절: 20주',
+    ]);
+  });
+
+  it('시드 완전 소진 상태이면 위험 관리 손절을 출력한다', () => {
+    const executionData: MultiSplitGuideState = {
+      cashUsagePct: 100,
+      totalInvested: 10000,
+      totalSeed: 10000,
+      remainingBudget: 0,
+      currentQuantity: 100,
+      avgPrice: 100,
+      isFirstBuy: false,
+      isDataError: false,
+      isSeedExhausted: true,
+      isLowBudget: false,
+      appliedLocRatioPct: 50,
+      sellGuide: {
+        mainTakeProfitQty: 40,
+        intermediateTakeProfitQty: 60,
+        riskCutQty: 20,
+        displayMainTakeProfit: { price: 110, quantity: 40 },
+        displayIntermediateTakeProfit: { price: 105, quantity: 60 },
+      },
+    };
+
+    expect(
+      buildMultiSplitExecutionSummaryLines({
+        lang: 'ko',
+        execution: executionData,
+      }),
+    ).toEqual([
+      '현금 사용률: 100%',
+      '메인 익절: $110.00 / 40주',
+      '중간 익절: $105.00 / 60주',
+      '위험 관리 손절: 20주',
+    ]);
+  });
+
+  it('보유 수량이 있지만 평단가가 유효하지 않으면 데이터 오류 안내만 출력한다', () => {
+    const executionData: MultiSplitGuideState = {
+      cashUsagePct: 5,
+      totalInvested: 0,
+      totalSeed: 10000,
+      remainingBudget: 10000,
+      currentQuantity: 10,
+      avgPrice: 0,
+      isFirstBuy: false,
+      isDataError: true,
+      isSeedExhausted: false,
+      isLowBudget: false,
+      appliedLocRatioPct: 50,
+      sellGuide: {
+        mainTakeProfitQty: 0,
+        intermediateTakeProfitQty: 10,
+        riskCutQty: 2,
+      },
+    };
+
+    expect(
+      buildMultiSplitExecutionSummaryLines({
+        lang: 'ko',
+        execution: executionData,
+      }),
+    ).toEqual([
+      '현금 사용률: 5%',
+      '평단가 정보를 불러올 수 없습니다.',
     ]);
   });
 });

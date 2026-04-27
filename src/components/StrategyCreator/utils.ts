@@ -144,6 +144,8 @@ export interface VrBandWizardDraftInput {
   poolUsagePct?: number;
   deltaCash?: number;
   cycleWeeks?: number;
+  baseGrowthRatePct?: number;
+  smartBrakeThresholdPct?: number;
 }
 
 export interface StrategyWizardDraftInput {
@@ -211,6 +213,148 @@ export function safeNumber(val: unknown, fallback: number = ZERO_AMOUNT): number
   }
 
   return fallback;
+}
+
+export type DraftNumberRoundingMode = 'none' | 'integer';
+
+export interface NormalizeDraftNumberArgs {
+  rawValue: string;
+  fallback: number;
+  min: number;
+  max?: number;
+  roundingMode?: DraftNumberRoundingMode;
+}
+
+export interface NormalizedDraftNumberResult {
+  value: number;
+  hasClamped: boolean;
+  shouldShowOutOfRangeToast: boolean;
+  hasInvalidNumberConfig: boolean;
+  isEmptyTemporary: boolean;
+  hasInvalidFormat: boolean;
+}
+
+export interface NormalizedDraftNumberBounds {
+  safeMin: number;
+  safeMax?: number;
+  hasInvalidNumberConfig: boolean;
+}
+
+function normalizeFiniteFallback(value: number): {
+  value: number;
+  hasInvalidNumberConfig: boolean;
+} {
+  if (Number.isFinite(value)) {
+    return {
+      value,
+      hasInvalidNumberConfig: false,
+    };
+  }
+
+  return {
+    value: 0,
+    hasInvalidNumberConfig: true,
+  };
+}
+
+export function roundDraftValue(
+  value: number,
+  mode: DraftNumberRoundingMode = 'none',
+): number {
+  if (mode === 'integer') {
+    return Math.round(value + Number.EPSILON);
+  }
+
+  return value;
+}
+
+export function normalizeSafeBounds(args: {
+  fallback: number;
+  min: number;
+  max?: number;
+}): NormalizedDraftNumberBounds {
+  const fallback = normalizeFiniteFallback(args.fallback);
+  const hasInvalidMin = !Number.isFinite(args.min);
+  const safeMin = hasInvalidMin ? fallback.value : args.min;
+
+  if (args.max === undefined) {
+    return {
+      safeMin,
+      hasInvalidNumberConfig:
+        fallback.hasInvalidNumberConfig || hasInvalidMin,
+    };
+  }
+
+  if (!Number.isFinite(args.max) || args.max < safeMin) {
+    return {
+      safeMin,
+      safeMax: safeMin,
+      hasInvalidNumberConfig: true,
+    };
+  }
+
+  return {
+    safeMin,
+    safeMax: args.max,
+    hasInvalidNumberConfig:
+      fallback.hasInvalidNumberConfig || hasInvalidMin,
+  };
+}
+
+export function normalizeDraftNumberToBounds(
+  args: NormalizeDraftNumberArgs,
+): NormalizedDraftNumberResult {
+  const fallback = normalizeFiniteFallback(args.fallback);
+  const bounds = normalizeSafeBounds({
+    fallback: args.fallback,
+    min: args.min,
+    max: args.max,
+  });
+  const hasInvalidNumberConfig =
+    fallback.hasInvalidNumberConfig || bounds.hasInvalidNumberConfig;
+  const trimmedValue = args.rawValue.trim();
+
+  if (trimmedValue === '') {
+    return {
+      value: fallback.value,
+      hasClamped: false,
+      shouldShowOutOfRangeToast: false,
+      hasInvalidNumberConfig,
+      isEmptyTemporary: true,
+      hasInvalidFormat: false,
+    };
+  }
+
+  const parsedValue = Number(trimmedValue);
+  if (!Number.isFinite(parsedValue)) {
+    return {
+      value: fallback.value,
+      hasClamped: false,
+      shouldShowOutOfRangeToast: false,
+      hasInvalidNumberConfig,
+      isEmptyTemporary: false,
+      hasInvalidFormat: true,
+    };
+  }
+
+  const processedValue = roundDraftValue(parsedValue, args.roundingMode);
+  const valueWithMin = Math.max(bounds.safeMin, processedValue);
+  let normalizedValue = valueWithMin;
+
+  if (bounds.safeMax !== undefined) {
+    normalizedValue = Math.min(bounds.safeMax, valueWithMin);
+  }
+
+  const hasClamped = normalizedValue !== processedValue;
+
+  return {
+    value: normalizedValue,
+    hasClamped,
+    shouldShowOutOfRangeToast: hasClamped && !hasInvalidNumberConfig,
+    hasInvalidNumberConfig,
+    isEmptyTemporary: false,
+    hasInvalidFormat: false,
+  };
 }
 
 export function safeBoolean(val: unknown, fallback = false): boolean {
@@ -521,9 +665,19 @@ function buildVrBandStrategy(
     bandRateLower: toDecimalRate(
       sanitizeVrBandWidthPercent(draft?.bandLowerPct),
     ),
-    G: safeNumber(draft?.g),
-    poolUsageRateBuy: toDecimalRate(safeNumber(draft?.poolUsagePct)),
+    G: safeNumber(draft?.g, STRATEGY_DEFAULTS.VR_G_VALUE),
+    poolUsageRateBuy: toDecimalRate(
+      safeNumber(draft?.poolUsagePct, STRATEGY_DEFAULTS.VR_POOL_USAGE_PCT),
+    ),
     cycleWeeks: sanitizeVrCycleWeeks(draft?.cycleWeeks),
+    baseGrowthRatePct: safeNumber(
+      draft?.baseGrowthRatePct,
+      STRATEGY_DEFAULTS.VR_BASE_GROWTH_RATE_PERCENT,
+    ),
+    smartBrakeThresholdPct: safeNumber(
+      draft?.smartBrakeThresholdPct,
+      STRATEGY_DEFAULTS.VR_SMART_BRAKE_THRESHOLD_PERCENT,
+    ),
   };
 
   let vrParams: VrBandStrategyParams;

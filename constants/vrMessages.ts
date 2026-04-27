@@ -1,4 +1,3 @@
-import { BookOpen, Users, Youtube, type LucideIcon } from 'lucide-react';
 import type { AppLang } from '../types';
 import type { VrBandStrategyParams } from '../types';
 
@@ -8,7 +7,13 @@ export type VrMode = VrBandStrategyParams['vrMode'];
 /** VR 운용 방식 — 폼에서 as 없이 순회용 SSOT */
 export const VR_MODE_KEYS: readonly VrMode[] = ['lump_sum', 'accumulate', 'withdraw'];
 
-/** VR 예약 주문 모달 — 탭/테이블 라벨 (단일 소스) */
+// Why: 인출 모드는 코어 엔진에서 지원되나(잔액 부족 방어 완료),
+// UI단 잔액 부족 에러 핸들링 및 복구 기획 복잡도를 제거하여 빠른 MVP 출시(Time-to-Market)를 달성하기 위해 렌더링에서 제외함. (하위 호환성 위해 타입은 유지)
+export const VISIBLE_TVC_VR_MODE_KEYS: readonly VrMode[] = VR_MODE_KEYS.filter(
+  (mode) => mode !== 'withdraw',
+);
+
+/** TVC 예약 주문 모달 — 탭/테이블 라벨 (단일 소스) */
 export const VR_MODAL_LABELS: Record<
   AppLang,
   {
@@ -26,27 +31,27 @@ export const VR_MODAL_LABELS: Record<
   }
 > = {
   ko: {
-    title: 'VR 예약 주문',
+    title: 'TVC 예약 주문',
     tabSell: '매도 주문',
     tabBuy: '매수 주문',
     step: '단계',
     price: '가격 ($)',
     qty: '수량',
     sharesAfter: '보유량',
-    poolAfter: 'Pool',
+    poolAfter: 'Cash',
     currentState: '현재',
     guide: '가이드',
     emptyOrder: '해당 탭에 예약 주문 내역이 없습니다.',
   },
   en: {
-    title: 'VR Limit Orders',
+    title: 'TVC Limit Orders',
     tabSell: 'Sell Orders',
     tabBuy: 'Buy Orders',
     step: 'Step',
     price: 'Price ($)',
     qty: 'Qty',
     sharesAfter: 'Shares After',
-    poolAfter: 'Pool After',
+    poolAfter: 'Cash',
     currentState: 'Current State',
     guide: 'Guide',
     emptyOrder: 'No reservation orders in this tab.',
@@ -127,6 +132,8 @@ export const VR_CREATOR_LABELS: Record<
     bandLower: string;
     minOrderQty: string;
     G: string;
+    baseGrowthRatePct: string;
+    smartBrakeThresholdPct: string;
     poolUsage: string;
     deltaCash: string;
     /** 리밸런싱 주기(주) 선택 라벨 */
@@ -151,18 +158,21 @@ export const VR_CREATOR_LABELS: Record<
       withdraw: '인출식 (매 사이클 인출금 제외)',
     },
     initialCapital: '초기 투자 원금 ($)',
-    initialV: '초기 V 값 ($)',
+    initialV: '초기 T 값 ($)',
     bandUpper: '상단 밴드 폭 (%)',
     bandLower: '하단 밴드 폭 (%)',
     minOrderQty: '최소 주문 수량 (주)',
     G: 'G (풀-밴드 비율 계수)',
-    poolUsage: '매수 시 Pool 사용 비율 (%)',
+    baseGrowthRatePct: '기본 목표 성장률 (%)',
+    smartBrakeThresholdPct:
+      '스마트 브레이크 임계치 (%) : 가용 현금 / 현재 목표 평가금(T)',
+    poolUsage: '매수 시 예수금 사용 비율 (%)',
     deltaCash: '주기별 입·출금 금액 ($)',
     cycleWeeks: '리밸런싱 주기 (주)',
     feeRate: '수수료율 (%)',
     portfolioName: '포트폴리오 이름',
     startDate: '시작일',
-    submit: 'VR 전략 시작',
+    submit: '전략 시작',
     next: '다음',
     back: '이전',
   },
@@ -178,18 +188,21 @@ export const VR_CREATOR_LABELS: Record<
       withdraw: 'Withdraw (Take out per cycle)',
     },
     initialCapital: 'Initial Capital ($)',
-    initialV: 'Initial V ($)',
+    initialV: 'Initial T ($)',
     bandUpper: 'Upper Band Width (%)',
     bandLower: 'Lower Band Width (%)',
     minOrderQty: 'Minimum Order Quantity (shares)',
     G: 'G (Pool-to-band ratio)',
-    poolUsage: 'Pool Usage on Buy (%)',
+    baseGrowthRatePct: 'Base target growth rate (%)',
+    smartBrakeThresholdPct:
+      'Smart brake threshold (%): available cash / current target value (T)',
+    poolUsage: 'Available cash usage on buy (%)',
     deltaCash: 'Periodic Cash In/Out ($)',
     cycleWeeks: 'Rebalancing cycle (weeks)',
     feeRate: 'Fee Rate (%)',
     portfolioName: 'Portfolio Name',
     startDate: 'Start Date',
-    submit: 'Start VR Strategy',
+    submit: 'Start Strategy',
     next: 'Next',
     back: 'Back',
   },
@@ -213,66 +226,33 @@ export const VR_DELTA_CASH_VALIDATION_MESSAGES: Record<
   },
 } as const;
 
+export const VR_TVC_VALIDATION_MESSAGES: Record<
+  AppLang,
+  { outOfRangeToast: string }
+> = {
+  ko: {
+    outOfRangeToast: '설정 범위를 벗어났어요.',
+  },
+  en: {
+    outOfRangeToast: 'The value is outside the allowed range.',
+  },
+} as const;
+
 /** 대시보드 VR 전략 안내 힌트 (단일 소스) */
 export const VR_DASHBOARD_HINT: Record<
   AppLang,
   { ready: string; pending: string; firstBuyPrompt: string; soldOutWaiting: string }
 > = {
   ko: {
-    ready: 'VR 밴드 룰에 따라 예약 주문표를 참고하여 매매하세요.',
-    pending: '아직 첫 매매를 진행하지 않았습니다. 설정된 V값에 맞춰 첫 매수를 진행해 주세요.',
-    firstBuyPrompt: '설정된 V값에 맞춰 첫 매수를 진행해 주세요.',
+    ready: '전략 룰에 따라 예약 주문표를 참고하여 매매하세요.',
+    pending: '아직 첫 매매를 진행하지 않았습니다. 설정된 T값에 맞춰 첫 매수를 진행해 주세요.',
+    firstBuyPrompt: '설정된 T값에 맞춰 첫 매수를 진행해 주세요.',
     soldOutWaiting: '전량 매도 상태, 다음 진입 시점 대기.',
   },
   en: {
-    ready: 'Follow the VR Band rules using the reservation order table.',
-    pending: 'No trades have been executed yet. Please place your first buy according to the configured V value.',
-    firstBuyPrompt: 'Please place your first buy according to the configured V value.',
+    ready: 'Follow the strategy rules using the reservation order table.',
+    pending: 'No trades have been executed yet. Please place your first buy according to the configured T value.',
+    firstBuyPrompt: 'Please place your first buy according to the configured T value.',
     soldOutWaiting: 'Completely sold out, waiting for the next entry.',
-  },
-};
-
-export type LaoerCreditLinkId = 'youtube' | 'cafe' | 'blog';
-
-export interface LaoerCreditLabels {
-  badge: string;
-  title: string;
-  desc: string;
-  ariaRegion: string;
-  linkLabels: Record<LaoerCreditLinkId, string>;
-}
-
-export const LAOER_CREDIT_LINKS: readonly {
-  id: LaoerCreditLinkId;
-  url: string;
-  icon: LucideIcon;
-}[] = [
-  { id: 'youtube', url: 'https://www.youtube.com/@laofus', icon: Youtube },
-  { id: 'cafe', url: 'http://cafe.naver.com/infinitebuying', icon: Users },
-  { id: 'blog', url: 'http://m.blog.naver.com/edgar0418', icon: BookOpen },
-];
-
-export const LAOER_CREDIT_LABELS: Record<AppLang, LaoerCreditLabels> = {
-  ko: {
-    badge: '라오어 Original',
-    title: 'Official Strategy Credit',
-    desc: "본 전략은 작가 '라오어'님의 독창적인 투자 철학을 바탕으로 설계되었습니다. 전략의 깊은 이해를 위해 원작자의 철학을 꼭 확인해 보세요.",
-    ariaRegion: '전략 출처 및 공식 채널',
-    linkLabels: {
-      youtube: '유튜브',
-      cafe: '네이버 카페',
-      blog: '블로그',
-    },
-  },
-  en: {
-    badge: 'Laoer Original',
-    title: 'Official Strategy Credit',
-    desc: "This strategy is based on the original investment philosophy of author 'Laoer'. Be sure to review the author's philosophy for a deeper understanding.",
-    ariaRegion: 'Strategy Credit and Official Channels',
-    linkLabels: {
-      youtube: 'YouTube',
-      cafe: 'Naver Cafe',
-      blog: 'Blog',
-    },
   },
 };

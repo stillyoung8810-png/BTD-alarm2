@@ -150,8 +150,8 @@ function formatVrBandBlock(
   if (!snapshot) {
     const pending =
       lang === 'ko'
-        ? 'VR 밴드 전략 데이터를 계산하는 중입니다. 첫 매수를 V값 안에서 진행해 주세요.'
-        : 'Calculating VR band data. Please execute your first buy within the V value.';
+        ? 'TVC 전략 데이터를 계산하는 중입니다. 첫 매수를 T값 안에서 진행해 주세요.'
+        : 'Calculating TVC strategy data. Please execute your first buy within the T value.';
     return `- ${pending}`;
   }
 
@@ -163,7 +163,7 @@ function formatVrBandBlock(
   }
 
   const { currentV, pool, bandLow, bandHigh } = snapshot;
-  lines.push(`- V: ${formatCurrency(currentV)}`);
+  lines.push(`- T: ${formatCurrency(currentV)}`);
   lines.push(`- Pool: ${formatCurrency(pool)}`);
   if (typeof bandLow === 'number' && typeof bandHigh === 'number') {
     lines.push(`- Band: ${bandLow.toFixed(2)} ~ ${bandHigh.toFixed(2)}`);
@@ -180,8 +180,8 @@ function formatVrBandBlock(
 
   const readyHint =
     lang === 'ko'
-      ? 'VR 밴드 룰에 따라 예약 주문표를 참고하여 매매하세요.'
-      : 'Follow the VR band rules using the reservation order table.';
+      ? 'TVC 전략 룰에 따라 예약 주문표를 참고하여 매매하세요.'
+      : 'Follow the TVC strategy rules using the reservation order table.';
   lines.push(`- ${readyHint}`);
 
   return lines.join('\n');

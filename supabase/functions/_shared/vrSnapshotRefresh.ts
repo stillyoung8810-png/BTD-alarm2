@@ -1,4 +1,6 @@
 import type { Portfolio, PortfolioRow, VrSnapshot } from './types.ts';
+import { getVrDeltaCashForNextV } from './types.ts';
+import { roundMoney } from './financialMath.ts';
 import { LEGACY_FEE_RATE_PCT } from './vrConstants.ts';
 import {
   calculateBands,
@@ -7,7 +9,10 @@ import {
   generateBuyOrders,
   generateSellOrders,
   sanitizeVrCycleWeeks,
+  validateFinancialArgs,
 } from './vrBandStrategy.ts';
+
+const ZERO_AMOUNT = 0;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object';
@@ -106,7 +111,25 @@ export function buildRefreshedVrSnapshot(
   const prev = portfolio.vrSnapshot;
   if (!params || !prev) return null;
 
-  const nextV = calculateNextV(prev.currentV, prev.pool, params);
+  const currentPool = prev.pool;
+  const adjustment = getVrDeltaCashForNextV(params);
+  const nextPool = roundMoney(currentPool + adjustment);
+  validateFinancialArgs(
+    { currentPool, adjustment, nextPool },
+    {
+      currentPool: { min: ZERO_AMOUNT },
+      adjustment: {},
+      nextPool: {},
+    },
+    'buildRefreshedVrSnapshot:settlement',
+  );
+  if (nextPool < ZERO_AMOUNT) {
+    throw new Error(
+      `[VR_Settlement_Error] Insufficient pool for cycle refresh. nextPool=${nextPool}`,
+    );
+  }
+
+  const nextV = calculateNextV(prev.currentV, currentPool, params);
   const { bandLow, bandHigh } = calculateBands(
     nextV,
     params.bandRateUpper,
@@ -115,7 +138,7 @@ export function buildRefreshedVrSnapshot(
 
   const buyOrders = generateBuyOrders({
     shares: prev.shares,
-    pool: prev.pool,
+    pool: nextPool,
     bandLow,
     minOrderQty: params.minOrderQty,
     feeRate: params.feeRate,
@@ -124,7 +147,7 @@ export function buildRefreshedVrSnapshot(
 
   const sellOrders = generateSellOrders({
     shares: prev.shares,
-    pool: prev.pool,
+    pool: nextPool,
     bandHigh,
     minOrderQty: params.minOrderQty,
     feeRate: params.feeRate,
@@ -133,6 +156,7 @@ export function buildRefreshedVrSnapshot(
   return {
     ...prev,
     currentV: nextV,
+    pool: nextPool,
     bandLow,
     bandHigh,
     buyOrders,

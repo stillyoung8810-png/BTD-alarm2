@@ -37,6 +37,7 @@ export interface StrategyCreatorMessageSet {
   duplicateSectionStockTooltip: string;
   portfolioLimitReached: (maxPortfolios: number) => string;
   duplicateSectionStocks: string;
+  outOfRangeToast: string;
   ma: {
     referenceStock: string;
     referenceStockHelper: string;
@@ -67,7 +68,6 @@ export interface StrategyCreatorMessageSet {
     intermediateTakeProfitRatioPct: string;
     riskCutRatioPct: string;
     riskCutRatioPctHelper: string;
-    outOfRangeToast: string;
     rsiConditionLabel: string;
     rsiConditionHelper: string;
     alignmentConditionLabel: string;
@@ -90,6 +90,12 @@ export interface StrategyCreatorMessageSet {
       moc70: string;
     };
     leveragedRecommended: string;
+  };
+  vrBand: {
+    initialTHelper: string;
+    baseGrowthRatePctHelper: string;
+    poolUsagePctHelper: string;
+    smartBrakeThresholdPctHelper: string;
   };
   noStopMultiSplit: {
     targetStock: string;
@@ -126,6 +132,11 @@ export interface StrategyCreatorMessageSet {
   };
 }
 
+export const STRATEGY_CREATOR_OUT_OF_RANGE_TOAST = {
+  ko: '설정 범위를 벗어 났어요.',
+  en: 'The value is outside the allowed range.',
+} as const satisfies Record<AppLang, string>;
+
 export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSet> = {
   ko: {
     titles: {
@@ -134,7 +145,7 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
       maSections: '구간별 진입 설정',
       multiSplitConfig: '스마트 스플릿 설정',
       noStopMultiSplitConfig: '무손절 다분할 설정',
-      vrBandConfig: 'VR 밴드 설정',
+      vrBandConfig: 'TVC 설정',
       strategyMeta: '포트폴리오 메타 정보',
     },
     actions: {
@@ -151,20 +162,23 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
     strategyDefinitions: {
       rsi_ma_interval: {
         title: '이평선 구간 전략',
-        description: '구간별 종목과 RSI/부분익절 규칙을 설정합니다.',
+        description:
+          '정해진 룰은 없어요. 이평선을 활용해 나만의 전략을 설계해요. 시장 상황별로 유리한 종목을 다채롭게 공략해 보세요.',
       },
       multi_split: {
         title: '스마트 스플릿',
         description:
-          '현금 사용률과 조건부 LOC/MOC 프리셋을 기반으로 매매 가이드를 구성합니다.',
+          '지표에 따른 동적 비중 조절과 분할 익절, 그리고 최후의 손절 방어까지. 적극적 투자 전략이에요.',
       },
       no_stop_multi_split: {
         title: '무손절 다분할',
-        description: '기본 LOC 비율과 조건별 프리셋 규칙을 설정합니다.',
+        description:
+          '내 성향에 맞춰 조건을 설정해요. 계산은 로봇에 맡기고, 유리한 가격에 주식을 차곡차곡 모아가요.',
       },
       vr_band: {
         title: '타겟 밸류 채널',
-        description: 'V 채널과 Pool 사용률을 기반으로 자동 비중 조절을 합니다.',
+        description:
+          '목표 평가금과 가용 현금을 동적으로 리밸런싱하여 안정적인 우상향을 설계해요.',
       },
     },
     tierLabels: {
@@ -178,6 +192,7 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
     portfolioLimitReached: (maxPortfolios) =>
       `포트폴리오 생성 한도(${maxPortfolios}개)에 도달했습니다.`,
     duplicateSectionStocks: '구간 1, 2, 3에서 서로 다른 종목을 선택해 주세요.',
+    outOfRangeToast: STRATEGY_CREATOR_OUT_OF_RANGE_TOAST.ko,
     ma: {
       referenceStock: '기준 종목',
       referenceStockHelper: '매매 구간(1~3)을 결정하는 기준이 되는 종목이에요.',
@@ -209,7 +224,6 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
       intermediateTakeProfitRatioPct: '중간 익절 비중 (자동 계산)',
       riskCutRatioPct: '리스크 컷 비중 (%)',
       riskCutRatioPctHelper: '현금 소진시, 손절할 보유 물량 비율',
-      outOfRangeToast: '설정 범위를 벗어 났어요.',
       rsiConditionLabel: 'RSI 조건',
       rsiConditionHelper:
         'RSI 조건이 충족되면 저장된 프리셋으로 LOC/MOC 비율을 덮어씁니다.',
@@ -234,6 +248,16 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
         moc70: '추격 위주 (MOC 70%)',
       },
       leveragedRecommended: '레버리지 ETF 권장',
+    },
+    vrBand: {
+      initialTHelper:
+        '첫 사이클의 목표 평가금이에요. 시작할 때 이 금액만큼 주식을 보유하는 것을 권장해요.',
+      baseGrowthRatePctHelper:
+        '매 사이클 달성하고 싶은 최대 성장률이에요. 실제로는 현금 상황에 맞춰 0~50% 정도로 성장률이 감소해요.',
+      poolUsagePctHelper:
+        '매 사이클 시작 시 남은 현금에서 예약 매수에 사용할 비율이에요.',
+      smartBrakeThresholdPctHelper:
+        '현금 소진을 막기 위해, 목표 성장률을 0에 가깝게 멈춰 세우는 비상 브레이크예요.',
     },
     noStopMultiSplit: {
       targetStock: '대상 종목',
@@ -277,7 +301,7 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
       maSections: 'Section Entry Settings',
       multiSplitConfig: 'Smart Split Settings',
       noStopMultiSplitConfig: 'No-Stop Multi-Split Settings',
-      vrBandConfig: 'VR Band Settings',
+      vrBandConfig: 'TVC Settings',
       strategyMeta: 'Portfolio Meta Information',
     },
     actions: {
@@ -294,20 +318,23 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
     strategyDefinitions: {
       rsi_ma_interval: {
         title: 'MA Interval Strategy',
-        description: 'Configure section stocks, RSI, and partial profit rules.',
+        description:
+          'No one-size-fits-all playbook. Use moving averages to design your own rules, then rotate into the tickers that fit each market regime.',
       },
       multi_split: {
         title: 'Smart Split',
         description:
-          'Build execution guidance from cash usage and conditional LOC/MOC presets.',
+          'Indicator-driven dynamic sizing, staged take-profits, and a final stop-loss backstop—an active investing strategy.',
       },
       no_stop_multi_split: {
         title: 'No-Stop Multi-Split',
-        description: 'Configure the base LOC ratio and conditional preset rules.',
+        description:
+          'Tune conditions to your style. The robot handles the math while you steadily accumulate shares at favorable prices.',
       },
       vr_band: {
         title: 'Target Value Channel',
-        description: 'Automatically rebalance using channel and pool usage settings.',
+        description:
+          'Dynamically rebalances target value and available cash for steady, stable growth.',
       },
     },
     tierLabels: {
@@ -322,6 +349,7 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
       `Portfolio limit (${maxPortfolios}) reached.`,
     duplicateSectionStocks:
       'Please select different stocks for sections 1, 2, and 3.',
+    outOfRangeToast: STRATEGY_CREATOR_OUT_OF_RANGE_TOAST.en,
     ma: {
       referenceStock: 'Reference Stock',
       referenceStockHelper:
@@ -359,7 +387,6 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
         'Intermediate Take-Profit Ratio (Derived)',
       riskCutRatioPct: 'Risk Cut Ratio (%)',
       riskCutRatioPctHelper: 'Ratio of holdings to cut when cash is exhausted.',
-      outOfRangeToast: 'The value is outside the allowed range.',
       rsiConditionLabel: 'RSI Condition',
       rsiConditionHelper:
         'When the RSI condition is met, override the LOC/MOC ratio with the saved preset.',
@@ -384,6 +411,16 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
         moc70: 'Chasing Bias (MOC 70%)',
       },
       leveragedRecommended: 'Leveraged ETF Recommended',
+    },
+    vrBand: {
+      initialTHelper:
+        'Target valuation for the first cycle. It is recommended to hold this amount of stock at the start.',
+      baseGrowthRatePctHelper:
+        'The maximum target growth rate per cycle. The actual rate is adjusted to around 0-50% based on cash availability.',
+      poolUsagePctHelper:
+        'The ratio of remaining cash to use for reserve buying at the start of each cycle.',
+      smartBrakeThresholdPctHelper:
+        'An emergency brake that brings the target growth rate close to zero to prevent cash depletion.',
     },
     noStopMultiSplit: {
       targetStock: 'Target Stock',

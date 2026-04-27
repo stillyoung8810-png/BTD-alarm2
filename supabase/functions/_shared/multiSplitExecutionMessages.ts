@@ -7,10 +7,14 @@ export type MultiSplitExecutionMessageId =
   | 'multiSplit.cashUsage'
   | 'multiSplit.locBuy'
   | 'multiSplit.mocBuy'
-  | 'multiSplit.noHoldings'
+  | 'multiSplit.buyGuide'
+  | 'multiSplit.insufficientFunds'
+  | 'multiSplit.firstBuyGuide'
+  | 'multiSplit.dataErrorNotice'
   | 'multiSplit.mainTakeProfit'
   | 'multiSplit.intermediateTakeProfit'
   | 'multiSplit.riskCut'
+  | 'format.textLine'
   | 'format.percentLabel'
   | 'format.priceQuantity'
   | 'format.quantityOnly'
@@ -20,10 +24,14 @@ export const MULTI_SPLIT_EXECUTION_MESSAGE_IDS = {
   cashUsage: 'multiSplit.cashUsage',
   locBuy: 'multiSplit.locBuy',
   mocBuy: 'multiSplit.mocBuy',
-  noHoldings: 'multiSplit.noHoldings',
+  buyGuide: 'multiSplit.buyGuide',
+  insufficientFunds: 'multiSplit.insufficientFunds',
+  firstBuyGuide: 'multiSplit.firstBuyGuide',
+  dataErrorNotice: 'multiSplit.dataErrorNotice',
   mainTakeProfit: 'multiSplit.mainTakeProfit',
   intermediateTakeProfit: 'multiSplit.intermediateTakeProfit',
   riskCut: 'multiSplit.riskCut',
+  textLine: 'format.textLine',
   percentLabel: 'format.percentLabel',
   priceQuantity: 'format.priceQuantity',
   quantityOnly: 'format.quantityOnly',
@@ -46,10 +54,15 @@ const MULTI_SPLIT_EXECUTION_MESSAGES: Record<
     'multiSplit.cashUsage': '현금 사용률',
     'multiSplit.locBuy': '평단가 매수 (LOC)',
     'multiSplit.mocBuy': '분할 매수 (MOC)',
-    'multiSplit.noHoldings': '보유 수량이 없습니다.',
+    'multiSplit.buyGuide': '매수 가이드',
+    'multiSplit.insufficientFunds': '매수금 부족',
+    'multiSplit.firstBuyGuide':
+      '첫 매수는 장중 아무 때나, 1회 매수금 기준으로 자유롭게 매수해 주세요.',
+    'multiSplit.dataErrorNotice': '평단가 정보를 불러올 수 없습니다.',
     'multiSplit.mainTakeProfit': '메인 익절',
     'multiSplit.intermediateTakeProfit': '중간 익절',
-    'multiSplit.riskCut': '리스크 컷',
+    'multiSplit.riskCut': '위험 관리 손절',
+    'format.textLine': '{label}: {value}',
     'format.percentLabel': '{label}: {value}%',
     'format.priceQuantity': '{label}: {price} / {quantity}{unit}',
     'format.quantityOnly': '{label}: {quantity}{unit}',
@@ -59,10 +72,15 @@ const MULTI_SPLIT_EXECUTION_MESSAGES: Record<
     'multiSplit.cashUsage': 'Cash Usage',
     'multiSplit.locBuy': 'Average-price buy (LOC)',
     'multiSplit.mocBuy': 'Split buy (MOC)',
-    'multiSplit.noHoldings': 'There is no holding quantity.',
+    'multiSplit.buyGuide': 'Buy guide',
+    'multiSplit.insufficientFunds': 'Insufficient Funds',
+    'multiSplit.firstBuyGuide':
+      'For the first buy, feel free to buy anytime during market hours using one buy tranche as the reference.',
+    'multiSplit.dataErrorNotice': 'Unable to load average price information.',
     'multiSplit.mainTakeProfit': 'Main take profit',
     'multiSplit.intermediateTakeProfit': 'Intermediate take profit',
-    'multiSplit.riskCut': 'Risk cut',
+    'multiSplit.riskCut': 'Risk management stop-loss',
+    'format.textLine': '{label}: {value}',
     'format.percentLabel': '{label}: {value}%',
     'format.priceQuantity': '{label}: {price} / {quantity}{unit}',
     'format.quantityOnly': '{label}: {quantity}{unit}',
@@ -72,7 +90,14 @@ const MULTI_SPLIT_EXECUTION_MESSAGES: Record<
 
 export type MultiSplitExecutionSummaryData = Pick<
   MultiSplitGuideState,
-  'cashUsagePct' | 'currentQuantity' | 'displayLocBuy' | 'displayMocBuy' | 'sellGuide'
+  | 'cashUsagePct'
+  | 'isFirstBuy'
+  | 'isDataError'
+  | 'isSeedExhausted'
+  | 'isLowBudget'
+  | 'displayLocBuy'
+  | 'displayMocBuy'
+  | 'sellGuide'
 >;
 
 export interface MultiSplitProgressVm {
@@ -157,6 +182,20 @@ function formatPriceQuantityLine(args: FormatPriceQuantityLineArgs): string {
   });
 }
 
+function formatTextLine(args: {
+  template: string;
+  label: string;
+  value: string;
+}): string {
+  return applyTemplate({
+    template: args.template,
+    replacements: {
+      label: args.label,
+      value: args.value,
+    },
+  });
+}
+
 export function buildMultiSplitProgressVm(args: {
   cashUsagePct: number;
   lang: Lang;
@@ -191,34 +230,53 @@ export function buildMultiSplitExecutionSummaryLines(args: {
   });
   const lines = [progressVm.labelText];
 
-  if (args.execution.currentQuantity <= 0) {
+  if (args.execution.isFirstBuy) {
     lines.push(
-      messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.noHoldings],
+      formatTextLine({
+        template: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.textLine],
+        label: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.buyGuide],
+        value: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.firstBuyGuide],
+      }),
     );
     return lines;
   }
 
-  if (args.execution.displayLocBuy != null) {
-    lines.push(
-      formatPriceQuantityLine({
-        template: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.priceQuantity],
-        label: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.locBuy],
-        price: args.execution.displayLocBuy.price,
-        quantity: args.execution.displayLocBuy.quantity,
-        sharesUnit,
-      }),
-    );
+  if (args.execution.isDataError) {
+    lines.push(messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.dataErrorNotice]);
+    return lines;
   }
 
-  if (args.execution.displayMocBuy != null) {
+  if (args.execution.isLowBudget) {
     lines.push(
-      formatQuantityLine({
-        template: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.quantityOnly],
-        label: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.mocBuy],
-        quantity: args.execution.displayMocBuy.quantity,
-        sharesUnit,
+      formatTextLine({
+        template: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.textLine],
+        label: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.buyGuide],
+        value: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.insufficientFunds],
       }),
     );
+  } else {
+    if (args.execution.displayLocBuy != null) {
+      lines.push(
+        formatPriceQuantityLine({
+          template: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.priceQuantity],
+          label: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.locBuy],
+          price: args.execution.displayLocBuy.price,
+          quantity: args.execution.displayLocBuy.quantity,
+          sharesUnit,
+        }),
+      );
+    }
+
+    if (args.execution.displayMocBuy != null) {
+      lines.push(
+        formatQuantityLine({
+          template: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.quantityOnly],
+          label: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.mocBuy],
+          quantity: args.execution.displayMocBuy.quantity,
+          sharesUnit,
+        }),
+      );
+    }
   }
 
   if (args.execution.sellGuide.displayMainTakeProfit != null) {
@@ -248,14 +306,18 @@ export function buildMultiSplitExecutionSummaryLines(args: {
     );
   }
 
-  lines.push(
-    formatQuantityLine({
-      template: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.quantityOnly],
-      label: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.riskCut],
-      quantity: args.execution.sellGuide.riskCutQty,
-      sharesUnit,
-    }),
-  );
+  const shouldShowRiskCut =
+    args.execution.isLowBudget || args.execution.isSeedExhausted;
+  if (shouldShowRiskCut) {
+    lines.push(
+      formatQuantityLine({
+        template: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.quantityOnly],
+        label: messages[MULTI_SPLIT_EXECUTION_MESSAGE_IDS.riskCut],
+        quantity: args.execution.sellGuide.riskCutQty,
+        sharesUnit,
+      }),
+    );
+  }
 
   return lines;
 }

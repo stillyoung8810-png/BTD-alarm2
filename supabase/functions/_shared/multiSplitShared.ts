@@ -178,7 +178,9 @@ export interface MultiSplitGuideState {
   currentQuantity: number;
   avgPrice: number;
   isFirstBuy: boolean;
+  isDataError: boolean;
   isSeedExhausted: boolean;
+  isLowBudget: boolean;
   appliedLocRatioPct: number;
   displayLocBuy?: MultiSplitDisplayOrder;
   displayMocBuy?: MultiSplitDisplayQuantityOnlyOrder;
@@ -720,9 +722,12 @@ export function calculateMultiSplitGuideState(args: {
     totalInvested,
     totalSplitCount: args.strategy.totalSplitCount,
   });
-  const isFirstBuy =
-    currentQuantity <= HOLDINGS_QTY_EPSILON || avgPrice <= MIN_VALID_UNIT_COST;
+  const isFirstBuy = currentQuantity <= HOLDINGS_QTY_EPSILON;
+  const isDataError =
+    currentQuantity > HOLDINGS_QTY_EPSILON && avgPrice <= MIN_VALID_UNIT_COST;
   const isSeedExhausted = totalInvested >= totalSeed;
+  const isLowBudget =
+    remainingBudget > HOLDINGS_QTY_EPSILON && remainingBudget < args.oneTimeAmount;
   const appliedLocRatioPct = resolveAppliedLocRatio(
     args.strategy,
     args.snapshot,
@@ -744,12 +749,14 @@ export function calculateMultiSplitGuideState(args: {
     currentQuantity,
     avgPrice,
     isFirstBuy,
+    isDataError,
     isSeedExhausted,
+    isLowBudget,
     appliedLocRatioPct,
     sellGuide,
   };
 
-  if (isFirstBuy || isSeedExhausted) {
+  if (isFirstBuy || isDataError || isSeedExhausted || isLowBudget) {
     return baseState;
   }
 

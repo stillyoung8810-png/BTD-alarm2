@@ -11,6 +11,7 @@ import { TIME_MS, VR_CYCLE } from '../constants/vrConstants';
 import { normalizePortfolioData } from './portfolioNormalize';
 import {
   calculateCycleIndexFromDates,
+  calculateNextV,
   calculatePoolDelta,
   computeVrSnapshotAfterTrade,
   createInitialVrSnapshot,
@@ -31,6 +32,8 @@ const BASE_VR_NUMBERS = {
   minOrderQty: 1,
   poolUsageRateBuy: 0.5,
   cycleWeeks: 1,
+  baseGrowthRatePct: 10,
+  smartBrakeThresholdPct: 25,
 } as const;
 
 function createVrParams(
@@ -141,6 +144,27 @@ describe('vrBandStrategy financial integrity', () => {
 
     expect(delta).toBeCloseTo(-50.125, 10);
     expect(toFixedMoney(Math.abs(delta))).toBe(50.13);
+  });
+
+  it('현금 비중이 임계치보다 크면 일반 구간 공식으로 다음 V를 계산한다', () => {
+    // Why: 안전 모드가 아닌 정상 구간에서 pool 성장분이 currentV가 아닌 pool 기준으로 더해져야 새 TVC 설계와 일치합니다.
+    const params = createVrParams('accumulate', 50);
+
+    expect(calculateNextV(1000, 400, params)).toBe(1090);
+  });
+
+  it('현금 비중이 임계치 이하면 안전 모드 공식으로 다음 V를 계산한다', () => {
+    // Why: 현금 부족 구간에서는 CR^2 감쇠가 걸리지 않으면 목표 평가금이 과하게 증가해 cash depletion 방어가 무너집니다.
+    const params = createVrParams('accumulate', 50);
+
+    expect(calculateNextV(1000, 200, params)).toBe(1054);
+  });
+
+  it('현금 비중이 임계치와 정확히 같아도 안전 모드로 판정한다', () => {
+    // Why: 경계값에서 일반/안전 모드가 흔들리면 같은 스냅샷이 실행 환경마다 다른 V를 만들 수 있습니다.
+    const params = createVrParams('lump_sum', 0);
+
+    expect(calculateNextV(1000, 250, params)).toBe(1006.25);
   });
 
   it('normalizePortfolioData는 레거시 루트 fee_rate 소수 저장 버그를 퍼센트 값으로 복구한다', () => {

@@ -1,5 +1,4 @@
 import React from 'react';
-import LaoerCreditBanner from '@/components/strategies/LaoerCreditBanner';
 import VrBandStrategyForm from '@/components/strategies/VrBandStrategyForm';
 import type { AppLang, Portfolio } from '@/types';
 import { StrategyCreatorLayout } from './StrategyCreatorLayout';
@@ -336,6 +335,14 @@ export default function StrategyCreator({
           <VrBandStrategyForm
             lang={lang}
             showErrors={controller.vrShowErrors}
+            initialTHelper={controller.copy.vrBand.initialTHelper}
+            baseGrowthRatePctHelper={
+              controller.copy.vrBand.baseGrowthRatePctHelper
+            }
+            poolUsagePctHelper={controller.copy.vrBand.poolUsagePctHelper}
+            smartBrakeThresholdPctHelper={
+              controller.copy.vrBand.smartBrakeThresholdPctHelper
+            }
             vrMode={controller.vrMode}
             onVrModeChange={controller.handleVrModeChange}
             vrInitialCapital={controller.vrInitialCapital}
@@ -348,8 +355,14 @@ export default function StrategyCreator({
             onVrBandUpperPctChange={controller.handleVrBandUpperPctChange}
             vrBandLowerPct={controller.vrBandLowerPct}
             onVrBandLowerPctChange={controller.handleVrBandLowerPctChange}
-            vrG={controller.vrG}
-            onVrGChange={controller.handleVrGChange}
+            vrBaseGrowthRatePct={controller.vrBaseGrowthRatePct}
+            onVrBaseGrowthRatePctChange={
+              controller.handleVrBaseGrowthRatePctChange
+            }
+            vrSmartBrakeThresholdPct={controller.vrSmartBrakeThresholdPct}
+            onVrSmartBrakeThresholdPctChange={
+              controller.handleVrSmartBrakeThresholdPctChange
+            }
             vrPoolUsagePct={controller.vrPoolUsagePct}
             onVrPoolUsagePctChange={controller.handleVrPoolUsagePctChange}
             vrDeltaCash={controller.vrDeltaCash}
@@ -395,9 +408,6 @@ export default function StrategyCreator({
         onPrimaryAction={controller.handlePrimaryButtonClick}
       >
         {renderCurrentStep()}
-        {controller.shouldShowLaoerCreditBanner && (
-          <LaoerCreditBanner lang={lang} />
-        )}
       </StrategyCreatorLayout>
     </>
   );

@@ -28,6 +28,7 @@ import {
 import {
   calculateMultiSplitGuideState,
   collectIndicatorRequirements as collectMultiSplitIndicatorRequirements,
+  getChronologicalTrades,
   type TradeInput,
 } from "../_shared/multiSplitShared.ts";
 import {
@@ -505,8 +506,9 @@ function mapPortfolioRow(row: PortfolioRow): Portfolio | null {
 
 function calculateHoldings(portfolio: Portfolio): Holdings[] {
   const holdingsMap: Record<string, { quantity: number; totalCost: number }> = {};
+  const chronologicalTrades = getChronologicalTrades(portfolio.trades);
 
-  portfolio.trades.forEach((trade) => {
+  chronologicalTrades.forEach((trade) => {
     if (trade.type === "buy") {
       if (!holdingsMap[trade.stock]) {
         holdingsMap[trade.stock] = { quantity: 0, totalCost: 0 };

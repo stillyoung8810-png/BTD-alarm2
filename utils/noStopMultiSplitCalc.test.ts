@@ -75,6 +75,29 @@ describe('calcNoStopCurrentRound', () => {
 
     expect(calcNoStopCurrentRound(trades, 150)).toBe(0);
   });
+
+  it('최신순 저장 배열도 날짜순으로 재정렬해 현재 회차를 계산한다', () => {
+    const trades: TradeInput[] = [
+      makeTrade({
+        type: 'sell',
+        stock: 'TQQQ',
+        date: '2026-04-01',
+        price: 120,
+        quantity: 3,
+        fee: 0,
+      }),
+      makeTrade({
+        type: 'buy',
+        stock: 'TQQQ',
+        date: '2026-01-01',
+        price: 100,
+        quantity: 5,
+        fee: 0,
+      }),
+    ];
+
+    expect(calcNoStopCurrentRound(trades, 100, 'TQQQ')).toBe(2);
+  });
 });
 
 describe('calcNoStopMultiSplitOrders', () => {
@@ -263,6 +286,54 @@ describe('calculateNoStopExecution', () => {
       executableLowLoc: { price: 100, quantity: 5 },
       executableMocBuy: { quantity: 4 },
       takeProfit: { price: 110, quantity: 1 },
+    });
+  });
+
+  it('최신순 저장 배열도 날짜순으로 재정렬해 매도 후 잔여 보유량 기준으로 실행값을 계산한다', () => {
+    const trades: TradeInput[] = [
+      makeTrade({
+        type: 'sell',
+        stock: 'TQQQ',
+        date: '2026-04-01',
+        price: 120,
+        quantity: 3,
+        fee: 0,
+      }),
+      makeTrade({
+        type: 'buy',
+        stock: 'TQQQ',
+        date: '2026-01-01',
+        price: 100,
+        quantity: 5,
+        fee: 0,
+      }),
+    ];
+
+    expect(
+      calculateNoStopExecution({
+        trades,
+        oneTimeAmount: 1_000,
+        feeRate: 0,
+        snapshot: {
+          currentPrice: 100,
+        },
+        strategy: {
+          targetStock: 'TQQQ',
+          baseLocRatio: 50,
+          takeProfitPct: 10,
+          totalSplitCount: 4,
+        },
+      }),
+    ).toEqual({
+      appliedLocRatio: 50,
+      progressPct: 5,
+      isFirstBuy: false,
+      isSplitComplete: false,
+      displayLowLoc: { price: 100, quantity: 5 },
+      displayMocBuy: { quantity: 4 },
+      executableLowLoc: { price: 100, quantity: 5 },
+      executableMocBuy: { quantity: 4 },
+      takeProfit: { price: 110, quantity: 2 },
     });
   });
 });

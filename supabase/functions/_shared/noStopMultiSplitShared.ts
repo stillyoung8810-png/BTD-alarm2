@@ -1,4 +1,8 @@
-import { calcHoldings, type TradeInput } from './multiSplitShared.ts';
+import {
+  calcHoldings,
+  getChronologicalTrades,
+  type TradeInput,
+} from './multiSplitShared.ts';
 import {
   HOLDINGS_QTY_EPSILON,
   floorToNonNegativeInt,
@@ -136,7 +140,7 @@ function findTargetHolding(
     return null;
   }
 
-  const holdings = calcHoldings(trades);
+  const holdings = calcHoldings(getChronologicalTrades(trades));
   return (
     holdings.find(
       (holding) =>
@@ -525,9 +529,10 @@ export function calcNoStopCurrentRound(
 
   const hasTargetStock =
     typeof targetStock === 'string' && targetStock.trim().length > 0;
+  const chronologicalTrades = getChronologicalTrades(trades);
   const totalInvested = hasTargetStock
-    ? findTargetHolding(trades, targetStock)?.totalCost ?? 0
-    : calcHoldings(trades).reduce(
+    ? findTargetHolding(chronologicalTrades, targetStock)?.totalCost ?? 0
+    : calcHoldings(chronologicalTrades).reduce(
         (sum, holding) => sum + holding.totalCost,
         0,
       );

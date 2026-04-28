@@ -18,6 +18,7 @@
     "typecheck": "npm run typecheck:app && npm run typecheck:node",
     "typecheck:server": "npm --prefix server run typecheck",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "test:watch": "vitest",
     "test:server": "vitest --config server/vitest.config.ts"
   },

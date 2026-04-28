@@ -7,7 +7,6 @@ import { analyzeTradeScreenshot, RecognizedTradeItem } from '../services/geminiS
 import { ensureValidSession } from '../services/supabase';
 import { REWARD_UNLOCK_AI_AD_GROUP_ID } from '../services/ads/adPlacements';
 import { requestRewardAd } from '../services/ads/rewardAdService';
-import { incrementUsage } from '../utils/subscriptionUtils';
 import { formatShareQuantity } from '../src/utils/tradeModalCalculations';
 import { validateSelectedTradesAgainstHoldings } from '../utils/tradeSellValidation';
 
@@ -138,29 +137,22 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
     }
     setStep('scanning');
     try {
-      if (!bypassUsageCheck) {
-        const usageResult = await incrementUsage('ai', currentTier);
-        if (!usageResult.success) {
-          if (usageResult.message === 'DAILY_LIMIT_REACHED' || usageResult.message === 'MONTHLY_LIMIT_REACHED') {
-            setLimitType(usageResult.message === 'DAILY_LIMIT_REACHED' ? 'daily' : 'monthly');
-            setStep('limit_reached');
-            return;
-          }
-          setErrorMessage(
-            lang === 'ko'
-              ? usageResult.message || '사용량 확인 중 오류가 발생했습니다.'
-              : usageResult.message || 'Usage limit reached or verification failed.'
-          );
-          setStep('error');
-          return;
-        }
-      }
-
       const base64 = imageData.includes(',') ? imageData.split(',')[1] : imageData;
       const shouldApplyPremiumAI = isPaidUser || bypassUsageCheck;
       const result = await analyzeTradeScreenshot(base64, imageMime, {
         isPaidUser: shouldApplyPremiumAI,
+        usageTier: currentTier,
+        skipUsageCheck: bypassUsageCheck,
       });
+
+      if (
+        result?.usageLimit === 'DAILY_LIMIT_REACHED' ||
+        result?.usageLimit === 'MONTHLY_LIMIT_REACHED'
+      ) {
+        setLimitType(result.usageLimit === 'DAILY_LIMIT_REACHED' ? 'daily' : 'monthly');
+        setStep('limit_reached');
+        return;
+      }
 
       if (result && result.trades.length > 0) {
         const strategyStocks = [

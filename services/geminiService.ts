@@ -12,9 +12,11 @@ const FALLBACK_ADVISOR_TEXT =
 const EDGE_BASE_URL = readTrimmedViteEnv('VITE_GEMINI_EDGE_URL');
 
 type Tier = 'free' | 'paid';
+type UsageLimitCode = 'DAILY_LIMIT_REACHED' | 'MONTHLY_LIMIT_REACHED';
 
 interface RecognizedTradesPayload {
   trades: RecognizedTradeItem[];
+  usageLimit?: UsageLimitCode;
 }
 
 const EMPTY_RECOGNIZED_TRADES: RecognizedTradesPayload = { trades: [] };
@@ -102,6 +104,18 @@ function decodeRecognizedTradeItem(value: unknown): RecognizedTradeItem | null {
   };
 }
 
+function readUsageLimit(payload: Record<string, unknown>): UsageLimitCode | undefined {
+  const usageLimit = payload.usageLimit;
+  if (
+    usageLimit === 'DAILY_LIMIT_REACHED' ||
+    usageLimit === 'MONTHLY_LIMIT_REACHED'
+  ) {
+    return usageLimit;
+  }
+
+  return undefined;
+}
+
 function decodeRecognizedTradesPayload(
   payload: unknown,
 ): RecognizedTradesPayload | null {
@@ -113,7 +127,10 @@ function decodeRecognizedTradesPayload(
     .map((item) => decodeRecognizedTradeItem(item))
     .filter((item): item is RecognizedTradeItem => item !== null);
 
-  return { trades };
+  return {
+    trades,
+    usageLimit: readUsageLimit(payload),
+  };
 }
 
 function mapGeminiFailureToThrownError(code: string): Error | null {
@@ -177,7 +194,11 @@ export const getStrategyAdvisor = async (
 export const analyzeTradeScreenshot = async (
   imageBase64: string,
   mimeType: string = 'image/png',
-  options?: { isPaidUser?: boolean },
+  options?: {
+    isPaidUser?: boolean;
+    usageTier?: string;
+    skipUsageCheck?: boolean;
+  },
 ): Promise<RecognizedTradesPayload | null> => {
   if (EDGE_BASE_URL.length === 0) {
     console.warn(
@@ -198,6 +219,9 @@ export const analyzeTradeScreenshot = async (
           imageBase64,
           mimeType,
           tier: getTier(Boolean(options?.isPaidUser)),
+          usageCheckMode: 'edge',
+          usageTier: options?.usageTier,
+          skipUsageCheck: options?.skipUsageCheck === true,
         }),
       },
       EMPTY_RECOGNIZED_TRADES,

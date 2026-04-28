@@ -1,11 +1,8 @@
-import React, { useState } from 'react';
-import { ChevronDown, Clock, Info, Plus, Trash2, X } from 'lucide-react';
+import React from 'react';
+import { Clock, Info, Plus, Trash2, X } from 'lucide-react';
 import type { AppLang } from '@/types';
-import { useTossApp } from '@/contexts/TossAppContext';
 import { handlePressEnterOrSpace } from '@/src/utils/a11yHelpers';
-import { useTDSMenu } from '@/components/tds';
 import Toggle from '@/components/Toggle';
-import CustomDropdown from '@/components/CustomDropdown';
 import InfoModal from '@/components/InfoModal';
 import { getCommonMessages } from '@/constants/messages/commonMessages';
 import type { UseAlarmModalControllerResult } from './useAlarmModalController';
@@ -58,12 +55,7 @@ export function AlarmModalView({
   onClose,
   controller,
 }: AlarmModalViewProps): React.ReactElement {
-  const { isInTossApp } = useTossApp();
-  const { Menu: TDSMenu } = useTDSMenu();
   const commonCopy = getCommonMessages(lang);
-  const [isMinuteMenuOpen, setIsMinuteMenuOpen] = useState(false);
-
-  const selectedMinuteLabel = `${controller.selectedMinute}${controller.copy.minuteUnit}`;
 
   return (
     <>
@@ -242,63 +234,22 @@ export function AlarmModalView({
                       <label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300">
                         {controller.copy.minuteLabel}
                       </label>
-                      {isInTossApp && TDSMenu != null ? (
-                        <TDSMenu
-                          open={isMinuteMenuOpen}
-                          onOpen={() => setIsMinuteMenuOpen(true)}
-                          onClose={() => setIsMinuteMenuOpen(false)}
-                          placement="bottom"
-                        >
-                          <TDSMenu.Trigger>
-                            <button
-                              type="button"
-                              className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white p-4 text-sm font-black text-slate-900 transition-colors hover:bg-slate-50 focus:ring-2 focus:ring-blue-500/50 dark:border-white/5 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
-                              aria-label={controller.copy.aria.minuteMenuTrigger}
-                            >
-                              <span>{selectedMinuteLabel}</span>
-                              <ChevronDown
-                                size={16}
-                                className="text-slate-400"
-                              />
-                            </button>
-                          </TDSMenu.Trigger>
-                          <TDSMenu.Dropdown>
-                            <TDSMenu.Header>
-                              {controller.copy.minuteIntervalHeader}
-                            </TDSMenu.Header>
-                            {controller.minuteOptions.map((option) => (
-                              <TDSMenu.DropdownCheckItem
-                                key={option.value}
-                                checked={
-                                  controller.selectedMinute === option.value
-                                }
-                                onCheckedChange={(checked) => {
-                                  if (!checked) {
-                                    return;
-                                  }
-                                  controller.handleSetSelectedMinute(
-                                    option.value,
-                                  );
-                                  setIsMinuteMenuOpen(false);
-                                }}
-                              >
-                                {option.label}
-                              </TDSMenu.DropdownCheckItem>
-                            ))}
-                          </TDSMenu.Dropdown>
-                        </TDSMenu>
-                      ) : (
-                        <CustomDropdown
-                          value={controller.selectedMinute}
-                          options={controller.minuteOptions}
-                          onChange={controller.handleSetSelectedMinute}
-                          header={controller.copy.minuteIntervalHeader}
-                          className="w-full"
-                          infoModalBadgeLabel={commonCopy.notice}
-                          infoModalCloseAriaLabel={commonCopy.closeDialog}
-                          infoModalConfirmLabel={commonCopy.acknowledge}
-                        />
-                      )}
+                      <div className="grid grid-cols-6 gap-2">
+                        {controller.minuteOptions.map((minute) => (
+                          <button
+                            key={minute}
+                            type="button"
+                            onClick={() =>
+                              controller.handleSetSelectedMinute(minute)
+                            }
+                            className={`text-[11px] ${getSelectableButtonClassName(
+                              controller.selectedMinute === minute,
+                            )}`}
+                          >
+                            {minute}
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
                     <div className="flex items-start gap-2 rounded-xl border border-blue-200 bg-blue-50 p-3 dark:border-blue-500/20 dark:bg-blue-600/10">

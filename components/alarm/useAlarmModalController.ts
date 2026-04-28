@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AlarmConfig, Portfolio } from '@/types';
 import { getAlarmMessages } from '@/constants/messages/alarmMessages';
 
@@ -29,7 +29,7 @@ export interface UseAlarmModalControllerResult {
   isInfoOpen: boolean;
   isSaving: boolean;
   hourOptions: string[];
-  minuteOptions: Array<{ value: string; label: string }>;
+  minuteOptions: string[];
   handleSetEnabled: (checked: boolean) => void;
   handleSetPeriod: (period: 'AM' | 'PM') => void;
   handleSetSelectedHour: (hour: string) => void;
@@ -64,15 +64,6 @@ export function useAlarmModalController({
   const previousSelectedTimesKeyRef = useRef<string | null>(null);
 
   const isAllSlotsFilled = selectedTimes.length >= maxAlarms;
-
-  const minuteOptions = useMemo(
-    () =>
-      MINUTES.map((minute) => ({
-        value: minute,
-        label: `${minute}${copy.minuteUnit}`,
-      })),
-    [copy.minuteUnit],
-  );
 
   // Rule 6: 모듈 최상단에 두고 단 한 곳에서도 안 쓰는 헬퍼(예: getSelectionFromTime) 금지.
   // 첫 선택 시각 → AM/PM·시·분 동기화는 이 effect 안에서만 인라인 파생한다.
@@ -186,7 +177,7 @@ export function useAlarmModalController({
     isInfoOpen,
     isSaving,
     hourOptions: HOURS,
-    minuteOptions,
+    minuteOptions: MINUTES,
     handleSetEnabled: setIsEnabled,
     handleSetPeriod: setPeriod,
     handleSetSelectedHour: setSelectedHour,

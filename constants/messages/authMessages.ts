@@ -210,7 +210,7 @@ export const AUTH_MODAL_MESSAGES: Record<AppLang, AuthModalMessageSet> = {
       telegramLinkInstruction:
         '아래 명령어를 텔레그램 봇에 전송해 연결을 완료하세요.',
       telegramTokenCreateFailed: '텔레그램 연결 토큰 생성에 실패했습니다.',
-      reopenProfileHint: '연결 후 프로필을 다시 열어 상태를 확인하세요.',
+      reopenProfileHint: '연결 후 앱을 다시 열거나 재로그인하면 상태가 반영돼요.',
       paidOnly: '유료 멤버십에서만 사용할 수 있습니다.',
       deleteWarning: '회원 탈퇴 후 데이터는 복구할 수 없습니다.',
       deleteInstruction: '확인을 위해 DELETE 를 입력해주세요.',
@@ -328,7 +328,7 @@ export const AUTH_MODAL_MESSAGES: Record<AppLang, AuthModalMessageSet> = {
         'Send the command below to the Telegram bot to complete the connection.',
       telegramTokenCreateFailed: 'Failed to create Telegram link token.',
       reopenProfileHint:
-        'Reopen the profile modal after linking to refresh state.',
+        'After linking, reopen the app or sign in again to refresh state.',
       paidOnly: 'This feature is available for paid members only.',
       deleteWarning: 'Your data cannot be restored after account deletion.',
       deleteInstruction: 'Type DELETE to confirm.',

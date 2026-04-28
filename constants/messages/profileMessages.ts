@@ -32,7 +32,7 @@ export const PROFILE_MESSAGES: Record<AppLang, ProfileMessageSet> = {
     telegramLinkInstruction:
       '아래 링크를 클릭하거나, 텔레그램에서 봇에게 다음을 보내주세요:',
     openInTelegram: '텔레그램에서 열기',
-    reopenProfileHint: '연결 후 프로필을 다시 열면 상태가 반영됩니다.',
+    reopenProfileHint: '연결 후 앱을 다시 열거나 재로그인하면 상태가 반영돼요.',
     connectTelegram: '텔레그램 연결하기',
     paidOnly: '유료 회원만 이용 가능합니다.',
     upgradeMembership: '멤버십 업그레이드',
@@ -54,7 +54,8 @@ export const PROFILE_MESSAGES: Record<AppLang, ProfileMessageSet> = {
     telegramLinkInstruction:
       'Click the link below or send the following to the bot on Telegram:',
     openInTelegram: 'Open in Telegram',
-    reopenProfileHint: 'Reopen profile after connecting to see status.',
+    reopenProfileHint:
+      'After linking, reopen the app or sign in again to refresh state.',
     connectTelegram: 'Connect Telegram',
     paidOnly: 'Available for paid members only.',
     upgradeMembership: 'Upgrade Membership',

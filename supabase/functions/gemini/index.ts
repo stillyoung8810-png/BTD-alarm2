@@ -33,6 +33,8 @@ type RequestBody = AdvisorRequestBody | AnalyzeTradesRequestBody;
 
 const FALLBACK_ADVISOR_TEXT =
   "The QQQ-based technical strategy shows strong historical momentum. Ensure rigorous drawdown management is active for leveraged positions.";
+const MISSING_HEADER_LOG_VALUE = "missing";
+const INVALID_REFERER_LOG_VALUE = "invalid_referer";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const UNLIMITED_USAGE_QUOTA = 999;
@@ -102,6 +104,46 @@ const createJsonResponse = (
   headers: Record<string, string>,
 ): Response => new Response(JSON.stringify(payload), { status, headers });
 
+const readHeaderForLog = (req: Request, headerName: string): string =>
+  req.headers.get(headerName) ?? MISSING_HEADER_LOG_VALUE;
+
+const readRefererOriginForLog = (req: Request): string => {
+  const referer = req.headers.get("referer");
+  if (!referer) {
+    return MISSING_HEADER_LOG_VALUE;
+  }
+
+  try {
+    return new URL(referer).origin;
+  } catch (_error) {
+    return INVALID_REFERER_LOG_VALUE;
+  }
+};
+
+const logOriginDebugContext = (
+  req: Request,
+  accessControlAllowOrigin: string | undefined,
+): void => {
+  console.info(
+    "[gemini:origin-debug]",
+    JSON.stringify({
+      method: req.method,
+      origin: readHeaderForLog(req, "origin"),
+      refererOrigin: readRefererOriginForLog(req),
+      accessControlRequestMethod: readHeaderForLog(
+        req,
+        "access-control-request-method",
+      ),
+      accessControlRequestHeaders: readHeaderForLog(
+        req,
+        "access-control-request-headers",
+      ),
+      accessControlAllowOrigin:
+        accessControlAllowOrigin ?? MISSING_HEADER_LOG_VALUE,
+    }),
+  );
+};
+
 const getApiKey = (tier: Tier): string | null => {
   const freeKey = Deno.env.get("GEMINI_API_KEY_FREE") ?? undefined;
   const paidKey = Deno.env.get("GEMINI_API_KEY_PAID") ?? undefined;
@@ -114,6 +156,7 @@ const getApiKey = (tier: Tier): string | null => {
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   const jsonHeaders = getJsonCorsHeaders(req);
+  logOriginDebugContext(req, corsHeaders["Access-Control-Allow-Origin"]);
 
   if (req.method === "OPTIONS") {
     // CORS preflight

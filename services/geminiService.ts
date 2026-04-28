@@ -10,6 +10,7 @@ import { readTrimmedViteEnv } from '../utils/viteImportMetaEnv';
 const FALLBACK_ADVISOR_TEXT =
   'The QQQ-based technical strategy shows strong historical momentum. Ensure rigorous drawdown management is active for leveraged positions.';
 const EDGE_BASE_URL = readTrimmedViteEnv('VITE_GEMINI_EDGE_URL');
+const AI_TRADE_ANALYSIS_TIMEOUT_MS = 60_000;
 
 type Tier = 'free' | 'paid';
 type UsageLimitCode = 'DAILY_LIMIT_REACHED' | 'MONTHLY_LIMIT_REACHED';
@@ -225,7 +226,10 @@ export const analyzeTradeScreenshot = async (
         }),
       },
       EMPTY_RECOGNIZED_TRADES,
-      { context: { mode: 'analyze-trades' } },
+      {
+        timeoutMs: AI_TRADE_ANALYSIS_TIMEOUT_MS,
+        context: { mode: 'analyze-trades' },
+      },
     );
 
     if (!analyzeResult.ok) {

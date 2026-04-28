@@ -2,7 +2,6 @@ import { GoogleAdMob } from '@apps-in-toss/web-framework';
 import { isTossApp } from '../toss/tossBridge';
 
 const REWARD_AD_LOAD_TIMEOUT_MS = 10_000;
-const REWARD_AD_SHOW_TIMEOUT_MS = 10_000;
 
 function executeWithTimeout<T>(
   executor: (
@@ -102,9 +101,20 @@ function waitForRewardAdLoad(adGroupId: string): Promise<() => void> {
 }
 
 function showRewardAd(adGroupId: string): Promise<boolean> {
-  return executeWithTimeout<boolean>((resolve, reject, onCancel) => {
+  return new Promise<boolean>((resolve, reject) => {
     let unregister: (() => void) | undefined;
     let isRewardEarned = false;
+    let isSettled = false;
+
+    const settleOnce = (settler: () => void): void => {
+      if (isSettled) {
+        return;
+      }
+
+      isSettled = true;
+      unregister?.();
+      settler();
+    };
 
     try {
       unregister = GoogleAdMob.showAppsInTossAdMob({
@@ -116,34 +126,30 @@ function showRewardAd(adGroupId: string): Promise<boolean> {
           }
 
           if (event.type === 'dismissed') {
-            if (unregister != null) {
-              unregister();
-            }
-            resolve(isRewardEarned);
+            settleOnce(() => {
+              resolve(isRewardEarned);
+            });
             return;
           }
 
           if (event.type === 'failedToShow') {
-            if (unregister != null) {
-              unregister();
-            }
-            reject(new Error('Toss SDK failedToShow'));
+            settleOnce(() => {
+              reject(new Error('Toss SDK failedToShow'));
+            });
           }
         },
         onError: (error: unknown) => {
-          if (unregister != null) {
-            unregister();
-          }
-          reject(error);
+          settleOnce(() => {
+            reject(error);
+          });
         },
       });
-      onCancel(() => {
-        unregister?.();
-      });
     } catch (error: unknown) {
-      reject(error);
+      settleOnce(() => {
+        reject(error);
+      });
     }
-  }, REWARD_AD_SHOW_TIMEOUT_MS, 'reward_ad_show_timeout');
+  });
 }
 
 export async function requestRewardAd(adGroupId: string): Promise<boolean> {

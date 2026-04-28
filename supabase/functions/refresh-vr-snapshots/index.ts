@@ -10,41 +10,83 @@ import {
   buildRefreshedVrSnapshot,
   processVrRefreshBatch,
 } from '../_shared/vrSnapshotRefresh.ts';
-import type { PortfolioRow, VrSnapshot } from '../_shared/types.ts';
+import type { Portfolio, PortfolioRow, VrSnapshot } from '../_shared/types.ts';
 
-interface EdgeMutationResult {
-  error: unknown;
+interface EdgePostgrestError {
+  message: string;
+  details?: string;
+  hint?: string;
+  code?: string;
 }
 
 interface EdgeSelectResult<Row> {
   data: Row[] | null;
-  error: unknown;
+  error: EdgePostgrestError | null;
 }
 
-interface EdgePortfolioSelectFilter {
-  eq(column: 'is_closed', value: boolean): EdgePortfolioSelectFilter;
+interface EdgeMutationResult {
+  error: EdgePostgrestError | null;
+}
+
+type EdgeAsyncResult<Result> = PromiseLike<Result>;
+
+type EdgePortfolioTable = 'portfolios';
+type EdgePortfolioEqColumn = 'is_closed';
+type EdgePortfolioNotColumn = 'strategy->vrBand';
+type EdgePortfolioUpdateColumn = 'id';
+type EdgePostgrestIsOperator = 'is';
+
+interface EdgeQueryFilter<Row> {
+  eq(
+    column: EdgePortfolioEqColumn,
+    value: boolean,
+  ): EdgeQueryFilter<Row>;
   not(
-    column: 'strategy->vrBand',
-    operator: 'is',
+    column: EdgePortfolioNotColumn,
+    operator: EdgePostgrestIsOperator,
     value: null,
-  ): EdgePortfolioSelectFilter;
-  range(from: number, to: number): Promise<EdgeSelectResult<PortfolioRow>>;
+  ): EdgeQueryFilter<Row>;
+  range(from: number, to: number): EdgeAsyncResult<EdgeSelectResult<Row>>;
 }
 
-interface EdgePortfoliosGateway {
-  select(columns: string): EdgePortfolioSelectFilter;
-  update(payload: { vr_snapshot: VrSnapshot }): {
-    eq(column: 'id', value: string): Promise<EdgeMutationResult>;
-  };
+interface EdgeUpdateFilter {
+  eq(
+    column: EdgePortfolioUpdateColumn,
+    value: string,
+  ): EdgeAsyncResult<EdgeMutationResult>;
+}
+
+interface EdgePortfolioSnapshotUpdate {
+  vr_snapshot: VrSnapshot;
+}
+
+interface EdgeTableGateway<Row, UpdatePayload> {
+  select(columns: string): EdgeQueryFilter<Row>;
+  update(payload: UpdatePayload): EdgeUpdateFilter;
 }
 
 interface EdgeSupabase {
-  from(table: 'portfolios'): EdgePortfoliosGateway;
+  from<Row = unknown, UpdatePayload = never>(
+    table: EdgePortfolioTable,
+  ): EdgeTableGateway<Row, UpdatePayload>;
+}
+
+type EdgeSupabaseFactory = (
+  supabaseUrl: string,
+  serviceKey: string,
+) => EdgeSupabase;
+
+function createEdgeSupabaseClient(
+  supabaseUrl: string,
+  serviceKey: string,
+): EdgeSupabase {
+  const createEdgeClient = createClient as unknown as EdgeSupabaseFactory;
+  return createEdgeClient(supabaseUrl, serviceKey);
 }
 
 async function refreshVrSnapshotForPortfolio(
   supabase: EdgeSupabase,
-  portfolio: { strategy: { vrBand?: unknown }; vrSnapshot?: VrSnapshot },
+  portfolio: Portfolio,
   portfolioId: string,
   targetCycleIndex: number,
 ): Promise<void> {
@@ -52,7 +94,7 @@ async function refreshVrSnapshotForPortfolio(
   if (!updatedSnapshot) return;
 
   const { error } = await supabase
-    .from('portfolios')
+    .from<PortfolioRow, EdgePortfolioSnapshotUpdate>('portfolios')
     .update({ vr_snapshot: updatedSnapshot })
     .eq('id', portfolioId);
 
@@ -72,7 +114,7 @@ export async function processAllVrPortfolios(supabase: EdgeSupabase): Promise<vo
 
   while (hasMore) {
     const { data: rows, error } = await supabase
-      .from('portfolios')
+      .from<PortfolioRow>('portfolios')
       .select(SELECT_COLUMNS)
       .eq('is_closed', false)
       // DB 단계에서 TVC 포트폴리오만 가져와 비-TVC row egress를 제거합니다.
@@ -116,7 +158,7 @@ serve(async () => {
       );
     }
 
-    const supabase: EdgeSupabase = createClient(supabaseUrl, serviceKey);
+    const supabase = createEdgeSupabaseClient(supabaseUrl, serviceKey);
     await processAllVrPortfolios(supabase);
 
     return new Response(JSON.stringify({ success: true }), {

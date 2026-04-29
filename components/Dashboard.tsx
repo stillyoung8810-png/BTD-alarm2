@@ -68,15 +68,20 @@ import {
   formatUsdValue,
   getRounded,
 } from '../src/utils/financialCalculations';
+import { getResolvedHistoryBannerAdGroupId } from '../services/ads/adPlacements';
 import { showErrorToast } from './tds-adapter/showErrorToast';
 import {
   getConditionalTypographyStyle,
   getConditionalColor,
 } from '../utils/tossStyleHelpers';
+import { TossInlineBanner } from './TossInlineBanner';
+
+const DASHBOARD_INLINE_BANNER_CONTAINER_CLASS_NAME = 'h-[96px] min-h-[96px]';
 
 interface DashboardProps {
   lang: AppLang;
   portfolios: Portfolio[];
+  shouldShowAds: boolean;
   onClosePortfolio: (id: string) => void;
   onDeletePortfolio: (id: string) => Promise<void> | void;
   onOpenCreator: () => void;
@@ -1780,6 +1785,7 @@ function DashboardHeader({
 const Dashboard: React.FC<DashboardProps> = ({
   lang,
   portfolios,
+  shouldShowAds,
   onClosePortfolio,
   onDeletePortfolio,
   onOpenCreator,
@@ -1919,6 +1925,8 @@ const Dashboard: React.FC<DashboardProps> = ({
     totalValuationChangePctText: formatSignedPercent(totalValuationChangePct),
     changeTone: getChangeTone(totalValuationChange),
   };
+  const shouldRenderDashboardBanner = isInTossApp && shouldShowAds;
+  const dashboardInlineBannerAdGroupId = getResolvedHistoryBannerAdGroupId();
 
   return (
     <div className="space-y-12 animate-in fade-in duration-700">
@@ -1930,6 +1938,16 @@ const Dashboard: React.FC<DashboardProps> = ({
         createLabel={copy.createLabel}
         onOpenCreator={onOpenCreator}
       />
+
+      {shouldRenderDashboardBanner ? (
+        <TossInlineBanner
+          adGroupId={dashboardInlineBannerAdGroupId}
+          shouldShowAd
+          isInTossApp={isInTossApp}
+          variant="card"
+          containerClassName={DASHBOARD_INLINE_BANNER_CONTAINER_CLASS_NAME}
+        />
+      ) : null}
 
       {portfolios.length === 0 ? (
         <section

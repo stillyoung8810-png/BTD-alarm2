@@ -142,6 +142,7 @@ const TabContentComponent: React.FC<TabContentProps> = (props) => {
           <Dashboard
             lang={lang}
             portfolios={activePortfolios}
+            shouldShowAds={shouldShowAds}
             onClosePortfolio={onClosePortfolio}
             onDeletePortfolio={onDeletePortfolio}
             onOpenCreator={onRequestOpenCreator}

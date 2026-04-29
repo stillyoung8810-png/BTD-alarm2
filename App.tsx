@@ -106,6 +106,7 @@ const NON_BLOCKING_AD_TRIGGER_DELAY_MS = 0;
 const TIER_ICON_SIZE_PX = 11;
 const DAILY_EXECUTION_DEBOUNCE_MS = 3000;
 const DAILY_EXECUTION_ON_CONFLICT = 'user_id,summary_date';
+const SHOULD_SHOW_MEMBERSHIP_NAV_TAB = true;
 
 const PRO_TIER_ICON_PROPS = {
   fill: 'currentColor',
@@ -426,10 +427,7 @@ const App: React.FC = () => {
   const paidTier = useMemo(() => toAdUserTier(currentTier), [currentTier]);
   const adsUserTier = paidTier;
 
-  const canAccessPaidStocks = useMemo(() => {
-    const tierOk = currentTier !== 'free';
-    return tierOk && effectiveSubscription.isActive && !effectiveSubscription.isExpired;
-  }, [currentTier, effectiveSubscription.isActive, effectiveSubscription.isExpired]);
+  const canAccessPaidStocks = true;
 
   const { translationKey, tierClassName, TierIcon, tierIconClassName } =
     useTierDisplay(paidTier);
@@ -1308,7 +1306,9 @@ const App: React.FC = () => {
             <NavIcon active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutDashboard size={22} />} label={t.dashboard} />
             <NavIcon active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<HistoryIcon size={22} />} label={t.history} />
             <NavIcon active={activeTab === 'markets'} onClick={() => setActiveTab('markets')} icon={<BarChart3 size={22} />} label={t.markets} />
-            <NavIcon active={activeTab === 'pricing'} onClick={() => setActiveTab('pricing')} icon={<Crown size={22} />} label={t.membership} />
+            {SHOULD_SHOW_MEMBERSHIP_NAV_TAB && (
+              <NavIcon active={activeTab === 'pricing'} onClick={() => setActiveTab('pricing')} icon={<Crown size={22} />} label={t.membership} />
+            )}
             {!isInTossApp && (
               <a
                 href="/posts"
@@ -1370,13 +1370,7 @@ const App: React.FC = () => {
             currentUserEmail={user?.email}
             currentTier={paidTier}
             currentUserId={user?.id ?? undefined}
-            onUpgradePlan={(planId) => {
-              if (!user) {
-                setAuthModal('login');
-                return;
-              }
-              setCheckoutPlan(planId);
-            }}
+            onUpgradePlan={undefined}
             telegramConnectedAt={userProfile?.telegram_connected_at ?? null}
             telegramAlertsEnabled={userProfile?.telegram_enabled ?? false}
             onTelegramAlertsEnabledChange={async (enabled) => {

@@ -68,8 +68,8 @@ function isAbortLikeError(error: unknown): boolean {
 function createPendingUserProfile(): AppUserProfile {
   return {
     subscription_tier: 'free',
-    max_portfolios: 2,
-    max_alarms: 2,
+    max_portfolios: 3,
+    max_alarms: 4,
     preferred_language: 'ko',
     timezone: getDeviceTimeZone(),
   };

@@ -220,7 +220,7 @@ export function getTierLimits(tier: SubscriptionTier): {
 } {
   if (tier === "premium") return { maxPortfolios: 20, maxAlarms: 40 };
   if (tier === "pro") return { maxPortfolios: 5, maxAlarms: 10 };
-  return { maxPortfolios: 2, maxAlarms: 2 };
+  return { maxPortfolios: 3, maxAlarms: 4 };
 }
 
 export function getServiceExpiresAt(days: number, nowIso?: string): string {
@@ -248,8 +248,8 @@ function buildEffectiveState(
     pendingPlanEffectiveAt,
     isActive: !isExpired && isActiveStatus && tier !== "free",
     isExpired,
-    maxPortfolios: isExpired ? 2 : limits.maxPortfolios,
-    maxAlarms: isExpired ? 2 : limits.maxAlarms,
+    maxPortfolios: isExpired ? 3 : limits.maxPortfolios,
+    maxAlarms: isExpired ? 4 : limits.maxAlarms,
   };
 }
 
@@ -318,8 +318,8 @@ export function getNormalizedProfileUpdate(
       subscription_status: "expired",
       pending_plan: null,
       pending_plan_effective_at: null,
-      max_portfolios: 2,
-      max_alarms: 2,
+      max_portfolios: 3,
+      max_alarms: 4,
     };
   }
 

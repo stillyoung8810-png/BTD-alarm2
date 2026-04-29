@@ -25,8 +25,8 @@ import {
 } from './serviceUtils';
 
 const EMPTY_PROFILE: AppUserProfile | null = null;
-const DEFAULT_PROFILE_LIMIT = 2;
-const DEFAULT_ALARM_LIMIT = 2;
+const DEFAULT_PROFILE_LIMIT = 3;
+const DEFAULT_ALARM_LIMIT = 4;
 const DEFAULT_AI_USAGE = 0;
 const DEFAULT_BACKTEST_USAGE = 0;
 const PROFILE_SELECT_FIELDS =

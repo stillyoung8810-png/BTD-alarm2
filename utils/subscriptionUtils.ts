@@ -168,15 +168,15 @@ export const shouldShowAds = (
  * @returns 최대 포트폴리오 개수
  *
  * 기본 규칙:
- * - 프로필 없음        →  Free 기본값 2개
+ * - 프로필 없음        →  Free 기본값 3개
  * - max_portfolios 있음 → 해당 값 사용
  * - Pro/Premium 티어   → 기본 5개
- * - 그 외(Free 등)     → 기본 2개
+ * - 그 외(Free 등)     → 기본 3개
  */
 export const getMaxPortfolios = (
   profile: UserProfile | SimpleUserProfile | null,
 ): number => {
-  if (!profile) return 2; // Free 기본값
+  if (!profile) return 3; // Free 기본값
   const tier = getEffectiveSubscription(profile).tier;
   if (tier === "premium") return 20;
   if (tier === "pro") return 5;
@@ -184,7 +184,7 @@ export const getMaxPortfolios = (
   const explicit = profile.max_portfolios;
   if (typeof explicit === "number") return explicit;
 
-  return 2;
+  return 3;
 };
 
 /**
@@ -193,15 +193,15 @@ export const getMaxPortfolios = (
  * @returns 최대 알람 개수
  *
  * 기본 규칙:
- * - 프로필 없음        → Free 기본값 2개
+ * - 프로필 없음        → Free 기본값 4개
  * - max_alarms 있음    → 해당 값 사용
  * - Pro/Premium 티어   → 기본 5개
- * - 그 외(Free 등)     → 기본 2개
+ * - 그 외(Free 등)     → 기본 4개
  */
 export const getMaxAlarms = (
   profile: UserProfile | SimpleUserProfile | null,
 ): number => {
-  if (!profile) return 2; // Free 기본값
+  if (!profile) return 4; // Free 기본값
   const tier = getEffectiveSubscription(profile).tier;
   if (tier === "premium") return 40;
   if (tier === "pro") return 10;
@@ -209,7 +209,7 @@ export const getMaxAlarms = (
   const explicit = profile.max_alarms;
   if (typeof explicit === "number") return explicit;
 
-  return 2;
+  return 4;
 };
 
 /**

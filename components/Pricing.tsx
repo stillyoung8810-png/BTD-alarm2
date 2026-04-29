@@ -61,6 +61,9 @@ const AI_PREVIEW_STACK_MASK_IMAGE_STYLES: CSSProperties = {
   maskPosition: 'center',
 };
 
+const SHOULD_SHOW_MEMBERSHIP_PRICING_CARDS = false;
+const SHOULD_SHOW_PRICING_TELEGRAM_SECTION = false;
+
 interface PricingProps {
   lang: AppLang;
   currentTier: string;
@@ -742,21 +745,25 @@ export default function Pricing({
       </div>
 
       <div className="max-w-5xl mx-auto px-4">
-        <PricingHero copy={copy.hero} />
+        {SHOULD_SHOW_MEMBERSHIP_PRICING_CARDS && (
+          <>
+            <PricingHero copy={copy.hero} />
 
-        <section className="grid gap-6 md:grid-cols-2 max-w-4xl mx-auto">
-          {copy.tiers.map((tier) => (
-            <TierCard
-              key={tier.id}
-              tier={tier}
-              lang={lang}
-              currentTier={currentTier}
-              copy={copy}
-              isInTossApp={isInTossApp}
-              onUpgrade={handleUpgrade}
-            />
-          ))}
-        </section>
+            <section className="grid gap-6 md:grid-cols-2 max-w-4xl mx-auto">
+              {copy.tiers.map((tier) => (
+                <TierCard
+                  key={tier.id}
+                  tier={tier}
+                  lang={lang}
+                  currentTier={currentTier}
+                  copy={copy}
+                  isInTossApp={isInTossApp}
+                  onUpgrade={handleUpgrade}
+                />
+              ))}
+            </section>
+          </>
+        )}
 
         <PricingAiSection
           copy={copy.sections.ai}
@@ -764,11 +771,13 @@ export default function Pricing({
           onAdvance={handleAdvanceAiPreview}
         />
 
-        <PricingTelegramSection
-          copy={copy.sections.telegram}
-          activeIndex={telegramPreviewIndex}
-          onAdvance={handleAdvanceTelegramPreview}
-        />
+        {SHOULD_SHOW_PRICING_TELEGRAM_SECTION && (
+          <PricingTelegramSection
+            copy={copy.sections.telegram}
+            activeIndex={telegramPreviewIndex}
+            onAdvance={handleAdvanceTelegramPreview}
+          />
+        )}
       </div>
     </div>
   );

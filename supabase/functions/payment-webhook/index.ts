@@ -319,8 +319,8 @@ serve(async (req: Request) => {
             subscription_expires_at: null,
             pending_plan: null,
             pending_plan_effective_at: null,
-            max_portfolios: 2,
-            max_alarms: 2,
+            max_portfolios: 3,
+            max_alarms: 4,
             updated_at: new Date().toISOString(),
           })
           .eq("id", order.user_id);

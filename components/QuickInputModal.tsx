@@ -23,6 +23,7 @@ import {
   parseTradeNumericInput,
   shouldWarnTradeBudgetExceeded,
 } from '../src/utils/tradeModalCalculations';
+import { MINIAPP_MODAL_LAYOUT } from './ui/constants';
 
 const EMPTY_STOCK_BADGE = {
   gradient: 'linear-gradient(135deg, #2563eb, #1e40af)',
@@ -242,11 +243,13 @@ export default function QuickInputModal({
     }
   }
 
-  const shouldWarnBudget = shouldWarnTradeBudgetExceeded({
-    tradeType,
-    totalSettlement: preview.totalSettlement,
-    dailyBuyAmount: portfolio.dailyBuyAmount,
-  });
+  const shouldWarnBudget =
+    !isVrStrategy &&
+    shouldWarnTradeBudgetExceeded({
+      tradeType,
+      totalSettlement: preview.totalSettlement,
+      dailyBuyAmount: portfolio.dailyBuyAmount,
+    });
   const budgetWarningMessage = shouldWarnBudget
     ? copy.helper.budgetExceededDetail(
         formatUsd(portfolio.dailyBuyAmount),
@@ -429,15 +432,15 @@ const QuickInputModalView = React.memo(function QuickInputModalView({
   );
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+    <div className={`${MINIAPP_MODAL_LAYOUT.overlay} z-[120]`}>
       <button
         type="button"
         aria-label={backdropAriaLabel}
         onClick={onClose}
         className="absolute inset-0 bg-slate-900/50 backdrop-blur-md"
       />
-      <div className="relative z-[121] flex w-full max-w-md flex-col overflow-hidden rounded-[2.5rem] border border-slate-200 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-200 p-6">
+      <div className={`${MINIAPP_MODAL_LAYOUT.panel} z-[121] max-w-md rounded-[2.5rem] border border-slate-200 bg-white shadow-2xl`}>
+        <div className={`${MINIAPP_MODAL_LAYOUT.header} flex items-center justify-between border-b border-slate-200 p-6`}>
           <div className="flex-1">
             <div className="mb-1 flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 shadow-lg">
@@ -461,7 +464,7 @@ const QuickInputModalView = React.memo(function QuickInputModalView({
           </button>
         </div>
 
-        <div className="flex-1 space-y-6 overflow-y-auto p-6">
+        <div className={`${MINIAPP_MODAL_LAYOUT.body} space-y-6 p-6`}>
           <div className="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
             <AlertCircle className="shrink-0 text-amber-500" size={18} />
             <div className="text-[11px] font-bold leading-snug text-amber-700">
@@ -636,7 +639,7 @@ const QuickInputModalView = React.memo(function QuickInputModalView({
           ) : null}
         </div>
 
-        <div className="flex gap-4 border-t border-slate-200 bg-slate-50 p-6">
+        <div className={`${MINIAPP_MODAL_LAYOUT.footer} flex gap-4 border-t border-slate-200 bg-slate-50 px-6 pt-6`}>
           <button
             type="button"
             onClick={onClose}

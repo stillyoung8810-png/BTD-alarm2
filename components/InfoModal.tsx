@@ -1,6 +1,7 @@
 import React from 'react';
 import { X } from 'lucide-react';
 import { handlePressEnterOrSpace } from '@/src/utils/a11yHelpers';
+import { MINIAPP_MODAL_LAYOUT } from './ui/constants';
 
 interface InfoModalProps {
   open: boolean;
@@ -24,7 +25,7 @@ export default function InfoModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[220] flex items-center justify-center p-4">
+    <div className={`${MINIAPP_MODAL_LAYOUT.overlay} z-[220]`}>
       <div
         role="button"
         tabIndex={0}
@@ -35,8 +36,8 @@ export default function InfoModal({
         }}
         className="absolute inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-md"
       />
-      <div className="relative w-full max-w-sm bg-white dark:bg-[#161d2a] rounded-[2rem] border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden">
-        <div className="p-6 flex items-start justify-between gap-4 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/40">
+      <div className={`${MINIAPP_MODAL_LAYOUT.panel} max-w-sm rounded-[2rem] border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#161d2a]`}>
+        <div className={`${MINIAPP_MODAL_LAYOUT.header} flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-50 p-6 dark:border-white/10 dark:bg-slate-900/40`}>
           <div>
             <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">
               {badgeLabel}
@@ -53,13 +54,13 @@ export default function InfoModal({
           </button>
         </div>
 
-        <div className="p-6">
+        <div className={`${MINIAPP_MODAL_LAYOUT.body} p-6`}>
           <p className="text-sm font-bold text-slate-700 dark:text-slate-200 leading-relaxed">
             {message}
           </p>
         </div>
 
-        <div className="p-6 pt-0">
+        <div className={`${MINIAPP_MODAL_LAYOUT.footer} px-6 pt-0`}>
           <button
             type="button"
             onClick={onClose}

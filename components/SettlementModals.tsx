@@ -205,7 +205,7 @@ const Result: React.FC<ResultProps> = ({ lang, result, onClose }) => {
         className="relative flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-2xl dark:border-white/5 dark:bg-[#161d2a] dark:shadow-2xl"
         style={{ touchAction: 'pan-y' }}
       >
-        <div className="flex items-center justify-between border-b border-slate-200 p-6 pb-2 md:p-8 dark:border-white/5">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-200 p-6 pb-2 md:p-8 dark:border-white/5">
           <h2 className="text-xl font-bold text-slate-900 dark:text-white md:text-2xl">
             {lang === 'ko' ? '정산 결과' : 'Settlement Result'}
           </h2>
@@ -219,7 +219,7 @@ const Result: React.FC<ResultProps> = ({ lang, result, onClose }) => {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto overscroll-contain p-6 md:p-8">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-6 md:p-8">
           <div className="space-y-6 rounded-[1.5rem] border border-slate-200 bg-slate-50 p-8 dark:border-white/5 dark:bg-[#111827]">
             <h3 className="mb-6 text-lg font-bold text-slate-900 dark:text-white">
               {lang === 'ko' ? '정산 결과' : 'Settlement Result'}
@@ -264,7 +264,7 @@ const Result: React.FC<ResultProps> = ({ lang, result, onClose }) => {
           </div>
         </div>
 
-        <div className="border-t border-slate-200 p-8 pt-4 dark:border-white/5">
+        <div className="shrink-0 border-t border-slate-200 px-8 pt-4 pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)] dark:border-white/5">
           <button
             type="button"
             onClick={onClose}

@@ -28,6 +28,7 @@ import { TdsAlertDialog } from './tds-adapter/TdsAlertDialog';
 import { getPricingMessages } from '../constants/messages/pricingMessages';
 import { showErrorToast } from './tds-adapter/showErrorToast';
 import { LegalDisclaimer } from './common/LegalDisclaimer';
+import { MINIAPP_MODAL_LAYOUT } from './ui/constants';
 
 // ---------------------------------------------------------------------------
 // 플랜 카드 스타일 (시각만; 카피는 paymentCheckoutMessages)
@@ -207,7 +208,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   const modalBody = (
     <>
-      <div className="p-6 border-b border-slate-200 dark:border-white/5 flex justify-between items-center bg-slate-50 dark:bg-[#0B0F19]">
+      <div className={`${MINIAPP_MODAL_LAYOUT.header} flex items-center justify-between border-b border-slate-200 bg-slate-50 p-6 dark:border-white/5 dark:bg-[#0B0F19]`}>
         <h2 className="text-lg font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
           <span className="text-xl">{'<'}</span>
           {messages.ORDER_SUMMARY}
@@ -220,7 +221,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
         </div>
       </div>
 
-      <div className="overflow-y-auto max-h-[calc(100vh-8rem)] p-6 space-y-6">
+      <div className={`${MINIAPP_MODAL_LAYOUT.body} space-y-6 p-6`}>
         <div className={`p-5 rounded-2xl border ${PLAN_STYLES[TOSS_IAP_FIXED_PLAN_ID].card}`}>
           <div className="flex items-center gap-3 mb-4">
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${PLAN_STYLES[TOSS_IAP_FIXED_PLAN_ID].iconBg}`}>

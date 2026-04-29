@@ -41,3 +41,12 @@ export const MODAL = {
   body: 'p-6 md:p-10 flex-1 overflow-y-auto overscroll-contain',
   closeButton: 'p-2 hover:bg-slate-100 dark:hover:bg-white/5 rounded-full text-slate-500 dark:text-slate-400 transition-colors',
 } as const;
+
+export const MINIAPP_MODAL_LAYOUT = {
+  overlay:
+    'fixed inset-0 flex min-h-[100dvh] items-center justify-center px-4 pt-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)]',
+  panel: 'relative flex min-h-0 max-h-full w-full flex-col overflow-hidden',
+  header: 'shrink-0',
+  body: 'min-h-0 flex-1 overflow-y-auto overscroll-contain',
+  footer: 'shrink-0 pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)]',
+} as const;

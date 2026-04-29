@@ -4,20 +4,13 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, '.'),
+      '@': path.resolve(__dirname, '..'),
     },
   },
   test: {
     globals: true,
-    environment: 'jsdom',
-    include: [
-      'utils/**/*.test.ts',
-      '__tests__/**/*.test.ts',
-      'components/**/*.test.tsx',
-      'src/components/**/*.test.ts',
-      'hooks/**/*.test.ts',
-      'hooks/**/*.test.tsx',
-    ],
+    environment: 'node',
+    include: ['docs2/miniapp_modal_layout_simulation.test.ts'],
     exclude: [
       '**/dist/**',
       '**/node_modules/**',
@@ -33,4 +26,3 @@ export default defineConfig({
     },
   },
 });
-

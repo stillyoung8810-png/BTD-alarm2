@@ -31,6 +31,7 @@ import {
   shiftMonthDateKey,
   shouldWarnTradeBudgetExceeded,
 } from '../src/utils/tradeModalCalculations';
+import { MINIAPP_MODAL_LAYOUT } from './ui/constants';
 
 const EMPTY_STOCK_BADGE = {
   gradient: 'linear-gradient(135deg, #2563eb, #1e40af)',
@@ -210,6 +211,7 @@ export default function TradeExecutionModal({
 
   const buyStocks = useMemo(() => getTradeExecutionBuyStocks(portfolio), [portfolio]);
   const sellableStocks = useMemo(() => getSellableStocks(portfolio), [portfolio]);
+  const isTvcStrategy = portfolio.strategy.vrBand != null;
   const isSmartSplit = portfolio.strategy.multiSplit != null;
   const isNoStopMultiSplit = portfolio.strategy.noStopMultiSplit != null;
 
@@ -307,11 +309,13 @@ export default function TradeExecutionModal({
     }
   }
 
-  const shouldWarnBudget = shouldWarnTradeBudgetExceeded({
-    tradeType,
-    totalSettlement,
-    dailyBuyAmount: portfolio.dailyBuyAmount,
-  });
+  const shouldWarnBudget =
+    !isTvcStrategy &&
+    shouldWarnTradeBudgetExceeded({
+      tradeType,
+      totalSettlement,
+      dailyBuyAmount: portfolio.dailyBuyAmount,
+    });
   const budgetWarningMessage = shouldWarnBudget
     ? copy.helper.budgetExceededDetail(
         formatUsd(portfolio.dailyBuyAmount),
@@ -549,15 +553,15 @@ const TradeExecutionModalView = React.memo(function TradeExecutionModalView({
     tradeType === 'sell' && !isNoStopMultiSplit && !isSmartSplit;
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+    <div className={`${MINIAPP_MODAL_LAYOUT.overlay} z-[120]`}>
       <button
         type="button"
         aria-label={backdropAriaLabel}
         onClick={onClose}
         className="absolute inset-0 bg-slate-900/50 backdrop-blur-md"
       />
-      <div className="relative z-[121] flex w-full max-w-2xl flex-col overflow-hidden rounded-[2.5rem] border border-slate-200 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 p-6">
+      <div className={`${MINIAPP_MODAL_LAYOUT.panel} z-[121] max-w-2xl rounded-[2.5rem] border border-slate-200 bg-white shadow-2xl`}>
+        <div className={`${MINIAPP_MODAL_LAYOUT.header} flex items-center justify-between border-b border-slate-200 bg-slate-50 p-6`}>
           <h2 className="text-xl font-black text-slate-900">{title}</h2>
           <button
             type="button"
@@ -569,7 +573,7 @@ const TradeExecutionModalView = React.memo(function TradeExecutionModalView({
           </button>
         </div>
 
-        <div className="flex-1 space-y-6 overflow-y-auto p-6">
+        <div className={`${MINIAPP_MODAL_LAYOUT.body} space-y-6 p-6`}>
           <div className="flex rounded-[1.5rem] border border-slate-200 bg-slate-100 p-1.5">
             <button
               type="button"
@@ -864,7 +868,7 @@ const TradeExecutionModalView = React.memo(function TradeExecutionModalView({
           ) : null}
         </div>
 
-        <div className="flex gap-4 border-t border-slate-200 bg-slate-50 p-6">
+        <div className={`${MINIAPP_MODAL_LAYOUT.footer} flex gap-4 border-t border-slate-200 bg-slate-50 px-6 pt-6`}>
           <button
             type="button"
             onClick={onClose}

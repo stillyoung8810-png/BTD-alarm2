@@ -4,6 +4,18 @@ import type { PluginOption } from 'vite';
 import react from '@vitejs/plugin-react';
 import { visualizer } from 'rollup-plugin-visualizer';
 
+const CLIENT_ENV_PREFIXES = [
+  'VITE_BACKTEST_',
+  'VITE_FIREBASE_',
+  'VITE_GEMINI_',
+  'VITE_PLAN_AMOUNT_',
+  'VITE_RAILWAY_',
+  'VITE_SITE_',
+  'VITE_SUPABASE_',
+  'VITE_TELEGRAM_',
+  'VITE_TOSS_',
+] as const;
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   const isAnalyze = mode === 'analyze';
@@ -21,6 +33,7 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
+    envPrefix: [...CLIENT_ENV_PREFIXES],
     server: {
       port: 5173,
       host: 'localhost',

@@ -26,7 +26,7 @@
 - 현재 정책상 배너는 **무료 경험에서만** 노출하지만, 그 판단은 `TossInlineBanner` 내부가 아니라 **상위 정책 계층이 계산한 `shouldShowAd` / `shouldShowAds` boolean** 으로만 전달합니다.
 - 디자인 정책은 마켓 탭과 동일하게 **`theme: 'auto'`, `tone: 'grey'`, `variant: 'card'`** 로 고정합니다.
 - 배너 형식은 토스 가이드의 **리스트형 배너 고정형**을 따르며, **권장 높이 96px**을 고정 슬롯으로 확보합니다.
-- 투자 이력 탭 배너용 광고 그룹은 콘솔 라이브 ID **`ait.v2.live.59f9f0b02a5b4114`** 를 SSOT로 보관하되, **비프로덕션 빌드에서는 토스 공식 리스트형 테스트 ID `ait-ad-test-banner-id` 가 자동 선택**되도록 런타임 실드를 둡니다.
+- 투자 이력 탭 배너용 광고 그룹은 콘솔 라이브 ID **`ait.v2.live.59f9f0b02a5b4114`** 를 SSOT로 보관하되, **비프로덕션 빌드에서는 빈 광고 ID가 선택**되도록 런타임 실드를 둡니다.
 - `History.tsx` 안에서 `h-[96px]` 같은 리터럴을 JSX에 직접 뿌리지 않고, **이름 있는 상수**로 분리해 intent를 고정합니다.
 - 배너 SDK 초기화/부착 로직은 기존 `useTossBanner` + `attachTossAdsBanner` 경로를 재사용합니다. `History.tsx`에서 SDK를 직접 다루지 않습니다.
 
@@ -41,7 +41,7 @@
 
 가이드에서 이번 설계에 직접 영향을 주는 핵심 규칙은 다음과 같습니다.
 
-- 토스 문서상 리스트형 배너 테스트 ID는 **`ait-ad-test-banner-id`** 이며, 비프로덕션 빌드에서는 이 값을 기본으로 사용해야 라이브 광고 어뷰징 리스크를 막을 수 있습니다([BannerAd](https://developers-apps-in-toss.toss.im/bedrock/reference/framework/%EA%B4%91%EA%B3%A0/BannerAd.html)).
+- 비프로덕션 빌드에서는 라이브 광고 호출을 막기 위해 배너 광고 ID를 빈 문자열로 반환합니다.
 - `TossAds.attachBanner` 대상 엘리먼트 내부는 **비어 있어야** 합니다.
 - 컨테이너 `width`는 항상 **`100%`** 여야 합니다.
 - 고정형 리스트 배너는 **`height: 96px` 권장** 입니다.
@@ -80,7 +80,7 @@ flowchart TD
 - **정책/표현 분리**: 광고 노출 자격은 상위에서 `shouldShowAd` boolean 으로 계산하고, `TossInlineBanner.tsx` 는 그 값을 받아 렌더링만 담당합니다.
 - **SRP 유지**: `History.tsx` 는 위치 결정과 prop 연결만 담당하고, SDK 부착 세부사항은 `TossInlineBanner.tsx` 가 계속 담당합니다.
 - **OCP 유지**: `TossInlineBanner.tsx` 에 `containerClassName` 을 추가하여, 마켓 탭의 인라인 배너 동작은 그대로 두고 투자 이력 화면만 고정형으로 확장합니다. 동시에 `currentTier` 의 도메인 의존성을 제거해, 향후 엔터프라이즈·B2B 무료 예외가 생겨도 UI 컴포넌트 수정 없이 정책층만 확장되게 합니다.
-- **런타임 실드 필수**: 라이브 배너 ID를 직접 export 하지 않고, `import.meta.env` 기반 해석 함수를 통해 **프로덕션만 라이브 ID**, 그 외는 **공식 테스트 ID** 로 강제합니다.
+- **런타임 실드 필수**: 라이브 배너 ID를 직접 export 하지 않고, 빌드 모드 기반 해석 함수를 통해 **프로덕션만 라이브 ID**, 그 외는 **빈 ID** 로 강제합니다.
 - **Strict TS 유지**: 현재 `TossInlineBanner.tsx` 의 `any` 콜백 타입은 문서 스니펫에서 제거합니다.
 - **레이아웃 안정성**: 고정형 리스트 배너는 슬롯 높이를 먼저 확보해야 하므로, `attachBanner` 대상 엘리먼트 자체에 `h-[96px] min-h-[96px]` 클래스를 적용합니다.
 - **스타일 일관성**: 인라인 `style` 객체로 여백을 주지 않고, Tailwind 클래스(`my-6`, `w-full`)로 시스템 레이아웃과 합류시킵니다.
@@ -100,8 +100,7 @@ flowchart TD
 ### 5.2 `services/ads/adPlacements.ts`
 
 ```ts
-import { parseViteBooleanEnvFlag } from '@/utils/envViteFlags';
-import { getViteImportMetaEnv, isViteProdBuild } from '@/utils/viteImportMetaEnv';
+import { isViteProdBuild } from '@/utils/viteImportMetaEnv';
 
 /**
  * 광고 플레이스먼트 ID 단일 소스.
@@ -111,34 +110,18 @@ import { getViteImportMetaEnv, isViteProdBuild } from '@/utils/viteImportMetaEnv
 /** 전면형 광고 그룹 ID (콘솔 전면형 · 운영 빌드) */
 export const INTERSTITIAL_LIVE_AD_GROUP_ID = 'ait.v2.live.3f570e10ec374139';
 
-/** 배너형 광고 그룹 ID (콘솔 배너형 - 이미지 강조) */
-export const BANNER_AD_GROUP_ID = 'ait.v2.live.b1d77d31f3b14d57';
-
-/** @see https://developers-apps-in-toss.toss.im/bedrock/reference/framework/%EA%B4%91%EA%B3%A0/BannerAd.html */
-export const TOSS_LIST_BANNER_TEST_AD_GROUP_ID = 'ait-ad-test-banner-id';
-
 /** 투자 이력 탭 배너 광고 그룹 ID (콘솔 발급 · 라이브). */
 export const HISTORY_BANNER_LIVE_AD_GROUP_ID = 'ait.v2.live.59f9f0b02a5b4114';
 
 /**
- * 비프로덕션에서는 테스트 ID를 기본값으로 강제해 라이브 광고 트래픽 오염을 막습니다.
- * 필요 시 `.env`의 `VITE_TOSS_HISTORY_BANNER_USE_TEST=true` 로 프로덕션에서도 테스트 ID를 강제할 수 있습니다.
+ * 비프로덕션에서는 빈 ID를 반환해 라이브 광고 호출을 막습니다.
  */
 export function getResolvedHistoryBannerAdGroupId(): string {
-  const env = getViteImportMetaEnv();
-  const useTest = parseViteBooleanEnvFlag(
-    env?.VITE_TOSS_HISTORY_BANNER_USE_TEST,
-  );
-
-  if (useTest) {
-    return TOSS_LIST_BANNER_TEST_AD_GROUP_ID;
-  }
-
   if (isViteProdBuild()) {
     return HISTORY_BANNER_LIVE_AD_GROUP_ID;
   }
 
-  return TOSS_LIST_BANNER_TEST_AD_GROUP_ID;
+  return '';
 }
 
 /** 보상형 광고 AI인식 그룹 ID (콘솔 보상형 광고 AI인식) */
@@ -148,7 +131,7 @@ export const REWARD_UNLOCK_AI_AD_GROUP_ID = 'ait.v2.live.f71d668772bf4bf4';
 설계 메모:
 
 - 기존 배너/전면/보상형 ID 구조를 그대로 따릅니다.
-- 이 저장소는 이미 interstitial에서 `parseViteBooleanEnvFlag()` + `getViteImportMetaEnv()` + `isViteProdBuild()` 패턴을 사용하므로, 배너도 같은 방식을 재사용해야 일관됩니다.
+- 출시 심사 안정성을 위해 배너 테스트 ID 문자열은 제품 코드와 계획서에 보관하지 않습니다.
 - `process.env.NODE_ENV` 기반 예시는 이 Vite 저장소의 실제 패턴과 어긋나므로, 계획서 스니펫에서는 채택하지 않습니다.
 - 개발·로컬·QR 테스트 빌드에서 실수로 라이브 광고를 호출하는 것을 원천 차단하려면, “라이브 상수 직접 사용” 대신 “해석 함수만 사용” 계약이 안전합니다.
 
@@ -191,7 +174,6 @@ declare global {
     readonly VITE_BACKTEST_NO_STOP_MULTI_URL?: string;
 
     readonly VITE_TOSS_INTERSTITIAL_USE_TEST?: BooleanEnvFlag;
-    readonly VITE_TOSS_HISTORY_BANNER_USE_TEST?: BooleanEnvFlag;
   }
 
   interface ImportMeta {
@@ -202,8 +184,7 @@ declare global {
 
 설계 메모:
 
-- 새로운 env key를 선언하지 않으면 `env?.VITE_TOSS_HISTORY_BANNER_USE_TEST` 가 타입 계약 밖으로 밀려 strict TS 일관성이 깨집니다.
-- 프로젝트가 이미 `BooleanEnvFlag` 를 쓰고 있으므로 동일 규약으로 맞춥니다.
+- 배너 테스트 env key는 두지 않습니다. 제품 번들에 테스트 광고 ID 경로가 남지 않게 하는 것이 출시 심사 안정성에 더 유리합니다.
 
 ### 5.4 `components/TossInlineBanner.tsx`
 
@@ -871,11 +852,11 @@ const shouldShowAds = currentTier === 'free';
 
 ## 6. 반영 순서
 
-1. `services/ads/adPlacements.ts` 에 테스트/라이브 배너 ID와 `getResolvedHistoryBannerAdGroupId()` 추가  
-   검증: 비프로덕션 기본값이 테스트 ID, 프로덕션 기본값이 라이브 ID인지 확인
+1. `services/ads/adPlacements.ts` 에 라이브 배너 ID와 `getResolvedHistoryBannerAdGroupId()` 추가  
+   검증: 비프로덕션 기본값이 빈 ID, 프로덕션 기본값이 라이브 ID인지 확인
 
-2. `vite-env.d.ts` 에 `VITE_TOSS_HISTORY_BANNER_USE_TEST` 선언 추가  
-   검증: env 키 접근이 strict TS 계약 안에 들어오는지 확인
+2. 배너 테스트 env 키를 추가하지 않음  
+   검증: 제품 코드에 배너 테스트 광고 ID 문자열이 남지 않는지 확인
 
 3. `components/TossInlineBanner.tsx` 에 `containerClassName` 지원 및 `any` 제거  
    검증: 마켓 탭 호출부 수정 없이 타입 에러가 없는지 확인
@@ -896,9 +877,8 @@ const shouldShowAds = currentTier === 'free';
 시나리오 A. **광고 허용 정책(`shouldShowAds === true`) + 토스 앱 + 비프로덕션 빌드 + 투자 이력 0건**
 
 - `TabContent` 가 상위 정책식에서 `shouldShowAds === true` 를 계산해 `History` 로 전달합니다.
-- `History` 는 `getResolvedHistoryBannerAdGroupId()` 로 테스트 ID를 받고, `StatCard` 아래에 `TossInlineBanner` 를 먼저 렌더링한 뒤 그 아래에 Empty State 를 렌더링합니다.
-- `TossInlineBanner` 는 `attachBanner` 대상 div 에 `w-full h-[96px] min-h-[96px]` 를 적용한 뒤 `theme: 'auto'`, `tone: 'grey'`, `variant: 'card'` 로 부착을 시도합니다.
-- 결과: 빈 상태 여부와 무관하게 고정형 리스트 배너 슬롯이 먼저 확보되고, 라이브 광고 ID는 호출되지 않습니다.
+- `History` 는 `getResolvedHistoryBannerAdGroupId()` 로 빈 ID를 받고, `TossInlineBanner` 는 광고 부착 없이 `null` 을 반환합니다.
+- 결과: 라이브 광고 ID도 테스트 광고 ID도 호출되지 않습니다.
 
 시나리오 B. **광고 허용 정책(`shouldShowAds === true`) + 토스 앱 + 프로덕션 빌드 + 투자 이력 N건**
 
@@ -920,8 +900,8 @@ const shouldShowAds = currentTier === 'free';
 - **TS 리스크 2**: 현재 `TossInlineBanner.tsx` 의 `any` 콜백은 팀 규칙과 충돌합니다.  
   → `TossAdsBannerCallbackPayload` 로 대체합니다.
 
-- **TS 리스크 3**: 새 env 키를 선언하지 않으면 `import.meta.env` 접근이 타입 계약 밖으로 밀려납니다.  
-  → `vite-env.d.ts` 스니펫을 함께 반영합니다.
+- **TS 리스크 3**: 배너 테스트 env 키를 남기면 테스트 광고 ID 경로를 다시 열 수 있습니다.  
+  → 배너 테스트 env 키를 선언하지 않습니다.
 
 - **레이아웃 리스크 1**: 높이를 outer wrapper 가 아니라 attach 대상 div 에 주지 않으면 고정형 배너 슬롯이 정확히 확보되지 않을 수 있습니다.  
   → `containerClassName` 을 inner div 에 적용합니다.
@@ -933,7 +913,7 @@ const shouldShowAds = currentTier === 'free';
   → 정책 판단은 상위의 `shouldShowAds` 계산으로 올리고, 배너 UI는 boolean 명령만 받습니다.
 
 - **운영 리스크 1**: 로컬·QA 빌드에서 라이브 광고 ID가 직접 붙으면 토스 정책 위반 및 계정 리스크가 생길 수 있습니다.  
-  → `getResolvedHistoryBannerAdGroupId()` 가 비프로덕션 기본값을 테스트 ID로 강제합니다.
+  → `getResolvedHistoryBannerAdGroupId()` 가 비프로덕션 기본값을 빈 ID로 강제합니다.
 
 - **가드레일 1**: `History.tsx` 는 이미 Strategy/정산 표시용 VM을 만들고 있으므로, 배너 추가를 빌미로 Strategy 구조 의존성을 더 늘리면 안 됩니다.  
   → 배너는 독립 슬롯으로만 삽입하고 기존 VM 계산과 교차시키지 않습니다.
@@ -943,6 +923,6 @@ const shouldShowAds = currentTier === 'free';
 ## 9. Mental Compile 결과
 
 - `TossInlineBanner` 가 `shouldShowAd` boolean 만 받도록 바뀌면 정책/UI 경계가 분리되고, `History.tsx` 와 `TabContent.tsx` 는 단순 prop 계약만 맞추면 됩니다.
-- `getResolvedHistoryBannerAdGroupId()` 가 interstitial와 동일한 env 해석 패턴을 재사용하므로, 이 저장소 기준에서 환경 분리 방식도 일관됩니다.
+- `getResolvedHistoryBannerAdGroupId()` 가 프로덕션 여부만 확인하므로, 배너 테스트 ID 문자열이 제품 코드에 남지 않습니다.
 - 고정형 슬롯 높이를 `TossInlineBanner` 의 attach 대상 div 에 주고, wrapper 여백도 Tailwind 클래스로 처리하므로 인라인 스타일 기반 레이아웃 흔들림 가능성이 낮습니다.
 - `interstitialPlacementConfig.ts` 를 건드리지 않고 `adPlacements.ts` 를 확장하므로, 기존 전면 광고 프리로드/노출 시스템과 충돌하지 않습니다.

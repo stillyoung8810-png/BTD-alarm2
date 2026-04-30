@@ -41,6 +41,7 @@ interface MockProfileRow {
 
 interface MockAuthUserState {
   user_metadata: Record<string, unknown>;
+  password?: string;
 }
 
 interface MockFilter {
@@ -418,9 +419,16 @@ describe('AuthService', () => {
     }));
 
     mockUpdateUserById.mockImplementation(
-      async (authUserId: string, payload: { user_metadata?: Record<string, unknown> }) => {
+      async (
+        authUserId: string,
+        payload: { user_metadata?: Record<string, unknown>; password?: string },
+      ) => {
+        const currentUserState = state.authUsersById[authUserId] ?? {
+          user_metadata: {},
+        };
         state.authUsersById[authUserId] = {
-          user_metadata: payload.user_metadata ?? {},
+          user_metadata: payload.user_metadata ?? currentUserState.user_metadata,
+          password: payload.password ?? currentUserState.password,
         };
 
         return {
@@ -512,7 +520,13 @@ describe('AuthService', () => {
       });
       expect(mockCreateUser).not.toHaveBeenCalled();
       expect(mockGetUserById).toHaveBeenCalledWith('existing-user-uuid');
-      expect(mockUpdateUserById).toHaveBeenCalledTimes(1);
+      expect(mockUpdateUserById).toHaveBeenCalledTimes(2);
+      expect(mockUpdateUserById).toHaveBeenCalledWith(
+        'existing-user-uuid',
+        expect.objectContaining({
+          password: expect.stringMatching(/^TossLogin_/),
+        }),
+      );
 
       const refreshLinkInsert = state.inserts.find((entry) => entry.table === 'toss_auth_links');
       expect(refreshLinkInsert).toBeDefined();
@@ -533,6 +547,9 @@ describe('AuthService', () => {
       const metadata = state.authUsersById['existing-user-uuid']?.user_metadata ?? {};
       expect(metadata.toss_user_key).toBe('123');
       expect(metadata.toss_email_encrypted).toBe('encrypted@example.com');
+      expect(state.authUsersById['existing-user-uuid']?.password).toEqual(
+        expect.stringMatching(/^TossLogin_/),
+      );
     });
 
     it('필수 약관이 하나라도 없으면 DB 작업 전에 fail-closed 한다', async () => {
@@ -587,6 +604,12 @@ describe('AuthService', () => {
         email: 'toss_123@toss.placeholder',
         password: expect.any(String),
       });
+      expect(mockUpdateUserById).toHaveBeenCalledWith(
+        'existing-user-uuid',
+        expect.objectContaining({
+          password: expect.stringMatching(/^TossLogin_/),
+        }),
+      );
 
       const tossAccountUpsert = state.upserts.find((entry) => entry.table === 'toss_accounts');
       expect(tossAccountUpsert).toBeDefined();

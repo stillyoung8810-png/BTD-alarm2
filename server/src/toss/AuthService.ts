@@ -433,11 +433,25 @@ async function syncOptionalTossMetadata(
 }
 
 async function signInManagedTossUser(
+  authUserId: string,
   tossUserKey: string,
   log: RequestLogger,
 ): Promise<TossSessionResponse> {
   const email = tossEmailFromUserKey(tossUserKey);
   const password = managedPassword(email);
+
+  const { error: passwordSyncError } = await supabaseAdmin.auth.admin.updateUserById(authUserId, {
+    password,
+  });
+
+  if (passwordSyncError != null) {
+    log.error(
+      { passwordSyncError, authUserId, tossUserKey },
+      'signInManagedTossUser: managed password sync failed',
+    );
+    throw new Error('Auth 사용자 비밀번호 동기화 실패');
+  }
+
   // service-role 싱글턴을 로그인 세션으로 오염시키면 이후 self-unlink가 toss_auth_links를 못 읽는다.
   const authClient = createSupabaseAuthClient();
   const { data, error } = await authClient.auth.signInWithPassword({ email, password });
@@ -480,7 +494,7 @@ export async function issueSessionForUser(
     throw new Error('Mapped toss_user_key is required to issue session');
   }
 
-  return signInManagedTossUser(tossUserKey, log);
+  return signInManagedTossUser(authUserId, tossUserKey, log);
 }
 
 async function syncTossLoginState(

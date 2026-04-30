@@ -34,7 +34,7 @@ export function TossInlineBanner(props: TossInlineBannerProps): ReactElement | n
     variant = 'card',
   } = props;
 
-  if (!isInTossApp || !shouldShowAd) {
+  if (!isInTossApp || !shouldShowAd || adGroupId.trim() === '') {
     return null;
   }
 

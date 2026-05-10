@@ -1,0 +1,23 @@
+{
+  "total_count": 600,
+  "files": [
+    {
+      "file": "stock_basics.jsonl",
+      "category": "stock_basic",
+      "count": 200,
+      "review_status": "draft"
+    },
+    {
+      "file": "etf_basics.jsonl",
+      "category": "etf_fund",
+      "count": 200,
+      "review_status": "draft"
+    },
+    {
+      "file": "economy_basics.jsonl",
+      "category": "economic_indicator",
+      "count": 200,
+      "review_status": "draft"
+    }
+  ]
+}

@@ -21,8 +21,8 @@
 | 연속 출석 보너스 | 10회 연속 출석마다 전면광고 시청 후 `10머니` 추가 |
 | 주식 가격 예측 | 1일 기본 1문제, 보상광고로 추가 문제 해금, 하루 최대 5문제 |
 | 주식 상식 퀴즈 | 1일 기본 1문제, 보상광고로 추가 문제 해금, 하루 최대 5문제 |
-| 문제 참여 보상 | 문제 제출 시 무조건 `1머니` |
-| 정답 보상 | 정답 시 `9머니` 추가 지급, 총 `10머니` |
+| 문제 참여 보상 | 가격 예측·상식 퀴즈 제출 완료 시 정답 여부와 무관하게 고정 `5머니` |
+| 정답 결과 | 머니 차등 지급에는 사용하지 않고, 연속 정답·정답률 표시용으로만 사용 |
 | 토스 포인트 받기 | 누적 `1,000머니`마다 토스 포인트 `100P` 지급 요청, 1회 요청 최대 `5,000P` |
 | 광고 | 출석 영역 배너, 문제 완료 전면광고, 추가 문제 해금 보상광고 |
 
@@ -94,7 +94,7 @@
 돈으로 바꾸기
 ```
 
-**출시 게이트**: 토스 검수에서 `머니 누적 후 토스 포인트 받기`, `정답 여부에 따른 머니 차등 지급`, `가격 예측 미션`이 승인되지 않으면 이 기능은 출시하지 않습니다. 구현 단계에서는 feature flag를 기본 `off`로 두고, 검수 승인 전에는 네비게이션 탭도 노출하지 않습니다. 노출 조건은 `feature flag on`, `토스 프로모션 승인`, `승인 광고 그룹 ID 준비`, `서버 API 준비`, `토스 앱 환경`이 모두 참일 때만 통과합니다.
+**출시 게이트**: 토스 검수에서 `머니 누적 후 토스 포인트 받기`, `가격 예측 미션`, `참여 완료 기준 고정 머니 지급`이 승인되지 않으면 이 기능은 출시하지 않습니다. 구현 단계에서는 feature flag를 기본 `off`로 두고, 검수 승인 전에는 네비게이션 탭도 노출하지 않습니다. 노출 조건은 `feature flag on`, `토스 프로모션 승인`, `승인 광고 그룹 ID 준비`, `서버 API 준비`, `토스 앱 환경`이 모두 참일 때만 통과합니다.
 
 ```typescript
 export interface BenefitFeatureGateInput {
@@ -236,12 +236,45 @@ create table benefit_quiz_attempts (
   idempotency_key text not null,
   selected_choice_id text not null,
   is_correct boolean not null,
-  reward_money integer not null check (reward_money >= 0),
+  reward_money integer not null default 5 check (reward_money >= 0),
   answered_at timestamptz not null default now(),
   unique (user_id, attempt_date, attempt_sequence),
   unique (user_id, idempotency_key)
 );
 ```
+
+원장 idempotency는 `source`와 `source_id` 규칙이 흔들리면 바로 깨집니다. 구현 시 아래 값만 사용하고, `source_id`는 빈 문자열을 허용하지 않습니다.
+
+```typescript
+export const BENEFIT_LEDGER_SOURCES = {
+  attendanceBase: 'attendance_base',
+  attendanceStreakBonus: 'attendance_streak_bonus',
+  stockQuizAttempt: 'stock_quiz_attempt',
+  pricePredictionAttempt: 'price_prediction_attempt',
+  tossRedeemDebit: 'toss_redeem_debit',
+  tossRedeemRestore: 'toss_redeem_restore',
+} as const;
+
+export function normalizeBenefitLedgerSourceId(sourceId: string): string {
+  const normalizedSourceId = sourceId.trim();
+  if (normalizedSourceId === '') {
+    throw new Error('sourceId_must_not_be_empty');
+  }
+
+  return normalizedSourceId;
+}
+```
+
+| 보상/차감 | `source` | `source_id` |
+|-----------|----------|-------------|
+| 기본 출석 | `attendance_base` | KST `attendance_date` |
+| 10연속 출석 보너스 | `attendance_streak_bonus` | KST `attendance_date` |
+| 주식 상식 퀴즈 | `stock_quiz_attempt` | `benefit_quiz_attempts.id` |
+| 가격 예측 | `price_prediction_attempt` | `benefit_prediction_attempts.id` |
+| 토스 포인트 받기 차감 | `toss_redeem_debit` | `redeem_request_id` |
+| 토스 포인트 실패 원복 | `toss_redeem_restore` | `redeem_request_id` |
+
+퀴즈와 가격 예측의 `source_id`는 날짜와 회차를 직접 조합하지 않고, 먼저 attempt row를 만든 뒤 생성된 attempt id를 사용합니다. 이렇게 해야 미션 종류가 달라도 원장 번호가 충돌하지 않습니다.
 
 `benefit_mission_daily_states`는 보상광고 해금의 서버 단일 진실입니다. 광고 SDK 이벤트키나 별도 intent는 만들지 않되, 사용자가 광고를 본 뒤 서버가 이 행을 `FOR UPDATE`로 잠그고 `rewarded_ad_unlocks`를 원자적으로 증가시킵니다. 새로고침, 앱 재진입, 네트워크 재시도 후에도 “오늘 몇 문제까지 열렸는지”가 보존되어야 하므로 클라이언트 `boolean`만으로 처리하지 않습니다.
 
@@ -273,7 +306,7 @@ create table benefit_prediction_attempts (
   idempotency_key text not null,
   selected_direction text not null check (selected_direction in ('up', 'down')),
   is_correct boolean,
-  reward_money integer not null default 1 check (reward_money >= 0),
+  reward_money integer not null default 5 check (reward_money >= 0),
   answered_at timestamptz not null default now(),
   settled_at timestamptz,
   unique (user_id, attempt_date, attempt_sequence),
@@ -440,22 +473,16 @@ case 'benefits':
 ```typescript
 export type AnswerOutcome = 'correct' | 'incorrect';
 
-const PARTICIPATION_REWARD_MONEY = 1;
-const CORRECT_BONUS_MONEY = 9;
+const FIXED_ATTEMPT_REWARD_MONEY = 5;
 
 export function calculateAttemptReward(outcome: AnswerOutcome) {
   switch (outcome) {
     case 'correct':
-      return {
-        baseMoney: PARTICIPATION_REWARD_MONEY,
-        bonusMoney: CORRECT_BONUS_MONEY,
-        totalMoney: PARTICIPATION_REWARD_MONEY + CORRECT_BONUS_MONEY,
-      };
     case 'incorrect':
       return {
-        baseMoney: PARTICIPATION_REWARD_MONEY,
+        baseMoney: FIXED_ATTEMPT_REWARD_MONEY,
         bonusMoney: 0,
-        totalMoney: PARTICIPATION_REWARD_MONEY,
+        totalMoney: FIXED_ATTEMPT_REWARD_MONEY,
       };
     default: {
       const _exhaustiveCheck: never = outcome;
@@ -464,6 +491,8 @@ export function calculateAttemptReward(outcome: AnswerOutcome) {
   }
 }
 ```
+
+정답 여부는 연속 정답·정답률 표시와 문제 품질 통계에만 사용합니다. 머니 지급액은 가격 예측과 주식 상식 퀴즈 모두 제출 완료 기준 고정 `5머니`이며, 정답 보너스 `9머니` 정책은 1차 출시 범위에서 제거합니다.
 
 ### 6.4 하루 5문제 제한과 보상광고 해금
 
@@ -658,7 +687,14 @@ const handleClaimAttendanceStreakBonus = useCallback(async (): Promise<void> => 
       return;
     }
 
-    await showInstantAd(INTERSTITIAL_PLACEMENT_KEYS.BENEFIT_ATTENDANCE_STREAK);
+    const hasShownStreakBonusAd = await showInstantAd(
+      INTERSTITIAL_PLACEMENT_KEYS.BENEFIT_ATTENDANCE_STREAK,
+    );
+    if (!hasShownStreakBonusAd) {
+      showErrorToast(copy.streakBonusAdRequired);
+      return;
+    }
+
     await benefitQuestClient.claimAttendanceStreakBonus();
     await reloadAttendanceState();
   } catch {
@@ -675,7 +711,10 @@ const handleClaimAttendanceStreakBonus = useCallback(async (): Promise<void> => 
 ]);
 ```
 
+전면광고 함수가 `false`를 반환하면 사용자가 광고를 완료하지 못한 상태이므로 `/attendance/streak-bonus`를 호출하지 않습니다. 서버도 `hasWatchedInterstitialForStreakBonus`에 해당하는 검증 조건을 만족하지 않으면 보너스 ledger를 만들지 않습니다.
+
 ```tsx
+const NON_BLOCKING_AD_TRIGGER_DELAY_MS = 0;
 const isSubmittingRef = useRef(false);
 
 const handleQuizSubmit = useCallback(async (): Promise<void> => {
@@ -683,23 +722,37 @@ const handleQuizSubmit = useCallback(async (): Promise<void> => {
     return;
   }
 
+  const selectedChoiceId = selectedChoiceIdRef.current;
+  if (selectedChoiceId == null) {
+    showErrorToast(copy.selectChoiceRequired);
+    return;
+  }
+
   isSubmittingRef.current = true;
   try {
-    const result = await benefitQuestClient.submitQuizAnswer(selectedChoiceIdRef.current);
+    const result = await benefitQuestClient.submitQuizAnswer(selectedChoiceId);
     setQuizResult(result);
 
     window.setTimeout(() => {
-      showInstantAd?.(INTERSTITIAL_PLACEMENT_KEYS.BENEFIT_QUIZ_COMPLETE).catch(() => {
-        // 광고 실패가 퀴즈 완료 UX를 망치지 않도록 서버 보상과 분리합니다.
-      });
-    }, 0);
+      void showInstantAd?.(INTERSTITIAL_PLACEMENT_KEYS.BENEFIT_QUIZ_COMPLETE)
+        .catch(() => {
+          // 광고 실패는 이미 확정된 참여 보상을 되돌릴 이유가 아니므로 비차단 처리합니다.
+        });
+    }, NON_BLOCKING_AD_TRIGGER_DELAY_MS);
   } catch {
     showErrorToast(copy.quizSubmitFailed);
   } finally {
     isSubmittingRef.current = false;
   }
-}, [benefitQuestClient, copy.quizSubmitFailed, showInstantAd]);
+}, [
+  benefitQuestClient,
+  copy.quizSubmitFailed,
+  copy.selectChoiceRequired,
+  showInstantAd,
+]);
 ```
+
+`copy.selectChoiceRequired`와 `copy.quizSubmitFailed`는 실제 구현 시 `BENEFIT_MESSAGES` 또는 기존 i18n 사전에 추가합니다. 선택지가 없을 때는 서버 요청을 보내지 않고 사용자에게 먼저 안내합니다.
 
 ### 6.6 배너 광고
 
@@ -716,7 +769,7 @@ const handleQuizSubmit = useCallback(async (): Promise<void> => {
 
 ### 6.7 토스 포인트 받기
 
-서버는 `1,000머니` 단위로만 토스 포인트 지급을 요청합니다. 토스 지급 요청 전 wallet row를 잠그고 `pending` payout과 음수 ledger를 같은 트랜잭션으로 남깁니다. 토스 지급 실패 시에는 복구 ledger로 wallet을 원복합니다.
+서버는 `1,000머니` 단위로만 토스 포인트 지급을 요청합니다. `wallet` row 잠금은 `pending` payout과 음수 ledger를 남기는 짧은 트랜잭션 안에서만 유지합니다. 외부 Toss 지급 API는 DB row lock 밖에서 호출하고, 토스 지급 실패 시에는 별도 트랜잭션으로 복구 ledger를 만들어 wallet을 원복합니다.
 
 토스 포인트 프로모션은 금액별로 여러 개 만들지 않고, 승인된 단일 `promotionCode`를 사용합니다. 실제 지급 포인트는 API 호출 시 `amount`로 전달하며, 이 값은 내부 `머니`가 아니라 토스 포인트 수량입니다. 예를 들어 `1,000머니 -> 100P` 요청이면 `amount = 100`, `50,000머니 -> 5,000P` 요청이면 `amount = 5000`입니다.
 
@@ -725,9 +778,17 @@ const TOSS_POINT_REDEEM_THRESHOLD_MONEY = 1_000;
 const TOSS_POINT_REDEEM_AMOUNT = 100;
 const TOSS_POINT_REDEEM_MAX_POINT_PER_REQUEST = 5_000;
 
+function assertNonNegativeInteger(value: number, fieldName: string): void {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`${fieldName}_must_be_non_negative_integer`);
+  }
+}
+
 export function resolveRedeemRequest(
   currentMoneyBalance: number,
 ) {
+  assertNonNegativeInteger(currentMoneyBalance, 'currentMoneyBalance');
+
   const bundleCountByBalance = Math.floor(
     currentMoneyBalance / TOSS_POINT_REDEEM_THRESHOLD_MONEY,
   );
@@ -825,6 +886,10 @@ export function resolveBenefitWalletBoardSummary(
   lifetimeEarnedMoney: number,
   pendingTossPointAmount: number,
 ): BenefitWalletBoardSummary {
+  assertNonNegativeInteger(currentMoneyBalance, 'currentMoneyBalance');
+  assertNonNegativeInteger(lifetimeEarnedMoney, 'lifetimeEarnedMoney');
+  assertNonNegativeInteger(pendingTossPointAmount, 'pendingTossPointAmount');
+
   const redemption = resolveRedeemRequest(currentMoneyBalance);
   const remainderMoney = currentMoneyBalance % TOSS_POINT_REDEEM_THRESHOLD_MONEY;
   const moneyUntilNextRedeem =
@@ -1031,9 +1096,11 @@ POST /benefits/quiz/attempt
 4. 시작 가능 여부 확인
 5. question_id와 selected_choice_id 검증
 6. 정답 여부 계산
-7. 1머니 기본 지급 + 정답이면 9머니 추가
-8. attempts, ledger, wallet, daily_state.completed_attempts를 동일 트랜잭션으로 저장
-9. 결과, 새 머니 잔액, 최신 daily_state 반환
+7. 정답 여부와 무관하게 고정 5머니 지급
+8. 정답 여부는 연속 정답·정답률 표시와 문제 통계에만 반영
+9. attempts row 생성 후 `source = 'stock_quiz_attempt'`, `source_id = attempt.id` ledger 생성
+10. wallet, daily_state.completed_attempts를 동일 트랜잭션으로 저장
+11. 결과, 새 머니 잔액, 최신 daily_state 반환
 ```
 
 ### 8.2 보상광고 해금
@@ -1087,6 +1154,8 @@ export function resolvePredictionCandidateSymbols(
 }
 ```
 
+가격 예측 제출도 퀴즈와 같은 원장 규칙을 사용합니다. attempt row를 먼저 만들고 `source = 'price_prediction_attempt'`, `source_id = attempt.id`로 고정 5머니 ledger를 생성합니다. 정답 여부는 결과 확정 후 재미 요소와 통계에만 반영하고, 머니 지급액은 변경하지 않습니다.
+
 ### 8.4 출석체크
 
 ```text
@@ -1096,7 +1165,7 @@ POST /benefits/attendance/check-in
 3. 전일 출석 여부로 연속일 계산
 4. 기본 1머니 지급
 5. 10연속이면 streakBonusPending=true 반환
-6. 사용자가 전면광고 시청 완료 후 /attendance/streak-bonus 호출
+6. 클라이언트는 전면광고 함수가 `true`를 반환한 경우에만 /attendance/streak-bonus 호출
 7. 서버는 오늘 `benefit_attendance` 행을 `FOR UPDATE`로 잠금
 8. `streak_bonus_ad_shown = true` 또는 동일 ledger가 이미 있으면 기존 결과 반환
 9. `source = 'attendance_streak_bonus'`, `source_id = attendance_date` ledger로 10머니 지급
@@ -1108,19 +1177,28 @@ POST /benefits/attendance/check-in
 
 ```text
 POST /benefits/toss-point/redeem
+
+트랜잭션 A
 1. 사용자 인증 확인
 2. redeem_request_id 중복이면 기존 payout 상태 반환
 3. wallet row를 `FOR UPDATE` 잠금
 4. `1,000머니 -> 100P`, 1회 최대 `5,000P` 기준으로 지급 가능 금액 계산
 5. 지급 가능 금액이 0이면 차감 없이 거절
 6. `pending` payout 생성
-7. 음수 ledger를 생성하고 wallet.money_balance를 차감
-8. 단일 promotionCode로 토스 지급 API 호출, `amount`에는 차감 머니가 아니라 토스 포인트 수량을 전달
-9. 토스 지급 성공 시 payout을 `success`로 변경하고 toss_reward_key 저장
-10. 토스 지급 실패 시 복구 ledger를 생성하고 wallet.money_balance를 원복한 뒤 payout을 `failed`로 변경
+7. `source = 'toss_redeem_debit'`, `source_id = redeem_request_id` 음수 ledger 생성
+8. wallet.money_balance를 차감하고 commit
+
+외부 호출
+9. 단일 promotionCode로 토스 지급 API 호출
+10. `amount`에는 차감 머니가 아니라 토스 포인트 수량을 전달
+
+트랜잭션 B
+11. 토스 지급 성공 시 payout을 `success`로 변경하고 toss_reward_key 저장
+12. 토스 지급 실패 시 `source = 'toss_redeem_restore'`, `source_id = redeem_request_id` 복구 ledger 생성
+13. 실패 시 wallet.money_balance를 원복한 뒤 payout을 `failed`로 변경
 ```
 
-토스 포인트 지급은 사용자가 직접 보는 돈성 로직이므로 “성공 전 차감하지 않거나 pending으로 잠근다”처럼 선택지를 남기지 않습니다. 서버 구현은 위 순서로 고정합니다.
+토스 포인트 지급은 사용자가 직접 보는 돈성 로직이므로 “성공 전 차감하지 않거나 pending으로 잠근다”처럼 선택지를 남기지 않습니다. 서버 구현은 위 순서로 고정합니다. 단, 외부 Toss API 호출은 절대 `FOR UPDATE` lock을 잡은 트랜잭션 안에서 실행하지 않습니다.
 
 ---
 
@@ -1130,12 +1208,15 @@ POST /benefits/toss-point/redeem
 
 | 검증 | 기준 |
 |------|------|
-| 문제 보상 | 정답 `10머니`, 오답 `1머니` |
+| 문제 보상 | 가격 예측·상식 퀴즈 모두 정답 여부와 무관하게 고정 `5머니` |
+| 재미 요소 | 정답 여부는 연속 정답·정답률 표시용으로만 사용 |
 | 추가 문제 | 무료 1회 + 보상광고 해금 4회, 하루 최대 5회 |
 | 서버 일일 상태 | 완료 횟수 5회 이후 보상광고 해금 불가, 해금 4회 이후 추가 해금 불가 |
 | 출석 | 기본 `1머니`, 10연속 보너스는 전면광고 후 총 `11머니`, 중복 호출은 기존 결과 반환 |
 | 토스 포인트 받기 | `1,000머니 -> 100P`, 1회 요청 최대 `5,000P`, API `amount`는 토스 포인트 수량 |
 | 토스 포인트 실패 복구 | 토스 지급 실패 시 차감한 머니를 복구 ledger로 원복 |
+| 토스 지급 트랜잭션 | wallet `FOR UPDATE` lock 안에서는 차감과 pending 생성만 수행하고, 외부 Toss API는 lock 밖에서 호출 |
+| 원장 source 규칙 | 출석, 퀴즈, 예측, 토스 차감/원복 source와 source_id를 고정해 보상 충돌 방지 |
 | 상단 월렛 보드 | 현재 머니, 누적 적립 머니, 받을 수 있는 토스 포인트, 지급 대기 금액 표시, stable item ID 기반 렌더링 |
 | 문제은행 | 총 600문제 계획 |
 | 출제 우선순위 | 미풀이 → 30일 제외 → 품질밴드 → fallback |

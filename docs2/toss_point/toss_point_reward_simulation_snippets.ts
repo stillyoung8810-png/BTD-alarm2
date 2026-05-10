@@ -2,8 +2,7 @@ const DAILY_FREE_ATTEMPT_COUNT = 1;
 const DAILY_MAX_ATTEMPTS_PER_MISSION = 5;
 const DAILY_REWARDED_AD_UNLOCK_LIMIT_PER_MISSION =
   DAILY_MAX_ATTEMPTS_PER_MISSION - DAILY_FREE_ATTEMPT_COUNT;
-const PARTICIPATION_REWARD_MONEY = 1;
-const CORRECT_BONUS_MONEY = 9;
+const FIXED_ATTEMPT_REWARD_MONEY = 5;
 const ATTENDANCE_REWARD_MONEY = 1;
 const ATTENDANCE_STREAK_BONUS_INTERVAL_DAYS = 10;
 const ATTENDANCE_STREAK_BONUS_MONEY = 10;
@@ -32,6 +31,8 @@ export type BenefitWalletBoardItemId =
   | 'lifetime'
   | 'pending'
   | 'nextRedeem';
+export type BenefitLedgerSource =
+  (typeof BENEFIT_LEDGER_SOURCES)[keyof typeof BENEFIT_LEDGER_SOURCES];
 
 export interface DailyAttemptState {
   readonly completedAttempts: number;
@@ -206,6 +207,15 @@ export const RECOMMENDED_QUIZ_QUESTION_BANK_PLAN: QuizQuestionBankPlan = {
   phase3CurrentQuestionCount: 200,
 } as const;
 
+export const BENEFIT_LEDGER_SOURCES = {
+  attendanceBase: 'attendance_base',
+  attendanceStreakBonus: 'attendance_streak_bonus',
+  stockQuizAttempt: 'stock_quiz_attempt',
+  pricePredictionAttempt: 'price_prediction_attempt',
+  tossRedeemDebit: 'toss_redeem_debit',
+  tossRedeemRestore: 'toss_redeem_restore',
+} as const;
+
 const STRATEGY_STOCK_KEYS: readonly StrategyStockKey[] = [
   'ma0',
   'ma1',
@@ -247,6 +257,15 @@ function assertDailyAttemptState(state: DailyAttemptState): void {
 
 function normalizeSymbol(symbol: string): string {
   return symbol.trim().toUpperCase();
+}
+
+export function normalizeBenefitLedgerSourceId(sourceId: string): string {
+  const normalizedSourceId = sourceId.trim();
+  if (normalizedSourceId === '') {
+    throw new Error('sourceId_must_not_be_empty');
+  }
+
+  return normalizedSourceId;
 }
 
 function isWithinRecentWindow(
@@ -397,16 +416,11 @@ export function resolveRewardedAdServerUnlock(
 export function calculateAttemptReward(outcome: AnswerOutcome): AttemptReward {
   switch (outcome) {
     case 'correct':
-      return {
-        baseMoney: PARTICIPATION_REWARD_MONEY,
-        bonusMoney: CORRECT_BONUS_MONEY,
-        totalMoney: PARTICIPATION_REWARD_MONEY + CORRECT_BONUS_MONEY,
-      };
     case 'incorrect':
       return {
-        baseMoney: PARTICIPATION_REWARD_MONEY,
+        baseMoney: FIXED_ATTEMPT_REWARD_MONEY,
         bonusMoney: 0,
-        totalMoney: PARTICIPATION_REWARD_MONEY,
+        totalMoney: FIXED_ATTEMPT_REWARD_MONEY,
       };
     default: {
       const _exhaustiveCheck: never = outcome;

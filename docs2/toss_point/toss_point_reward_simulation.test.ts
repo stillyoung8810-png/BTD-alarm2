@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BENEFIT_LEDGER_SOURCES,
   RECOMMENDED_QUIZ_QUESTION_BANK_PLAN,
   calculateAttemptReward,
   calculateAttendanceReward,
@@ -7,6 +8,7 @@ import {
   executeTossPointRedeemSettlement,
   grantRewardedAdUnlock,
   hasApprovedAdGroupId,
+  normalizeBenefitLedgerSourceId,
   redeemTossPoints,
   resolveAttendanceStreakBonusClaim,
   resolveBenefitWalletBoardItems,
@@ -49,16 +51,16 @@ function makeQuestion(
 }
 
 describe('toss point reward policy simulation', () => {
-  it('pays 1 money for participation and 9 extra money for a correct answer', () => {
+  it('pays fixed 5 money for both correct and incorrect mission attempts', () => {
     expect(calculateAttemptReward('correct')).toEqual({
-      baseMoney: 1,
-      bonusMoney: 9,
-      totalMoney: 10,
+      baseMoney: 5,
+      bonusMoney: 0,
+      totalMoney: 5,
     });
     expect(calculateAttemptReward('incorrect')).toEqual({
-      baseMoney: 1,
+      baseMoney: 5,
       bonusMoney: 0,
-      totalMoney: 1,
+      totalMoney: 5,
     });
   });
 
@@ -308,6 +310,20 @@ describe('toss point reward policy simulation', () => {
     });
   });
 
+  it('rejects invalid money balances before redeem calculation', () => {
+    expect(() =>
+      redeemTossPoints({
+        currentMoneyBalance: -1,
+      }),
+    ).toThrow('currentMoneyBalance_must_be_non_negative_integer');
+
+    expect(() =>
+      redeemTossPoints({
+        currentMoneyBalance: 1_000.5,
+      }),
+    ).toThrow('currentMoneyBalance_must_be_non_negative_integer');
+  });
+
   it('uses Toss point amount, not internal money, as promotion reward amount', () => {
     const redemption = redeemTossPoints({
       currentMoneyBalance: 2_060,
@@ -478,6 +494,23 @@ describe('toss point reward policy simulation', () => {
       finalMoneyBalance: 2_500,
       tossPointToPay: 0,
     });
+  });
+
+  it('keeps ledger sources explicit and source ids non-empty', () => {
+    expect(BENEFIT_LEDGER_SOURCES).toEqual({
+      attendanceBase: 'attendance_base',
+      attendanceStreakBonus: 'attendance_streak_bonus',
+      stockQuizAttempt: 'stock_quiz_attempt',
+      pricePredictionAttempt: 'price_prediction_attempt',
+      tossRedeemDebit: 'toss_redeem_debit',
+      tossRedeemRestore: 'toss_redeem_restore',
+    });
+    expect(normalizeBenefitLedgerSourceId(' attempt-123 ')).toBe(
+      'attempt-123',
+    );
+    expect(() => normalizeBenefitLedgerSourceId('   ')).toThrow(
+      'sourceId_must_not_be_empty',
+    );
   });
 
   it('keeps the recommended quiz bank at 600 questions', () => {

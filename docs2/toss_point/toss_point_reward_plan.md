@@ -23,7 +23,7 @@
 | 주식 상식 퀴즈 | 1일 기본 1문제, 보상광고로 추가 문제 해금, 하루 최대 5문제 |
 | 문제 참여 보상 | 가격 예측·상식 퀴즈 제출 완료 시 정답 여부와 무관하게 고정 `5머니` |
 | 정답 결과 | 머니 차등 지급에는 사용하지 않고, 연속 정답·정답률 표시용으로만 사용 |
-| 토스 포인트 받기 | 누적 `1,000머니`마다 토스 포인트 `100P` 지급 요청, 1회 요청 최대 `5,000P` |
+| 토스 포인트 받기 | 누적 `1,000머니`마다 토스 포인트 `100P` 지급 요청, 확인된 정책 기준 1회 요청 최대 `5,000P` |
 | 광고 | 출석 영역 배너, 문제 완료 전면광고, 추가 문제 해금 보상광고 |
 
 ---
@@ -42,6 +42,10 @@
 
 새 탭은 `ActiveTab`에 `benefits`를 추가하고, `TabContent.tsx`에 `Benefits` lazy 컴포넌트를 추가하는 방식이 가장 작습니다.
 
+`혜택`만 바로 여는 링크가 필요하면 시세 탭과 같은 방식으로 path 기반 진입점을 함께 둡니다. 현재 라우터는 `*` fallback으로도 `App`을 렌더링하지만, 직접 진입 링크를 명시적으로 유지하려면 `index.tsx`의 `ROUTE_PATHS`에 `/benefits`를 추가하고 `Route path={ROUTE_PATHS.benefits}`를 선언하는 편이 안전합니다.
+
+`App.tsx`의 `syncTabFromLocation()`에는 `path.startsWith('/benefits')` 분기를 추가해 새로고침·딥링크 진입 시 `activeTab`이 `benefits`로 동기화되게 합니다. 그리고 하단 `혜택` 탭 클릭 시에도 `setActiveTab('benefits')`만 호출하지 말고 URL을 `/benefits`로 맞춰야 “현재 화면을 다시 열었을 때 같은 탭이 유지되는 링크”가 됩니다. 반대로 다른 탭으로 이동할 때는 `/benefits` path를 기본 경로로 되돌리거나, 시세 탭처럼 탭별 path 정책을 명시적으로 정해야 URL과 화면 상태가 어긋나지 않습니다.
+
 ### 1.2 광고
 
 현재 광고는 이미 용도별로 분리되어 있습니다.
@@ -50,15 +54,38 @@
 |------|-----------|----------------------|
 | 배너 | `TossInlineBanner`, `useTossBanner`, `tossBannerService.ts` | 혜택 홈/출석체크 영역 |
 | 전면 | `GlobalAdManager`, `INTERSTITIAL_PLACEMENT_KEYS` | 문제 완료, 10연속 출석 보너스 |
-| 보상형 | `requestRewardAd`, 혜택 전용 보상형 광고 그룹 ID | 추가 문제 1회 해금 |
+| 보상형 | `requestRewardAd`, 기존 보상형 광고 그룹 ID 또는 혜택 전용 보상형 광고 그룹 ID | 추가 문제 1회 해금 |
 
-새 SDK 래퍼를 만들 필요는 없습니다. 필요한 것은 **새 광고 지면 key와 광고 그룹 ID 상수 추가**입니다. 혜택용 보상형 광고 그룹 ID는 승인 후 전달받는 실제 ID로 교체합니다.
+새 SDK 래퍼를 만들 필요는 없습니다. 필요한 것은 **새 광고 지면 key와 광고 그룹 ID 상수 매핑**입니다. 1차 구현에서는 현재 운영 중인 광고 그룹 ID를 재사용하고, 토스 콘솔·검수 문구가 혜택 미션과 맞지 않으면 혜택 전용 광고 그룹 ID를 별도로 발급받아 교체합니다.
+
+현재 시스템에 이미 있는 광고 그룹 ID는 아래입니다.
+
+| 기존 상수/함수 | 실제 그룹 ID | 광고 종류 | 현재 사용처 |
+|----------------|--------------|-----------|-------------|
+| `INTERSTITIAL_LIVE_AD_GROUP_ID` | `ait.v2.live.3f570e10ec374139` | 전면 | 전략 저장, 거래 저장, 알림 저장, 정산 상세 |
+| `MARKET_BANNER_LIVE_AD_GROUP_ID` / `getResolvedMarketBannerAdGroupId()` | `ait.v2.live.b1d77d31f3b14d57` | 배너 | 마켓 탭, `TossInlineBanner` 기본값 |
+| `HISTORY_BANNER_LIVE_AD_GROUP_ID` / `getResolvedHistoryBannerAdGroupId()` | `ait.v2.live.59f9f0b02a5b4114` | 배너 | 투자 이력 탭, 대시보드 인라인 배너 |
+| `REWARD_UNLOCK_AI_AD_GROUP_ID` | `ait.v2.live.f71d668772bf4bf4` | 보상형 | AI 이미지 인식 해금 |
+
+혜택 탭 광고 위치별 1차 재사용안은 아래입니다.
+
+| 혜택 탭 위치 | 광고 종류 | 1차 재사용 ID | 계획서/구현 위치 | 비고 |
+|--------------|-----------|---------------|------------------|------|
+| 상단 월렛 보드 아래 또는 혜택 홈 첫 카드 아래 | 배너 | `getResolvedMarketBannerAdGroupId()` → `MARKET_BANNER_LIVE_AD_GROUP_ID` | `6.6 배너 광고`, `BenefitWalletBoard` 다음 | `TossInlineBanner` 기본값과 같아 코드 변경이 가장 작음 |
+| 출석체크 카드 하단 또는 퀘스트 리스트 중간 | 배너 | `getResolvedHistoryBannerAdGroupId()` → `HISTORY_BANNER_LIVE_AD_GROUP_ID` | `6.6 배너 광고`, `AttendanceQuestCard` | 문구 강조형 배너가 미션/혜택 안내와 더 자연스러움. 탭 안 배너가 1개면 이 위치만 우선 |
+| 주식 상식 퀴즈 완료 후 | 전면 | `INTERSTITIAL_LIVE_AD_GROUP_ID` | `6.5 전면광고 지면 추가`, `BENEFIT_QUIZ_COMPLETE` | 기존 전면 그룹을 logical placement key만 추가해 재사용 |
+| 가격 예측 완료 후 | 전면 | `INTERSTITIAL_LIVE_AD_GROUP_ID` | `6.5 전면광고 지면 추가`, `BENEFIT_PREDICTION_COMPLETE` | 문제 완료 보상은 이미 서버에서 확정한 뒤 비차단 전면 노출 |
+| 10연속 출석 보너스 받기 | 전면 | `INTERSTITIAL_LIVE_AD_GROUP_ID` | `6.5 전면광고 지면 추가`, `BENEFIT_ATTENDANCE_STREAK` | 광고 성공(`true`)일 때만 보너스 지급 요청 |
+| 퀴즈 추가 문제 해금 | 보상형 | `REWARD_UNLOCK_AI_AD_GROUP_ID` | `6.4 하루 5문제 제한과 보상광고 해금` | 1차 재사용 가능. 단, 콘솔 명칭/검수 문구가 AI 인식 전용이면 혜택 전용 ID로 분리 |
+| 가격 예측 추가 문제 해금 | 보상형 | `REWARD_UNLOCK_AI_AD_GROUP_ID` | `6.4 하루 5문제 제한과 보상광고 해금` | 퀴즈와 같은 보상형 그룹을 재사용하되, 일일 해금 제한은 미션별 서버 상태로 분리 |
+
+광고 피로를 막기 위해 1차에서는 `혜택` 탭 안에 배너를 1개만 우선 배치합니다. 추천 위치는 **출석체크 카드 하단**이며, 성과를 보고 상단 월렛 보드 아래 배너를 추가합니다.
 
 ### 1.3 토스 프로모션
 
 토스 포인트 지급은 문서상 `grantPromotionReward` 또는 서버 지급 방식을 사용할 수 있습니다. 이번 기능은 머니 잔액·중복 지급·일일 한도·예산 실패 처리가 중요하므로 **서버 지급 방식 우선**이 맞습니다.
 
-클라이언트에서 직접 토스 포인트를 지급하면 위변조와 중복 호출 방지가 약해집니다. 서버에서 `userId`, `tossUserKey`, `promotionCode`, `amount`, `txId`, `status`를 저장하고, `PENDING/SUCCESS/FAILED`를 대사할 수 있어야 합니다.
+클라이언트에서 직접 토스 포인트를 지급하면 위변조와 중복 호출 방지가 약해집니다. 서버에서 `userId`, `tossUserKey`, `promotionCode`, `amount`, 토스 프로모션 `key`, 내부 `redeem_request_id`, `status`, `errorCode`를 저장하고, `PENDING/SUCCESS/FAILED`를 대사할 수 있어야 합니다.
 
 ---
 
@@ -148,7 +175,7 @@ export function shouldExposeBenefitTab(input: BenefitFeatureGateInput): boolean 
 | 영역 | 1차 범위 |
 |------|----------|
 | UI | 하단 `혜택` 탭, 상단 누적 머니 보드, 출석체크, 가격 예측, 상식 퀴즈, 토스 포인트 받기 |
-| 문제은행 | DB 저장, 600문제 목표, 출제 우선순위 적용 |
+| 문제은행 | `docs2/toss_point/quiz_seed/*.jsonl` 검수 후 DB seed 적재, 600문제 목표, 출제 우선순위 적용 |
 | 광고 | 배너/전면/보상형 기존 래퍼 재사용 |
 | 보상 | 서버에서 머니 원장 적립, 1,000머니 단위 토스 포인트 지급 |
 | 어뷰징 방지 | 일일 제한, 중복 제출 방지, 보상광고 버튼 mutex, 원장 idempotency |
@@ -202,19 +229,29 @@ create table benefit_attendance (
 
 create table benefit_quiz_questions (
   id uuid primary key default gen_random_uuid(),
+  human_id text not null unique,
   phase text not null,
   category text not null,
   difficulty text not null,
+  question_type text not null check (question_type in ('ox', 'ab')),
   question text not null,
-  choices jsonb not null,
+  choices jsonb not null check (jsonb_typeof(choices) = 'array'),
   correct_choice_id text not null,
   explanation text not null,
-  is_active boolean not null default true,
+  topic text,
+  source_note text,
+  review_status text not null default 'draft' check (review_status in ('draft', 'approved', 'rejected')),
+  is_active boolean not null default false,
   total_attempts integer not null default 0 check (total_attempts >= 0),
   correct_attempts integer not null default 0 check (correct_attempts >= 0),
+  check (correct_attempts <= total_attempts),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+create index benefit_quiz_questions_active_lookup_idx
+  on benefit_quiz_questions (category, difficulty, updated_at)
+  where is_active = true and review_status = 'approved';
 
 create table benefit_mission_daily_states (
   user_id uuid not null,
@@ -324,7 +361,14 @@ create table benefit_toss_point_payouts (
   promotion_code text not null,
   redeemed_money integer not null check (redeemed_money > 0),
   toss_point_amount integer not null check (toss_point_amount > 0),
-  toss_reward_key text,
+  toss_promotion_key text,
+  toss_promotion_key_issued_at timestamptz,
+  toss_promotion_key_expires_at timestamptz,
+  promotion_attempt_count integer not null default 0 check (promotion_attempt_count >= 0),
+  last_promotion_attempt_at timestamptz,
+  next_promotion_retry_at timestamptz,
+  toss_error_code text,
+  toss_error_message text,
   status text not null default 'pending' check (status in ('pending', 'success', 'failed')),
   requested_at timestamptz not null default now(),
   completed_at timestamptz,
@@ -340,15 +384,17 @@ create table benefit_toss_point_payouts (
 
 ### 5.1 수량
 
-초기 목표는 총 600문제입니다.
+초기 목표는 총 600문제입니다. 현재 초안 문제은행은 `docs2/toss_point/quiz_seed/`에 있으며, `manifest.json` 기준으로 아래 3개 JSONL 파일이 각각 200문항씩 보관되어 있습니다.
 
-| 단계 | 수량 | 예시 |
-|------|------|------|
-| 1차 | 핵심 주식 상식 200문제 | 주식, ETF, 배당, 분산투자 |
-| 2차 | ETF/배당/지수/환율/금리 200문제 | S&P 500, 금리, 환율, 채권 ETF |
-| 3차 | 시사형/기업형/용어 비교 200문제 | 엔비디아, 테슬라, 실적, PER/PBR |
+| 파일 | 카테고리 | 수량 | 상태 |
+|------|----------|------|------|
+| `stock_basics.jsonl` | `stock_basic` | 200 | `draft` |
+| `etf_basics.jsonl` | `etf_fund` | 200 | `draft` |
+| `economy_basics.jsonl` | `economic_indicator` | 200 | `draft` |
 
-카테고리는 아래 8개를 기본으로 둡니다.
+각 줄은 문제 1개를 나타내는 JSON입니다. 이 폴더는 운영 서버가 직접 읽는 런타임 데이터가 아니라, 사람 검수와 DB seed/migration 생성을 위한 원본 초안입니다. `generate_quiz_seed.mjs`는 JSONL 생성기이므로 미니앱/웹 서버 배포물에 포함하지 않습니다.
+
+카테고리는 아래 8개를 기본으로 두되, 1차 seed는 `stock_basic`, `etf_fund`, `economic_indicator` 3개만 사용합니다.
 
 ```typescript
 export const BENEFIT_QUIZ_CATEGORIES = [
@@ -373,6 +419,50 @@ export const BENEFIT_QUIZ_CATEGORIES = [
 4. 그래도 없으면 전체 활성 문제 중 안정 정렬 랜덤 또는 fallback
 
 시뮬레이션 스니펫은 이 정책을 `selectNextQuizQuestion`으로 검증합니다.
+
+### 5.3 JSONL seed 적재 파이프라인
+
+앱/서버는 `docs2/toss_point/quiz_seed/` 파일을 직접 조회하지 않습니다. 운영 흐름은 **JSONL 검수 → DB seed 변환 → `benefit_quiz_questions` 조회**로 고정합니다.
+
+1. `docs2/toss_point/quiz_seed/manifest.json`의 `total_count`와 각 JSONL 라인 수가 일치하는지 확인합니다.
+2. 각 JSONL 라인을 파싱해 `human_id`, `phase`, `category`, `difficulty`, `question_type`, `question`, `choices`, `correct_choice_id`, `explanation`, `review_status`를 검증합니다.
+3. `choices`는 2개만 허용하고, `correct_choice_id`는 반드시 `choices[].id` 중 하나여야 합니다.
+4. `human_id`는 DB upsert 기준이므로 전체 파일에서 유일해야 합니다.
+5. 사람 검수 전 `review_status: "draft"` 문항은 운영 노출 금지입니다. 검수 통과 문항만 `review_status: "approved"`, `is_active: true`로 적재합니다.
+6. `review_status: "rejected"` 또는 검수 미완료 문항은 DB에 넣지 않거나 `is_active: false`로만 보관합니다.
+7. 임포트는 구현 시 `scripts/import-benefit-quiz-seed.mjs` 같은 1회성 Node 스크립트나 Supabase SQL migration으로 실행합니다. 반복 실행해도 중복 생성되지 않도록 `human_id` 기준 upsert를 사용합니다.
+
+권장 실행 형태는 아래처럼 단순하게 둡니다. 이 스크립트는 배포 서버에서 상시 실행하지 않고, DB seed 반영 시점에만 실행합니다.
+
+```bash
+node scripts/import-benefit-quiz-seed.mjs docs2/toss_point/quiz_seed
+```
+
+필드 매핑은 아래처럼 고정합니다.
+
+| JSONL 필드 | DB 컬럼 | 운영 사용 |
+|------------|---------|-----------|
+| `human_id` | `human_id` | seed 재실행 idempotency, 문제 추적 |
+| `phase` | `phase` | 출시 단계/배치 구분 |
+| `category` | `category` | 카테고리 필터와 출제 분산 |
+| `difficulty` | `difficulty` | 1차는 `easy`만 노출 |
+| `question_type` | `question_type` | `ox` 또는 `ab` 렌더링 |
+| `question` | `question` | 사용자에게 표시 |
+| `choices` | `choices` | 2지선다 선택지 |
+| `correct_choice_id` | `correct_choice_id` | 채점과 정답률 통계 |
+| `explanation` | `explanation` | 제출 후 설명 |
+| `review_status` | `review_status` | `approved`만 운영 노출 |
+| `source_note`, `topic` | `source_note`, `topic` | 검수/운영 추적용 메타 |
+
+서버 출제 쿼리는 반드시 `is_active = true`와 `review_status = 'approved'`를 함께 조건으로 둡니다. 이 조건이 빠지면 초안 또는 반려 문항이 사용자에게 노출될 수 있습니다.
+
+```sql
+select id, category, difficulty, question_type, question, choices, explanation
+from benefit_quiz_questions
+where is_active = true
+  and review_status = 'approved'
+  and difficulty = 'easy';
+```
 
 ---
 
@@ -591,9 +681,10 @@ export function grantRewardedAdUnlock(
 클라이언트 이벤트 핸들러는 동시 클릭을 막습니다.
 
 ```tsx
-const REWARD_UNLOCK_BENEFIT_QUIZ_AD_GROUP_ID = 'APPROVED_BENEFIT_QUIZ_REWARD_AD_GROUP_ID';
-const REWARD_UNLOCK_BENEFIT_PREDICTION_AD_GROUP_ID =
-  'APPROVED_BENEFIT_PREDICTION_REWARD_AD_GROUP_ID';
+import { REWARD_UNLOCK_AI_AD_GROUP_ID } from '@/services/ads/adPlacements';
+
+const REWARD_UNLOCK_BENEFIT_QUIZ_AD_GROUP_ID = REWARD_UNLOCK_AI_AD_GROUP_ID;
+const REWARD_UNLOCK_BENEFIT_PREDICTION_AD_GROUP_ID = REWARD_UNLOCK_AI_AD_GROUP_ID;
 
 const isUnlockingRef = useRef(false);
 
@@ -628,6 +719,8 @@ const handleUnlockExtraQuiz = useCallback(async (): Promise<void> => {
 ### 6.5 전면광고 지면 추가
 
 `INTERSTITIAL_PLACEMENT_KEYS`에 혜택용 지면을 추가합니다. 실제 구현에서는 key만 추가하지 말고 `INTERSTITIAL_PLACEMENT_DEFINITION_BASES`, `AdRouteKey`, `getPrimeableAdRouteKey`까지 함께 갱신해야 합니다. 이 세 곳이 맞지 않으면 `GlobalAdManager.showInstant()`가 `show_error`로 거절되어 광고가 조용히 빠질 수 있습니다.
+
+전면 광고 그룹 ID는 새로 만들지 않고 기존 `INTERSTITIAL_LIVE_AD_GROUP_ID`를 재사용합니다. 현재 구조는 logical placement key별로 프리로드/노출 지면만 나누고, 실제 SDK에는 `getResolvedInterstitialAdGroupId()`가 반환한 동일 전면 그룹 ID를 전달합니다.
 
 ```typescript
 export const INTERSTITIAL_PLACEMENT_KEYS = {
@@ -756,10 +849,15 @@ const handleQuizSubmit = useCallback(async (): Promise<void> => {
 
 ### 6.6 배너 광고
 
-출석/혜택 홈의 배너는 기존 `TossInlineBanner`를 재사용합니다.
+출석/혜택 홈의 배너는 기존 `TossInlineBanner`를 재사용합니다. 1차 구현에서는 배너를 1개만 두고, 출석체크 카드 하단에 `getResolvedHistoryBannerAdGroupId()`를 연결합니다. 상단 월렛 보드 아래 배너까지 추가할 때는 `getResolvedMarketBannerAdGroupId()`를 사용합니다.
 
 ```tsx
+import { getResolvedHistoryBannerAdGroupId } from '@/services/ads/adPlacements';
+
+const attendanceBannerAdGroupId = getResolvedHistoryBannerAdGroupId();
+
 <TossInlineBanner
+  adGroupId={attendanceBannerAdGroupId}
   shouldShowAd={shouldShowAds}
   isInTossApp={isInTossApp}
   containerClassName="h-[96px] min-h-[96px]"
@@ -767,11 +865,13 @@ const handleQuizSubmit = useCallback(async (): Promise<void> => {
 />
 ```
 
+월렛 보드 아래 배너를 추가할 때만 `getResolvedMarketBannerAdGroupId()`를 별도로 호출합니다. 배너가 2개로 늘어나면 광고 노출 피로가 커질 수 있으므로, 초기 출시에서는 출석체크 카드 하단 1개만 우선 적용합니다.
+
 ### 6.7 토스 포인트 받기
 
 서버는 `1,000머니` 단위로만 토스 포인트 지급을 요청합니다. `wallet` row 잠금은 `pending` payout과 음수 ledger를 남기는 짧은 트랜잭션 안에서만 유지합니다. 외부 Toss 지급 API는 DB row lock 밖에서 호출하고, 토스 지급 실패 시에는 별도 트랜잭션으로 복구 ledger를 만들어 wallet을 원복합니다.
 
-토스 포인트 프로모션은 금액별로 여러 개 만들지 않고, 승인된 단일 `promotionCode`를 사용합니다. 실제 지급 포인트는 API 호출 시 `amount`로 전달하며, 이 값은 내부 `머니`가 아니라 토스 포인트 수량입니다. 예를 들어 `1,000머니 -> 100P` 요청이면 `amount = 100`, `50,000머니 -> 5,000P` 요청이면 `amount = 5000`입니다.
+토스 포인트 프로모션은 금액별로 여러 개 만들지 않고, 승인된 단일 `promotionCode`를 사용합니다. 실제 지급 포인트는 API 호출 시 `amount`로 전달하며, 이 값은 내부 `머니`가 아니라 토스 포인트 수량입니다. 예를 들어 `1,000머니 -> 100P` 요청이면 `amount = 100`, `50,000머니 -> 5,000P` 요청이면 `amount = 5000`입니다. 정책 확인 결과 `5,000P`는 1인 누적 한도가 아니라 **1회 요청 한도**이므로, 다른 날 다시 미션을 수행해도 승인된 한도 안에서 추가 지급 요청이 가능합니다.
 
 ```typescript
 const TOSS_POINT_REDEEM_THRESHOLD_MONEY = 1_000;
@@ -806,6 +906,81 @@ export function resolveRedeemRequest(
   };
 }
 ```
+
+서버 지급 방식은 공식 S2S 3단계를 그대로 따릅니다. 아래 경로는 파트너사 서버에서 호출하며, 세 요청 모두 토스 로그인으로 얻은 `tossUserKey`를 `x-toss-user-key` 헤더로 전달합니다.
+
+```text
+BaseURL: https://apps-in-toss-api.toss.im
+
+1. 지급 key 발급
+POST /api-partner/v1/apps-in-toss/promotion/execute-promotion/get-key
+header: Content-Type: application/json
+header: x-toss-user-key: {tossUserKey}
+
+2. 프로모션 지급 실행
+POST /api-partner/v1/apps-in-toss/promotion/execute-promotion
+header: Content-Type: application/json
+header: x-toss-user-key: {tossUserKey}
+body:
+{
+  "promotionCode": "{approvedPromotionCode}",
+  "key": "{issuedPromotionKey}",
+  "amount": tossPointAmount
+}
+
+3. 지급 결과 조회
+POST /api-partner/v1/apps-in-toss/promotion/execution-result
+header: Content-Type: application/json
+header: x-toss-user-key: {tossUserKey}
+body:
+{
+  "promotionCode": "{approvedPromotionCode}",
+  "key": "{issuedPromotionKey}"
+}
+```
+
+`execution-result`가 `SUCCESS`이면 `benefit_toss_point_payouts.status = 'success'`로 확정합니다. `PENDING`이면 차감 상태를 유지하고 상단 월렛 보드의 `지급 대기`에 표시합니다. `FAILED` 또는 복구가 필요한 종료 에러이면 `toss_redeem_restore` ledger를 생성해 wallet을 원복하고 `failed`로 저장합니다.
+
+`key`는 1시간 유효하므로 발급 즉시 `toss_promotion_key_issued_at`, `toss_promotion_key_expires_at = issued_at + 1 hour`를 저장합니다. 서버가 pending payout을 재시도할 때 현재 시간이 `toss_promotion_key_expires_at` 이상이면 기존 key로 `execute-promotion`을 다시 호출하지 않고, 같은 `redeem_request_id`의 pending payout에 대해 새 `key`를 발급받아 재시도합니다. 공식 문서에 별도 “만료 전용 에러 코드”가 명시되어 있지 않으므로 특정 코드를 가정하지 않습니다. 대신 서버 저장 만료시각을 1차 기준으로 삼고, 이미 사용한 key를 재사용해 `4113`이 발생하거나 key 관련 실패가 의심되면 새 key 발급 후 같은 `redeem_request_id`로 1회 재시도합니다.
+
+재시도는 새 payout을 만들지 않습니다. 기존 pending payout row를 `FOR UPDATE`로 짧게 잠근 뒤 `toss_promotion_key`, `toss_promotion_key_issued_at`, `toss_promotion_key_expires_at`, `promotion_attempt_count`만 갱신하고, 이미 생성한 `toss_redeem_debit` ledger와 wallet 차감은 다시 만들지 않습니다. 이렇게 해야 앱 재진입, 새로고침, 네트워크 복구 후에도 동일 교환 요청이 중복 차감·중복 지급되지 않습니다.
+
+네트워크 실패나 timeout은 즉시 무한 재시도하지 않습니다. 서버는 `promotion_attempt_count`, `last_promotion_attempt_at`, `next_promotion_retry_at`을 기준으로 같은 `redeem_request_id`의 다음 재시도 가능 시점을 계산합니다. 재시도 요청이 `next_promotion_retry_at`보다 빨리 들어오면 Toss API를 다시 호출하지 않고 기존 pending 상태와 다음 재시도 가능 시각만 반환합니다.
+
+```typescript
+const PROMOTION_RETRY_INITIAL_DELAY_MS = 1_000;
+const PROMOTION_RETRY_MAX_DELAY_MS = 30_000;
+const PROMOTION_RETRY_BACKOFF_MULTIPLIER = 2;
+const PROMOTION_RETRY_MAX_ATTEMPTS = 5;
+
+export function resolvePromotionRetryDelayMs(attemptCount: number): number {
+  assertNonNegativeInteger(attemptCount, 'attemptCount');
+
+  const retryDelayMs =
+    PROMOTION_RETRY_INITIAL_DELAY_MS *
+    PROMOTION_RETRY_BACKOFF_MULTIPLIER ** attemptCount;
+
+  return Math.min(retryDelayMs, PROMOTION_RETRY_MAX_DELAY_MS);
+}
+```
+
+`PROMOTION_RETRY_MAX_ATTEMPTS`를 넘으면 자동 재시도는 중단하고 사용자에게 “나중에 받기” 안내를 보여줍니다. 이때도 payout은 운영자가 대사할 수 있게 pending으로 유지하거나, 복구가 확정된 실패라면 `toss_redeem_restore` ledger로 원복 후 failed로 종료합니다. 어떤 쪽으로 종료할지는 Toss 응답이 `PENDING`인지, 복구 불가능한 실패인지에 따라 서버가 판단합니다.
+
+실패 사유별 사용자 안내는 아래처럼 분리합니다. 실제 UI 문구는 `BENEFIT_MESSAGES`에 둡니다.
+
+| 상황 | 대표 코드/조건 | 사용자 안내 방향 |
+|------|----------------|------------------|
+| 프로모션 없음 | `4100` | 혜택 준비가 완료되지 않았다고 안내하고 재시도 버튼 숨김 |
+| 프로모션 비활성/종료/예산 소진 | `4109`, 종료일 경과 | 현재 받을 수 없는 혜택이라고 안내하고 혜택 탭 지급 CTA 비활성 |
+| 예산 부족 | `4112` | 예산 확인 후 다시 받을 수 있다고 안내 |
+| 동일 key 중복 사용 | `4113` | 새 key 발급 후 같은 `redeem_request_id`로 재시도 |
+| key 만료 | 서버 저장 `toss_promotion_key_expires_at` 경과 | 새 key 발급 후 같은 `redeem_request_id`의 pending payout으로 재시도 |
+| 지급 내역 없음 | `4111` | 지급 결과 조회 대상이 없으므로 내부 대사 로그를 남기고 같은 `redeem_request_id` 상태를 재확인 |
+| 1회 한도 초과 | `4114` | 1회 최대 `5,000P`까지만 받을 수 있다고 안내 |
+| 최대 지급 금액이 예산 초과 | `4116` | 운영 예산/프로모션 설정 확인 후 현재 받을 수 없는 혜택으로 안내 |
+| 내부 시스템 오류 | `4110`, 5xx | 중복 지급 없이 “나중에 받기” 또는 재시도 안내 |
+| 네트워크/timeout | timeout, 연결 실패 | `next_promotion_retry_at`까지 기다린 뒤 지수 백오프로 재시도 |
+| 앱 버전 미지원 | SDK 직접 지급의 `undefined` | 토스앱 업데이트 안내 |
 
 공식 API 호출은 실제 구현 시 서버 지급 방식을 우선합니다. 클라이언트 직접 지급을 선택해야 한다면 중복 지급 방지는 서버에서 별도로 잠가야 합니다.
 
@@ -1188,17 +1363,30 @@ POST /benefits/toss-point/redeem
 7. `source = 'toss_redeem_debit'`, `source_id = redeem_request_id` 음수 ledger 생성
 8. wallet.money_balance를 차감하고 commit
 
-외부 호출
-9. 단일 promotionCode로 토스 지급 API 호출
-10. `amount`에는 차감 머니가 아니라 토스 포인트 수량을 전달
+외부 Toss S2S 호출
+9. `get-key` 호출로 1시간 유효한 프로모션 지급 key 발급
+10. 트랜잭션 A-2에서 같은 payout row를 짧게 `FOR UPDATE` 잠금
+    - 현재 시간이 `next_promotion_retry_at`보다 이르면 Toss API를 호출하지 않고 기존 pending 상태 반환
+    - `toss_promotion_key`, `toss_promotion_key_issued_at`, `toss_promotion_key_expires_at`, `promotion_attempt_count += 1`, `last_promotion_attempt_at` 저장 후 commit
+    - 이미 생성한 `toss_redeem_debit` ledger와 wallet 차감은 다시 생성하지 않음
+11. `execute-promotion` 호출
+    - header: `x-toss-user-key = tossUserKey`
+    - body: `promotionCode`, `key`, `amount = tossPointAmount`
+12. `execution-result` 호출로 최종 상태 확인
+13. pending payout 재시도 시 `toss_promotion_key_expires_at`이 지났으면 기존 key로 실행하지 않고 9번부터 새 key를 발급
+14. `4113` 또는 key 관련 실패가 의심되는 경우 같은 `redeem_request_id`에서 새 key 발급 후 1회 재시도
+15. 네트워크 실패나 timeout이면 `next_promotion_retry_at = now + resolvePromotionRetryDelayMs(promotion_attempt_count)` 저장 후 pending 유지
 
 트랜잭션 B
-11. 토스 지급 성공 시 payout을 `success`로 변경하고 toss_reward_key 저장
-12. 토스 지급 실패 시 `source = 'toss_redeem_restore'`, `source_id = redeem_request_id` 복구 ledger 생성
-13. 실패 시 wallet.money_balance를 원복한 뒤 payout을 `failed`로 변경
+16. `SUCCESS`이면 payout을 `success`로 변경
+17. `PENDING`이면 payout을 `pending`으로 유지하고 상단 월렛 보드에 지급 대기로 표시
+18. `FAILED` 또는 복구 대상 에러이면 `source = 'toss_redeem_restore'`, `source_id = redeem_request_id` 복구 ledger 생성
+19. 실패 시 wallet.money_balance를 원복하고 `toss_error_code`, `toss_error_message`, `failed` 상태 저장
 ```
 
 토스 포인트 지급은 사용자가 직접 보는 돈성 로직이므로 “성공 전 차감하지 않거나 pending으로 잠근다”처럼 선택지를 남기지 않습니다. 서버 구현은 위 순서로 고정합니다. 단, 외부 Toss API 호출은 절대 `FOR UPDATE` lock을 잡은 트랜잭션 안에서 실행하지 않습니다.
+
+사용자가 앱을 닫았다가 1시간 뒤 다시 `토스 포인트 받기`를 눌러도 새 요청을 만들지 않습니다. 서버는 기존 `redeem_request_id`의 pending payout을 반환하거나 이어서 처리하고, key가 만료되어 있으면 같은 payout에 새 key만 발급해 재시도합니다. 네트워크가 불안정한 구간에서는 `next_promotion_retry_at` 전까지 Toss API를 다시 호출하지 않습니다. 사용자에게는 자동 재시도 중이면 “지급 확인 중” 상태와 다음 재시도 가능 시각을 보여주고, 예산 소진·프로모션 종료처럼 복구 불가능한 실패일 때만 실패 안내와 원복 결과를 보여줍니다.
 
 ---
 
@@ -1215,10 +1403,14 @@ POST /benefits/toss-point/redeem
 | 출석 | 기본 `1머니`, 10연속 보너스는 전면광고 후 총 `11머니`, 중복 호출은 기존 결과 반환 |
 | 토스 포인트 받기 | `1,000머니 -> 100P`, 1회 요청 최대 `5,000P`, API `amount`는 토스 포인트 수량 |
 | 토스 포인트 실패 복구 | 토스 지급 실패 시 차감한 머니를 복구 ledger로 원복 |
+| 토스 공식 S2S | `get-key → execute-promotion → execution-result`, `x-toss-user-key`, 1시간 key 유효시간 준수 |
+| key 만료 재시도 | 만료된 key는 재사용하지 않고 같은 `redeem_request_id`의 pending payout에 새 key를 발급해 중복 차감 없이 재시도 |
+| 네트워크 재시도 | timeout/연결 실패 시 즉시 연타하지 않고 `next_promotion_retry_at`과 지수 백오프 기준으로 제한 재시도 |
+| 토스 에러 안내 | 예산 소진, 종료, 한도 초과, key 중복, 네트워크 실패별 안내 문구 분리 |
 | 토스 지급 트랜잭션 | wallet `FOR UPDATE` lock 안에서는 차감과 pending 생성만 수행하고, 외부 Toss API는 lock 밖에서 호출 |
 | 원장 source 규칙 | 출석, 퀴즈, 예측, 토스 차감/원복 source와 source_id를 고정해 보상 충돌 방지 |
 | 상단 월렛 보드 | 현재 머니, 누적 적립 머니, 받을 수 있는 토스 포인트, 지급 대기 금액 표시, stable item ID 기반 렌더링 |
-| 문제은행 | 총 600문제 계획 |
+| 문제은행 | `quiz_seed/*.jsonl` 600문항 검수 후 `human_id` 기준 DB upsert, 서버는 `approved` + `is_active`만 출제 |
 | 출제 우선순위 | 미풀이 → 30일 제외 → 품질밴드 → fallback |
 | 보상광고 해금 | 광고 완료 `boolean`, 클라이언트 mutex, 미션별 하루 4회 해금 |
 | 일일 상태 UI fallback | 서버 daily state가 깨져도 UI는 `null` availability로 빈 상태/재시도 안내 표시 |
@@ -1240,7 +1432,7 @@ npx vitest run --config docs2/toss_point/vitest.toss_point_reward.config.ts
 | 새 광고 SDK 래퍼 | 불필요. 기존 배너/전면/보상형 래퍼 재사용 |
 | 리워드 정책 엔진 | 불필요. 상수 + 순수 함수로 충분 |
 | 문제 추천 알고리즘 | 초기에는 단순 우선순위로 충분 |
-| 관리자 CMS | 1차에서는 CSV/SQL seed로 충분. 운영 시작 후 필요하면 추가 |
+| 관리자 CMS | 1차에서는 `quiz_seed/*.jsonl` 검수 후 1회성 import/SQL seed로 충분. 운영 시작 후 필요하면 추가 |
 | 실시간 통계 대시보드 | 1차 제외. ledger와 attempts만 쌓으면 사후 분석 가능 |
 | 대규모 상태관리 라이브러리 | 불필요. 서버 상태 fetch + 섹션 단위 state로 충분 |
 
@@ -1251,26 +1443,30 @@ npx vitest run --config docs2/toss_point/vitest.toss_point_reward.config.ts
 ## 11. 구현 전 체크리스트
 
 1. 토스에 `머니 누적 후 토스 포인트 받기` 표현과 정책 사전 문의
-2. 프로모션 예산, 1인 최대 지급, 일일 지급 한도 결정
-3. 광고 그룹 ID 발급: 혜택 배너, 문제 완료 전면, 추가 문제 보상형 실제 승인 ID 주입
-4. 문제은행 1차 200문제 seed 작성 및 정답 검수
-5. 시뮬레이션 통과
-6. 서버 원장/중복 지급/광고 해금 동시성 테스트 작성
-7. 상단 월렛 보드 UI 구현
-8. 프론트 UI 구현 시작
+2. 프로모션 예산, 1회 최대 `5,000P`, 일일 운영 한도 결정
+3. 프로모션 S2S 운영 사전 체크: 계약/정산 승인, mTLS/파트너 인증, 테스트 계정 `x-toss-user-key`, `Content-Type: application/json` 요청 설정 확인
+4. 광고 그룹 ID 확인: 1차는 기존 배너/전면/보상형 ID 재사용, 콘솔·검수 문구가 혜택 미션과 맞지 않으면 혜택 전용 ID 발급 후 주입
+5. `/benefits` 직접 진입 링크 정책 확정: `ROUTE_PATHS`, `syncTabFromLocation`, 탭 클릭 시 URL 동기화 방식 합의
+6. `docs2/toss_point/quiz_seed/*.jsonl` 600문항 내용 검수, 오답/표현 리스크 제거, 승인 문항 `approved` 확정
+7. JSONL → `benefit_quiz_questions` import 스크립트 또는 SQL seed 준비, `human_id` 기준 upsert 검증
+8. 시뮬레이션 통과
+9. 서버 원장/중복 지급/광고 해금 동시성 테스트 작성
+10. 상단 월렛 보드 UI 구현
+11. 프론트 UI 구현 시작
 
 ---
 
 ## 12. 구현 순서
 
 1. `services/benefits/benefitRewardPolicy.ts`에 시뮬레이션 통과 로직 이식
-2. DB 마이그레이션 및 seed 추가
-3. 서버 API/Edge Function 작성
-4. `Benefits` 탭과 네비게이션 추가
-5. 상단 월렛 보드 구현
-6. 출석체크 섹션 구현
-7. 주식 상식 퀴즈 섹션 구현
-8. 가격 예측 섹션 구현
-9. 토스 포인트 받기 섹션 구현
-10. 광고 지면 연결
-11. 토스 검수 문구 및 QA 체크리스트 작성
+2. DB 마이그레이션 작성: `benefit_quiz_questions`는 `human_id`, `question_type`, `review_status`, `is_active`를 포함
+3. `docs2/toss_point/quiz_seed/*.jsonl` 검수 후 `benefit_quiz_questions`로 적재하는 1회성 import/SQL seed 작성
+4. 서버 API/Edge Function 작성: 퀴즈 출제는 DB의 `is_active = true`와 `review_status = 'approved'` 문항만 조회
+5. `Benefits` 탭과 네비게이션 추가
+6. 상단 월렛 보드 구현
+7. 출석체크 섹션 구현
+8. 주식 상식 퀴즈 섹션 구현
+9. 가격 예측 섹션 구현
+10. 토스 포인트 받기 섹션 구현
+11. 광고 지면 연결
+12. 토스 검수 문구 및 QA 체크리스트 작성

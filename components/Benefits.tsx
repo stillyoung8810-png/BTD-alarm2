@@ -46,12 +46,16 @@ interface BenefitQuestionState<Response> {
 interface BenefitsProps {
   readonly lang: AppLang;
   readonly shouldShowAds: boolean;
+  readonly isAuthenticated: boolean;
 }
 
 const BENEFIT_LOCALE_BY_LANG: Record<AppLang, string> = {
   ko: 'ko-KR',
   en: 'en-US',
 } as const;
+const PERCENT_SCALE = 100;
+const PERCENT_DECIMAL_PLACES = 0;
+const PERCENT_ROUNDING_SCALE = 10 ** PERCENT_DECIMAL_PLACES;
 const NO_REWARD_MONEY = 0;
 const NO_UNLOCKED_ATTEMPT_REASON = 'no_unlocked_attempt_available';
 const ERROR_TOAST_DEDUP_WINDOW_MS = 1_200;
@@ -186,6 +190,25 @@ function resolveWalletItems(
     ...item,
     value: formatWalletItemValue(item.id, summary, lang, copy),
   }));
+}
+
+function formatPredictionAccuracyText(
+  summary: BenefitSummary | null,
+  copy: BenefitMessages,
+): string {
+  const predictionAccuracy = summary?.predictionAccuracy ?? null;
+  if (predictionAccuracy == null || predictionAccuracy.settledAttempts <= 0) {
+    return copy.predictionLastAccuracyEmptyLabel;
+  }
+
+  const rawPercent = predictionAccuracy.accuracyRate * PERCENT_SCALE;
+  const roundedPercent =
+    Math.round((rawPercent + Number.EPSILON) * PERCENT_ROUNDING_SCALE) /
+    PERCENT_ROUNDING_SCALE;
+
+  return `${copy.predictionLastAccuracyLabel}: ${roundedPercent.toFixed(
+    PERCENT_DECIMAL_PLACES,
+  )}%`;
 }
 
 function createIdempotencyKey(prefix: string): string {
@@ -335,7 +358,15 @@ function resolveQuestionStatusLabel(
     return fallbackStatus;
   }
 
-  if (hasQuestion || canUnlockWithAd) {
+  if (hasQuestion) {
+    return readyStatus;
+  }
+
+  if (unavailableReason === NO_UNLOCKED_ATTEMPT_REASON) {
+    return completedStatus;
+  }
+
+  if (canUnlockWithAd) {
     return readyStatus;
   }
 
@@ -383,6 +414,7 @@ function resolveTossPointStatusLabel(
 export default function Benefits({
   lang,
   shouldShowAds,
+  isAuthenticated,
 }: BenefitsProps): React.ReactElement {
   const copy = getBenefitMessages(lang);
   const { showInstantAd } = useAdPreload();
@@ -417,6 +449,18 @@ export default function Benefits({
       isMountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      return;
+    }
+
+    setSummaryStatus('idle');
+    setSummary(null);
+    setQuizState({ status: 'idle', response: null });
+    setPredictionState({ status: 'idle', response: null });
+    setNoticeMessage(null);
+  }, [isAuthenticated]);
 
   const publishInfoNotice = useCallback((message: string): void => {
     setNoticeMessage(message);
@@ -533,6 +577,10 @@ export default function Benefits({
   );
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+
     const loadInitialBenefitState = async (): Promise<void> => {
       const nextSummary = await loadSummary();
       if (nextSummary == null) {
@@ -546,7 +594,7 @@ export default function Benefits({
     };
 
     void loadInitialBenefitState();
-  }, [loadPredictionQuestion, loadQuizQuestion, loadSummary]);
+  }, [isAuthenticated, loadPredictionQuestion, loadQuizQuestion, loadSummary]);
 
   const refreshBenefitState = useCallback(async (): Promise<void> => {
     const nextSummary = await loadSummary();
@@ -818,15 +866,24 @@ export default function Benefits({
   }, [copy.summaryLoadError, loadPredictionQuestion, publishErrorNotice, summary]);
 
   const walletItems = resolveWalletItems(copy, summary, lang);
-  const isSummaryLoading = summaryStatus === 'loading' && summary == null;
+  const shouldLockGuestBenefits = !isAuthenticated;
+  const isSummaryLoading =
+    isAuthenticated && summaryStatus === 'loading' && summary == null;
   const isAttendanceDisabled =
+    shouldLockGuestBenefits ||
     summary == null ||
     summary.attendance.hasCheckedInToday ||
     attendanceCommand.isExecuting;
-  const attendanceStatusLabel = resolveAttendanceStatusLabel(copy, summary);
+  const attendanceStatusLabel = shouldLockGuestBenefits
+    ? copy.guestLockedStatus
+    : resolveAttendanceStatusLabel(copy, summary);
   const canUnlockQuizWithAd =
+    !shouldLockGuestBenefits &&
+    quizState.response?.reason === NO_UNLOCKED_ATTEMPT_REASON &&
     quizState.response?.availability.canWatchRewardedAd === true;
   const canUnlockPredictionWithAd =
+    !shouldLockGuestBenefits &&
+    predictionState.response?.reason === NO_UNLOCKED_ATTEMPT_REASON &&
     predictionState.response?.availability.canWatchRewardedAd === true;
   const isQuizBusy =
     quizSubmitCommand.isExecuting ||
@@ -836,40 +893,47 @@ export default function Benefits({
     predictionSubmitCommand.isExecuting ||
     predictionUnlockCommand.isExecuting ||
     predictionState.status === 'loading';
-  const quizStatusLabel = resolveQuestionStatusLabel(
-    quizState.status,
-    quizState.response?.question != null,
-    canUnlockQuizWithAd,
-    quizState.response?.reason,
-    copy.quizStatus,
-    copy.quizReadyStatus,
-    copy.quizUnavailableStatus,
-    copy.quizCompletedStatus,
-  );
-  const predictionStatusLabel = resolveQuestionStatusLabel(
-    predictionState.status,
-    predictionState.response?.question != null,
-    canUnlockPredictionWithAd,
-    predictionState.response?.reason,
-    copy.predictionStatus,
-    copy.predictionReadyStatus,
-    copy.predictionUnavailableStatus,
-    copy.predictionCompletedStatus,
-  );
-  const tossPointStatusLabel = resolveTossPointStatusLabel(copy, summary);
+  const quizStatusLabel = shouldLockGuestBenefits
+    ? copy.guestLockedStatus
+    : resolveQuestionStatusLabel(
+        quizState.status,
+        quizState.response?.question != null,
+        canUnlockQuizWithAd,
+        quizState.response?.reason,
+        copy.quizStatus,
+        copy.quizReadyStatus,
+        copy.quizUnavailableStatus,
+        copy.quizCompletedStatus,
+      );
+  const predictionStatusLabel = shouldLockGuestBenefits
+    ? copy.guestLockedStatus
+    : resolveQuestionStatusLabel(
+        predictionState.status,
+        predictionState.response?.question != null,
+        canUnlockPredictionWithAd,
+        predictionState.response?.reason,
+        copy.predictionStatus,
+        copy.predictionReadyStatus,
+        copy.predictionUnavailableStatus,
+        copy.predictionCompletedStatus,
+      );
+  const predictionLastAccuracyLabel = formatPredictionAccuracyText(summary, copy);
+  const tossPointStatusLabel = shouldLockGuestBenefits
+    ? copy.guestLockedStatus
+    : resolveTossPointStatusLabel(copy, summary);
   const isTossPointRedeemDisabled =
+    shouldLockGuestBenefits ||
     summary == null ||
     summary.pendingPayout.hasPendingPayout ||
     !summary.walletBoard.canRedeem ||
     tossPointRedeemCommand.isExecuting;
-  const noticeText = noticeMessage ?? copy.apiPendingNotice;
+  const noticeText = shouldLockGuestBenefits
+    ? copy.guestNoticeMessage
+    : noticeMessage ?? copy.apiPendingNotice;
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 animate-in fade-in duration-500">
       <header className="flex flex-col gap-3">
-        <span className="w-fit rounded-full bg-blue-600/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-blue-600 dark:text-blue-300">
-          {copy.launchPreparingBadge}
-        </span>
         <div>
           <h1 className="text-3xl font-black tracking-tight text-slate-950 dark:text-white">
             {copy.pageTitle}
@@ -903,6 +967,7 @@ export default function Benefits({
           copy={copy}
           lang={lang}
           statusLabel={predictionStatusLabel}
+          lastAccuracyLabel={predictionLastAccuracyLabel}
           questionResponse={predictionState.response}
           isLoading={predictionState.status === 'loading'}
           isBusy={isPredictionBusy}

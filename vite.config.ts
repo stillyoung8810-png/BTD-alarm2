@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react';
 import { visualizer } from 'rollup-plugin-visualizer';
 
 const CLIENT_ENV_PREFIXES = [
+  'VITE_BENEFIT_',
   'VITE_BACKTEST_',
   'VITE_FIREBASE_',
   'VITE_GEMINI_',

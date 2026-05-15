@@ -9,6 +9,7 @@ interface BenefitQuestCardProps {
   readonly statusLabel: string;
   readonly icon: React.ReactNode;
   readonly accentClassName: string;
+  readonly metaLabel?: string;
   readonly isCtaLoading?: boolean;
   readonly isCtaDisabled?: boolean;
   readonly children?: React.ReactNode;
@@ -24,6 +25,7 @@ export function BenefitQuestCard({
   statusLabel,
   icon,
   accentClassName,
+  metaLabel,
   isCtaLoading = false,
   isCtaDisabled = false,
   children,
@@ -50,6 +52,11 @@ export function BenefitQuestCard({
       <h3 className="text-lg font-black tracking-tight text-slate-950 dark:text-white">
         {title}
       </h3>
+      {metaLabel != null && (
+        <p className="mt-1 text-xs font-black text-blue-500 dark:text-blue-300">
+          {metaLabel}
+        </p>
+      )}
       <p className="mt-2 min-h-[48px] text-sm font-semibold leading-6 text-slate-500 dark:text-slate-400">
         {subtitle}
       </p>

@@ -32,6 +32,8 @@ const TOSS_POINT_REDEEM_ROUTE = '/toss-point/redeem';
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const RATIO_MIN = 0;
+const RATIO_MAX = 1;
 
 type BenefitRoute =
   | typeof SUMMARY_ROUTE
@@ -99,6 +101,13 @@ export interface BenefitAttendanceSummary {
   readonly streakBonusMoney: number;
 }
 
+export interface BenefitPredictionAccuracySummary {
+  readonly resultTradeDate: string;
+  readonly correctAttempts: number;
+  readonly settledAttempts: number;
+  readonly accuracyRate: number;
+}
+
 export interface BenefitSummary {
   readonly summaryDate: string;
   readonly wallet: {
@@ -115,6 +124,7 @@ export interface BenefitSummary {
     readonly stockQuiz: BenefitMissionSummary;
     readonly pricePrediction: BenefitMissionSummary;
   };
+  readonly predictionAccuracy: BenefitPredictionAccuracySummary | null;
 }
 
 export interface BenefitSummaryRequest {
@@ -521,6 +531,20 @@ function readPositiveNumber(
   return candidate;
 }
 
+function readRatioNumber(value: Record<string, unknown>, key: string): number | null {
+  const candidate = value[key];
+  if (
+    typeof candidate !== 'number' ||
+    !Number.isFinite(candidate) ||
+    candidate < RATIO_MIN ||
+    candidate > RATIO_MAX
+  ) {
+    return null;
+  }
+
+  return candidate;
+}
+
 function readNullableNonNegativeInteger(
   value: Record<string, unknown>,
   key: string,
@@ -733,6 +757,43 @@ function decodeAttendanceSummary(value: unknown): BenefitAttendanceSummary | nul
   };
 }
 
+function decodePredictionAccuracySummary(
+  value: unknown,
+): BenefitPredictionAccuracySummary | null {
+  if (value == null) {
+    return null;
+  }
+
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const resultTradeDate = readDateString(value, 'resultTradeDate');
+  const correctAttempts = readNonNegativeInteger(value, 'correctAttempts');
+  const settledAttempts = readNonNegativeInteger(value, 'settledAttempts');
+  const accuracyRate = readRatioNumber(value, 'accuracyRate');
+  const hasInvalidAttemptCounts =
+    settledAttempts == null ||
+    settledAttempts <= 0 ||
+    correctAttempts == null ||
+    correctAttempts > settledAttempts;
+
+  if (
+    resultTradeDate == null ||
+    hasInvalidAttemptCounts ||
+    accuracyRate == null
+  ) {
+    return null;
+  }
+
+  return {
+    resultTradeDate,
+    correctAttempts,
+    settledAttempts,
+    accuracyRate,
+  };
+}
+
 function decodeBenefitSummary(value: unknown): BenefitSummary | null {
   if (!isRecord(value)) {
     return null;
@@ -746,6 +807,9 @@ function decodeBenefitSummary(value: unknown): BenefitSummary | null {
   const attendance = decodeAttendanceSummary(value.attendance);
   const stockQuiz = decodeMissionSummary(missions?.stockQuiz);
   const pricePrediction = decodeMissionSummary(missions?.pricePrediction);
+  const predictionAccuracy = decodePredictionAccuracySummary(
+    value.predictionAccuracy,
+  );
 
   if (
     summaryDate == null ||
@@ -794,6 +858,7 @@ function decodeBenefitSummary(value: unknown): BenefitSummary | null {
       stockQuiz,
       pricePrediction,
     },
+    predictionAccuracy,
   };
 }
 

@@ -462,6 +462,7 @@ Phase 4B 추가:
 | `VITE_BENEFIT_TAB_ENABLED` | `false` | 혜택 탭 숨김 |
 | `VITE_TOSS_PROMOTION_APPROVED` | `false` | 프로모션 승인 전 차단 |
 | `VITE_BENEFIT_API_READY` | `false` | 서버 최종 QA 전 차단 |
+| `VITE_BENEFIT_PREVIEW_ENABLED` | `false` | QA 전용 토스 앱 환경 감지 우회. 운영 출시 전 반드시 false |
 
 기존 필수:
 

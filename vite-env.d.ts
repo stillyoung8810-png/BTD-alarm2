@@ -29,6 +29,7 @@ declare global {
     readonly VITE_BENEFIT_TAB_ENABLED?: BooleanEnvFlag;
     readonly VITE_TOSS_PROMOTION_APPROVED?: BooleanEnvFlag;
     readonly VITE_BENEFIT_API_READY?: BooleanEnvFlag;
+    readonly VITE_BENEFIT_PREVIEW_ENABLED?: BooleanEnvFlag;
 
     readonly VITE_PLAN_AMOUNT_PRO?: NumericEnvString;
     readonly VITE_PLAN_AMOUNT_PREMIUM?: NumericEnvString;

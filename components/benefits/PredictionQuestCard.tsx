@@ -18,6 +18,7 @@ interface PredictionQuestCardProps {
   readonly copy: BenefitMessages;
   readonly lang: AppLang;
   readonly statusLabel: string;
+  readonly lastAccuracyLabel: string;
   readonly questionResponse: BenefitPredictionQuestionResponse | null;
   readonly isLoading: boolean;
   readonly isBusy: boolean;
@@ -32,6 +33,7 @@ export function PredictionQuestCard({
   copy,
   lang,
   statusLabel,
+  lastAccuracyLabel,
   questionResponse,
   isLoading,
   isBusy,
@@ -49,6 +51,10 @@ export function PredictionQuestCard({
     : copy.predictionQuestionLoadCta;
   const handlePrimaryClick = canUnlockWithAd ? onUnlockWithAd : onRefreshQuestion;
   const shouldDisablePrimary = isBusy || isLoading || isDisabled;
+  const unavailableMessage =
+    questionResponse?.reason === 'no_unlocked_attempt_available'
+      ? copy.missionNotUnlockedMessage
+      : copy.predictionNoQuestionMessage;
   const basePriceText =
     question == null
       ? ''
@@ -60,6 +66,7 @@ export function PredictionQuestCard({
     <BenefitQuestCard
       title={copy.predictionTitle}
       subtitle={copy.predictionSubtitle}
+      metaLabel={lastAccuracyLabel}
       ctaLabel={hasSubmittableQuestion ? undefined : primaryCtaLabel}
       loadingLabel={copy.actionLoadingLabel}
       statusLabel={statusLabel}
@@ -93,7 +100,7 @@ export function PredictionQuestCard({
     >
       {question == null ? (
         <p className="mt-4 rounded-2xl bg-slate-50 p-3 text-xs font-bold leading-5 text-slate-500 dark:bg-white/[0.03] dark:text-slate-400">
-          {copy.predictionNoQuestionMessage}
+          {unavailableMessage}
         </p>
       ) : (
         <div className="mt-4 rounded-2xl bg-blue-50 p-4 ring-1 ring-blue-100 dark:bg-blue-400/10 dark:ring-blue-400/20">

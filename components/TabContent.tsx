@@ -214,22 +214,15 @@ const TabContentComponent: React.FC<TabContentProps> = (props) => {
       );
 
     case 'benefits':
-      if (user == null) {
-        return (
-          <Landing
-            lang={lang}
-            onOpenSignup={onOpenSignup}
-            onOpenLogin={onOpenLogin}
-            onContinueWithToss={onContinueWithToss}
-          />
-        );
-      }
-
       return (
         <React.Suspense
           fallback={<SuspenseFallback message={copy.loadingGeneric} />}
         >
-          <Benefits lang={lang} shouldShowAds={shouldShowAds} />
+          <Benefits
+            lang={lang}
+            shouldShowAds={shouldShowAds}
+            isAuthenticated={user != null}
+          />
         </React.Suspense>
       );
 

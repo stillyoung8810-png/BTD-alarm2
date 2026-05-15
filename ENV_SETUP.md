@@ -44,6 +44,9 @@ VITE_RAILWAY_BFF_URL=https://your-bff.railway.app
 VITE_BENEFIT_TAB_ENABLED=false
 VITE_TOSS_PROMOTION_APPROVED=false
 VITE_BENEFIT_API_READY=false
+# QA 전용: 일반 브라우저/AIT 콘솔 미리보기에서 토스 앱 환경 감지만 우회합니다.
+# 운영 출시 전에는 반드시 false로 닫아야 합니다.
+VITE_BENEFIT_PREVIEW_ENABLED=false
 ```
 
 ---

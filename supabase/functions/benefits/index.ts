@@ -6,12 +6,10 @@ import {
   redeemTossPoints,
   resolveBenefitWalletBoardSummary,
   resolveDailyAttemptAvailability,
-  resolvePredictionCandidateSymbols,
   resolveRewardedAdServerUnlock,
   selectNextQuizQuestion,
   type DailyAttemptState,
   type MissionKind,
-  type PredictionPortfolioSnapshot,
   type QuestionPhase,
   type QuizQuestionSnapshot,
   type UserQuestionAttemptSnapshot,
@@ -49,8 +47,6 @@ const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const QUIZ_QUESTION_QUERY_LIMIT = 500;
 const QUIZ_ATTEMPT_HISTORY_LIMIT = 1_000;
-const PREDICTION_QUESTION_LOOKAHEAD_LIMIT = 50;
-const PREDICTION_FALLBACK_SYMBOLS = ["SPY", "QQQ", "TQQQ"] as const;
 const BENEFIT_BFF_PROMOTION_TIMEOUT_MS = 15_000;
 const BENEFIT_BFF_PROMOTION_PATH = "/benefits/toss-point/execute-promotion";
 
@@ -96,8 +92,11 @@ interface BenefitPredictionQuestionRow {
   readonly base_close: number | string;
 }
 
-interface PortfolioStrategyRow {
-  readonly strategy: unknown;
+interface BenefitPredictionAccuracySummaryRow {
+  readonly result_trade_date: string;
+  readonly correct_attempts: number;
+  readonly settled_attempts: number;
+  readonly accuracy_rate: number | string;
 }
 
 interface BenefitRedeemRpcResult {
@@ -597,6 +596,61 @@ async function readAttendanceSummary(
   };
 }
 
+function formatPredictionAccuracySummary(
+  row: BenefitPredictionAccuracySummaryRow | null,
+): JsonObject | null {
+  if (row == null) {
+    return null;
+  }
+
+  const settledAttempts = readNonNegativeInteger(
+    row.settled_attempts,
+    "settledAttempts",
+  );
+  if (settledAttempts <= 0) {
+    return null;
+  }
+
+  const accuracyRate = Number.parseFloat(String(row.accuracy_rate));
+  if (!Number.isFinite(accuracyRate) || accuracyRate < 0 || accuracyRate > 1) {
+    throw new Error("prediction_accuracy_rate_invalid");
+  }
+
+  const correctAttempts = readNonNegativeInteger(
+    row.correct_attempts,
+    "correctAttempts",
+  );
+  if (correctAttempts > settledAttempts) {
+    throw new Error("prediction_accuracy_attempt_count_invalid");
+  }
+
+  return {
+    resultTradeDate: row.result_trade_date,
+    correctAttempts,
+    settledAttempts,
+    accuracyRate,
+  };
+}
+
+async function readPredictionAccuracySummary(
+  adminClient: SupabaseClient,
+  userId: string,
+): Promise<JsonObject | null> {
+  const { data, error } = await adminClient
+    .from("benefit_prediction_accuracy_summaries")
+    .select("result_trade_date, correct_attempts, settled_attempts, accuracy_rate")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error != null) {
+    throw new Error(`prediction_accuracy_summary_read_failed:${error.message}`);
+  }
+
+  return formatPredictionAccuracySummary(
+    data as BenefitPredictionAccuracySummaryRow | null,
+  );
+}
+
 async function handleSummary(
   req: Request,
   context: AuthenticatedRequestContext,
@@ -633,7 +687,12 @@ async function handleSummary(
     pendingTossPointAmount,
   });
 
-  const [attendance, quizMission, predictionMission] = await Promise.all([
+  const [
+    attendance,
+    quizMission,
+    predictionMission,
+    predictionAccuracy,
+  ] = await Promise.all([
     readAttendanceSummary(context.adminClient, context.userId, summaryDate),
     readMissionSummary(
       context.adminClient,
@@ -647,6 +706,7 @@ async function handleSummary(
       "price_prediction",
       summaryDate,
     ),
+    readPredictionAccuracySummary(context.adminClient, context.userId),
   ]);
 
   return jsonResponse(req, 200, {
@@ -667,6 +727,7 @@ async function handleSummary(
         stockQuiz: quizMission,
         pricePrediction: predictionMission,
       },
+      predictionAccuracy,
     },
   });
 }
@@ -809,60 +870,6 @@ async function handleQuizQuestion(
   });
 }
 
-function readPredictionStrategyStockSlot(
-  value: unknown,
-): { readonly stock?: string | null } | null {
-  if (!isJsonObject(value)) {
-    return null;
-  }
-
-  const stock = value.stock;
-  if (typeof stock !== "string") {
-    return null;
-  }
-
-  return { stock };
-}
-
-function toPredictionPortfolioSnapshot(
-  row: PortfolioStrategyRow,
-): PredictionPortfolioSnapshot | null {
-  if (!isJsonObject(row.strategy)) {
-    return null;
-  }
-
-  return {
-    strategy: {
-      ma0: readPredictionStrategyStockSlot(row.strategy.ma0),
-      ma1: readPredictionStrategyStockSlot(row.strategy.ma1),
-      ma2: readPredictionStrategyStockSlot(row.strategy.ma2),
-      ma3: readPredictionStrategyStockSlot(row.strategy.ma3),
-    },
-  };
-}
-
-async function readPredictionPortfolios(
-  adminClient: SupabaseClient,
-  userId: string,
-): Promise<readonly PredictionPortfolioSnapshot[]> {
-  const { data, error } = await adminClient
-    .from("portfolios")
-    .select("strategy")
-    .eq("user_id", userId)
-    .eq("is_closed", false);
-
-  if (error != null) {
-    throw new Error(`prediction_portfolio_read_failed:${error.message}`);
-  }
-
-  const portfolioRows = (data ?? []) as readonly PortfolioStrategyRow[];
-  return portfolioRows
-    .map(toPredictionPortfolioSnapshot)
-    .filter((portfolio): portfolio is PredictionPortfolioSnapshot =>
-      portfolio != null
-    );
-}
-
 function formatPredictionQuestion(
   row: BenefitPredictionQuestionRow,
 ): JsonObject {
@@ -901,55 +908,44 @@ async function handlePredictionQuestion(
     });
   }
 
-  const { data, error } = await context.adminClient
-    .from("benefit_prediction_questions")
-    .select("id, symbol, question_date, base_trade_date, base_close")
-    .eq("status", "open")
-    .lte("question_date", attemptDate)
-    .order("question_date", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(PREDICTION_QUESTION_LOOKAHEAD_LIMIT);
-
-  if (error != null) {
-    throw new Error(`prediction_question_read_failed:${error.message}`);
-  }
-
-  const questionRows = (data ?? []) as readonly BenefitPredictionQuestionRow[];
-  if (questionRows.length === 0) {
+  const attemptSequence = resolveNextAttemptSequence(missionState);
+  if (attemptSequence == null) {
     return jsonResponse(req, 200, {
       success: true,
       data: {
         attemptDate,
-        attemptSequence: resolveNextAttemptSequence(missionState),
+        attemptSequence: null,
         availability,
         question: null,
-        reason: "prediction_question_not_ready",
+        reason: "no_unlocked_attempt_available",
       },
     });
   }
 
-  const supportedSymbols = [
-    ...new Set(questionRows.map((row) => normalizeStockSymbol(row.symbol))),
-  ];
-  const candidateSymbols = resolvePredictionCandidateSymbols(
-    await readPredictionPortfolios(context.adminClient, context.userId),
-    supportedSymbols,
-    PREDICTION_FALLBACK_SYMBOLS,
-  );
-  const candidateSymbolSet = new Set(candidateSymbols);
-  const selectedQuestion = questionRows.find((row) =>
-    candidateSymbolSet.has(normalizeStockSymbol(row.symbol))
+  const { data, error } = await context.adminClient.rpc(
+    "select_benefit_prediction_question",
+    {
+      p_user_id: context.userId,
+      p_attempt_date: attemptDate,
+      p_attempt_sequence: attemptSequence,
+    },
   );
 
+  if (error != null) {
+    throw new Error(`prediction_question_select_failed:${error.message}`);
+  }
+
+  const questionRows = (data ?? []) as readonly BenefitPredictionQuestionRow[];
+  const selectedQuestion = questionRows[0] ?? null;
   if (selectedQuestion == null) {
     return jsonResponse(req, 200, {
       success: true,
       data: {
         attemptDate,
-        attemptSequence: resolveNextAttemptSequence(missionState),
+        attemptSequence,
         availability,
         question: null,
-        reason: "prediction_candidate_not_ready",
+        reason: "prediction_question_not_ready",
       },
     });
   }
@@ -958,7 +954,7 @@ async function handlePredictionQuestion(
     success: true,
     data: {
       attemptDate,
-      attemptSequence: resolveNextAttemptSequence(missionState),
+      attemptSequence,
       availability,
       question: formatPredictionQuestion(selectedQuestion),
     },

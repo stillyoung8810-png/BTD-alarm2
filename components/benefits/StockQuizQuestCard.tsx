@@ -37,6 +37,10 @@ export function StockQuizQuestCard({
     : copy.quizQuestionLoadCta;
   const handlePrimaryClick = canUnlockWithAd ? onUnlockWithAd : onRefreshQuestion;
   const shouldDisablePrimary = isBusy || isLoading || isDisabled;
+  const unavailableMessage =
+    questionResponse?.reason === 'no_unlocked_attempt_available'
+      ? copy.missionNotUnlockedMessage
+      : copy.quizNoQuestionMessage;
 
   return (
     <BenefitQuestCard
@@ -71,7 +75,7 @@ export function StockQuizQuestCard({
     >
       {question == null ? (
         <p className="mt-4 rounded-2xl bg-slate-50 p-3 text-xs font-bold leading-5 text-slate-500 dark:bg-white/[0.03] dark:text-slate-400">
-          {copy.quizNoQuestionMessage}
+          {unavailableMessage}
         </p>
       ) : (
         <div className="mt-4 rounded-2xl bg-violet-50 p-4 ring-1 ring-violet-100 dark:bg-violet-400/10 dark:ring-violet-400/20">

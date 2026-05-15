@@ -10,7 +10,6 @@ export interface BenefitMessages {
   readonly navLabel: string;
   readonly pageTitle: string;
   readonly pageSubtitle: string;
-  readonly launchPreparingBadge: string;
   readonly actionLoadingLabel: string;
   readonly retryCta: string;
   readonly moneyUnit: string;
@@ -19,6 +18,8 @@ export interface BenefitMessages {
   readonly walletSubtitle: string;
   readonly walletSkeletonLabel: string;
   readonly walletItems: readonly BenefitWalletBoardItemCopy[];
+  readonly guestLockedStatus: string;
+  readonly guestNoticeMessage: string;
   readonly summaryLoadError: string;
   readonly authRequiredMessage: string;
   readonly networkErrorMessage: string;
@@ -46,6 +47,8 @@ export interface BenefitMessages {
   readonly predictionNoQuestionMessage: string;
   readonly predictionSubmitSuccessMessage: string;
   readonly predictionPendingResultMessage: string;
+  readonly predictionLastAccuracyLabel: string;
+  readonly predictionLastAccuracyEmptyLabel: string;
   readonly quizTitle: string;
   readonly quizSubtitle: string;
   readonly quizCta: string;
@@ -94,7 +97,6 @@ export const BENEFIT_MESSAGES: Record<AppLang, BenefitMessages> = {
     navLabel: '혜택',
     pageTitle: '혜택',
     pageSubtitle: '출석, 예측, 퀴즈로 머니를 모으고 토스 포인트 받기를 준비합니다.',
-    launchPreparingBadge: 'PHASE 4 API',
     actionLoadingLabel: '처리 중',
     retryCta: '다시 시도',
     moneyUnit: '머니',
@@ -108,6 +110,8 @@ export const BENEFIT_MESSAGES: Record<AppLang, BenefitMessages> = {
       { id: 'redeemable', label: '받을 수 있는 토스 포인트', value: '0P' },
       { id: 'pending', label: '지급 대기', value: '0P' },
     ],
+    guestLockedStatus: '로그인 후 이용 가능',
+    guestNoticeMessage: '로그인하면 출석, 예측, 퀴즈와 토스 포인트 받기를 이용할 수 있습니다.',
     summaryLoadError: '혜택 지갑 정보를 불러오지 못했습니다.',
     authRequiredMessage: '로그인 세션을 확인한 뒤 다시 시도해 주세요.',
     networkErrorMessage: '네트워크 상태를 확인한 뒤 다시 시도해 주세요.',
@@ -121,7 +125,7 @@ export const BENEFIT_MESSAGES: Record<AppLang, BenefitMessages> = {
     attendanceSuccessMessage: '출석 보상이 지갑에 반영되었습니다.',
     attendanceStreakSuccessMessage: '출석 보상과 연속 출석 보너스가 지갑에 반영되었습니다.',
     predictionTitle: '주식 가격 예측',
-    predictionSubtitle: '내 전략 종목 기반 상승/하락 예측 화면입니다.',
+    predictionSubtitle: '서비스 지원 종목의 다음 영업일 종가 상승/하락을 예측합니다.',
     predictionCta: '예측 문제 보기',
     predictionStatus: '상태 확인 중',
     predictionReadyStatus: '예측 참여 가능',
@@ -132,9 +136,11 @@ export const BENEFIT_MESSAGES: Record<AppLang, BenefitMessages> = {
     predictionUpCta: '상승',
     predictionDownCta: '하락',
     predictionBasePriceLabel: '기준가',
-    predictionNoQuestionMessage: '지금 풀 수 있는 예측 문제가 없습니다.',
+    predictionNoQuestionMessage: '지금 참여 가능한 예측 문제가 없습니다.',
     predictionSubmitSuccessMessage: '예측 보상이 지갑에 반영되었습니다.',
     predictionPendingResultMessage: '예측 참여 보상이 지갑에 반영되었습니다. 정답 판정은 정산 시 확정됩니다.',
+    predictionLastAccuracyLabel: '직전 정답률',
+    predictionLastAccuracyEmptyLabel: '직전 정답률 없음',
     quizTitle: '주식 상식 퀴즈',
     quizSubtitle: '쉬운 주식·ETF·경제 상식 문제를 풉니다.',
     quizCta: '퀴즈 시작하기',
@@ -182,7 +188,6 @@ export const BENEFIT_MESSAGES: Record<AppLang, BenefitMessages> = {
     navLabel: 'Benefits',
     pageTitle: 'Benefits',
     pageSubtitle: 'Collect money through attendance, predictions, and quizzes.',
-    launchPreparingBadge: 'PHASE 4 API',
     actionLoadingLabel: 'Processing',
     retryCta: 'Retry',
     moneyUnit: 'money',
@@ -196,6 +201,8 @@ export const BENEFIT_MESSAGES: Record<AppLang, BenefitMessages> = {
       { id: 'redeemable', label: 'Redeemable Toss Points', value: '0P' },
       { id: 'pending', label: 'Pending', value: '0P' },
     ],
+    guestLockedStatus: 'Available after login',
+    guestNoticeMessage: 'Log in to use attendance, predictions, quizzes, and Toss Point redemption.',
     summaryLoadError: 'Could not load your benefit wallet.',
     authRequiredMessage: 'Please check your login session and try again.',
     networkErrorMessage: 'Please check your network connection and try again.',
@@ -209,7 +216,7 @@ export const BENEFIT_MESSAGES: Record<AppLang, BenefitMessages> = {
     attendanceSuccessMessage: 'Attendance reward has been added to your wallet.',
     attendanceStreakSuccessMessage: 'Attendance and streak bonus rewards have been added to your wallet.',
     predictionTitle: 'Stock Price Prediction',
-    predictionSubtitle: 'A shell for up/down predictions based on strategy symbols.',
+    predictionSubtitle: 'Predict whether a supported symbol closes up or down on the next trading day.',
     predictionCta: 'View Prediction',
     predictionStatus: 'Checking status',
     predictionReadyStatus: 'Prediction ready',
@@ -220,9 +227,11 @@ export const BENEFIT_MESSAGES: Record<AppLang, BenefitMessages> = {
     predictionUpCta: 'Up',
     predictionDownCta: 'Down',
     predictionBasePriceLabel: 'Base price',
-    predictionNoQuestionMessage: 'No prediction is available right now.',
+    predictionNoQuestionMessage: 'No prediction is available to join right now.',
     predictionSubmitSuccessMessage: 'Prediction reward has been added to your wallet.',
     predictionPendingResultMessage: 'Participation reward has been added. The final result will be settled later.',
+    predictionLastAccuracyLabel: 'Last accuracy',
+    predictionLastAccuracyEmptyLabel: 'No settled accuracy yet',
     quizTitle: 'Stock Basics Quiz',
     quizSubtitle: 'Answer easy stock, ETF, and economy basics questions.',
     quizCta: 'Start Quiz',

@@ -1,5 +1,4 @@
 import React from 'react';
-import { WalletCards } from 'lucide-react';
 import type {
   BenefitMessages,
   BenefitWalletBoardItemCopy,
@@ -49,10 +48,6 @@ export function BenefitWalletBoard({
     >
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-blue-600/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-blue-600 dark:text-blue-300">
-            <WalletCards size={14} aria-hidden />
-            {copy.launchPreparingBadge}
-          </div>
           <h2 className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">
             {copy.walletTitle}
           </h2>

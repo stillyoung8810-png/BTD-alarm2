@@ -349,6 +349,9 @@ const App: React.FC = () => {
   const KST_UPDATE_HOUR = 7;
   const KST_UPDATE_MINUTE = 20;
   const isInTossApp = isTossApp();
+  const shouldEnableBenefitPreview = parseViteBooleanEnvFlag(
+    import.meta.env.VITE_BENEFIT_PREVIEW_ENABLED,
+  );
   const shouldExposeBenefits = shouldExposeBenefitTab({
     isFeatureFlagEnabled: parseViteBooleanEnvFlag(
       import.meta.env.VITE_BENEFIT_TAB_ENABLED,
@@ -360,7 +363,7 @@ const App: React.FC = () => {
     hasBenefitApiReady: parseViteBooleanEnvFlag(
       import.meta.env.VITE_BENEFIT_API_READY,
     ),
-    isInTossApp,
+    isInTossApp: isInTossApp || shouldEnableBenefitPreview,
   });
 
   useEffect(() => {

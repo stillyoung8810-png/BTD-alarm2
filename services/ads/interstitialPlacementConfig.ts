@@ -37,6 +37,7 @@ export interface InterstitialPlacementDefinition {
   readonly adGroupId: string;
   readonly preloadOnRoutes: readonly AdRouteKey[];
   readonly eligibleTiers: readonly UserTier[];
+  readonly shouldDeferFirstAttempt: boolean;
 }
 
 type InterstitialPlacementDefinitionBase = Omit<
@@ -50,26 +51,31 @@ const INTERSTITIAL_PLACEMENT_DEFINITION_BASES: readonly InterstitialPlacementDef
       key: INTERSTITIAL_PLACEMENT_KEYS.STRATEGY_SAVE,
       preloadOnRoutes: ['dashboard'],
       eligibleTiers: ['free'],
+      shouldDeferFirstAttempt: true,
     },
     {
       key: INTERSTITIAL_PLACEMENT_KEYS.TRADE_SAVE,
       preloadOnRoutes: ['dashboard', 'portfolio_details'],
       eligibleTiers: ['free'],
+      shouldDeferFirstAttempt: true,
     },
     {
       key: INTERSTITIAL_PLACEMENT_KEYS.ALARM_SAVE,
       preloadOnRoutes: ['dashboard'],
       eligibleTiers: ['free'],
+      shouldDeferFirstAttempt: true,
     },
     {
       key: INTERSTITIAL_PLACEMENT_KEYS.SETTLEMENT_DETAIL,
       preloadOnRoutes: ['history', 'portfolio_details'],
       eligibleTiers: ['free'],
+      shouldDeferFirstAttempt: true,
     },
     {
       key: INTERSTITIAL_PLACEMENT_KEYS.BENEFIT_MISSION_REWARD,
       preloadOnRoutes: ['benefits'],
       eligibleTiers: ['free'],
+      shouldDeferFirstAttempt: false,
     },
   ] as const;
 

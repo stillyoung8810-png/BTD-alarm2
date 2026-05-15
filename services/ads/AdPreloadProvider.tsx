@@ -14,6 +14,14 @@ import {
 import type { UserTier } from '@/types/userTier';
 import type { InterstitialPlacementKey } from './interstitialPlacementConfig';
 
+const INSTANT_AD_NOT_READY_RETRY_DELAYS_MS = [400, 900, 1_400] as const;
+
+function waitForInstantAdRetry(delayMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    globalThis.setTimeout(resolve, delayMs);
+  });
+}
+
 export interface AdPreloadContextValue {
   snapshots: ReadonlyArray<AdSlotSnapshot>;
   showInstantAd: (key: InterstitialPlacementKey) => Promise<boolean>;
@@ -62,7 +70,16 @@ export function AdPreloadProvider({
       isExecutingRef.current = true;
 
       try {
-        const result = await Promise.resolve(manager.showInstant(key));
+        let result = await Promise.resolve(manager.showInstant(key));
+        for (const delayMs of INSTANT_AD_NOT_READY_RETRY_DELAYS_MS) {
+          if (result.shown || result.code !== 'skipped_not_ready') {
+            return result.shown;
+          }
+
+          await waitForInstantAdRetry(delayMs);
+          result = await Promise.resolve(manager.showInstant(key));
+        }
+
         return result.shown;
       } catch (error: unknown) {
         console.error('[AdPreloadProvider] showInstantAd failed:', error);

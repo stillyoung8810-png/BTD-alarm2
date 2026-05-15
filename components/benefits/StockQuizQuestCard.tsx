@@ -46,6 +46,7 @@ export function StockQuizQuestCard({
     <BenefitQuestCard
       title={copy.quizTitle}
       subtitle={copy.quizSubtitle}
+      rewardLabel={copy.quizRewardLabel}
       ctaLabel={hasSubmittableQuestion ? undefined : primaryCtaLabel}
       loadingLabel={copy.actionLoadingLabel}
       statusLabel={statusLabel}

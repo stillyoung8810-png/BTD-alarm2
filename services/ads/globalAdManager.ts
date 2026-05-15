@@ -658,7 +658,10 @@ export class GlobalAdManager {
       return { ok: false, code: 'skipped_ineligible_tier' };
     }
 
-    if (this.deferFirstInterstitialAttemptOncePerSession) {
+    if (
+      this.deferFirstInterstitialAttemptOncePerSession &&
+      definition.shouldDeferFirstAttempt
+    ) {
       if (!this.hasConsumedDeferredFirstInterstitialAttempt) {
         this.hasConsumedDeferredFirstInterstitialAttempt = true;
         return { ok: false, code: 'skipped_first_action_exemption' };

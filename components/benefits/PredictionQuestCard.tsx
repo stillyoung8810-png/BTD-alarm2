@@ -66,6 +66,7 @@ export function PredictionQuestCard({
     <BenefitQuestCard
       title={copy.predictionTitle}
       subtitle={copy.predictionSubtitle}
+      rewardLabel={copy.predictionRewardLabel}
       metaLabel={lastAccuracyLabel}
       ctaLabel={hasSubmittableQuestion ? undefined : primaryCtaLabel}
       loadingLabel={copy.actionLoadingLabel}

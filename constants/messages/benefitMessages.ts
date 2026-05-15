@@ -25,6 +25,7 @@ export interface BenefitMessages {
   readonly networkErrorMessage: string;
   readonly genericActionError: string;
   readonly attendanceTitle: string;
+  readonly attendanceRewardLabel: string;
   readonly attendanceSubtitle: string;
   readonly attendanceCta: string;
   readonly attendanceStatus: string;
@@ -33,6 +34,7 @@ export interface BenefitMessages {
   readonly attendanceSuccessMessage: string;
   readonly attendanceStreakSuccessMessage: string;
   readonly predictionTitle: string;
+  readonly predictionRewardLabel: string;
   readonly predictionSubtitle: string;
   readonly predictionCta: string;
   readonly predictionStatus: string;
@@ -50,6 +52,7 @@ export interface BenefitMessages {
   readonly predictionLastAccuracyLabel: string;
   readonly predictionLastAccuracyEmptyLabel: string;
   readonly quizTitle: string;
+  readonly quizRewardLabel: string;
   readonly quizSubtitle: string;
   readonly quizCta: string;
   readonly quizStatus: string;
@@ -117,6 +120,7 @@ export const BENEFIT_MESSAGES: Record<AppLang, BenefitMessages> = {
     networkErrorMessage: '네트워크 상태를 확인한 뒤 다시 시도해 주세요.',
     genericActionError: '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.',
     attendanceTitle: '출석체크',
+    attendanceRewardLabel: '참여 보상 5머니',
     attendanceSubtitle: '하루 한 번 출석하고 연속 출석 보너스를 준비합니다.',
     attendanceCta: '출석체크하기',
     attendanceStatus: '상태 확인 중',
@@ -125,6 +129,7 @@ export const BENEFIT_MESSAGES: Record<AppLang, BenefitMessages> = {
     attendanceSuccessMessage: '출석 보상이 지갑에 반영되었습니다.',
     attendanceStreakSuccessMessage: '출석 보상과 연속 출석 보너스가 지갑에 반영되었습니다.',
     predictionTitle: '주식 가격 예측',
+    predictionRewardLabel: '참여 보상 10머니',
     predictionSubtitle: '서비스 지원 종목의 다음 영업일 종가 상승/하락을 예측합니다.',
     predictionCta: '예측 문제 보기',
     predictionStatus: '상태 확인 중',
@@ -142,6 +147,7 @@ export const BENEFIT_MESSAGES: Record<AppLang, BenefitMessages> = {
     predictionLastAccuracyLabel: '직전 정답률',
     predictionLastAccuracyEmptyLabel: '직전 정답률 없음',
     quizTitle: '주식 상식 퀴즈',
+    quizRewardLabel: '참여 보상 10머니',
     quizSubtitle: '쉬운 주식·ETF·경제 상식 문제를 풉니다.',
     quizCta: '퀴즈 시작하기',
     quizStatus: '상태 확인 중',
@@ -208,6 +214,7 @@ export const BENEFIT_MESSAGES: Record<AppLang, BenefitMessages> = {
     networkErrorMessage: 'Please check your network connection and try again.',
     genericActionError: 'We could not process the request. Please try again later.',
     attendanceTitle: 'Attendance',
+    attendanceRewardLabel: 'Participation reward 5 money',
     attendanceSubtitle: 'Check in once a day and prepare streak bonuses.',
     attendanceCta: 'Check In',
     attendanceStatus: 'Checking status',
@@ -216,6 +223,7 @@ export const BENEFIT_MESSAGES: Record<AppLang, BenefitMessages> = {
     attendanceSuccessMessage: 'Attendance reward has been added to your wallet.',
     attendanceStreakSuccessMessage: 'Attendance and streak bonus rewards have been added to your wallet.',
     predictionTitle: 'Stock Price Prediction',
+    predictionRewardLabel: 'Participation reward 10 money',
     predictionSubtitle: 'Predict whether a supported symbol closes up or down on the next trading day.',
     predictionCta: 'View Prediction',
     predictionStatus: 'Checking status',
@@ -233,6 +241,7 @@ export const BENEFIT_MESSAGES: Record<AppLang, BenefitMessages> = {
     predictionLastAccuracyLabel: 'Last accuracy',
     predictionLastAccuracyEmptyLabel: 'No settled accuracy yet',
     quizTitle: 'Stock Basics Quiz',
+    quizRewardLabel: 'Participation reward 10 money',
     quizSubtitle: 'Answer easy stock, ETF, and economy basics questions.',
     quizCta: 'Start Quiz',
     quizStatus: 'Checking status',

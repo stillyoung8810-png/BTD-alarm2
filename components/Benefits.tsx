@@ -7,8 +7,11 @@ import {
 import { useMutexAction } from '@/hooks/useMutexAction';
 import { showErrorToast } from '@/components/tds-adapter/showErrorToast';
 import { useAdPreload } from '@/services/ads/AdPreloadProvider';
+import {
+  getResolvedBenefitFeedBannerAdGroupId,
+  REWARD_UNLOCK_AI_AD_GROUP_ID,
+} from '@/services/ads/adPlacements';
 import { INTERSTITIAL_PLACEMENT_KEYS } from '@/services/ads/interstitialPlacementConfig';
-import { REWARD_UNLOCK_AI_AD_GROUP_ID } from '@/services/ads/adPlacements';
 import { requestRewardAd } from '@/services/ads/rewardAdService';
 import {
   checkInBenefitAttendance,
@@ -40,6 +43,7 @@ import { BenefitWalletBoard } from './benefits/BenefitWalletBoard';
 import { PredictionQuestCard } from './benefits/PredictionQuestCard';
 import { StockQuizQuestCard } from './benefits/StockQuizQuestCard';
 import { TossPointReceiveCard } from './benefits/TossPointReceiveCard';
+import { TossInlineBanner } from './TossInlineBanner';
 
 type RequestStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -67,6 +71,7 @@ const NO_UNLOCKED_ATTEMPT_REASON = 'no_unlocked_attempt_available';
 const ERROR_TOAST_DEDUP_WINDOW_MS = 1_200;
 const TOSS_PAYOUT_STATUS_PENDING = 'pending';
 const TOSS_PAYOUT_STATUS_FAILED = 'failed';
+const BENEFIT_FEED_BANNER_CONTAINER_CLASS = 'h-[410px] min-h-[410px] w-full';
 
 const MISSION_ATTEMPT_LIMIT_CODES = [
   'attempt_limit_reached',
@@ -972,6 +977,11 @@ export default function Benefits({
   const noticeText = shouldLockGuestBenefits
     ? copy.guestNoticeMessage
     : noticeMessage ?? copy.apiPendingNotice;
+  const benefitFeedBannerAdGroupId = getResolvedBenefitFeedBannerAdGroupId();
+  const shouldRenderBenefitFeedBanner =
+    shouldShowAds &&
+    isInTossApp &&
+    benefitFeedBannerAdGroupId.trim() !== '';
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 animate-in fade-in duration-500">
@@ -1046,6 +1056,17 @@ export default function Benefits({
       >
         {noticeText}
       </aside>
+
+      {shouldRenderBenefitFeedBanner ? (
+        <TossInlineBanner
+          adGroupId={benefitFeedBannerAdGroupId}
+          shouldShowAd
+          isInTossApp={isInTossApp}
+          className="!my-0"
+          containerClassName={BENEFIT_FEED_BANNER_CONTAINER_CLASS}
+          variant="card"
+        />
+      ) : null}
     </div>
   );
 }

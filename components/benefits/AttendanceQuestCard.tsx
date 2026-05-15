@@ -34,6 +34,7 @@ export function AttendanceQuestCard({
     <BenefitQuestCard
       title={copy.attendanceTitle}
       subtitle={copy.attendanceSubtitle}
+      rewardLabel={copy.attendanceRewardLabel}
       ctaLabel={copy.attendanceCta}
       loadingLabel={copy.actionLoadingLabel}
       statusLabel={statusLabel}

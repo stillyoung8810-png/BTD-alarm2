@@ -9,6 +9,7 @@ import { tossSmartMessageRoutes } from "./routes/tossSmartMessageRoute";
 import { tossWebhookRoutes } from "./routes/tossWebhook";
 import { tossDisconnectCallbackRoutes } from "./routes/tossDisconnectCallbackRoute";
 import { tossSelfUnlinkRoute } from "./routes/tossSelfUnlinkRoute";
+import { benefitPromotionRoutes } from "./routes/benefitPromotionRoute";
 
 dotenv.config();
 
@@ -73,6 +74,7 @@ const start = async () => {
         await server.register(tossWebhookRoutes);
         await server.register(tossDisconnectCallbackRoutes);
         await server.register(tossSelfUnlinkRoute);
+        await server.register(benefitPromotionRoutes);
 
         server.get("/health", async () => ({ status: "ok" }));
 

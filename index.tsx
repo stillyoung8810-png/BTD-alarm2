@@ -16,6 +16,7 @@ const ROUTE_PATHS = {
   postsList: '/posts',
   postDetail: '/posts/:id',
   markets: '/markets',
+  benefits: '/benefits',
   appFallback: '*',
 } as const;
 
@@ -41,6 +42,7 @@ function AppRoutes(): React.ReactElement {
       <Route path={ROUTE_PATHS.postsList} element={<PostsListPage />} />
       <Route path={ROUTE_PATHS.postDetail} element={<PostDetailPage />} />
       <Route path={ROUTE_PATHS.markets} element={<App />} />
+      <Route path={ROUTE_PATHS.benefits} element={<App />} />
       <Route path={ROUTE_PATHS.appFallback} element={<App />} />
     </Routes>
   );

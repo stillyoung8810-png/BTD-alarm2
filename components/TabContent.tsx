@@ -13,11 +13,13 @@ const Dashboard = React.lazy(() => import('@/components/Dashboard'));
 const Markets = React.lazy(() => import('@/components/Markets'));
 const Backtest = React.lazy(() => import('@/components/Backtest'));
 const History = React.lazy(() => import('@/components/History'));
+const Benefits = React.lazy(() => import('@/components/Benefits'));
 
 export type ActiveTab =
   | 'dashboard'
   | 'markets'
   | 'history'
+  | 'benefits'
   | 'backtest'
   | 'pricing'
   | 'privacy'
@@ -208,6 +210,26 @@ const TabContentComponent: React.FC<TabContentProps> = (props) => {
             onDeleteHistory={onDeleteHistory}
             onClearHistory={onClearHistory}
           />
+        </React.Suspense>
+      );
+
+    case 'benefits':
+      if (user == null) {
+        return (
+          <Landing
+            lang={lang}
+            onOpenSignup={onOpenSignup}
+            onOpenLogin={onOpenLogin}
+            onContinueWithToss={onContinueWithToss}
+          />
+        );
+      }
+
+      return (
+        <React.Suspense
+          fallback={<SuspenseFallback message={copy.loadingGeneric} />}
+        >
+          <Benefits lang={lang} shouldShowAds={shouldShowAds} />
         </React.Suspense>
       );
 

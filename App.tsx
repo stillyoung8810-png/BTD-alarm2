@@ -62,7 +62,8 @@ import {
   UserCircle,
   Languages,
   Crown,
-  FileText
+  FileText,
+  Gift
 } from 'lucide-react';
 import { 
   getMaxPortfolios, 
@@ -83,6 +84,14 @@ import AlarmModal from './components/AlarmModal';
 import PortfolioDetailsModal from './components/PortfolioDetailsModal';
 import AIImageInputModal from './components/AIImageInputModal';
 import { usePortfolioUiCommands } from './src/hooks/usePortfolioUiCommands';
+import { parseViteBooleanEnvFlag } from './utils/envViteFlags';
+import {
+  INTERSTITIAL_LIVE_AD_GROUP_ID,
+  MARKET_BANNER_LIVE_AD_GROUP_ID,
+  HISTORY_BANNER_LIVE_AD_GROUP_ID,
+  REWARD_UNLOCK_AI_AD_GROUP_ID,
+} from './services/ads/adPlacements';
+import { shouldExposeBenefitTab } from './services/benefits/benefitRewardPolicy';
 
 const BOOTSTRAP_AD_USER_TIER: UserTier = 'free';
 const INTERSTITIAL_GLOBAL_COOLDOWN_MS = 240_000;
@@ -107,6 +116,12 @@ const TIER_ICON_SIZE_PX = 11;
 const DAILY_EXECUTION_DEBOUNCE_MS = 3000;
 const DAILY_EXECUTION_ON_CONFLICT = 'user_id,summary_date';
 const SHOULD_SHOW_MEMBERSHIP_NAV_TAB = true;
+const BENEFIT_REQUIRED_AD_GROUP_IDS = [
+  INTERSTITIAL_LIVE_AD_GROUP_ID,
+  MARKET_BANNER_LIVE_AD_GROUP_ID,
+  HISTORY_BANNER_LIVE_AD_GROUP_ID,
+  REWARD_UNLOCK_AI_AD_GROUP_ID,
+] as const;
 
 const PRO_TIER_ICON_PROPS = {
   fill: 'currentColor',
@@ -138,6 +153,8 @@ function getPrimeableAdRouteKey(activeTab: ActiveTab): AdRouteKey | null {
       return 'dashboard';
     case 'history':
       return 'history';
+    case 'benefits':
+      return 'benefits';
     default:
       return null;
   }
@@ -331,6 +348,20 @@ const App: React.FC = () => {
   const STOCK_PRICE_CACHE_KEY = 'STOCK_PRICE_CACHE_V1';
   const KST_UPDATE_HOUR = 7;
   const KST_UPDATE_MINUTE = 20;
+  const isInTossApp = isTossApp();
+  const shouldExposeBenefits = shouldExposeBenefitTab({
+    isFeatureFlagEnabled: parseViteBooleanEnvFlag(
+      import.meta.env.VITE_BENEFIT_TAB_ENABLED,
+    ),
+    hasTossPromotionApproval: parseViteBooleanEnvFlag(
+      import.meta.env.VITE_TOSS_PROMOTION_APPROVED,
+    ),
+    requiredAdGroupIds: BENEFIT_REQUIRED_AD_GROUP_IDS,
+    hasBenefitApiReady: parseViteBooleanEnvFlag(
+      import.meta.env.VITE_BENEFIT_API_READY,
+    ),
+    isInTossApp,
+  });
 
   useEffect(() => {
     const syncTabFromLocation = () => {
@@ -345,17 +376,25 @@ const App: React.FC = () => {
         return;
       }
       const path = window.location.pathname;
+      if (path.startsWith('/benefits')) {
+        setActiveTab(shouldExposeBenefits ? 'benefits' : 'dashboard');
+        return;
+      }
       if (path.startsWith('/markets')) {
         setActiveTab('markets');
       }
     };
     syncTabFromLocation();
     window.addEventListener('hashchange', syncTabFromLocation);
+    window.addEventListener('popstate', syncTabFromLocation);
     if (isTossApp()) {
       restorePendingIapOrders();
     }
-    return () => window.removeEventListener('hashchange', syncTabFromLocation);
-  }, []);
+    return () => {
+      window.removeEventListener('hashchange', syncTabFromLocation);
+      window.removeEventListener('popstate', syncTabFromLocation);
+    };
+  }, [shouldExposeBenefits]);
 
   const summaryToSave = useMemo(() => {
     const fromDashboard = dailyExecutionSummaryFromDashboard;
@@ -457,7 +496,6 @@ const App: React.FC = () => {
   const shellCopyRef = useRef(shellCopy);
   const dashboardCopyRef = useRef(dashboardCopy);
   const isClosingRef = useRef(false);
-  const isInTossApp = isTossApp();
   const primeableAdRouteKey = useMemo(
     () => getPrimeableAdRouteKey(activeTab),
     [activeTab],
@@ -486,6 +524,14 @@ const App: React.FC = () => {
     if (!isInTossApp) return;
     setIsDarkMode(false);
   }, [isInTossApp]);
+
+  useEffect(() => {
+    if (shouldExposeBenefits || activeTab !== 'benefits') {
+      return;
+    }
+
+    setActiveTab('dashboard');
+  }, [activeTab, shouldExposeBenefits]);
 
   useEffect(() => {
     if (primeableAdRouteKey === null) {
@@ -1004,6 +1050,15 @@ const App: React.FC = () => {
     setActiveTab('dashboard');
   }, [setActiveTab]);
 
+  const handleOpenBenefitsTab = useCallback(() => {
+    setActiveTab('benefits');
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.history.pushState(null, '', '/benefits');
+  }, [setActiveTab]);
+
   const handleOpenLogin = useCallback(() => {
     setAuthModal('login');
   }, [setAuthModal]);
@@ -1306,6 +1361,9 @@ const App: React.FC = () => {
             <NavIcon active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutDashboard size={22} />} label={t.dashboard} />
             <NavIcon active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<HistoryIcon size={22} />} label={t.history} />
             <NavIcon active={activeTab === 'markets'} onClick={() => setActiveTab('markets')} icon={<BarChart3 size={22} />} label={t.markets} />
+            {shouldExposeBenefits && (
+              <NavIcon active={activeTab === 'benefits'} onClick={handleOpenBenefitsTab} icon={<Gift size={22} />} label={t.benefits} />
+            )}
             {SHOULD_SHOW_MEMBERSHIP_NAV_TAB && (
               <NavIcon active={activeTab === 'pricing'} onClick={() => setActiveTab('pricing')} icon={<Crown size={22} />} label={t.membership} />
             )}

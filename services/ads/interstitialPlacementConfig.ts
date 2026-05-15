@@ -19,13 +19,14 @@ import {
 /** @see https://developers-apps-in-toss.toss.im/ads/develop.html — 테스트하기 */
 export const TOSS_INTERSTITIAL_TEST_AD_GROUP_ID = 'ait-ad-test-interstitial-id';
 
-export type AdRouteKey = 'dashboard' | 'history' | 'portfolio_details';
+export type AdRouteKey = 'dashboard' | 'history' | 'portfolio_details' | 'benefits';
 
 export const INTERSTITIAL_PLACEMENT_KEYS = {
   STRATEGY_SAVE: 'strategy_save',
   TRADE_SAVE: 'trade_save',
   ALARM_SAVE: 'alarm_save',
   SETTLEMENT_DETAIL: 'settlement_detail',
+  BENEFIT_MISSION_REWARD: 'benefit_mission_reward',
 } as const;
 
 export type InterstitialPlacementKey =
@@ -63,6 +64,11 @@ const INTERSTITIAL_PLACEMENT_DEFINITION_BASES: readonly InterstitialPlacementDef
     {
       key: INTERSTITIAL_PLACEMENT_KEYS.SETTLEMENT_DETAIL,
       preloadOnRoutes: ['history', 'portfolio_details'],
+      eligibleTiers: ['free'],
+    },
+    {
+      key: INTERSTITIAL_PLACEMENT_KEYS.BENEFIT_MISSION_REWARD,
+      preloadOnRoutes: ['benefits'],
       eligibleTiers: ['free'],
     },
   ] as const;

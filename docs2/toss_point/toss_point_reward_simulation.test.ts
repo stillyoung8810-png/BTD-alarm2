@@ -24,7 +24,7 @@ import {
   type PredictionPortfolioSnapshot,
   type QuizQuestionSnapshot,
   type UserQuestionAttemptSnapshot,
-} from './toss_point_reward_simulation_snippets';
+} from '../../services/benefits/benefitRewardPolicy';
 
 function makeAttemptState(
   overrides: Partial<DailyAttemptState> = {},

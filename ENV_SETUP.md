@@ -38,6 +38,12 @@ VITE_FIREBASE_VAPID_KEY=your_vapid_key
 # 토스 미니앱 BFF (Railway, mTLS·인증·결제 검증)
 # 토스 로그인 code 교환, 토스페이 결제 검증 등 서버 간 통신용. 토스 미니앱 연동 시 필수.
 VITE_RAILWAY_BFF_URL=https://your-bff.railway.app
+
+# 혜택 탭 출시 게이트
+# 운영 첫 배포는 반드시 false로 둔 뒤, Supabase/Railway/프로모션 QA 통과 후 순서대로 엽니다.
+VITE_BENEFIT_TAB_ENABLED=false
+VITE_TOSS_PROMOTION_APPROVED=false
+VITE_BENEFIT_API_READY=false
 ```
 
 ---

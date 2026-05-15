@@ -193,6 +193,7 @@ export interface BenefitAttendanceCheckInResult {
 export interface BenefitAdUnlockRequest {
   readonly missionKind: MissionKind;
   readonly missionDate?: string;
+  readonly idempotencyKey: string;
 }
 
 export interface BenefitAdUnlockResult {
@@ -1252,7 +1253,10 @@ export function unlockBenefitMissionAd(
 ): Promise<ServiceResult<BenefitAdUnlockResult | null>> {
   return postBenefitRequest({
     route: readAdUnlockRoute(request.missionKind),
-    body: stripUndefinedValues({ missionDate: request.missionDate }),
+    body: stripUndefinedValues({
+      missionDate: request.missionDate,
+      idempotencyKey: request.idempotencyKey,
+    }),
     fallback: null,
     decode: decodeAdUnlockResult,
   });

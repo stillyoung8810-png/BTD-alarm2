@@ -20,6 +20,7 @@ import {
   submitBenefitQuizAttempt,
   unlockBenefitMissionAd,
   type BenefitAdUnlockReason,
+  type BenefitAdUnlockResult,
   type BenefitPredictionQuestionResponse,
   type BenefitQuizQuestionResponse,
   type BenefitSummary,
@@ -27,7 +28,11 @@ import {
   type PredictionDirection,
 } from '@/services/benefits/benefitQuestClient';
 import type { MissionKind } from '@/services/benefits/benefitRewardPolicy';
-import type { ServiceError, ServiceResult } from '@/services/serviceUtils';
+import type {
+  ServiceError,
+  ServiceErrorCode,
+  ServiceResult,
+} from '@/services/serviceUtils';
 import type { AppLang } from '@/types';
 import { useTossApp } from '@/contexts/TossAppContext';
 import { AttendanceQuestCard } from './benefits/AttendanceQuestCard';
@@ -56,6 +61,7 @@ const BENEFIT_LOCALE_BY_LANG: Record<AppLang, string> = {
 const PERCENT_SCALE = 100;
 const PERCENT_DECIMAL_PLACES = 0;
 const PERCENT_ROUNDING_SCALE = 10 ** PERCENT_DECIMAL_PLACES;
+const AD_UNLOCK_RETRY_DELAYS_MS = [700, 1_500] as const;
 const NO_REWARD_MONEY = 0;
 const NO_UNLOCKED_ATTEMPT_REASON = 'no_unlocked_attempt_available';
 const ERROR_TOAST_DEDUP_WINDOW_MS = 1_200;
@@ -80,6 +86,11 @@ const MISSION_INVALID_ATTEMPT_CODES = [
   'attemptSequence_must_be_between_1_and_5',
 ] as const;
 const AD_UNLOCK_LIMIT_CODES = ['unlock_limit_reached'] as const;
+const AD_UNLOCK_RETRYABLE_ERROR_CODES: readonly ServiceErrorCode[] = [
+  'NETWORK',
+  'TIMEOUT',
+  'SERVER_ERROR',
+];
 const TOSS_POINT_NOT_ENOUGH_CODES = ['not_enough_money_to_redeem'] as const;
 const TOSS_POINT_PENDING_CODES = [
   'pending_toss_redeem_exists',
@@ -209,6 +220,35 @@ function formatPredictionAccuracyText(
   return `${copy.predictionLastAccuracyLabel}: ${roundedPercent.toFixed(
     PERCENT_DECIMAL_PLACES,
   )}%`;
+}
+
+function waitForAdUnlockRetry(delayMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, delayMs);
+  });
+}
+
+function isRetryableAdUnlockError(error: ServiceError): boolean {
+  return AD_UNLOCK_RETRYABLE_ERROR_CODES.includes(error.code);
+}
+
+async function unlockBenefitMissionAdWithRetry(request: {
+  readonly missionKind: MissionKind;
+  readonly missionDate: string;
+  readonly idempotencyKey: string;
+}): Promise<ServiceResult<BenefitAdUnlockResult | null>> {
+  let result = await unlockBenefitMissionAd(request);
+
+  for (const delayMs of AD_UNLOCK_RETRY_DELAYS_MS) {
+    if (result.ok || !isRetryableAdUnlockError(result.error)) {
+      return result;
+    }
+
+    await waitForAdUnlockRetry(delayMs);
+    result = await unlockBenefitMissionAd(request);
+  }
+
+  return result;
 }
 
 function createIdempotencyKey(prefix: string): string {
@@ -756,9 +796,11 @@ export default function Benefits({
         return false;
       }
 
-      const result = await unlockBenefitMissionAd({
+      const idempotencyKey = createIdempotencyKey(`ad-unlock:${missionKind}`);
+      const result = await unlockBenefitMissionAdWithRetry({
         missionKind,
         missionDate,
+        idempotencyKey,
       });
 
       if (!result.ok || result.data == null) {

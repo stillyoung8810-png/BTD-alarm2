@@ -6,7 +6,6 @@ import {
   redeemTossPoints,
   resolveBenefitWalletBoardSummary,
   resolveDailyAttemptAvailability,
-  resolveRewardedAdServerUnlock,
   selectNextQuizQuestion,
   type DailyAttemptState,
   type MissionKind,
@@ -997,21 +996,7 @@ async function handleAdUnlock(
   const body = await readBody(req);
   const missionKind = routeMissionKind ?? readMissionKind(body);
   const missionDate = readOptionalDateString(body, "missionDate");
-  const currentState = await readDailyAttemptState(
-    context.adminClient,
-    context.userId,
-    missionKind,
-    missionDate,
-  );
-
-  const decision = resolveRewardedAdServerUnlock(currentState);
-  if (!decision.canGrant) {
-    return jsonResponse(req, 409, {
-      success: false,
-      reason: decision.reason,
-      availability: decision.availability,
-    });
-  }
+  const idempotencyKey = readRequiredString(body, "idempotencyKey");
 
   const { data, error } = await context.adminClient.rpc(
     "unlock_benefit_mission_ad",
@@ -1019,6 +1004,7 @@ async function handleAdUnlock(
       p_user_id: context.userId,
       p_mission_kind: missionKind,
       p_mission_date: missionDate,
+      p_idempotency_key: idempotencyKey,
     },
   );
 

@@ -12,6 +12,7 @@ interface StockQuizQuestCardProps {
   readonly isBusy: boolean;
   readonly isDisabled: boolean;
   readonly canUnlockWithAd: boolean;
+  readonly shouldShowSubmitInterstitialNotice: boolean;
   readonly onRefreshQuestion: () => void;
   readonly onSelectChoice: (choiceId: string) => void;
   readonly onUnlockWithAd: () => void;
@@ -25,6 +26,7 @@ export function StockQuizQuestCard({
   isBusy,
   isDisabled,
   canUnlockWithAd,
+  shouldShowSubmitInterstitialNotice,
   onRefreshQuestion,
   onSelectChoice,
   onUnlockWithAd,
@@ -47,6 +49,11 @@ export function StockQuizQuestCard({
       title={copy.quizTitle}
       subtitle={copy.quizSubtitle}
       rewardLabel={copy.quizRewardLabel}
+      submitNoticeLabel={
+        hasSubmittableQuestion && shouldShowSubmitInterstitialNotice
+          ? copy.missionSubmitInterstitialNotice
+          : undefined
+      }
       ctaLabel={hasSubmittableQuestion ? undefined : primaryCtaLabel}
       loadingLabel={copy.actionLoadingLabel}
       statusLabel={statusLabel}

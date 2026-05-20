@@ -1,8 +1,22 @@
 import type { AppLang } from '@/types';
+import type { StrategyType } from '@/src/components/StrategyCreator/utils';
 import { getStrategyNames } from '../../supabase/functions/_shared/strategyNames.ts';
 
 const STRATEGY_NAMES_KO = getStrategyNames('ko');
 const STRATEGY_NAMES_EN = getStrategyNames('en');
+
+export interface StrategyGuideLabelsMessage {
+  closeAriaLabel: string;
+  dialogTitle: string;
+  closeLabel: string;
+  brokenImageMessage: string;
+}
+
+export interface StrategyGuideEntryMessage {
+  title: string;
+  openButtonAriaLabel: string;
+  overviewImageAlt: string;
+}
 
 export interface StrategyCreatorMessageSet {
   titles: {
@@ -24,6 +38,10 @@ export interface StrategyCreatorMessageSet {
   strategySelection: {
     heading: string;
     description: string;
+  };
+  strategyGuide: {
+    labels: StrategyGuideLabelsMessage;
+    entries: Partial<Record<StrategyType, StrategyGuideEntryMessage>>;
   };
   strategyDefinitions: {
     rsi_ma_interval: { title: string; description: string };
@@ -162,6 +180,39 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
     strategySelection: {
       heading: '전략 엔진 선택',
       description: '사용할 전략을 선택하세요.',
+    },
+    strategyGuide: {
+      labels: {
+        closeAriaLabel: '전략 설명 닫기',
+        dialogTitle: '전략 설명',
+        closeLabel: '닫기',
+        brokenImageMessage: '전략 설명 이미지를 불러오지 못했어요.',
+      },
+      entries: {
+        rsi_ma_interval: {
+          title: STRATEGY_NAMES_KO.rsi_ma_interval,
+          openButtonAriaLabel: `${STRATEGY_NAMES_KO.rsi_ma_interval} 전략 설명 보기`,
+          overviewImageAlt:
+            '이동평균선 구간 전략의 3구간 판정과 보조 지표 필터를 설명하는 인포그래픽',
+        },
+        multi_split: {
+          title: STRATEGY_NAMES_KO.multi_split,
+          openButtonAriaLabel: `${STRATEGY_NAMES_KO.multi_split} 전략 설명 보기`,
+          overviewImageAlt:
+            'Smart Split 전략의 분할 매수와 2단 익절 구조를 설명하는 인포그래픽',
+        },
+        no_stop_multi_split: {
+          title: STRATEGY_NAMES_KO.no_stop_multi_split,
+          openButtonAriaLabel: `${STRATEGY_NAMES_KO.no_stop_multi_split} 전략 설명 보기`,
+          overviewImageAlt:
+            '무손절 다분할 전략의 분할 매수와 전량 익절 구조를 설명하는 인포그래픽',
+        },
+        vr_band: {
+          title: STRATEGY_NAMES_KO.vr_band,
+          openButtonAriaLabel: `${STRATEGY_NAMES_KO.vr_band} 전략 설명 보기`,
+          overviewImageAlt: 'TVC 전략 기술적 가이드라인 개요 이미지',
+        },
+      },
     },
     strategyDefinitions: {
       rsi_ma_interval: {
@@ -318,6 +369,39 @@ export const STRATEGY_CREATOR_MESSAGES: Record<AppLang, StrategyCreatorMessageSe
     strategySelection: {
       heading: 'Select Strategy Engine',
       description: 'Choose the strategy you want to use.',
+    },
+    strategyGuide: {
+      labels: {
+        closeAriaLabel: 'Close strategy guide',
+        dialogTitle: 'Strategy Guide',
+        closeLabel: 'Close',
+        brokenImageMessage: 'The strategy guide image could not be loaded.',
+      },
+      entries: {
+        rsi_ma_interval: {
+          title: STRATEGY_NAMES_EN.rsi_ma_interval,
+          openButtonAriaLabel: `View ${STRATEGY_NAMES_EN.rsi_ma_interval} strategy guide`,
+          overviewImageAlt:
+            'Infographic explaining the MA Strategy zone determination and indicator filters',
+        },
+        multi_split: {
+          title: STRATEGY_NAMES_EN.multi_split,
+          openButtonAriaLabel: `View ${STRATEGY_NAMES_EN.multi_split} strategy guide`,
+          overviewImageAlt:
+            'Infographic explaining Smart Split staged buying and two-level take-profit structure',
+        },
+        no_stop_multi_split: {
+          title: STRATEGY_NAMES_EN.no_stop_multi_split,
+          openButtonAriaLabel: `View ${STRATEGY_NAMES_EN.no_stop_multi_split} strategy guide`,
+          overviewImageAlt:
+            'Infographic explaining the no-stop multi-split staged buying and full take-profit structure',
+        },
+        vr_band: {
+          title: STRATEGY_NAMES_EN.vr_band,
+          openButtonAriaLabel: `View ${STRATEGY_NAMES_EN.vr_band} strategy guide`,
+          overviewImageAlt: 'TVC strategy technical guideline overview image',
+        },
+      },
     },
     strategyDefinitions: {
       rsi_ma_interval: {

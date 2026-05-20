@@ -24,6 +24,7 @@ interface PredictionQuestCardProps {
   readonly isBusy: boolean;
   readonly isDisabled: boolean;
   readonly canUnlockWithAd: boolean;
+  readonly shouldShowSubmitInterstitialNotice: boolean;
   readonly onRefreshQuestion: () => void;
   readonly onSelectDirection: (direction: PredictionDirection) => void;
   readonly onUnlockWithAd: () => void;
@@ -39,6 +40,7 @@ export function PredictionQuestCard({
   isBusy,
   isDisabled,
   canUnlockWithAd,
+  shouldShowSubmitInterstitialNotice,
   onRefreshQuestion,
   onSelectDirection,
   onUnlockWithAd,
@@ -68,6 +70,11 @@ export function PredictionQuestCard({
       subtitle={copy.predictionSubtitle}
       rewardLabel={copy.predictionRewardLabel}
       metaLabel={lastAccuracyLabel}
+      submitNoticeLabel={
+        hasSubmittableQuestion && shouldShowSubmitInterstitialNotice
+          ? copy.missionSubmitInterstitialNotice
+          : undefined
+      }
       ctaLabel={hasSubmittableQuestion ? undefined : primaryCtaLabel}
       loadingLabel={copy.actionLoadingLabel}
       statusLabel={statusLabel}

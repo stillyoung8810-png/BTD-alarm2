@@ -982,6 +982,7 @@ export default function Benefits({
     shouldShowAds &&
     isInTossApp &&
     benefitFeedBannerAdGroupId.trim() !== '';
+  const shouldShowMissionSubmitInterstitialNotice = shouldShowAds && isInTossApp;
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 animate-in fade-in duration-500">
@@ -1025,6 +1026,9 @@ export default function Benefits({
           isBusy={isPredictionBusy}
           isDisabled={summary == null}
           canUnlockWithAd={canUnlockPredictionWithAd}
+          shouldShowSubmitInterstitialNotice={
+            shouldShowMissionSubmitInterstitialNotice
+          }
           onRefreshQuestion={handleRefreshPredictionQuestion}
           onSelectDirection={predictionSubmitCommand.run}
           onUnlockWithAd={predictionUnlockCommand.run}
@@ -1037,6 +1041,9 @@ export default function Benefits({
           isBusy={isQuizBusy}
           isDisabled={summary == null}
           canUnlockWithAd={canUnlockQuizWithAd}
+          shouldShowSubmitInterstitialNotice={
+            shouldShowMissionSubmitInterstitialNotice
+          }
           onRefreshQuestion={handleRefreshQuizQuestion}
           onSelectChoice={quizSubmitCommand.run}
           onUnlockWithAd={quizUnlockCommand.run}

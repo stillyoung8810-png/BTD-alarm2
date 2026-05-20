@@ -1,4 +1,8 @@
 import type { ReactNode } from 'react';
+import type {
+  StrategyGuideEntryMessage,
+  StrategyGuideLabelsMessage,
+} from '@/constants/messages/strategyCreatorMessages';
 import type { AppLang } from '@/types';
 import type {
   MultiSplitBudgetPresetId,
@@ -40,6 +44,21 @@ export interface StrategyDefinitionViewModel {
   gradientClassName: string;
 }
 
+export interface StrategyGuideEntryViewModel extends StrategyGuideEntryMessage {
+  id: StrategyType;
+  overviewImageSrc: string;
+}
+
+export type StrategyGuideEntryLookup = Readonly<
+  Partial<Record<StrategyType, StrategyGuideEntryViewModel>>
+>;
+
+export interface StrategyGuideSheetProps {
+  labels: StrategyGuideLabelsMessage;
+  entry: StrategyGuideEntryViewModel;
+  onClose: () => void;
+}
+
 export interface StrategyCreatorLayoutProps {
   title: string;
   closeAriaLabel: string;
@@ -71,7 +90,9 @@ export interface StrategySelectionStepViewProps {
   description: string;
   definitions: readonly StrategyDefinitionViewModel[];
   selectedStrategy: StrategyType | null;
+  guideEntriesByStrategy: StrategyGuideEntryLookup;
   onSelectStrategy: (strategy: StrategyType) => void;
+  onOpenStrategyGuide: (strategy: StrategyType) => void;
 }
 
 export interface MaBaseStepViewProps {

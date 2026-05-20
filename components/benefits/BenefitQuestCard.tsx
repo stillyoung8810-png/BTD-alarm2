@@ -11,6 +11,7 @@ interface BenefitQuestCardProps {
   readonly accentClassName: string;
   readonly metaLabel?: string;
   readonly rewardLabel?: string;
+  readonly submitNoticeLabel?: string;
   readonly isCtaLoading?: boolean;
   readonly isCtaDisabled?: boolean;
   readonly children?: React.ReactNode;
@@ -28,6 +29,7 @@ export function BenefitQuestCard({
   accentClassName,
   metaLabel,
   rewardLabel,
+  submitNoticeLabel,
   isCtaLoading = false,
   isCtaDisabled = false,
   children,
@@ -70,6 +72,11 @@ export function BenefitQuestCard({
         {subtitle}
       </p>
       {children}
+      {submitNoticeLabel != null && (
+        <p className="mt-4 rounded-2xl bg-amber-50 px-3 py-2 text-xs font-bold leading-5 text-amber-700 ring-1 ring-amber-100 dark:bg-amber-400/10 dark:text-amber-100 dark:ring-amber-400/20">
+          {submitNoticeLabel}
+        </p>
+      )}
       {actions}
       {shouldRenderDefaultAction && (
         <button

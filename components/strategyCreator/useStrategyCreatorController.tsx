@@ -7,6 +7,7 @@ import {
   roundMoney,
   validatePortfolioSetupInput,
 } from '@/constants/domain/financeRules';
+import { STRATEGY_GUIDE_IMAGE_SRC_BY_STRATEGY } from '@/constants/strategyGuideAssets';
 import { getCommonMessages } from '@/constants/messages/commonMessages';
 import { getStrategyCreatorMessages } from '@/constants/messages/strategyCreatorMessages';
 import {
@@ -50,6 +51,7 @@ import {
 } from '@/src/components/StrategyCreator/utils';
 import type {
   StrategyDefinitionViewModel,
+  StrategyGuideEntryLookup,
   StrategyStockOption,
   StrategyTier,
   StrategyWizardScreen,
@@ -425,6 +427,35 @@ function buildStrategyDefinitions(
   ];
 }
 
+function buildStrategyGuideEntries(args: {
+  messages: ReturnType<typeof getStrategyCreatorMessages>['strategyGuide']['entries'];
+  strategyDefinitions: readonly StrategyDefinitionViewModel[];
+}): StrategyGuideEntryLookup {
+  return args.strategyDefinitions.reduce<StrategyGuideEntryLookup>(
+    (entries, definition) => {
+      const message = args.messages[definition.id];
+      const overviewImageSrc =
+        STRATEGY_GUIDE_IMAGE_SRC_BY_STRATEGY[definition.id];
+
+      if (message == null || overviewImageSrc == null) {
+        return entries;
+      }
+
+      return {
+        ...entries,
+        [definition.id]: {
+          id: definition.id,
+          title: message.title,
+          openButtonAriaLabel: message.openButtonAriaLabel,
+          overviewImageAlt: message.overviewImageAlt,
+          overviewImageSrc,
+        },
+      };
+    },
+    {},
+  );
+}
+
 export function useStrategyCreatorController({
   lang,
   onClose,
@@ -444,6 +475,9 @@ export function useStrategyCreatorController({
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isVrShowErrors, setIsVrShowErrors] = useState(false);
+  const [guideStrategyId, setGuideStrategyId] = useState<StrategyType | null>(
+    null,
+  );
   const isSavingRef = useRef(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -459,6 +493,18 @@ export function useStrategyCreatorController({
     () => buildStrategyDefinitions(copy),
     [copy],
   );
+  const guideEntriesByStrategy = useMemo(
+    () =>
+      buildStrategyGuideEntries({
+        messages: copy.strategyGuide.entries,
+        strategyDefinitions,
+      }),
+    [copy.strategyGuide.entries, strategyDefinitions],
+  );
+  const strategyGuideEntry =
+    guideStrategyId == null
+      ? null
+      : guideEntriesByStrategy[guideStrategyId] ?? null;
 
   const updateMeta = useCallback(
     (patch: Partial<StrategyCreatorMetaDraftInput>) => {
@@ -626,6 +672,14 @@ export function useStrategyCreatorController({
     setSelectedStrategy(strategy);
     setStep(1);
     setErrorMessage(null);
+  }, []);
+
+  const handleOpenStrategyGuide = useCallback((strategy: StrategyType) => {
+    setGuideStrategyId(strategy);
+  }, []);
+
+  const handleCloseStrategyGuide = useCallback(() => {
+    setGuideStrategyId(null);
   }, []);
 
   const handleNameChange = useCallback(
@@ -1834,7 +1888,11 @@ export function useStrategyCreatorController({
     canGoBack: step > 0,
     isPrimaryDisabled: selectedStrategy == null || isSaving,
     strategyDefinitions,
+    guideEntriesByStrategy,
+    strategyGuideEntry,
     handleSelectStrategy,
+    handleOpenStrategyGuide,
+    handleCloseStrategyGuide,
     stockOptions: fullStockOptions,
     stockOptionsForMa1,
     stockOptionsForMa2,

@@ -85,6 +85,7 @@ export interface BenefitMessages {
   readonly missionNotUnlockedMessage: string;
   readonly missionQuestionUnavailableMessage: string;
   readonly missionInvalidAttemptMessage: string;
+  readonly missionSubmitInterstitialNotice: string;
   readonly benefitApiSetupMessage: string;
   readonly benefitApiRouteMissingMessage: string;
   readonly benefitServerErrorMessage: string;
@@ -180,6 +181,8 @@ export const BENEFIT_MESSAGES: Record<AppLang, BenefitMessages> = {
     missionNotUnlockedMessage: '광고 시청으로 추가 문제를 먼저 해금해 주세요.',
     missionQuestionUnavailableMessage: '지금은 참여 가능한 문제가 없습니다. 잠시 후 다시 확인해 주세요.',
     missionInvalidAttemptMessage: '미션 상태가 바뀌었습니다. 새로고침 후 다시 시도해 주세요.',
+    missionSubmitInterstitialNotice:
+      '제출 후 짧은 광고가 나올 수 있어요. 보상은 그대로 지급됩니다.',
     benefitApiSetupMessage: '혜택 API 설정을 확인한 뒤 다시 시도해 주세요.',
     benefitApiRouteMissingMessage: '혜택 API 경로를 찾지 못했습니다. 앱을 새로고침해 주세요.',
     benefitServerErrorMessage: '혜택 서버가 요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.',
@@ -274,6 +277,8 @@ export const BENEFIT_MESSAGES: Record<AppLang, BenefitMessages> = {
     missionNotUnlockedMessage: 'Please unlock an extra question by watching an ad first.',
     missionQuestionUnavailableMessage: 'No mission question is available right now. Please check again later.',
     missionInvalidAttemptMessage: 'Mission status has changed. Please refresh and try again.',
+    missionSubmitInterstitialNotice:
+      'A short full-screen ad may appear after you submit. Your participation reward is still granted.',
     benefitApiSetupMessage: 'Please check the Benefits API setup and try again.',
     benefitApiRouteMissingMessage: 'The Benefits API route was not found. Please refresh the app.',
     benefitServerErrorMessage: 'The Benefits server could not process the request. Please try again later.',

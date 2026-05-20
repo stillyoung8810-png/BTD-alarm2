@@ -1,149 +1,194 @@
 ---
-name: 전략 설명 시트 UI 계획서
-overview: 포트폴리오 생성 플로우의 전략 선택 카드에 설명 버튼과 상세 시트를 추가하기 위한 구현 전 계획과 AST 매핑 가능한 스니펫입니다.
-stage: pre-implementation
-status: draft
+name: 전략 설명 시트 기본 계획서
+overview: 새 포트폴리오 생성 플로우의 전략 선택 카드에 데이터 기반 설명 버튼과 전략별 인포그래픽 이미지를 연결하기 위한 기본 계획입니다.
+stage: implemented
+status: completed
 ---
 
-# 전략 설명 시트 UI 계획서
+# 전략 설명 시트 기본 계획서
 
-## 0. 범위
+## 0. 목표
 
-이 문서는 새 포트폴리오 생성 모달의 첫 단계인 전략 선택 화면에 "작은 설명 버튼"과 전략 설명 시트를 추가하기 위한 구현 전 계획서입니다. 실제 전략별 상세 설명 본문은 아직 확정하지 않았으므로, 이 문서에서는 상세 내용의 제목만 만들고 본문은 비워둡니다.
+새 포트폴리오 생성 모달의 첫 단계인 전략 선택 화면에서, 사용자가 전략별 설명을 바로 확인할 수 있게 합니다. 설명 진입점은 각 전략 카드 우측 상단의 작은 정보 버튼입니다.
 
-첨부된 TVC 가이드 이미지는 추후 구현 시 재사용할 수 있도록 워크스페이스에 선보관합니다. 현재 코어 `StrategyType`에는 TVC가 포함되어 있지 않으므로, 이 문서에서는 해당 이미지를 "향후 TVC 전략 설명 시트용 예약 자산"으로만 기록하고 실제 렌더링 연결은 범위에서 제외합니다.
+현재는 이동평균선 구간 전략(`rsi_ma_interval`), TVC(`vr_band`), Smart Split(`multi_split`), 무손절 다분할(`no_stop_multi_split`) 전략의 인포그래픽 이미지가 준비되어 있습니다. 이후 전략 이미지도 **렌더링 컴포넌트/컨트롤러 코드를 수정하지 않고**, 자산 맵과 i18n 데이터만 추가해서 같은 방식으로 연결합니다.
 
-이번 변경의 대상은 다음 파일 경계로 제한합니다.
+이미지 확대/핀치 줌 기능은 이 문서에서 다루지 않습니다. 해당 기능은 별도 문서 `docs2/strategy-guide-image-zoom-plan/strategy-guide-image-zoom-plan.md`에서 관리합니다.
 
-- `constants/messages/strategyCreatorMessages.ts`
-- `components/strategyCreator/types/ui.ts`
-- `components/strategyCreator/useStrategyCreatorController.tsx`
-- `components/strategyCreator/StrategyCreator.tsx`
-- `components/strategyCreator/steps/StrategySelectionStepView.tsx`
-- `components/strategyCreator/styles.ts`
-- `components/strategyCreator/StrategyGuideSheet.tsx` 신규
+**관련 지식 문서 (NotebookLM·카피 작성용):**
 
-이번 계획에서 의도적으로 제외하는 범위는 다음과 같습니다.
+| 문서 | 용도 |
+|---|---|
+| [`NOTEBOOKLM_SMART_SPLIT_PROMPT.md`](./NOTEBOOKLM_SMART_SPLIT_PROMPT.md) | **NotebookLM 복붙용 프롬프트** (본문 + 후속 수정 프롬프트) |
+| [`NOTEBOOKLM_SMART_SPLIT_MODAL_BRIEF.md`](./NOTEBOOKLM_SMART_SPLIT_MODAL_BRIEF.md) | 조사 범위·앱 고정 사실·산출물 체크리스트 |
+| [`NO_STOP_NOTEBOOKLM_CONTEXT.md`](./NO_STOP_NOTEBOOKLM_CONTEXT.md) | 앱 계산 SSOT(§0 역할, §9 스마트 스플릿 vs 무손절 비교) |
+| [`NOTEBOOKLM_MA_STRATEGY_CONTEXT.md`](./NOTEBOOKLM_MA_STRATEGY_CONTEXT.md) | 이동평균선 구간 전략 계산·구간 판정·필터 로직 SSOT |
+| [`NOTEBOOKLM_MA_STRATEGY_ANALYSIS_REPORT.md`](./NOTEBOOKLM_MA_STRATEGY_ANALYSIS_REPORT.md) | NotebookLM이 정리한 이동평균선 구간 전략 장단점·카피 참고 보고서 |
+| [`NOTEBOOKLM_MA_STRATEGY_INFOGRAPHIC_PROMPT.md`](./NOTEBOOKLM_MA_STRATEGY_INFOGRAPHIC_PROMPT.md) | 이동평균선 구간 전략 인포그래픽 제작 프롬프트 |
 
+## 1. 핵심 설계 결정
+
+TVC만 콕 집어서 별도 JSX 분기를 만들지 않습니다. 모든 전략 카드는 `definitions.map`으로 동일한 `StrategyDefinitionCard` 컴포넌트를 렌더링합니다.
+
+정보 버튼 노출 여부는 데이터 유무로만 결정합니다.
+
+```text
+strategyGuideEntriesByStrategy[definition.id] != null
+```
+
+향후 다른 전략 이미지가 준비되면 다음 데이터만 추가합니다.
+
+- `constants/strategyGuideAssets.ts`의 이미지 경로 맵
+- `constants/messages/strategyCreatorMessages.ts`의 i18n entry
+
+컴포넌트 렌더링 코드는 바꾸지 않습니다.
+
+## 2. 범위
+
+이번 기본 계획에 포함합니다.
+
+- 전략 선택 카드에 설명 버튼 추가
+- 모든 전략 카드를 동일한 구조로 렌더링
+- 가이드 데이터가 있는 전략에만 설명 버튼 표시
+- 설명 시트를 `StrategyCreator` 내부 오버레이로 렌더링
+- 현재는 이동평균선 구간 전략, TVC, Smart Split, 무손절 다분할 인포그래픽 이미지를 표시
+- 이후 전략은 이미지 준비 후 데이터만 추가해서 연결
+- UI 텍스트는 `constants/messages/strategyCreatorMessages.ts`에서 관리
+
+이번 기본 계획에서 제외합니다.
+
+- 이미지 핀치 줌/팬 기능
+- `react-zoom-pan-pinch` 또는 기타 줌 라이브러리 설치
 - 하단 네비게이션 탭 추가
-- 멤버십 탭 내부 설명 콘텐츠 추가
-- `App.tsx`, `TabContent.tsx`, `Dashboard.tsx` 상태 확장
-- 금융 계산, 주문 생성, 검증 규칙, 저장 로직 변경
-- `Portfolio` 또는 코어 `Strategy` 데이터 모델 리팩토링
+- 멤버십 탭 내부 콘텐츠 추가
+- 코어 `StrategyType`, `Portfolio`, 전략 데이터 모델 리팩토링
+- 금융 계산, 주문 생성, 저장 로직 변경
 
-## 0-1. 예약 자산
+## 3. 자산 데이터 계획
 
-### TVC 가이드 이미지
+대상 파일: `constants/strategyGuideAssets.ts`
 
-- 보관 경로: `public/images/strategy-guides/tvc-guide-overview.png`
-- 자산 용도: 향후 TVC 상세 설명 버튼 클릭 시 열리는 설명 시트의 대표 이미지
-- 현재 상태: 파일만 선보관, UI 연결 없음
-- 연결 전제 조건: `StrategyType` 또는 이에 준하는 전략 목록에 TVC가 실제로 추가된 이후에만 사용
-
-향후 구현 시 이미지 참조는 앱 번들 import가 아니라 정적 경로를 우선 사용합니다.
+최종 파일은 기존 `TVC_GUIDE_OVERVIEW_IMAGE_SRC`와 해당 주석 없이 아래 맵만 남깁니다.
 
 ```ts
-const TVC_GUIDE_IMAGE_SRC = '/images/strategy-guides/tvc-guide-overview.png';
+import type { StrategyType } from '@/src/components/StrategyCreator/utils';
+
+export const STRATEGY_GUIDE_IMAGE_SRC_BY_STRATEGY = {
+  rsi_ma_interval: '/images/strategy-guides/ma-strategy-guide-overview.png',
+  multi_split: '/images/strategy-guides/smart-split-guide-overview.png',
+  no_stop_multi_split:
+    '/images/strategy-guides/no-stop-multi-split-guide-overview.png',
+  vr_band: '/images/strategy-guides/tvc-guide-overview.png',
+} as const satisfies Partial<Record<StrategyType, string>>;
 ```
 
 검토:
 
-- `public/images` 경로를 사용하므로 나중에 설명 시트에서 바로 정적 자산으로 참조할 수 있습니다.
-- 아직 TVC 전략이 현재 전략 생성 플로우에 존재하지 않으므로, 지금 단계에서는 이 상수를 실제 코드에 넣지 않습니다.
-- 미래에 TVC를 추가하더라도 이미지 파일 위치를 다시 옮길 필요가 없도록 경로를 안정화합니다.
+- 준비되지 않은 전략 이미지를 임의로 추가하지 않습니다.
+- `rsi_ma_interval` 이미지는 `public/images/strategy-guides/ma-strategy-guide-overview.png`에 저장합니다.
+- `multi_split` 이미지는 `public/images/strategy-guides/smart-split-guide-overview.png`에 저장합니다.
+- `no_stop_multi_split` 이미지는 `public/images/strategy-guides/no-stop-multi-split-guide-overview.png`에 저장합니다.
+- `vr_band` 이미지는 `public/images/strategy-guides/tvc-guide-overview.png`에 저장합니다.
+- 이미지 경로는 전략 ID 기반 맵으로 관리합니다.
+- 이미지 경로를 JSX에 직접 하드코딩하지 않습니다.
+- 새 전략이 `StrategyType`에 추가되어도 이 맵은 `Partial<Record<StrategyType, string>>`이므로 미준비 상태를 허용합니다.
+- 기존 `TVC_GUIDE_OVERVIEW_IMAGE_SRC` 상수는 새 맵으로 완전히 대체합니다. 구현 시 기존 상수를 삭제하여 dead code를 남기지 않고, `STRATEGY_GUIDE_IMAGE_SRC_BY_STRATEGY`만 전략 가이드 이미지 경로의 단일 진실 공급원으로 유지합니다.
 
-## 1. 현재 구조 판정
+## 4. 컴포넌트 경계
 
-현재 `StrategyType`은 다음 4개입니다.
-
-```ts
-export type StrategyType =
-  | 'rsi_ma_interval'
-  | 'multi_split'
-  | 'no_stop_multi_split'
-  | 'vr_band';
-```
-
-현재 전략 선택 화면은 `StrategySelectionStepView`에서 `definitions.map`으로 카드를 렌더링하고, 카드 전체를 하나의 `<button>`으로 사용합니다. 이 구조에 설명 버튼을 그대로 넣으면 "button 안에 button"이 되어 HTML 구조, 접근성, 이벤트 전파가 모두 나빠집니다.
-
-따라서 카드 구조는 다음 계약으로 바꿔야 합니다.
-
-- 카드 본문 버튼: 전략 선택만 담당합니다.
-- 우측 상단 작은 설명 버튼: 설명 시트 열기만 담당합니다.
-- 설명 시트는 생성 마법사와 같은 레벨의 형제 오버레이로 렌더링합니다.
-- 설명 시트는 선택 중인 전략을 바꾸지 않습니다.
-
-## 2. 유지보수성 기준의 냉정한 리뷰
-
-현재 구조에서 그대로 덧붙이면 다음 문제가 생깁니다.
-
-- 카드 전체가 `<button>`인 상태에서 내부에 설명 `<button>`을 넣는 방식은 중첩 인터랙티브 요소라서 즉시 폐기해야 합니다.
-- 설명 문구를 컴포넌트 JSX 안에 직접 넣으면 i18n 규칙 위반이며, 이후 마케팅 문구 수정 때 중복 수정 포인트가 생깁니다.
-- 설명 콘텐츠를 `title` 같은 번역 문자열로 분기하면 전략명 변경 시 런타임 버그가 납니다. 반드시 `StrategyType` 키로만 분기해야 합니다.
-- 설명 시트 상태를 `App.tsx`나 `Dashboard.tsx`로 올리면 상태 범위가 과도하게 커집니다. 이 기능은 `StrategyCreator` 안에서만 쓰이므로 컨트롤러 내부 상태로 충분합니다.
-- 현재 코어 `Strategy` 데이터 모델은 모든 전략이 MA 계열 데이터에 끌려가는 Fat Interface 기술 부채가 있습니다. 이번 UI 설명 기능은 그 부채를 고치지 않으며, 고쳐서도 안 됩니다. 설명 기능은 `StrategyType`과 메시지 딕셔너리만 참조해야 합니다.
-- 상세 설명 본문이 없는 상태로 버튼을 릴리즈하면 빈 모달이 열립니다. 이는 제품 품질상 실패입니다. 따라서 실제 배포 전에는 상세 본문을 채운 뒤 버튼 노출을 활성화해야 합니다.
-
-## 3. 컴포넌트 분할
-
-권장 분할은 다음과 같습니다.
+목표 구조:
 
 ```text
 StrategyCreator
 ├─ StrategyCreatorLayout
 │  └─ StrategySelectionStepView
-│     └─ StrategyDefinitionCard
+│     └─ definitions.map(...)
+│        └─ StrategyDefinitionCard
+│           ├─ select button
+│           └─ optional guide info button
 └─ StrategyGuideSheet
+   └─ img
 ```
 
-역할은 다음처럼 제한합니다.
+책임 분리:
 
-- `StrategyCreator`: 컨트롤러와 뷰를 연결하고, 시트가 열렸을 때 형제 레벨로 렌더링합니다.
-- `useStrategyCreatorController`: `guideStrategyId` 상태와 open/close handler만 가집니다.
-- `StrategySelectionStepView`: 전략 목록, 선택 상태, 설명 버튼 콜백 전달만 담당합니다.
-- `StrategyDefinitionCard`: 카드 한 장의 선택 버튼과 설명 버튼을 분리합니다.
-- `StrategyGuideSheet`: 시트 레이아웃, 닫기 동작, 제목 렌더링만 담당합니다.
-- `strategyCreatorMessages`: 모든 UI 문자열과 전략별 제목을 보관합니다.
+- `StrategyCreator`: 컨트롤러와 시트 렌더링을 연결합니다.
+- `useStrategyCreatorController`: 설명 시트 open/close 상태, 가이드 entry lookup 생성을 담당합니다.
+- `StrategySelectionStepView`: 전략 카드 목록을 동일 구조로 렌더링합니다.
+- `StrategyDefinitionCard`: 카드 선택 버튼과 선택적 설명 버튼을 분리합니다.
+- `StrategyGuideSheet`: 설명 시트 레이아웃, 닫기, 이미지 표시만 담당합니다.
+- `strategyCreatorMessages`: 모든 UI 문구, aria-label, 이미지 alt를 담당합니다.
 
-## 4. 상세 내용 제목
+## 5. 타입 계획
 
-아래 각 제목의 상세 본문은 추후 별도 계획에서 채웁니다. 현재 문서에서는 본문을 의도적으로 비워 둡니다.
+대상 파일: `components/strategyCreator/types/ui.ts`
 
-### rsi_ma_interval
+```ts
+import type {
+  StrategyGuideEntryMessage,
+  StrategyGuideLabelsMessage,
+} from '@/constants/messages/strategyCreatorMessages';
 
-### multi_split
+export interface StrategyGuideEntryViewModel
+  extends StrategyGuideEntryMessage {
+  id: StrategyType;
+  overviewImageSrc: string;
+}
 
-### no_stop_multi_split
+export type StrategyGuideEntryLookup = Readonly<
+  Partial<Record<StrategyType, StrategyGuideEntryViewModel>>
+>;
 
-### vr_band
+export type StrategyGuideSheetLabels = StrategyGuideLabelsMessage;
 
-## 5. 스니펫 1: 메시지 모델 확장
+export interface StrategyGuideSheetProps {
+  labels: StrategyGuideSheetLabels;
+  entry: StrategyGuideEntryViewModel;
+  onClose: () => void;
+}
+
+export interface StrategySelectionStepViewProps {
+  lang: AppLang;
+  heading: string;
+  description: string;
+  definitions: readonly StrategyDefinitionViewModel[];
+  selectedStrategy: StrategyType | null;
+  guideEntriesByStrategy: StrategyGuideEntryLookup;
+  onSelectStrategy: (strategy: StrategyType) => void;
+  onOpenStrategyGuide: (strategy: StrategyType) => void;
+}
+```
+
+검토:
+
+- 안내 문구 타입(`StrategyGuideEntryMessage`, `StrategyGuideLabelsMessage`)은 메시지 딕셔너리 파일이 소유합니다.
+- UI 타입 파일은 메시지 타입을 소비만 하며, `constants/messages/strategyCreatorMessages.ts`가 UI 컴포넌트 타입에 의존하지 않습니다.
+- `StrategyType`은 `components/strategyCreator/types/ui.ts`의 기존 import 블록에 이미 포함되어 있으므로 중복 import를 추가하지 않습니다.
+- `StrategyGuideEntryViewModel.id`는 `StrategyType`입니다. TVC만 특별 취급하지 않습니다.
+- 가이드 미준비 전략은 lookup에 entry가 없는 상태로 표현합니다.
+- `any`와 non-null assertion을 사용하지 않습니다.
+- 콜백 prop은 `on*` 규칙을 지킵니다.
+
+## 6. 메시지 계획
 
 대상 파일: `constants/messages/strategyCreatorMessages.ts`
 
-핵심 목적은 전략 설명 시트가 컴포넌트 내부 하드코딩 없이 동작하게 만드는 것입니다. 상세 본문은 아직 넣지 않고, 전략별 제목과 공통 버튼 라벨만 둡니다.
+`StrategyCreatorMessageSet`에 다음 구조를 추가합니다. `strategyGuide` 필드는 `strategySelection` 바로 다음, `strategyDefinitions` 바로 전에 삽입합니다.
 
 ```ts
-import type { AppLang } from '@/types';
 import type { StrategyType } from '@/src/components/StrategyCreator/utils';
-import { getStrategyNames } from '../../supabase/functions/_shared/strategyNames.ts';
-```
 
-`StrategyCreatorMessageSet`에 다음 필드를 추가합니다.
-
-```ts
-export interface StrategyGuideEntryMessage {
-  title: string;
+export interface StrategyGuideLabelsMessage {
+  closeLabel: string;
+  closeAriaLabel: string;
+  dialogTitle: string;
+  brokenImageMessage: string;
 }
 
-export interface StrategyGuideMessageSet {
-  labels: {
-    closeLabel: string;
-    closeAriaLabel: string;
-    dialogTitle: string;
-  };
-  openButtonAriaLabels: Record<StrategyType, string>;
-  entries: Record<StrategyType, StrategyGuideEntryMessage>;
+export interface StrategyGuideEntryMessage {
+  title: string;
+  openButtonAriaLabel: string;
+  overviewImageAlt: string;
 }
 
 export interface StrategyCreatorMessageSet {
@@ -167,346 +212,187 @@ export interface StrategyCreatorMessageSet {
     heading: string;
     description: string;
   };
+  strategyGuide: {
+    labels: StrategyGuideLabelsMessage;
+    entries: Partial<Record<StrategyType, StrategyGuideEntryMessage>>;
+  };
   strategyDefinitions: {
     rsi_ma_interval: { title: string; description: string };
     multi_split: { title: string; description: string };
     no_stop_multi_split: { title: string; description: string };
     vr_band: { title: string; description: string };
   };
-  strategyGuide: StrategyGuideMessageSet;
-  tierLabels: {
-    FREE: string;
-    PRO: string;
-    PREMIUM: string;
-  };
-  stockPickerHeader: string;
-  lockedTickerTooltip: string;
-  duplicateSectionStockTooltip: string;
-  portfolioLimitReached: (maxPortfolios: number) => string;
-  duplicateSectionStocks: string;
-  outOfRangeToast: string;
-  ma: {
-    referenceStock: string;
-    referenceStockHelper: string;
-    shortPeriod: string;
-    longPeriod: string;
-    rsiEnabled: string;
-    rsiEnabledHelper: string;
-    alignmentEnabled: string;
-    alignmentEnabledHelper: string;
-    section1Title: string;
-    section1Helper: string;
-    section2Title: string;
-    section2Helper: string;
-    section3Title: string;
-    section3Helper: string;
-    sectionStock: string;
-    rsiThreshold: string;
-    takePartialProfit: string;
-    partialProfitTargetPct: string;
-  };
-  multiSplit: {
-    targetStock: string;
-    targetReturnRate: string;
-    intermediateReturnRate: string;
-    totalSplitCount: string;
-    baseLocRatio: string;
-    mainTakeProfitRatioPct: string;
-    intermediateTakeProfitRatioPct: string;
-    riskCutRatioPct: string;
-    riskCutRatioPctHelper: string;
-    rsiConditionLabel: string;
-    rsiConditionHelper: string;
-    alignmentConditionLabel: string;
-    alignmentConditionHelper: string;
-    criterionGroupLabel: string;
-    budgetGroupLabel: string;
-    rsiCriteria: {
-      rsi30: string;
-      rsi40: string;
-      rsi50: string;
-    };
-    alignmentCriteria: {
-      ma5_20: string;
-      ma20_60: string;
-      ma60_120: string;
-    };
-    budgetPresets: {
-      loc70: string;
-      balanced: string;
-      moc70: string;
-    };
-    leveragedRecommended: string;
-  };
-  vrBand: {
-    initialTHelper: string;
-    baseGrowthRatePctHelper: string;
-    poolUsagePctHelper: string;
-    smartBrakeThresholdPctHelper: string;
-  };
-  noStopMultiSplit: {
-    targetStock: string;
-    baseLocRatio: string;
-    takeProfitPct: string;
-    totalSplitCount: string;
-    rsiConditionLabel: string;
-    rsiConditionHelper: string;
-    alignmentConditionLabel: string;
-    alignmentConditionHelper: string;
-    criterionGroupLabel: string;
-    budgetGroupLabel: string;
-    rsiCriteria: {
-      rsi30: string;
-      rsi40: string;
-      rsi50: string;
-    };
-    alignmentCriteria: {
-      ma5_20: string;
-      ma20_60: string;
-      ma60_120: string;
-    };
-    budgetPresets: {
-      loc70: string;
-      balanced: string;
-      moc70: string;
-    };
-  };
-  meta: {
-    portfolioName: string;
-    dailyBuyAmount: string;
-    startDate: string;
-    feeRatePercent: string;
-  };
+  // 기존 tierLabels 이하 필드는 그대로 유지합니다.
 }
 ```
 
-`ko.strategyDefinitions` 바로 아래에 다음을 추가합니다.
+한국어 메시지 예시:
 
 ```ts
-    strategyGuide: {
-      labels: {
-        closeLabel: '닫기',
-        closeAriaLabel: '전략 설명 닫기',
-        dialogTitle: '전략 설명',
-      },
-      openButtonAriaLabels: {
-        rsi_ma_interval: `${STRATEGY_NAMES_KO.rsi_ma_interval} 전략 설명 보기`,
-        multi_split: `${STRATEGY_NAMES_KO.multi_split} 전략 설명 보기`,
-        no_stop_multi_split: `${STRATEGY_NAMES_KO.no_stop_multi_split} 전략 설명 보기`,
-        vr_band: `${STRATEGY_NAMES_KO.vr_band} 전략 설명 보기`,
-      },
-      entries: {
-        rsi_ma_interval: {
-          title: STRATEGY_NAMES_KO.rsi_ma_interval,
-        },
-        multi_split: {
-          title: STRATEGY_NAMES_KO.multi_split,
-        },
-        no_stop_multi_split: {
-          title: STRATEGY_NAMES_KO.no_stop_multi_split,
-        },
-        vr_band: {
-          title: STRATEGY_NAMES_KO.vr_band,
-        },
-      },
+strategyGuide: {
+  labels: {
+    closeLabel: '닫기',
+    closeAriaLabel: '전략 설명 닫기',
+    dialogTitle: '전략 설명',
+    brokenImageMessage: '전략 설명 이미지를 불러오지 못했어요.',
+  },
+  entries: {
+    rsi_ma_interval: {
+      title: '이동평균선 구간 전략',
+      openButtonAriaLabel: `${STRATEGY_NAMES_KO.rsi_ma_interval} 전략 설명 보기`,
+      overviewImageAlt:
+        '이동평균선 구간 전략의 3구간 판정과 보조 지표 필터를 설명하는 인포그래픽',
     },
+    multi_split: {
+      title: '다분할 매매',
+      openButtonAriaLabel: `${STRATEGY_NAMES_KO.multi_split} 전략 설명 보기`,
+      overviewImageAlt:
+        'Smart Split 전략의 분할 매수와 2단 익절 구조를 설명하는 인포그래픽',
+    },
+    no_stop_multi_split: {
+      title: '무손절 다분할',
+      openButtonAriaLabel: `${STRATEGY_NAMES_KO.no_stop_multi_split} 전략 설명 보기`,
+      overviewImageAlt:
+        '무손절 다분할 전략의 분할 매수와 전량 익절 구조를 설명하는 인포그래픽',
+    },
+    vr_band: {
+      title: 'TVC 전략 기술적 가이드라인',
+      openButtonAriaLabel: `${STRATEGY_NAMES_KO.vr_band} 전략 설명 보기`,
+      overviewImageAlt: 'TVC 전략 기술적 가이드라인 개요 이미지',
+    },
+  },
+},
 ```
 
-`en.strategyDefinitions` 바로 아래에 다음을 추가합니다.
+영어 메시지 예시:
 
 ```ts
-    strategyGuide: {
-      labels: {
-        closeLabel: 'Close',
-        closeAriaLabel: 'Close strategy guide',
-        dialogTitle: 'Strategy Guide',
-      },
-      openButtonAriaLabels: {
-        rsi_ma_interval: `View ${STRATEGY_NAMES_EN.rsi_ma_interval} strategy guide`,
-        multi_split: `View ${STRATEGY_NAMES_EN.multi_split} strategy guide`,
-        no_stop_multi_split: `View ${STRATEGY_NAMES_EN.no_stop_multi_split} strategy guide`,
-        vr_band: `View ${STRATEGY_NAMES_EN.vr_band} strategy guide`,
-      },
-      entries: {
-        rsi_ma_interval: {
-          title: STRATEGY_NAMES_EN.rsi_ma_interval,
-        },
-        multi_split: {
-          title: STRATEGY_NAMES_EN.multi_split,
-        },
-        no_stop_multi_split: {
-          title: STRATEGY_NAMES_EN.no_stop_multi_split,
-        },
-        vr_band: {
-          title: STRATEGY_NAMES_EN.vr_band,
-        },
-      },
+strategyGuide: {
+  labels: {
+    closeLabel: 'Close',
+    closeAriaLabel: 'Close strategy guide',
+    dialogTitle: 'Strategy Guide',
+    brokenImageMessage: 'The strategy guide image could not be loaded.',
+  },
+  entries: {
+    rsi_ma_interval: {
+      title: 'MA Strategy',
+      openButtonAriaLabel: `View ${STRATEGY_NAMES_EN.rsi_ma_interval} strategy guide`,
+      overviewImageAlt:
+        'Infographic explaining the MA Strategy zone determination and indicator filters',
     },
+    multi_split: {
+      title: 'Smart Split',
+      openButtonAriaLabel: `View ${STRATEGY_NAMES_EN.multi_split} strategy guide`,
+      overviewImageAlt:
+        'Infographic explaining Smart Split staged buying and two-level take-profit structure',
+    },
+    no_stop_multi_split: {
+      title: 'No-Stop Multi-Split',
+      openButtonAriaLabel: `View ${STRATEGY_NAMES_EN.no_stop_multi_split} strategy guide`,
+      overviewImageAlt:
+        'Infographic explaining the no-stop multi-split staged buying and full take-profit structure',
+    },
+    vr_band: {
+      title: 'TVC Strategy Technical Guideline',
+      openButtonAriaLabel: `View ${STRATEGY_NAMES_EN.vr_band} strategy guide`,
+      overviewImageAlt: 'TVC strategy technical guideline overview image',
+    },
+  },
+},
 ```
 
 검토:
 
-- `Record<StrategyType, ...>`이므로 새 전략이 추가되면 누락된 메시지가 컴파일 단계에서 드러납니다.
-- 상세 본문 필드를 만들지 않으므로 빈 상세 내용을 데이터로 위장하지 않습니다.
-- JSX 하드코딩 없이 모든 라벨을 i18n 딕셔너리에서 가져옵니다.
+- JSX에 한국어/영어 문구를 직접 쓰지 않습니다.
+- 전략명 문자열로 로직 분기하지 않습니다.
+- 메시지 딕셔너리가 안내 문구 타입을 직접 소유하므로 UI 컴포넌트 타입에 의존하지 않습니다.
+- `strategyGuide` 필드는 반드시 `StrategyCreatorMessageSet` 인터페이스 내부에 선언합니다. 최상위에 단독 `strategyGuide: { ... };` 블록을 두지 않습니다.
+- 이동평균선 구간 전략(`rsi_ma_interval`), Smart Split(`multi_split`), 무손절 다분할(`no_stop_multi_split`), TVC(`vr_band`)는 `entries`와 이미지 맵에 모두 등록합니다.
+- 향후 다른 전략 이미지는 `entries`에 전략 ID 키를 추가해서 연결합니다.
+- `entries`와 이미지 맵의 키 불일치는 QA/테스트에서 확인해야 합니다.
 
-## 6. 스니펫 2: UI 타입 확장
-
-대상 파일: `components/strategyCreator/types/ui.ts`
-
-```ts
-export interface StrategyGuideEntryViewModel {
-  id: StrategyType;
-  title: string;
-}
-
-export interface StrategyGuideSheetLabels {
-  closeLabel: string;
-  closeAriaLabel: string;
-  dialogTitle: string;
-}
-
-export interface StrategyGuideSheetProps {
-  labels: StrategyGuideSheetLabels;
-  entry: StrategyGuideEntryViewModel;
-  onClose: () => void;
-}
-
-export interface StrategySelectionStepViewProps {
-  lang: AppLang;
-  heading: string;
-  description: string;
-  definitions: readonly StrategyDefinitionViewModel[];
-  selectedStrategy: StrategyType | null;
-  strategyGuideButtonAriaLabels: Readonly<Record<StrategyType, string>>;
-  onSelectStrategy: (strategy: StrategyType) => void;
-  onOpenStrategyGuide: (strategy: StrategyType) => void;
-}
-```
-
-검토:
-
-- 콜백 prop은 `on*` 접두사를 사용합니다.
-- `StrategyGuideEntryViewModel.id`는 시트 제목 id와 테스트 식별에 사용 가능한 안정 키입니다.
-- `Readonly<Record<StrategyType, string>>`은 StepView가 라벨 객체를 수정하지 못하게 합니다.
-
-## 6-1. 스니펫 2-1: 스타일 토큰 확장
+## 7. 스타일 토큰 계획
 
 대상 파일: `components/strategyCreator/styles.ts`
 
-시트 레이아웃과 설명 버튼의 임의 Tailwind 값을 컴포넌트에 직접 흩뿌리지 않습니다. `STRATEGY_CREATOR_STYLES` 안에 명명된 토큰으로 모아, z-index와 viewport 크기 값의 의미를 한 곳에서 통제합니다.
+`STRATEGY_CREATOR_STYLES`에 다음 토큰을 추가합니다.
 
 ```ts
-export const STRATEGY_CREATOR_STYLES = {
-  overlay:
-    'fixed inset-0 z-[210] flex items-center justify-center p-4',
-  backdrop:
-    'absolute inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-md',
-  panel:
-    'relative flex h-[min(92vh,960px)] w-full max-w-6xl flex-col overflow-hidden rounded-[2.5rem] border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#161d2a]',
-  header:
-    'flex items-center justify-between gap-4 border-b border-slate-200 px-6 py-5 dark:border-white/10',
-  content:
-    'flex min-h-0 flex-1 flex-col overflow-y-auto bg-slate-50/50 p-6 dark:bg-slate-950/70 md:p-8',
-  footer:
-    'flex gap-4 border-t border-slate-200 bg-white p-6 dark:border-white/10 dark:bg-slate-900/80 md:p-8',
-  sectionCard:
-    'rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-slate-900/70',
-  fieldStack: 'space-y-3',
-  fieldLabel:
-    'text-[10px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-400',
-  textInput:
-    'w-full min-w-0 max-w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-black text-slate-900 outline-none transition-all focus:ring-2 focus:ring-blue-500/50 dark:border-white/10 dark:bg-slate-900/80 dark:text-white',
-  primaryButton:
-    'flex-1 rounded-2xl bg-blue-600 px-6 py-5 text-xs font-black uppercase text-white shadow-[0_12px_40px_rgba(37,99,235,0.35)] transition-all hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-50',
-  secondaryButton:
-    'rounded-2xl border border-slate-600/60 bg-slate-800 px-6 py-5 text-xs font-black uppercase text-slate-200 transition-colors hover:bg-slate-700',
-  errorBanner:
-    'rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-600',
-  helperText: 'text-[11px] font-medium text-slate-500 dark:text-slate-400',
-  strategyGuideOverlay:
-    'fixed inset-0 z-[220] flex items-center justify-center p-4',
-  strategyGuidePanel:
-    'relative flex h-[min(86vh,760px)] w-full max-w-2xl flex-col overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#161d2a]',
-  strategyGuideHeader:
-    'flex items-center justify-between gap-4 border-b border-slate-200 px-6 py-5 dark:border-white/10',
-  strategyGuideEyebrow:
-    'text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400',
-  strategyGuideTitle:
-    'truncate text-lg font-black text-slate-900 dark:text-white',
-  strategyGuideBody: 'min-h-0 flex-1 overflow-y-auto px-6 py-6 md:px-8',
-  strategyGuideFooter:
-    'border-t border-slate-200 bg-white p-6 dark:border-white/10 dark:bg-slate-900/80',
-  strategyGuideIconButton:
-    'rounded-full p-3 text-slate-400 transition-colors hover:bg-slate-100 dark:hover:bg-white/10',
-  strategyGuideInfoButton:
-    'absolute right-5 top-5 rounded-full border border-slate-200 bg-white p-2 text-slate-500 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900 dark:border-white/10 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white',
-} as const;
+strategyGuideOverlay:
+  'fixed inset-0 z-[220] flex items-center justify-center p-4',
+strategyGuidePanel:
+  'relative flex h-[min(86vh,760px)] w-full max-w-2xl flex-col overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#161d2a]',
+strategyGuideHeader:
+  'flex items-center justify-between gap-4 border-b border-slate-200 px-6 py-5 dark:border-white/10',
+strategyGuideEyebrow:
+  'text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400',
+strategyGuideTitle:
+  'truncate text-lg font-black text-slate-900 dark:text-white',
+strategyGuideBody: 'min-h-0 flex-1 overflow-y-auto px-6 py-6 md:px-8',
+strategyGuideImage:
+  'w-full rounded-2xl border border-slate-200 dark:border-white/10',
+strategyGuideImageFallback:
+  'flex min-h-[320px] items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-100 px-6 text-center text-sm font-bold text-slate-500 dark:border-white/10 dark:bg-slate-950 dark:text-slate-400',
+strategyGuideFooter:
+  'border-t border-slate-200 bg-white p-6 dark:border-white/10 dark:bg-slate-900/80',
+strategyGuideIconButton:
+  'rounded-full p-3 text-slate-400 transition-colors hover:bg-slate-100 dark:hover:bg-white/10',
+strategyGuideInfoButton:
+  'absolute right-5 top-5 z-10 flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900 dark:border-white/10 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white',
 ```
 
-검토:
+값 기준:
 
-- z-index와 viewport height는 컴포넌트 JSX에 직접 쓰지 않고, 전략 생성 레이아웃 스타일 토큰으로 집중합니다.
-- 기존 토큰은 유지하고 신규 토큰만 추가합니다.
-- 같은 class 묶음을 2회 이상 반복하지 않습니다.
+- `z-[220]`: 기존 `StrategyCreatorLayout` 오버레이보다 위에 떠야 합니다.
+- `h-[min(86vh,760px)]`: 작은 모바일 화면에서 헤더/푸터 포함 여백을 남기는 상한입니다.
+- `min-h-[320px]`: 이미지 실패 상태가 빈 시트처럼 보이지 않게 하는 최소 시각 영역입니다.
+- `h-11 w-11`: 모바일 터치 환경에서 약 44px 수준의 최소 터치 영역을 확보하기 위한 정보 버튼 크기입니다.
 
-## 7. 스니펫 3: 컨트롤러 상태 추가
-
-대상 파일: `components/strategyCreator/useStrategyCreatorController.tsx`
-
-`selectedStrategy` 상태 근처에 다음 상태를 추가합니다.
-
-```ts
-  const [guideStrategyId, setGuideStrategyId] = useState<StrategyType | null>(
-    null,
-  );
-```
-
-`strategyDefinitions` 아래에 다음 파생값과 handler를 추가합니다.
-
-```ts
-  const strategyGuideEntry =
-    guideStrategyId == null
-      ? null
-      : {
-          id: guideStrategyId,
-          title: copy.strategyGuide.entries[guideStrategyId].title,
-        };
-
-  const handleOpenStrategyGuide = useCallback((strategy: StrategyType) => {
-    setGuideStrategyId(strategy);
-  }, []);
-
-  const handleCloseStrategyGuide = useCallback(() => {
-    setGuideStrategyId(null);
-  }, []);
-```
-
-컨트롤러 return 객체에 다음 필드를 추가합니다.
-
-```ts
-    strategyGuideEntry,
-    handleOpenStrategyGuide,
-    handleCloseStrategyGuide,
-```
-
-검토:
-
-- 상태는 `StrategyCreator` 플로우 안에만 머뭅니다. `App.tsx`로 올리지 않습니다.
-- `strategyGuideEntry`는 소형 객체라 `useMemo`가 필요 없습니다.
-- async 작업이 없으므로 mutex가 필요하지 않습니다.
-- `copy.strategyGuide.entries[guideStrategyId]`는 `Record<StrategyType, ...>`이므로 정상 타입에서는 누락될 수 없습니다.
-
-## 8. 스니펫 4: 전략 설명 시트 신규 파일
+## 8. 설명 시트 스니펫
 
 대상 파일: `components/strategyCreator/StrategyGuideSheet.tsx`
 
 ```tsx
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { handlePressEnterOrSpace } from '@/src/utils/a11yHelpers';
 import { STRATEGY_CREATOR_STYLES } from './styles';
 import type { StrategyGuideSheetProps } from './types/ui';
+
+function renderGuideImage(params: {
+  resolvedImageSrc: string;
+  alt: string;
+  hasImageLoadError: boolean;
+  brokenImageMessage: string;
+  onImageError: React.ReactEventHandler<HTMLImageElement>;
+}): React.ReactElement {
+  const {
+    resolvedImageSrc,
+    alt,
+    hasImageLoadError,
+    brokenImageMessage,
+    onImageError,
+  } = params;
+
+  if (resolvedImageSrc.length === 0 || hasImageLoadError) {
+    return (
+      <div className={STRATEGY_CREATOR_STYLES.strategyGuideImageFallback}>
+        {brokenImageMessage}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={resolvedImageSrc}
+      alt={alt}
+      draggable={false}
+      onError={onImageError}
+      className={STRATEGY_CREATOR_STYLES.strategyGuideImage}
+    />
+  );
+}
 
 export function StrategyGuideSheet({
   labels,
@@ -514,6 +400,18 @@ export function StrategyGuideSheet({
   onClose,
 }: StrategyGuideSheetProps): React.ReactElement {
   const titleId = `strategy-guide-title-${entry.id}`;
+  const resolvedImageSrc = entry.overviewImageSrc?.trim() ?? '';
+  const [hasImageLoadError, setHasImageLoadError] = useState(false);
+
+  useEffect(() => {
+    setHasImageLoadError(false);
+  }, [resolvedImageSrc]);
+
+  const handleImageError = useCallback<
+    React.ReactEventHandler<HTMLImageElement>
+  >(() => {
+    setHasImageLoadError(true);
+  }, []);
 
   return (
     <div className={STRATEGY_CREATOR_STYLES.strategyGuideOverlay}>
@@ -557,7 +455,15 @@ export function StrategyGuideSheet({
           </button>
         </div>
 
-        <div className={STRATEGY_CREATOR_STYLES.strategyGuideBody} />
+        <div className={STRATEGY_CREATOR_STYLES.strategyGuideBody}>
+          {renderGuideImage({
+            resolvedImageSrc,
+            alt: entry.overviewImageAlt,
+            hasImageLoadError,
+            brokenImageMessage: labels.brokenImageMessage,
+            onImageError: handleImageError,
+          })}
+        </div>
 
         <div className={STRATEGY_CREATOR_STYLES.strategyGuideFooter}>
           <button
@@ -576,15 +482,180 @@ export function StrategyGuideSheet({
 
 검토:
 
-- 상세 본문 영역은 의도적으로 비워 둡니다.
-- 배경 `<div>`는 인터랙티브 요소이므로 `role`, `tabIndex`, `onKeyDown`, `aria-label`을 모두 갖습니다.
-- `strategyGuideOverlay`는 기존 `StrategyCreatorLayout` 오버레이보다 위에 뜨도록 스타일 토큰에서 관리합니다.
-- `role="dialog"`와 `aria-modal="true"`를 둬 시트의 의미를 명확히 합니다.
-- 닫기 handler는 동기 상태 변경만 하므로 async mutex 대상이 아닙니다.
+- 이 스니펫에는 이미지 확대/핀치 줌 기능이 없습니다.
+- nested ternary 없이 helper function으로 fallback을 분리합니다.
+- fallback 문구는 i18n 딕셔너리에서 가져옵니다.
+- backdrop은 interactive div이므로 `role`, `tabIndex`, `onKeyDown`, `aria-label`을 모두 갖습니다.
+- `any`와 non-null assertion을 사용하지 않습니다.
 
-## 9. 스니펫 5: 전략 선택 카드 분리
+## 9. 컨트롤러 연결 계획
+
+대상 파일: `components/strategyCreator/useStrategyCreatorController.tsx`
+
+추가 import:
+
+```ts
+import { STRATEGY_GUIDE_IMAGE_SRC_BY_STRATEGY } from '@/constants/strategyGuideAssets';
+import type { StrategyGuideEntryMessage } from '@/constants/messages/strategyCreatorMessages';
+import type {
+  StrategyGuideEntryLookup,
+  StrategyGuideEntryViewModel,
+} from './types/ui';
+```
+
+순수 helper:
+
+```ts
+function buildStrategyGuideEntries(params: {
+  definitions: readonly StrategyDefinitionViewModel[];
+  messages: Partial<Record<StrategyType, StrategyGuideEntryMessage>>;
+  imageSrcByStrategy: Partial<Record<StrategyType, string>>;
+}): StrategyGuideEntryLookup {
+  const entries: Partial<Record<StrategyType, StrategyGuideEntryViewModel>> = {};
+
+  for (const definition of params.definitions) {
+    const message = params.messages[definition.id];
+    const overviewImageSrc = params.imageSrcByStrategy[definition.id];
+
+    if (message == null || overviewImageSrc == null) {
+      continue;
+    }
+
+    entries[definition.id] = {
+      id: definition.id,
+      title: message.title,
+      openButtonAriaLabel: message.openButtonAriaLabel,
+      overviewImageAlt: message.overviewImageAlt,
+      overviewImageSrc,
+    };
+  }
+
+  return entries;
+}
+```
+
+상태:
+
+```ts
+const [guideStrategyId, setGuideStrategyId] = useState<StrategyType | null>(
+  null,
+);
+```
+
+파생값과 handler:
+
+```ts
+const guideEntriesByStrategy = useMemo(
+  () =>
+    buildStrategyGuideEntries({
+      definitions: strategyDefinitions,
+      messages: copy.strategyGuide.entries,
+      imageSrcByStrategy: STRATEGY_GUIDE_IMAGE_SRC_BY_STRATEGY,
+    }),
+  [copy.strategyGuide.entries, strategyDefinitions],
+);
+
+const strategyGuideEntry =
+  guideStrategyId == null
+    ? null
+    : guideEntriesByStrategy[guideStrategyId] ?? null;
+
+const handleOpenStrategyGuide = useCallback((strategy: StrategyType) => {
+  setGuideStrategyId(strategy);
+}, []);
+
+const handleCloseStrategyGuide = useCallback(() => {
+  setGuideStrategyId(null);
+}, []);
+```
+
+return 객체 추가:
+
+```ts
+guideEntriesByStrategy,
+strategyGuideEntry,
+handleOpenStrategyGuide,
+handleCloseStrategyGuide,
+```
+
+검토:
+
+- 특정 전략 ID를 컨트롤러 로직에서 분기하지 않습니다.
+- 가이드 데이터가 있는 전략만 lookup에 들어갑니다.
+- `useMemo`는 `guideEntriesByStrategy` 객체를 child prop으로 넘길 때 referential stability를 유지하기 위한 용도입니다.
+- async 작업이 아니므로 mutex 대상이 아닙니다.
+
+## 10. StrategyCreator 연결 계획
+
+대상 파일: `components/strategyCreator/StrategyCreator.tsx`
+
+추가 import:
+
+```ts
+import { StrategyGuideSheet } from './StrategyGuideSheet';
+```
+
+`StrategySelectionStepView` prop 추가:
+
+```tsx
+<StrategySelectionStepView
+  lang={lang}
+  heading={controller.copy.strategySelection.heading}
+  description={controller.copy.strategySelection.description}
+  definitions={controller.strategyDefinitions}
+  selectedStrategy={controller.selectedStrategy}
+  guideEntriesByStrategy={controller.guideEntriesByStrategy}
+  onSelectStrategy={controller.handleSelectStrategy}
+  onOpenStrategyGuide={controller.handleOpenStrategyGuide}
+/>
+```
+
+`StrategyCreator`의 최종 `return` AST 계층:
+
+```tsx
+return (
+  <>
+    <StrategyCreatorLayout
+      title={controller.title}
+      closeAriaLabel={controller.closeLabel}
+      cancelLabel={controller.copy.actions.cancel}
+      backLabel={controller.copy.actions.back}
+      primaryActionLabel={controller.primaryActionLabel}
+      processingLabel={controller.processingLabel}
+      errorMessage={controller.errorMessage}
+      isSaving={controller.isSaving}
+      isPrimaryDisabled={controller.isPrimaryDisabled}
+      canGoBack={controller.canGoBack}
+      onClose={controller.handleClose}
+      onBack={controller.handleBack}
+      onPrimaryAction={controller.handlePrimaryButtonClick}
+    >
+      {renderCurrentStep()}
+    </StrategyCreatorLayout>
+
+    {controller.strategyGuideEntry != null && (
+      <StrategyGuideSheet
+        labels={controller.copy.strategyGuide.labels}
+        entry={controller.strategyGuideEntry}
+        onClose={controller.handleCloseStrategyGuide}
+      />
+    )}
+  </>
+);
+```
+
+검토:
+
+- `strategyGuideEntry != null` guard가 있으므로 non-null assertion이 필요 없습니다.
+- 설명 시트는 `StrategyCreatorLayout`의 `children` 내부가 아니라 Fragment의 두 번째 자식으로 렌더링합니다.
+- 이 AST 계층은 시트를 기존 생성 마법사와 형제 레벨 오버레이로 고정합니다.
+- 특정 전략 전용 prop을 추가하지 않습니다.
+
+## 11. 전략 선택 화면 계획
 
 대상 파일: `components/strategyCreator/steps/StrategySelectionStepView.tsx`
+
+카드는 모든 전략에 같은 컴포넌트를 사용합니다.
 
 ```tsx
 import React, { useCallback } from 'react';
@@ -592,18 +663,11 @@ import { Info } from 'lucide-react';
 import { STRATEGY_CREATOR_STYLES } from '../styles';
 import type {
   StrategyDefinitionViewModel,
+  StrategyGuideEntryViewModel,
   StrategySelectionStepViewProps,
 } from '../types/ui';
 import type { StrategyType } from '@/src/components/StrategyCreator/utils';
 import { LegalDisclaimer } from '@/components/common/LegalDisclaimer';
-
-interface StrategyDefinitionCardProps {
-  definition: StrategyDefinitionViewModel;
-  isSelected: boolean;
-  strategyGuideButtonAriaLabel: string;
-  onSelectStrategy: (strategy: StrategyType) => void;
-  onOpenStrategyGuide: (strategy: StrategyType) => void;
-}
 
 function getStrategyCardClassName(isSelected: boolean): string {
   if (isSelected) {
@@ -613,10 +677,18 @@ function getStrategyCardClassName(isSelected: boolean): string {
   return 'border-slate-200 bg-white dark:border-white/10 dark:bg-slate-900/70';
 }
 
+interface StrategyDefinitionCardProps {
+  definition: StrategyDefinitionViewModel;
+  guideEntry: StrategyGuideEntryViewModel | null;
+  isSelected: boolean;
+  onSelectStrategy: (strategy: StrategyType) => void;
+  onOpenStrategyGuide: (strategy: StrategyType) => void;
+}
+
 function StrategyDefinitionCard({
   definition,
+  guideEntry,
   isSelected,
-  strategyGuideButtonAriaLabel,
   onSelectStrategy,
   onOpenStrategyGuide,
 }: StrategyDefinitionCardProps): React.ReactElement {
@@ -659,14 +731,16 @@ function StrategyDefinitionCard({
         </div>
       </button>
 
-      <button
-        type="button"
-        onClick={handleOpenStrategyGuide}
-        aria-label={strategyGuideButtonAriaLabel}
-        className={STRATEGY_CREATOR_STYLES.strategyGuideInfoButton}
-      >
-        <Info size={16} aria-hidden />
-      </button>
+      {guideEntry != null && (
+        <button
+          type="button"
+          onClick={handleOpenStrategyGuide}
+          aria-label={guideEntry.openButtonAriaLabel}
+          className={STRATEGY_CREATOR_STYLES.strategyGuideInfoButton}
+        >
+          <Info size={16} aria-hidden />
+        </button>
+      )}
     </div>
   );
 }
@@ -677,7 +751,7 @@ export function StrategySelectionStepView({
   description,
   definitions,
   selectedStrategy,
-  strategyGuideButtonAriaLabels,
+  guideEntriesByStrategy,
   onSelectStrategy,
   onOpenStrategyGuide,
 }: StrategySelectionStepViewProps): React.ReactElement {
@@ -695,10 +769,8 @@ export function StrategySelectionStepView({
           <StrategyDefinitionCard
             key={definition.id}
             definition={definition}
+            guideEntry={guideEntriesByStrategy[definition.id] ?? null}
             isSelected={selectedStrategy === definition.id}
-            strategyGuideButtonAriaLabel={
-              strategyGuideButtonAriaLabels[definition.id]
-            }
             onSelectStrategy={onSelectStrategy}
             onOpenStrategyGuide={onOpenStrategyGuide}
           />
@@ -717,150 +789,107 @@ export function StrategySelectionStepView({
 
 검토:
 
-- 중첩 버튼을 제거했습니다.
-- `definition.id`를 `key`로 사용하므로 index key를 쓰지 않습니다.
-- 선택 버튼과 설명 버튼의 이벤트 책임이 분리됩니다.
-- JSX 중첩 삼항이 없고, 선택 스타일은 `getStrategyCardClassName`로 분리했습니다.
-- 버튼 라벨은 메시지 딕셔너리에서 전달됩니다.
+- 모든 전략을 동일한 카드 컴포넌트로 렌더링합니다.
+- TVC 전용 JSX 분기가 없습니다.
+- 정보 버튼은 `guideEntry != null`인 전략에만 보입니다.
+- 정보 버튼은 카드 선택 버튼 안에 들어가지 않습니다.
+- `definition.id`를 stable key로 유지합니다.
+- inline object prop을 사용하지 않습니다.
+- map 내부에서 inline handler를 만들지 않습니다.
 
-## 10. 스니펫 6: StrategyCreator 연결
+## 12. 가상 런타임 시뮬레이션
 
-대상 파일: `components/strategyCreator/StrategyCreator.tsx`
-
-import를 추가합니다.
-
-```ts
-import { StrategyGuideSheet } from './StrategyGuideSheet';
+```text
+사용자: 새 포트폴리오 생성 모달 열기
+→ useStrategyCreatorController 실행
+→ strategyDefinitions 생성
+→ buildStrategyGuideEntries 실행
+→ 각 definition.id별로 message와 imageSrc를 조회
+→ 현재는 rsi_ma_interval, multi_split, no_stop_multi_split, vr_band에 message + imageSrc가 모두 있음
+→ guideEntriesByStrategy.rsi_ma_interval 생성
+→ guideEntriesByStrategy.multi_split 생성
+→ guideEntriesByStrategy.no_stop_multi_split 생성
+→ guideEntriesByStrategy.vr_band 생성
+→ StrategyCreator 렌더
+→ StrategySelectionStepView 렌더
+→ definitions.map으로 모든 전략을 StrategyDefinitionCard로 렌더
+→ rsi_ma_interval: guideEntry 있음, 정보 버튼 표시
+→ multi_split: guideEntry 있음, 정보 버튼 표시
+→ no_stop_multi_split: guideEntry 있음, 정보 버튼 표시
+→ vr_band: guideEntry 있음, 정보 버튼 표시
+→ 사용자: rsi_ma_interval 정보 버튼 클릭
+→ handleOpenStrategyGuide('rsi_ma_interval')
+→ guideStrategyId = 'rsi_ma_interval'
+→ strategyGuideEntry = guideEntriesByStrategy.rsi_ma_interval
+→ StrategyGuideSheet 렌더
+→ 이미지 로드 성공: 인포그래픽 표시
+→ 닫기 버튼 또는 backdrop activation
+→ handleCloseStrategyGuide()
+→ guideStrategyId = null
+→ StrategyGuideSheet unmount
 ```
 
-`strategy_select` 분기에서 props를 추가합니다.
+이동평균선 구간 전략, Smart Split, 무손절 다분할 이미지 연결은 다음 데이터 추가만으로 완료됩니다.
 
-```tsx
-          <StrategySelectionStepView
-            lang={lang}
-            heading={controller.copy.strategySelection.heading}
-            description={controller.copy.strategySelection.description}
-            definitions={controller.strategyDefinitions}
-            selectedStrategy={controller.selectedStrategy}
-            strategyGuideButtonAriaLabels={
-              controller.copy.strategyGuide.openButtonAriaLabels
-            }
-            onSelectStrategy={controller.handleSelectStrategy}
-            onOpenStrategyGuide={controller.handleOpenStrategyGuide}
-          />
+```text
+STRATEGY_GUIDE_IMAGE_SRC_BY_STRATEGY.rsi_ma_interval 추가
+STRATEGY_GUIDE_IMAGE_SRC_BY_STRATEGY.multi_split 추가
+STRATEGY_GUIDE_IMAGE_SRC_BY_STRATEGY.no_stop_multi_split 추가
+→ ko/en strategyGuide.entries.rsi_ma_interval 추가
+→ ko/en strategyGuide.entries.multi_split 추가
+→ ko/en strategyGuide.entries.no_stop_multi_split 추가
+→ buildStrategyGuideEntries가 자동으로 rsi_ma_interval/multi_split/no_stop_multi_split entry 생성
+→ StrategyDefinitionCard가 자동으로 rsi_ma_interval/multi_split/no_stop_multi_split 정보 버튼 표시
+→ 컴포넌트 렌더링 코드 수정 없음
 ```
 
-return 영역에 시트를 형제 레벨로 추가합니다.
+## 13. 구현 적용 순서
 
-```tsx
-  return (
-    <>
-      <StrategyCreatorLayout
-        title={controller.title}
-        closeAriaLabel={controller.closeLabel}
-        cancelLabel={controller.copy.actions.cancel}
-        backLabel={controller.copy.actions.back}
-        primaryActionLabel={controller.primaryActionLabel}
-        processingLabel={controller.processingLabel}
-        errorMessage={controller.errorMessage}
-        isSaving={controller.isSaving}
-        isPrimaryDisabled={controller.isPrimaryDisabled}
-        canGoBack={controller.canGoBack}
-        onClose={controller.handleClose}
-        onBack={controller.handleBack}
-        onPrimaryAction={controller.handlePrimaryButtonClick}
-      >
-        {renderCurrentStep()}
-      </StrategyCreatorLayout>
+1. `constants/messages/strategyCreatorMessages.ts`에 `StrategyGuideLabelsMessage`, `StrategyGuideEntryMessage`, `strategyGuide` i18n 구조 추가
+2. `constants/strategyGuideAssets.ts`에 `STRATEGY_GUIDE_IMAGE_SRC_BY_STRATEGY` 추가 후 기존 `TVC_GUIDE_OVERVIEW_IMAGE_SRC` 삭제
+3. `components/strategyCreator/types/ui.ts`에 가이드 타입 추가
+4. `components/strategyCreator/styles.ts`에 시트/버튼 토큰 추가
+5. `components/strategyCreator/StrategyGuideSheet.tsx`를 기본 이미지 시트로 정리
+6. `components/strategyCreator/useStrategyCreatorController.tsx`에 가이드 lookup/state/handler 추가
+7. `components/strategyCreator/StrategyCreator.tsx`에 prop과 시트 렌더링 연결
+8. `components/strategyCreator/steps/StrategySelectionStepView.tsx`를 데이터 기반 카드 구조로 교체
+9. `npm run typecheck:app`
 
-      {controller.strategyGuideEntry != null && (
-        <StrategyGuideSheet
-          labels={controller.copy.strategyGuide.labels}
-          entry={controller.strategyGuideEntry}
-          onClose={controller.handleCloseStrategyGuide}
-        />
-      )}
-    </>
-  );
+## 14. 검증 체크리스트
+
+정적 검증:
+
+```bash
+npm run typecheck:app
 ```
 
-검토:
+수동 QA:
 
-- 설명 시트는 마법사 내부 콘텐츠가 아니라 형제 오버레이입니다.
-- `controller.strategyGuideEntry != null` guard가 있으므로 non-null assertion이 필요 없습니다.
-- 시트를 닫아도 `selectedStrategy`와 `step`은 변경되지 않습니다.
+- 모든 전략 카드가 동일한 시각 구조로 보입니다.
+- 현재는 이동평균선 구간 전략, TVC, Smart Split, 무손절 다분할 카드에 정보 버튼이 보입니다.
+- 가이드 미준비 전략 카드는 기존 선택 동작을 유지합니다.
+- 이동평균선 구간 전략, TVC, Smart Split, 무손절 다분할 정보 버튼 클릭 시 설명 시트가 열립니다.
+- 각 전략에 연결된 인포그래픽 이미지가 표시됩니다.
+- 이미지 경로가 비어 있거나 로드 실패하면 fallback 메시지가 표시됩니다.
+- 닫기 버튼과 backdrop 키보드 activation으로 시트가 닫힙니다.
+- 이미지 확대/핀치 줌은 이 문서 범위에서 동작하지 않아야 합니다.
 
-## 11. 가상 런타임 시뮬레이션
+데이터 정합성 검증:
 
-### 11.1 AST 매핑
+- 현재 `Partial<Record>`와 `continue` 로직은 데이터가 부족할 때 정보 버튼을 조용히 숨기는 silent fallback을 의도한 동작으로 유지합니다.
+- 이 구조에서는 이미지 맵과 ko/en `strategyGuide.entries`의 키 불일치를 typecheck만으로 강제할 수 없습니다.
+- 출시 전 수동 QA에서 `STRATEGY_GUIDE_IMAGE_SRC_BY_STRATEGY`와 ko/en `strategyGuide.entries`의 키가 의도대로 맞는지 확인합니다.
 
-1. `StrategyCreator.tsx`가 `useStrategyCreatorController`를 호출합니다.
-2. 컨트롤러 return 타입은 명시되어 있지 않지만, 반환 객체에 `strategyGuideEntry`, `handleOpenStrategyGuide`, `handleCloseStrategyGuide`가 추가됩니다.
-3. `StrategySelectionStepViewProps`에 `strategyGuideButtonAriaLabels`, `onOpenStrategyGuide`가 추가됩니다.
-4. `StrategyCreator.tsx`의 `strategy_select` 분기는 두 prop을 모두 전달합니다.
-5. `StrategySelectionStepView`는 `definitions.map`에서 각 `definition.id`로 `strategyGuideButtonAriaLabels[definition.id]`를 조회합니다.
-6. `definition.id`는 `StrategyType`이므로 `Readonly<Record<StrategyType, string>>` 인덱싱이 성립합니다.
-7. 설명 버튼 클릭은 `StrategyDefinitionCard.handleOpenStrategyGuide`를 호출합니다.
-8. `handleOpenStrategyGuide`는 `guideStrategyId`를 해당 `StrategyType`으로 설정합니다.
-9. 렌더 재실행 시 `strategyGuideEntry`가 `{ id, title }` 객체가 됩니다.
-10. `StrategyCreator.tsx`는 `strategyGuideEntry != null`일 때 `StrategyGuideSheet`를 렌더링합니다.
-11. `StrategyGuideSheet`는 `entry.id`로 `titleId`를 생성하고, `entry.title`을 `<h2>`에 렌더링합니다.
-12. 닫기 버튼 또는 backdrop activation은 `handleCloseStrategyGuide`를 호출합니다.
-13. `guideStrategyId`가 `null`이 되어 다음 렌더에서 `StrategyGuideSheet`가 언마운트됩니다.
+## 15. 별도 문서
 
-### 11.2 타입 체크 시뮬레이션
+이미지 확대/핀치 줌 기능은 별도 계획서에서 관리합니다.
 
-- `StrategyGuideMessageSet.entries`는 `Record<StrategyType, StrategyGuideEntryMessage>`입니다. 4개 전략 중 하나라도 빠지면 컴파일 에러가 납니다.
-- `openButtonAriaLabels`도 `Record<StrategyType, string>`입니다. aria-label 누락이 타입 단계에서 걸립니다.
-- `StrategyGuideSheet`는 `entry: StrategyGuideEntryViewModel`을 필수로 받습니다. nullable entry를 직접 넘길 수 없습니다.
-- `controller.strategyGuideEntry != null` guard 이후에만 시트를 렌더링하므로 non-null assertion이 필요 없습니다.
-- `StrategyDefinitionCard`는 `StrategyDefinitionViewModel`을 그대로 받아 기존 `buildStrategyDefinitions` 산출물과 호환됩니다.
+- `docs2/strategy-guide-image-zoom-plan/strategy-guide-image-zoom-plan.md`
 
-### 11.3 이벤트 흐름 시뮬레이션
+해당 문서는 다음을 다룹니다.
 
-- 카드 본문 클릭: `onSelectStrategy(definition.id)`만 실행됩니다.
-- 설명 버튼 클릭: `onOpenStrategyGuide(definition.id)`만 실행됩니다.
-- 설명 버튼은 카드 버튼 밖에 있으므로 이벤트 전파 차단에 의존하지 않습니다.
-- 설명 시트 닫기: `guideStrategyId`만 `null`로 바뀝니다.
-- 전략 선택 상태, 마법사 step, 저장 가능 여부는 변경되지 않습니다.
-
-### 11.4 접근성 시뮬레이션
-
-- 카드 선택은 실제 `<button>`입니다.
-- 설명 버튼도 실제 `<button>`이고, `aria-label`을 갖습니다.
-- 시트 backdrop은 `div`이므로 `role="button"`, `tabIndex={0}`, `onKeyDown`, `aria-label`을 모두 갖습니다.
-- 시트는 `role="dialog"`, `aria-modal="true"`, `aria-labelledby`를 갖습니다.
-- `X`와 `Info` 아이콘은 `aria-hidden`으로 장식 처리합니다.
-
-### 11.5 품질 규칙 위반 여부
-
-- 금융 계산 없음: divide-by-zero, floating-point rounding, sign enforcement, order loop 규칙 영향 없음.
-- async 없음: one-click mutex, bridge rejection wrapping 영향 없음.
-- i18n 준수: JSX에 한국어/영어 UI 문자열을 직접 넣지 않습니다.
-- string-based logic 없음: 전략명 문자열이 아니라 `StrategyType` 키로만 조회합니다.
-- `any` 없음: 추가 타입은 모두 구체 타입입니다.
-- non-null assertion 없음: null guard를 사용합니다.
-- magic number: 시트 z-index와 viewport 크기 토큰은 JSX에 직접 두지 않고 `STRATEGY_CREATOR_STYLES` 안에 명명해 둡니다.
-- SRP: 카드, 시트, 컨트롤러 상태가 분리됩니다.
-- OCP: 새 전략 추가 시 `StrategyType`과 메시지 `Record` 확장으로 컴파일 에러가 안내합니다.
-
-## 12. 구현 전 차단 조건
-
-상세 본문이 비어 있는 상태로 실제 사용자에게 버튼을 노출하면 안 됩니다. 구현 시작 전에 다음 중 하나를 선택해야 합니다.
-
-- 상세 본문 계획서를 먼저 작성하고, 본문까지 채운 뒤 버튼을 노출합니다.
-- 또는 임시 feature flag를 두고 내부 QA에서만 버튼을 노출합니다.
-
-임시 feature flag를 둔다면 플래그 이름은 boolean naming 규칙에 맞춰 `shouldShowStrategyGuideButton`처럼 작성해야 합니다. 단, 이 문서의 스니펫에는 feature flag를 넣지 않았습니다. 아직 실제 출시 정책이 확정되지 않았기 때문입니다.
-
-## 13. 최종 판정
-
-이 계획은 현재 코드 구조에 억지로 전역 탭을 추가하지 않고, 포트폴리오 생성 플로우 안에서만 상태와 UI를 닫아 둡니다. 코어 전략 모델의 Fat Interface 부채를 건드리지 않으면서도, 새 설명 기능이 해당 부채에 의존하지 않도록 `StrategyType`과 i18n 메시지 딕셔너리만 사용합니다.
-
-구현 시 반드시 지켜야 할 결론은 다음과 같습니다.
-
-- 설명 버튼은 카드 버튼 안에 넣지 않습니다.
-- 상세 본문은 JSX에 직접 쓰지 않습니다.
-- `title` 또는 번역 문자열로 분기하지 않습니다.
-- 설명 시트 상태를 `App.tsx`로 올리지 않습니다.
-- 상세 본문이 비어 있으면 외부 사용자에게 노출하지 않습니다.
+- `react-zoom-pan-pinch` 설치
+- `ZoomableImage.tsx` 분리
+- 미니앱 WebView 제스처 충돌 방지
+- reset zoom 컨트롤
+- 라이브러리 타입 검증

@@ -8,6 +8,7 @@ import {
   NoStopMultiSplitConfigStepView,
   StrategyMetaStepView,
 } from './steps/SingleStockStrategyStepViews';
+import { StrategyGuideSheet } from './StrategyGuideSheet';
 import { StrategySelectionStepView } from './steps/StrategySelectionStepView';
 import { useStrategyCreatorController } from './useStrategyCreatorController';
 
@@ -47,7 +48,9 @@ export default function StrategyCreator({
             description={controller.copy.strategySelection.description}
             definitions={controller.strategyDefinitions}
             selectedStrategy={controller.selectedStrategy}
+            guideEntriesByStrategy={controller.guideEntriesByStrategy}
             onSelectStrategy={controller.handleSelectStrategy}
+            onOpenStrategyGuide={controller.handleOpenStrategyGuide}
           />
         );
       case 'ma_base':
@@ -409,6 +412,13 @@ export default function StrategyCreator({
       >
         {renderCurrentStep()}
       </StrategyCreatorLayout>
+      {controller.strategyGuideEntry != null && (
+        <StrategyGuideSheet
+          labels={controller.copy.strategyGuide.labels}
+          entry={controller.strategyGuideEntry}
+          onClose={controller.handleCloseStrategyGuide}
+        />
+      )}
     </>
   );
 }

@@ -8,8 +8,8 @@ import { useMutexAction } from '@/hooks/useMutexAction';
 import { showErrorToast } from '@/components/tds-adapter/showErrorToast';
 import { useAdPreload } from '@/services/ads/AdPreloadProvider';
 import {
+  BENEFIT_REWARD_LIVE_AD_GROUP_ID,
   getResolvedBenefitFeedBannerAdGroupId,
-  REWARD_UNLOCK_AI_AD_GROUP_ID,
 } from '@/services/ads/adPlacements';
 import { INTERSTITIAL_PLACEMENT_KEYS } from '@/services/ads/interstitialPlacementConfig';
 import { requestRewardAd } from '@/services/ads/rewardAdService';
@@ -795,7 +795,9 @@ export default function Benefits({
         return false;
       }
 
-      const hasCompletedRewardAd = await requestRewardAd(REWARD_UNLOCK_AI_AD_GROUP_ID);
+      const hasCompletedRewardAd = await requestRewardAd(
+        BENEFIT_REWARD_LIVE_AD_GROUP_ID,
+      );
       if (!hasCompletedRewardAd) {
         publishErrorNotice(copy.rewardAdNotCompletedMessage);
         return false;

@@ -86,10 +86,10 @@ import AIImageInputModal from './components/AIImageInputModal';
 import { usePortfolioUiCommands } from './src/hooks/usePortfolioUiCommands';
 import { parseViteBooleanEnvFlag } from './utils/envViteFlags';
 import {
-  INTERSTITIAL_LIVE_AD_GROUP_ID,
+  BENEFIT_INTERSTITIAL_LIVE_AD_GROUP_ID,
+  BENEFIT_REWARD_LIVE_AD_GROUP_ID,
   MARKET_BANNER_LIVE_AD_GROUP_ID,
   HISTORY_BANNER_LIVE_AD_GROUP_ID,
-  REWARD_UNLOCK_AI_AD_GROUP_ID,
 } from './services/ads/adPlacements';
 import { shouldExposeBenefitTab } from './services/benefits/benefitRewardPolicy';
 
@@ -117,10 +117,10 @@ const DAILY_EXECUTION_DEBOUNCE_MS = 3000;
 const DAILY_EXECUTION_ON_CONFLICT = 'user_id,summary_date';
 const SHOULD_SHOW_MEMBERSHIP_NAV_TAB = true;
 const BENEFIT_REQUIRED_AD_GROUP_IDS = [
-  INTERSTITIAL_LIVE_AD_GROUP_ID,
+  BENEFIT_INTERSTITIAL_LIVE_AD_GROUP_ID,
   MARKET_BANNER_LIVE_AD_GROUP_ID,
   HISTORY_BANNER_LIVE_AD_GROUP_ID,
-  REWARD_UNLOCK_AI_AD_GROUP_ID,
+  BENEFIT_REWARD_LIVE_AD_GROUP_ID,
 ] as const;
 
 const PRO_TIER_ICON_PROPS = {

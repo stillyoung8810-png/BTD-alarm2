@@ -5,7 +5,7 @@ import { I18N } from '../constants';
 import { X, Camera, Upload, Clipboard, Sparkles, ChevronRight, Video } from 'lucide-react';
 import { analyzeTradeScreenshot, RecognizedTradeItem } from '../services/geminiService';
 import { ensureValidSession } from '../services/supabase';
-import { REWARD_UNLOCK_AI_AD_GROUP_ID } from '../services/ads/adPlacements';
+import { getResolvedRewardUnlockAiAdGroupId } from '../services/ads/adPlacements';
 import { requestRewardAd } from '../services/ads/rewardAdService';
 import { formatShareQuantity } from '../src/utils/tradeModalCalculations';
 import { validateSelectedTradesAgainstHoldings } from '../utils/tradeSellValidation';
@@ -242,7 +242,9 @@ const AIImageInputModal: React.FC<AIImageInputModalProps> = ({
   };
 
   const handleWatchAdToUnlock = async () => {
-    const isRewardEarned = await requestRewardAd(REWARD_UNLOCK_AI_AD_GROUP_ID);
+    const isRewardEarned = await requestRewardAd(
+      getResolvedRewardUnlockAiAdGroupId(),
+    );
     if (isRewardEarned) {
       setRewardWatched(true);
       onStartScan(true);

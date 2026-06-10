@@ -1,7 +1,7 @@
 import React from 'react';
 import { CalendarCheck } from 'lucide-react';
 import type { BenefitMessages } from '@/constants/messages/benefitMessages';
-import { getResolvedHistoryBannerAdGroupId } from '@/services/ads/adPlacements';
+import { getResolvedBenefitAttendanceBannerAdGroupId } from '@/services/ads/adPlacements';
 import { TossInlineBanner } from '../TossInlineBanner';
 import { BenefitQuestCard } from './BenefitQuestCard';
 
@@ -24,7 +24,7 @@ export function AttendanceQuestCard({
   isInTossApp,
   onCheckIn,
 }: AttendanceQuestCardProps): React.ReactElement {
-  const attendanceBannerAdGroupId = getResolvedHistoryBannerAdGroupId();
+  const attendanceBannerAdGroupId = getResolvedBenefitAttendanceBannerAdGroupId();
   const shouldRenderBannerAd =
     shouldShowBannerAd &&
     isInTossApp &&

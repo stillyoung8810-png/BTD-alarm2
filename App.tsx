@@ -86,15 +86,18 @@ import AIImageInputModal from './components/AIImageInputModal';
 import { usePortfolioUiCommands } from './src/hooks/usePortfolioUiCommands';
 import { parseViteBooleanEnvFlag } from './utils/envViteFlags';
 import {
+  BENEFIT_PREDICTION_BANNER_LIVE_AD_GROUP_ID,
+  BENEFIT_QUIZ_BANNER_LIVE_AD_GROUP_ID,
   BENEFIT_INTERSTITIAL_LIVE_AD_GROUP_ID,
+  BENEFIT_QUIZ_REWARD_LIVE_AD_GROUP_ID,
   BENEFIT_REWARD_LIVE_AD_GROUP_ID,
   MARKET_BANNER_LIVE_AD_GROUP_ID,
-  HISTORY_BANNER_LIVE_AD_GROUP_ID,
+  BENEFIT_ATTENDANCE_BANNER_LIVE_AD_GROUP_ID,
 } from './services/ads/adPlacements';
 import { shouldExposeBenefitTab } from './services/benefits/benefitRewardPolicy';
 
 const BOOTSTRAP_AD_USER_TIER: UserTier = 'free';
-const INTERSTITIAL_GLOBAL_COOLDOWN_MS = 240_000;
+const INTERSTITIAL_GLOBAL_COOLDOWN_MS = 60_000;
 const SILENT_AD_AUDIO_MANAGER: AppAudioManager = {
   pauseAllSounds: () => {},
   resumeAllSounds: () => {},
@@ -104,6 +107,7 @@ const GLOBAL_INTERSTITIAL_AD_MANAGER = new GlobalAdManager(
   getInterstitialPlacementDefinitions(),
   {
     audioManager: SILENT_AD_AUDIO_MANAGER,
+    deferFirstInterstitialAttemptOncePerSession: false,
     globalCooldownMs: INTERSTITIAL_GLOBAL_COOLDOWN_MS,
     initialTier: BOOTSTRAP_AD_USER_TIER,
   },
@@ -119,7 +123,10 @@ const SHOULD_SHOW_MEMBERSHIP_NAV_TAB = true;
 const BENEFIT_REQUIRED_AD_GROUP_IDS = [
   BENEFIT_INTERSTITIAL_LIVE_AD_GROUP_ID,
   MARKET_BANNER_LIVE_AD_GROUP_ID,
-  HISTORY_BANNER_LIVE_AD_GROUP_ID,
+  BENEFIT_ATTENDANCE_BANNER_LIVE_AD_GROUP_ID,
+  BENEFIT_PREDICTION_BANNER_LIVE_AD_GROUP_ID,
+  BENEFIT_QUIZ_BANNER_LIVE_AD_GROUP_ID,
+  BENEFIT_QUIZ_REWARD_LIVE_AD_GROUP_ID,
   BENEFIT_REWARD_LIVE_AD_GROUP_ID,
 ] as const;
 

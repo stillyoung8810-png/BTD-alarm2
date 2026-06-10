@@ -68,7 +68,10 @@ import {
   formatUsdValue,
   getRounded,
 } from '../src/utils/financialCalculations';
-import { getResolvedHistoryBannerAdGroupId } from '../services/ads/adPlacements';
+import {
+  getResolvedDashboardBannerAdGroupId,
+  getResolvedDashboardFeedBannerAdGroupId,
+} from '../services/ads/adPlacements';
 import { showErrorToast } from './tds-adapter/showErrorToast';
 import {
   getConditionalTypographyStyle,
@@ -77,6 +80,8 @@ import {
 import { TossInlineBanner } from './TossInlineBanner';
 
 const DASHBOARD_INLINE_BANNER_CONTAINER_CLASS_NAME = 'h-[96px] min-h-[96px]';
+const DASHBOARD_FEED_BANNER_CONTAINER_CLASS_NAME =
+  'h-[410px] min-h-[410px] w-full';
 
 interface DashboardProps {
   lang: AppLang;
@@ -1926,7 +1931,10 @@ const Dashboard: React.FC<DashboardProps> = ({
     changeTone: getChangeTone(totalValuationChange),
   };
   const shouldRenderDashboardBanner = isInTossApp && shouldShowAds;
-  const dashboardInlineBannerAdGroupId = getResolvedHistoryBannerAdGroupId();
+  const dashboardInlineBannerAdGroupId = getResolvedDashboardBannerAdGroupId();
+  const dashboardFeedBannerAdGroupId = getResolvedDashboardFeedBannerAdGroupId();
+  const shouldRenderDashboardFeedBanner =
+    shouldRenderDashboardBanner && dashboardFeedBannerAdGroupId.trim() !== '';
 
   return (
     <div className="space-y-12 animate-in fade-in duration-700">
@@ -2015,6 +2023,17 @@ const Dashboard: React.FC<DashboardProps> = ({
           )}
         </section>
       )}
+
+      {shouldRenderDashboardFeedBanner ? (
+        <TossInlineBanner
+          adGroupId={dashboardFeedBannerAdGroupId}
+          shouldShowAd
+          isInTossApp={isInTossApp}
+          className="!my-0"
+          containerClassName={DASHBOARD_FEED_BANNER_CONTAINER_CLASS_NAME}
+          variant="card"
+        />
+      ) : null}
     </div>
   );
 };

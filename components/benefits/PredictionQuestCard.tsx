@@ -5,8 +5,10 @@ import type {
   BenefitPredictionQuestionResponse,
   PredictionDirection,
 } from '@/services/benefits/benefitQuestClient';
+import { getResolvedBenefitPredictionBannerAdGroupId } from '@/services/ads/adPlacements';
 import type { AppLang } from '@/types';
 import { BenefitQuestCard } from './BenefitQuestCard';
+import { TossInlineBanner } from '../TossInlineBanner';
 
 const BASE_PRICE_MAX_FRACTION_DIGITS = 2;
 const PREDICTION_LOCALE_BY_LANG: Record<AppLang, string> = {
@@ -24,6 +26,8 @@ interface PredictionQuestCardProps {
   readonly isBusy: boolean;
   readonly isDisabled: boolean;
   readonly canUnlockWithAd: boolean;
+  readonly shouldShowBannerAd: boolean;
+  readonly isInTossApp: boolean;
   readonly shouldShowSubmitInterstitialNotice: boolean;
   readonly onRefreshQuestion: () => void;
   readonly onSelectDirection: (direction: PredictionDirection) => void;
@@ -40,6 +44,8 @@ export function PredictionQuestCard({
   isBusy,
   isDisabled,
   canUnlockWithAd,
+  shouldShowBannerAd,
+  isInTossApp,
   shouldShowSubmitInterstitialNotice,
   onRefreshQuestion,
   onSelectDirection,
@@ -57,6 +63,12 @@ export function PredictionQuestCard({
     questionResponse?.reason === 'no_unlocked_attempt_available'
       ? copy.missionNotUnlockedMessage
       : copy.predictionNoQuestionMessage;
+  const predictionBannerAdGroupId =
+    getResolvedBenefitPredictionBannerAdGroupId();
+  const shouldRenderBannerAd =
+    shouldShowBannerAd &&
+    isInTossApp &&
+    predictionBannerAdGroupId.trim() !== '';
   const basePriceText =
     question == null
       ? ''
@@ -106,20 +118,31 @@ export function PredictionQuestCard({
         ) : null
       }
     >
-      {question == null ? (
-        <p className="mt-4 rounded-2xl bg-slate-50 p-3 text-xs font-bold leading-5 text-slate-500 dark:bg-white/[0.03] dark:text-slate-400">
-          {unavailableMessage}
-        </p>
-      ) : (
-        <div className="mt-4 rounded-2xl bg-blue-50 p-4 ring-1 ring-blue-100 dark:bg-blue-400/10 dark:ring-blue-400/20">
-          <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-500">
-            {question.symbol}
+      <>
+        {question == null ? (
+          <p className="mt-4 rounded-2xl bg-slate-50 p-3 text-xs font-bold leading-5 text-slate-500 dark:bg-white/[0.03] dark:text-slate-400">
+            {unavailableMessage}
           </p>
-          <p className="mt-2 text-sm font-black leading-6 text-slate-900 dark:text-white">
-            {copy.predictionBasePriceLabel}: {basePriceText}
-          </p>
-        </div>
-      )}
+        ) : (
+          <div className="mt-4 rounded-2xl bg-blue-50 p-4 ring-1 ring-blue-100 dark:bg-blue-400/10 dark:ring-blue-400/20">
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-500">
+              {question.symbol}
+            </p>
+            <p className="mt-2 text-sm font-black leading-6 text-slate-900 dark:text-white">
+              {copy.predictionBasePriceLabel}: {basePriceText}
+            </p>
+          </div>
+        )}
+        {shouldRenderBannerAd ? (
+          <TossInlineBanner
+            adGroupId={predictionBannerAdGroupId}
+            shouldShowAd
+            isInTossApp
+            containerClassName="h-[96px] min-h-[96px]"
+            variant="card"
+          />
+        ) : null}
+      </>
     </BenefitQuestCard>
   );
 }

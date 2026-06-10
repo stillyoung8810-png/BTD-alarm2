@@ -1,7 +1,12 @@
-import { GoogleAdMob } from '@apps-in-toss/web-framework';
 import { isTossApp } from '../toss/tossBridge';
+import type {
+  OfficialLoadFullScreenAd,
+  OfficialShowFullScreenAd,
+} from './globalAdManager';
+import { tossIntegratedFullScreenAdApi } from './tossIntegratedFullScreenAdApi';
 
 const REWARD_AD_LOAD_TIMEOUT_MS = 10_000;
+const REWARD_AD_SHOW_TIMEOUT_MS = 120_000;
 
 function executeWithTimeout<T>(
   executor: (
@@ -61,39 +66,110 @@ function executeWithTimeout<T>(
   });
 }
 
-function isRewardAdSupported(): boolean {
+function createSafeUnregister(
+  register: (cleanup: () => void) => () => void,
+): () => void {
+  let unregister: (() => void) | null = null;
+  let shouldRunAfterAssign = false;
+  let isConsumed = false;
+
+  const cleanup = (): void => {
+    if (isConsumed) {
+      return;
+    }
+
+    if (unregister == null) {
+      shouldRunAfterAssign = true;
+      return;
+    }
+
+    isConsumed = true;
+    const currentUnregister = unregister;
+    unregister = null;
+    currentUnregister();
+  };
+
+  unregister = register(cleanup);
+
+  if (shouldRunAfterAssign) {
+    cleanup();
+  }
+
+  return cleanup;
+}
+
+function hasSupportedLoadMethod(
+  method: OfficialLoadFullScreenAd | undefined,
+): method is OfficialLoadFullScreenAd {
+  if (typeof method !== 'function') {
+    return false;
+  }
+
+  if (typeof method.isSupported !== 'function') {
+    return false;
+  }
+
   try {
-    return (
-      typeof GoogleAdMob?.loadAppsInTossAdMob?.isSupported === 'function' &&
-      GoogleAdMob.loadAppsInTossAdMob.isSupported() === true
-    );
+    return method.isSupported() === true;
   } catch {
     return false;
   }
 }
 
-function waitForRewardAdLoad(adGroupId: string): Promise<() => void> {
-  return executeWithTimeout<() => void>((resolve, reject, onCancel) => {
-    let unregister: (() => void) | undefined;
+function hasSupportedShowMethod(
+  method: OfficialShowFullScreenAd | undefined,
+): method is OfficialShowFullScreenAd {
+  if (typeof method !== 'function') {
+    return false;
+  }
 
+  if (typeof method.isSupported !== 'function') {
+    return false;
+  }
+
+  try {
+    return method.isSupported() === true;
+  } catch {
+    return false;
+  }
+}
+
+function isRewardAdSupported(): boolean {
+  return (
+    hasSupportedLoadMethod(tossIntegratedFullScreenAdApi.loadFullScreenAd) &&
+    hasSupportedShowMethod(tossIntegratedFullScreenAdApi.showFullScreenAd)
+  );
+}
+
+function waitForRewardAdLoad(adGroupId: string): Promise<void> {
+  const loadFullScreenAd = tossIntegratedFullScreenAdApi.loadFullScreenAd;
+  if (!hasSupportedLoadMethod(loadFullScreenAd)) {
+    return Promise.reject(new Error('reward_ad_unsupported'));
+  }
+
+  return executeWithTimeout<void>((resolve, reject, onCancel) => {
     try {
-      unregister = GoogleAdMob.loadAppsInTossAdMob({
-        options: { adGroupId },
-        onEvent: (event: { type: string }) => {
-          if (event.type === 'loaded') {
-            resolve(unregister ?? (() => {}));
-          }
-        },
-        onError: (error: unknown) => {
-          if (unregister != null) {
-            unregister();
-          }
-          reject(error);
-        },
+      const cleanup = createSafeUnregister((safeCleanup) => {
+        onCancel(() => {
+          safeCleanup();
+        });
+
+        return loadFullScreenAd({
+          options: { adGroupId },
+          onEvent: (event) => {
+            if (event.type === 'loaded') {
+              safeCleanup();
+              resolve();
+            }
+          },
+          onError: (error: unknown) => {
+            safeCleanup();
+            reject(error);
+          },
+        });
       });
-      onCancel(() => {
-        unregister?.();
-      });
+
+      void cleanup;
     } catch (error: unknown) {
       reject(error);
     }
@@ -101,55 +177,58 @@ function waitForRewardAdLoad(adGroupId: string): Promise<() => void> {
 }
 
 function showRewardAd(adGroupId: string): Promise<boolean> {
-  return new Promise<boolean>((resolve, reject) => {
-    let unregister: (() => void) | undefined;
+  const showFullScreenAd = tossIntegratedFullScreenAdApi.showFullScreenAd;
+  if (!hasSupportedShowMethod(showFullScreenAd)) {
+    return Promise.reject(new Error('reward_ad_unsupported'));
+  }
+
+  return executeWithTimeout<boolean>((resolve, reject, onCancel) => {
     let isRewardEarned = false;
-    let isSettled = false;
-
-    const settleOnce = (settler: () => void): void => {
-      if (isSettled) {
-        return;
-      }
-
-      isSettled = true;
-      unregister?.();
-      settler();
-    };
 
     try {
-      unregister = GoogleAdMob.showAppsInTossAdMob({
-        options: { adGroupId },
-        onEvent: (event: { type: string }) => {
-          if (event.type === 'userEarnedReward') {
-            isRewardEarned = true;
-            return;
-          }
+      const cleanup = createSafeUnregister((safeCleanup) => {
+        onCancel(() => {
+          safeCleanup();
+        });
 
-          if (event.type === 'dismissed') {
-            settleOnce(() => {
-              resolve(isRewardEarned);
-            });
-            return;
-          }
-
-          if (event.type === 'failedToShow') {
-            settleOnce(() => {
-              reject(new Error('Toss SDK failedToShow'));
-            });
-          }
-        },
-        onError: (error: unknown) => {
-          settleOnce(() => {
+        return showFullScreenAd({
+          options: { adGroupId },
+          onEvent: (event) => {
+            switch (event.type) {
+              case 'requested':
+              case 'show':
+              case 'impression':
+              case 'clicked':
+                return;
+              case 'userEarnedReward':
+                isRewardEarned = true;
+                return;
+              case 'dismissed':
+                safeCleanup();
+                resolve(isRewardEarned);
+                return;
+              case 'failedToShow':
+                safeCleanup();
+                reject(new Error('reward_ad_failed_to_show'));
+                return;
+              default: {
+                const neverEvent: never = event;
+                void neverEvent;
+              }
+            }
+          },
+          onError: (error: unknown) => {
+            safeCleanup();
             reject(error);
-          });
-        },
+          },
+        });
       });
+
+      void cleanup;
     } catch (error: unknown) {
-      settleOnce(() => {
-        reject(error);
-      });
+      reject(error);
     }
-  });
+  }, REWARD_AD_SHOW_TIMEOUT_MS, 'reward_ad_show_timeout');
 }
 
 export async function requestRewardAd(adGroupId: string): Promise<boolean> {
@@ -161,17 +240,11 @@ export async function requestRewardAd(adGroupId: string): Promise<boolean> {
     return false;
   }
 
-  let loadUnregister: (() => void) | null = null;
-
   try {
-    loadUnregister = await waitForRewardAdLoad(adGroupId);
+    await waitForRewardAdLoad(adGroupId);
     return await showRewardAd(adGroupId);
   } catch (error: unknown) {
     console.error('[RewardAdService] Reward Ad error:', error);
     return false;
-  } finally {
-    if (loadUnregister != null) {
-      loadUnregister();
-    }
   }
 }

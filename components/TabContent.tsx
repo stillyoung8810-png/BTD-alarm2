@@ -104,6 +104,7 @@ const TabContentComponent: React.FC<TabContentProps> = (props) => {
   const copy = APP_SHELL_MESSAGES[lang];
   const paidTier = resolvePaidTier(currentTier);
   const shouldShowAds = paidTier === 'free';
+  const shouldShowBenefitAds = true;
 
   const handlePricingUpgrade = useCallback(
     (planId: 'pro' | 'premium') => {
@@ -220,7 +221,7 @@ const TabContentComponent: React.FC<TabContentProps> = (props) => {
         >
           <Benefits
             lang={lang}
-            shouldShowAds={shouldShowAds}
+            shouldShowBenefitAds={shouldShowBenefitAds}
             isAuthenticated={user != null}
           />
         </React.Suspense>

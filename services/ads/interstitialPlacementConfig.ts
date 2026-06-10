@@ -48,6 +48,12 @@ type InterstitialPlacementDefinitionBase = Omit<
   'adGroupId'
 >;
 
+const BENEFIT_INTERSTITIAL_ELIGIBLE_TIERS: readonly UserTier[] = [
+  'free',
+  'pro',
+  'premium',
+];
+
 const INTERSTITIAL_PLACEMENT_DEFINITION_BASES: readonly InterstitialPlacementDefinitionBase[] =
   [
     {
@@ -77,7 +83,7 @@ const INTERSTITIAL_PLACEMENT_DEFINITION_BASES: readonly InterstitialPlacementDef
     {
       key: INTERSTITIAL_PLACEMENT_KEYS.BENEFIT_MISSION_REWARD,
       preloadOnRoutes: ['benefits'],
-      eligibleTiers: ['free'],
+      eligibleTiers: BENEFIT_INTERSTITIAL_ELIGIBLE_TIERS,
       shouldDeferFirstAttempt: false,
     },
   ] as const;

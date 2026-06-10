@@ -8,7 +8,8 @@ import { useMutexAction } from '@/hooks/useMutexAction';
 import { showErrorToast } from '@/components/tds-adapter/showErrorToast';
 import { useAdPreload } from '@/services/ads/AdPreloadProvider';
 import {
-  BENEFIT_REWARD_LIVE_AD_GROUP_ID,
+  getResolvedBenefitQuizRewardAdGroupId,
+  getResolvedBenefitRewardAdGroupId,
   getResolvedBenefitFeedBannerAdGroupId,
 } from '@/services/ads/adPlacements';
 import { INTERSTITIAL_PLACEMENT_KEYS } from '@/services/ads/interstitialPlacementConfig';
@@ -54,7 +55,7 @@ interface BenefitQuestionState<Response> {
 
 interface BenefitsProps {
   readonly lang: AppLang;
-  readonly shouldShowAds: boolean;
+  readonly shouldShowBenefitAds: boolean;
   readonly isAuthenticated: boolean;
 }
 
@@ -72,6 +73,19 @@ const ERROR_TOAST_DEDUP_WINDOW_MS = 1_200;
 const TOSS_PAYOUT_STATUS_PENDING = 'pending';
 const TOSS_PAYOUT_STATUS_FAILED = 'failed';
 const BENEFIT_FEED_BANNER_CONTAINER_CLASS = 'h-[410px] min-h-[410px] w-full';
+
+function getResolvedMissionRewardAdGroupId(missionKind: MissionKind): string {
+  switch (missionKind) {
+    case 'stock_quiz':
+      return getResolvedBenefitQuizRewardAdGroupId();
+    case 'price_prediction':
+      return getResolvedBenefitRewardAdGroupId();
+    default: {
+      const exhaustiveCheck: never = missionKind;
+      return exhaustiveCheck;
+    }
+  }
+}
 
 const MISSION_ATTEMPT_LIMIT_CODES = [
   'attempt_limit_reached',
@@ -458,7 +472,7 @@ function resolveTossPointStatusLabel(
 
 export default function Benefits({
   lang,
-  shouldShowAds,
+  shouldShowBenefitAds,
   isAuthenticated,
 }: BenefitsProps): React.ReactElement {
   const copy = getBenefitMessages(lang);
@@ -796,7 +810,7 @@ export default function Benefits({
       }
 
       const hasCompletedRewardAd = await requestRewardAd(
-        BENEFIT_REWARD_LIVE_AD_GROUP_ID,
+        getResolvedMissionRewardAdGroupId(missionKind),
       );
       if (!hasCompletedRewardAd) {
         publishErrorNotice(copy.rewardAdNotCompletedMessage);
@@ -981,10 +995,11 @@ export default function Benefits({
     : noticeMessage ?? copy.apiPendingNotice;
   const benefitFeedBannerAdGroupId = getResolvedBenefitFeedBannerAdGroupId();
   const shouldRenderBenefitFeedBanner =
-    shouldShowAds &&
+    shouldShowBenefitAds &&
     isInTossApp &&
     benefitFeedBannerAdGroupId.trim() !== '';
-  const shouldShowMissionSubmitInterstitialNotice = shouldShowAds && isInTossApp;
+  const shouldShowMissionSubmitInterstitialNotice =
+    shouldShowBenefitAds && isInTossApp;
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 animate-in fade-in duration-500">
@@ -1014,7 +1029,7 @@ export default function Benefits({
           statusLabel={attendanceStatusLabel}
           isLoading={attendanceCommand.isExecuting}
           isDisabled={isAttendanceDisabled}
-          shouldShowBannerAd={shouldShowAds}
+          shouldShowBannerAd={shouldShowBenefitAds}
           isInTossApp={isInTossApp}
           onCheckIn={attendanceCommand.run}
         />
@@ -1028,6 +1043,8 @@ export default function Benefits({
           isBusy={isPredictionBusy}
           isDisabled={summary == null}
           canUnlockWithAd={canUnlockPredictionWithAd}
+          shouldShowBannerAd={shouldShowBenefitAds}
+          isInTossApp={isInTossApp}
           shouldShowSubmitInterstitialNotice={
             shouldShowMissionSubmitInterstitialNotice
           }
@@ -1043,6 +1060,8 @@ export default function Benefits({
           isBusy={isQuizBusy}
           isDisabled={summary == null}
           canUnlockWithAd={canUnlockQuizWithAd}
+          shouldShowBannerAd={shouldShowBenefitAds}
+          isInTossApp={isInTossApp}
           shouldShowSubmitInterstitialNotice={
             shouldShowMissionSubmitInterstitialNotice
           }

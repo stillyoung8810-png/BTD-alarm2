@@ -2,7 +2,9 @@ import React from 'react';
 import { Brain } from 'lucide-react';
 import type { BenefitMessages } from '@/constants/messages/benefitMessages';
 import type { BenefitQuizQuestionResponse } from '@/services/benefits/benefitQuestClient';
+import { getResolvedBenefitQuizBannerAdGroupId } from '@/services/ads/adPlacements';
 import { BenefitQuestCard } from './BenefitQuestCard';
+import { TossInlineBanner } from '../TossInlineBanner';
 
 interface StockQuizQuestCardProps {
   readonly copy: BenefitMessages;
@@ -12,6 +14,8 @@ interface StockQuizQuestCardProps {
   readonly isBusy: boolean;
   readonly isDisabled: boolean;
   readonly canUnlockWithAd: boolean;
+  readonly shouldShowBannerAd: boolean;
+  readonly isInTossApp: boolean;
   readonly shouldShowSubmitInterstitialNotice: boolean;
   readonly onRefreshQuestion: () => void;
   readonly onSelectChoice: (choiceId: string) => void;
@@ -26,6 +30,8 @@ export function StockQuizQuestCard({
   isBusy,
   isDisabled,
   canUnlockWithAd,
+  shouldShowBannerAd,
+  isInTossApp,
   shouldShowSubmitInterstitialNotice,
   onRefreshQuestion,
   onSelectChoice,
@@ -43,6 +49,9 @@ export function StockQuizQuestCard({
     questionResponse?.reason === 'no_unlocked_attempt_available'
       ? copy.missionNotUnlockedMessage
       : copy.quizNoQuestionMessage;
+  const quizBannerAdGroupId = getResolvedBenefitQuizBannerAdGroupId();
+  const shouldRenderBannerAd =
+    shouldShowBannerAd && isInTossApp && quizBannerAdGroupId.trim() !== '';
 
   return (
     <BenefitQuestCard
@@ -81,20 +90,31 @@ export function StockQuizQuestCard({
         ) : null
       }
     >
-      {question == null ? (
-        <p className="mt-4 rounded-2xl bg-slate-50 p-3 text-xs font-bold leading-5 text-slate-500 dark:bg-white/[0.03] dark:text-slate-400">
-          {unavailableMessage}
-        </p>
-      ) : (
-        <div className="mt-4 rounded-2xl bg-violet-50 p-4 ring-1 ring-violet-100 dark:bg-violet-400/10 dark:ring-violet-400/20">
-          <p className="text-xs font-black uppercase tracking-[0.14em] text-violet-500">
-            {question.category}
+      <>
+        {question == null ? (
+          <p className="mt-4 rounded-2xl bg-slate-50 p-3 text-xs font-bold leading-5 text-slate-500 dark:bg-white/[0.03] dark:text-slate-400">
+            {unavailableMessage}
           </p>
-          <p className="mt-2 text-sm font-black leading-6 text-slate-900 dark:text-white">
-            {question.question}
-          </p>
-        </div>
-      )}
+        ) : (
+          <div className="mt-4 rounded-2xl bg-violet-50 p-4 ring-1 ring-violet-100 dark:bg-violet-400/10 dark:ring-violet-400/20">
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-violet-500">
+              {question.category}
+            </p>
+            <p className="mt-2 text-sm font-black leading-6 text-slate-900 dark:text-white">
+              {question.question}
+            </p>
+          </div>
+        )}
+        {shouldRenderBannerAd ? (
+          <TossInlineBanner
+            adGroupId={quizBannerAdGroupId}
+            shouldShowAd
+            isInTossApp
+            containerClassName="h-[96px] min-h-[96px]"
+            variant="card"
+          />
+        ) : null}
+      </>
     </BenefitQuestCard>
   );
 }

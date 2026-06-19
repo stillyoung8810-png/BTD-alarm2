@@ -1,0 +1,17 @@
+name = "btd-toss-bff"
+main = "src/index.ts"
+compatibility_date = "2026-06-19"
+workers_dev = true
+
+[[mtls_certificates]]
+binding = "TOSS_MTLS_CERT"
+certificate_id = "c366244a-9414-4388-a4ab-0eae6b186559"
+
+[vars]
+TOSS_API_URL = "https://apps-in-toss-api.toss.im"
+TOSS_IAP_API_URL = "https://api-partner.toss.im"
+TOSS_SMART_MESSAGE_TEMPLATE_CODE = "btdalarm-push_msg"
+TOSS_SMART_MESSAGE_SCREEN_NAME = "markets"
+TOSS_IAP_PRO_PRODUCT_ID = "ait.0000019657.865b2b73.2082393ca6.1984429523"
+PLAN_AMOUNT_PRO = "5907"
+PLAN_AMOUNT_PREMIUM = "9900"

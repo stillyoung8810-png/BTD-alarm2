@@ -26,6 +26,12 @@ __pycache__/
 .env.local
 .env.*.local
 
+# Local secrets and certificates
+.secrets/
+*.crt
+*.key
+*.pem
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -9,10 +9,13 @@ import {
   readString,
   wrapBridgeCall,
 } from '../serviceUtils';
-import { readTrimmedViteEnv } from '../../utils/viteImportMetaEnv';
+import { readFirstTrimmedViteEnv } from '../../utils/viteImportMetaEnv';
 import { TOSS_IAP_FIXED_PLAN_ID } from './types';
 
-const BFF_URL = readTrimmedViteEnv('VITE_RAILWAY_BFF_URL');
+const BFF_URL = readFirstTrimmedViteEnv([
+  'VITE_WORKER_BFF_URL',
+  'VITE_RAILWAY_BFF_URL',
+]);
 
 export interface IapResult {
   success: boolean;

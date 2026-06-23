@@ -652,10 +652,11 @@ class SupabaseRestClient {
         toss_user_key: tossUserKey,
       },
     });
-    if (data.user == null) {
+    const user = readSupabaseUser(data);
+    if (user == null) {
       throw new Error("Supabase create user response missing user");
     }
-    return data.user;
+    return user;
   }
 
   public async listUsers(page: number, perPage: number): Promise<SupabaseUser[]> {
@@ -675,7 +676,7 @@ class SupabaseRestClient {
 
   public async getUserById(userId: string): Promise<SupabaseUser | null> {
     const data = await this.authAdminRequest<SupabaseAuthUserResponse>("GET", `/admin/users/${userId}`);
-    return data.user ?? null;
+    return readSupabaseUser(data);
   }
 
   public async updateUserById(userId: string, payload: Record<string, unknown>): Promise<void> {
@@ -813,6 +814,22 @@ function readErrorMessage(data: unknown, status: number): string {
 
 function supabase(ctx: RequestContext): SupabaseRestClient {
   return new SupabaseRestClient(ctx.env);
+}
+
+function readSupabaseUser(data: unknown): SupabaseUser | null {
+  if (!isRecord(data)) {
+    return null;
+  }
+
+  if (isRecord(data.user) && typeof data.user.id === "string") {
+    return data.user as unknown as SupabaseUser;
+  }
+
+  if (typeof data.id === "string") {
+    return data as unknown as SupabaseUser;
+  }
+
+  return null;
 }
 
 function tossBaseUrl(env: Env): string {
@@ -1072,6 +1089,16 @@ async function findManagedAuthUserByEmail(client: SupabaseRestClient, email: str
   return null;
 }
 
+function isAuthUserAlreadyRegisteredError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  return (
+    message.includes("email_exists") ||
+    message.includes("already registered") ||
+    message.includes("already been registered") ||
+    message.includes("email address has already been registered")
+  );
+}
+
 async function createManagedTossAuthUser(
   ctx: RequestContext,
   client: SupabaseRestClient,
@@ -1084,8 +1111,7 @@ async function createManagedTossAuthUser(
     const user = await client.createUser(email, password, tossUserKey);
     return { id: user.id };
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "";
-    if (message.includes("email_exists") || message.includes("already registered")) {
+    if (isAuthUserAlreadyRegisteredError(error)) {
       const existingUser = await findManagedAuthUserByEmail(client, email);
       if (existingUser != null) {
         return existingUser;
@@ -2002,10 +2028,27 @@ async function sendMessage(ctx: RequestContext, userKey: string, templateSetCode
   if (failure != null) {
     throw new HttpError(502, failure.errorCode ?? "TOSS_SEND_MESSAGE_FAILED", failure.error, data);
   }
-  if (!isRecord(data) || data.resultType !== RESULT_SUCCESS || !isRecord(data.result)) {
+  const successPayload = readSendMessageSuccessPayload(data);
+  if (successPayload == null) {
     throw new HttpError(502, "TOSS_SEND_MESSAGE_RESPONSE_INVALID", "Invalid send-message response shape", data);
   }
-  return data.result as SendMessageApiResult;
+  return successPayload;
+}
+
+function readSendMessageSuccessPayload(data: unknown): SendMessageApiResult | null {
+  if (!isRecord(data) || data.resultType !== RESULT_SUCCESS) {
+    return null;
+  }
+
+  if (isRecord(data.result)) {
+    return data.result as SendMessageApiResult;
+  }
+
+  if (isRecord(data.success)) {
+    return data.success as SendMessageApiResult;
+  }
+
+  return {};
 }
 
 async function handleTossSmartMessage(ctx: RequestContext): Promise<Response> {

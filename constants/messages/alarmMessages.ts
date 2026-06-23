@@ -20,6 +20,9 @@ export interface AlarmMessageSet {
   allSlotsFilledNotice: string;
   premiumFeatureNoticeTitle: string;
   premiumFeatureNoticeBody: string;
+  notificationAgreementRejectedToast: string;
+  notificationAgreementFailedToast: string;
+  notificationAgreementUnsupportedToast: string;
   aria: {
     closeModal: string;
     closeBackdrop: string;
@@ -56,6 +59,12 @@ export const ALARM_MESSAGES: Record<AppLang, AlarmMessageSet> = {
     allSlotsFilledNotice: '더 많은 알람 설정은 추후 확장 예정입니다.',
     premiumFeatureNoticeTitle: '프리미엄 전용',
     premiumFeatureNoticeBody: '프리미엄 전용 기능입니다.',
+    notificationAgreementRejectedToast:
+      '알림 수신 동의가 필요해 알람을 저장하지 않았습니다.',
+    notificationAgreementFailedToast:
+      '알림 수신 동의 요청에 실패했습니다. 잠시 후 다시 시도해 주세요.',
+    notificationAgreementUnsupportedToast:
+      '현재 토스 앱 버전에서는 알림 수신 동의를 요청할 수 없습니다. 토스 앱을 업데이트한 뒤 다시 시도해 주세요.',
     aria: {
       closeModal: '알람 설정 모달 닫기',
       closeBackdrop: '알람 설정 모달 배경 닫기',
@@ -91,6 +100,12 @@ export const ALARM_MESSAGES: Record<AppLang, AlarmMessageSet> = {
     allSlotsFilledNotice: 'More alarm settings will be available in future updates.',
     premiumFeatureNoticeTitle: 'Premium only',
     premiumFeatureNoticeBody: 'This is a premium feature.',
+    notificationAgreementRejectedToast:
+      'Alarm settings were not saved because notification consent is required.',
+    notificationAgreementFailedToast:
+      'Failed to request notification consent. Please try again later.',
+    notificationAgreementUnsupportedToast:
+      'This Toss app version does not support notification consent. Please update Toss and try again.',
     aria: {
       closeModal: 'Close alarm settings modal',
       closeBackdrop: 'Close alarm settings modal backdrop',

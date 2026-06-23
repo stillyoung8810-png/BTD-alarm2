@@ -23,6 +23,23 @@ export function readTrimmedViteEnv(
   return typeof rawValue === 'string' ? rawValue.trim() : '';
 }
 
+export function readFirstTrimmedViteEnv(
+  keys: readonly (keyof ImportMetaEnv)[],
+): string {
+  for (const key of keys) {
+    const value = readTrimmedViteEnv(key);
+    if (value.length > 0) {
+      return value;
+    }
+  }
+
+  return '';
+}
+
+export function readTossNotificationAgreementTemplateCode(): string {
+  return readTrimmedViteEnv('VITE_TOSS_NOTIFICATION_AGREEMENT_TEMPLATE_CODE');
+}
+
 export function isViteDevBuild(): boolean {
   return getViteImportMetaEnv()?.DEV === true;
 }

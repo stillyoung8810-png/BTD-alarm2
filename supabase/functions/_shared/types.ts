@@ -106,10 +106,15 @@ export interface IndicatorRequirements {
   maPeriods: readonly NoStopMovingAveragePeriod[];
 }
 
+export type NotificationAgreementSuccessStatus = 'newAgreement' | 'alreadyAgreed';
+
 export interface AlarmConfig {
   enabled: boolean;
   selectedHours: string[]; // e.g., ["15:00", "16:00"] (최대 2개)
   timezone?: string; // IANA timezone (e.g., "Asia/Seoul")
+  notificationAgreementTemplateCode?: string;
+  notificationAgreementStatus?: NotificationAgreementSuccessStatus;
+  notificationAgreementAgreedAt?: string;
 }
 
 export interface Strategy {

@@ -9,9 +9,12 @@ import {
 } from '../services/serviceUtils';
 import { clearAuthStorage, supabase } from '../services/supabase';
 import type { AppLang } from '../types';
-import { readTrimmedViteEnv } from '../utils/viteImportMetaEnv';
+import { readFirstTrimmedViteEnv } from '../utils/viteImportMetaEnv';
 
-const BFF_URL = readTrimmedViteEnv('VITE_RAILWAY_BFF_URL');
+const BFF_URL = readFirstTrimmedViteEnv([
+  'VITE_WORKER_BFF_URL',
+  'VITE_RAILWAY_BFF_URL',
+]);
 const TOSS_SELF_UNLINK_PATH = '/auth/toss/self-unlink';
 /** Fastify는 Content-Type이 application/json일 때 빈 바디를 400(FST_ERR_CTP_EMPTY_JSON_BODY)으로 거부한다. */
 const EMPTY_JSON_OBJECT_BODY = JSON.stringify({});
@@ -97,7 +100,7 @@ export function useTossLogoutFlow({
       const trimmedBffUrl = BFF_URL.trim();
       if (trimmedBffUrl.length === 0) {
         console.error(
-          '[TossLogout] Missing VITE_RAILWAY_BFF_URL during self-unlink',
+          '[TossLogout] Missing VITE_WORKER_BFF_URL or VITE_RAILWAY_BFF_URL during self-unlink',
         );
         if (isMountedRef.current) {
           showErrorToast(copy.tossLogoutNetworkError);

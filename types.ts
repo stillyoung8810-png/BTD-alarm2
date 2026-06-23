@@ -106,10 +106,30 @@ export interface IndicatorRequirements {
   maPeriods: readonly NoStopMovingAveragePeriod[];
 }
 
+export const NOTIFICATION_AGREEMENT_SUCCESS_STATUSES = [
+  'newAgreement',
+  'alreadyAgreed',
+] as const;
+
+export type NotificationAgreementSuccessStatus =
+  (typeof NOTIFICATION_AGREEMENT_SUCCESS_STATUSES)[number];
+
+export function isNotificationAgreementSuccessStatus(
+  value: unknown,
+): value is NotificationAgreementSuccessStatus {
+  return (
+    typeof value === 'string' &&
+    (NOTIFICATION_AGREEMENT_SUCCESS_STATUSES as readonly string[]).includes(value)
+  );
+}
+
 export interface AlarmConfig {
   enabled: boolean;
   selectedHours: string[]; // e.g., ["15:00", "16:00"] (최대 2개)
   timezone?: string; // IANA timezone (e.g., "Asia/Seoul")
+  notificationAgreementTemplateCode?: string;
+  notificationAgreementStatus?: NotificationAgreementSuccessStatus;
+  notificationAgreementAgreedAt?: string;
 }
 
 export interface Strategy {

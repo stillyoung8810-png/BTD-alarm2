@@ -14,6 +14,7 @@ export default defineConfig({
       'utils/**/*.test.ts',
       '__tests__/**/*.test.ts',
       'components/**/*.test.tsx',
+      'services/**/*.test.ts',
       'src/components/**/*.test.ts',
       'hooks/**/*.test.ts',
       'hooks/**/*.test.tsx',

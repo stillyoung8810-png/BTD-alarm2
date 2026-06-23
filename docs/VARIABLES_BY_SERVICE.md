@@ -29,6 +29,7 @@ Supabase에서는 **Edge Function**에서 쓰는 비밀값(시크릿)만 대시�
 | `SUPABASE_SERVICE_ROLE_KEY` | Edge Function **Secrets** | 서버 권한으로 DB/API 호출 |
 | `TELEGRAM_BOT_TOKEN` | **send-alarm**, **telegram-webhook** 함수 Secrets | 텔레그램 API 호출 |
 | `INTERNAL_ALARM_SECRET` | **check-and-trigger-alarms**, **send-alarm** 함수 Secrets (동일 값) | 알람 트리거 → 발송 간 검증 |
+| `WORKER_BFF_URL` | **send-alarm**, **benefits** 함수 Secrets | Cloudflare Worker BFF base URL. 없으면 기존 `RAILWAY_BFF_URL` fallback 사용 |
 
 - Supabase Dashboard에서 **Edge Functions** 목록에 있는 각 함수(**check-and-trigger-alarms**, **send-alarm**, **telegram-webhook**, **update-stock-prices** 등)에 들어가서, 해당 함수가 사용하는 시크릿을 위와 같이 추가하면 됩니다.
 - `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`는 **Project Settings → API**에서 확인할 수 있습니다. 이 값을 복사해서 Edge Function Secrets에 넣으면 됩니다.
@@ -72,6 +73,7 @@ Supabase에서는 **Edge Function**에서 쓰는 비밀값(시크릿)만 대시�
 | `VITE_FIREBASE_APP_ID` | Firebase App ID |
 | `VITE_FIREBASE_VAPID_KEY` | FCM Web Push 키 (VAPID) |
 | `VITE_TELEGRAM_BOT_USERNAME` | 텔레그램 봇 유저명 (@ 없이) |
+| `VITE_WORKER_BFF_URL` | Cloudflare Worker BFF base URL. 없으면 기존 `VITE_RAILWAY_BFF_URL` fallback 사용 |
 
 - Firebase 관련 값은 **Firebase Console** → 프로젝트 → **Project settings** → **General** → **Your apps** 에서 확인할 수 있습니다.
 - **주의**: `TELEGRAM_BOT_TOKEN`, `INTERNAL_ALARM_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` 같은 **비밀키는 Cloudflare에 넣지 마세요.** 이건 Supabase Edge Function 쪽 Secrets에만 넣습니다.

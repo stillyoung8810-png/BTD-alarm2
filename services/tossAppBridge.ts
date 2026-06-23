@@ -16,6 +16,9 @@ import {
   wrapBridgeCall,
 } from './serviceUtils';
 import { isViteDevBuild } from '../utils/viteImportMetaEnv';
+import type {
+  RequestNotificationAgreementOptions,
+} from '@apps-in-toss/web-framework';
 
 // ---------------------------------------------------------------------------
 // 타입 정의
@@ -50,12 +53,23 @@ interface WebFrameworkModule {
   };
   /** 외부 URL 열기 (WebView에서는 브라우저 탭으로 열림) — @apps-in-toss 문서 권장 */
   openURL?: (url: string) => Promise<unknown>;
+  isMinVersionSupported?: (minVersions: {
+    android: `${number}.${number}.${number}` | 'always' | 'never';
+    ios: `${number}.${number}.${number}` | 'always' | 'never';
+  }) => boolean;
+  requestNotificationAgreement?: (
+    params: RequestNotificationAgreementOptions,
+  ) => () => void;
 }
 
 type WebFrameworkPartnerModule = NonNullable<WebFrameworkModule["partner"]>;
 type WebFrameworkTdsEventModule = NonNullable<WebFrameworkModule["tdsEvent"]>;
 type WebFrameworkSafeAreaModule = NonNullable<WebFrameworkModule["SafeAreaInsets"]>;
 type WebFrameworkOpenUrl = NonNullable<WebFrameworkModule["openURL"]>;
+type WebFrameworkIsMinVersionSupported =
+  NonNullable<WebFrameworkModule["isMinVersionSupported"]>;
+type WebFrameworkRequestNotificationAgreement =
+  NonNullable<WebFrameworkModule["requestNotificationAgreement"]>;
 
 let _cachedModule: WebFrameworkModule | null = null;
 
@@ -367,12 +381,22 @@ function decodeWebFrameworkModule(value: unknown): WebFrameworkModule | null {
     typeof value.openURL === 'function'
       ? value.openURL as WebFrameworkOpenUrl
       : undefined;
+  const isMinVersionSupported =
+    typeof value.isMinVersionSupported === 'function'
+      ? value.isMinVersionSupported as WebFrameworkIsMinVersionSupported
+      : undefined;
+  const requestNotificationAgreement =
+    typeof value.requestNotificationAgreement === 'function'
+      ? value.requestNotificationAgreement as WebFrameworkRequestNotificationAgreement
+      : undefined;
 
   if (
     partner == null &&
     tdsEvent == null &&
     safeAreaInsets == null &&
-    openURL == null
+    openURL == null &&
+    isMinVersionSupported == null &&
+    requestNotificationAgreement == null
   ) {
     return null;
   }
@@ -382,5 +406,7 @@ function decodeWebFrameworkModule(value: unknown): WebFrameworkModule | null {
     tdsEvent,
     SafeAreaInsets: safeAreaInsets,
     openURL,
+    isMinVersionSupported,
+    requestNotificationAgreement,
   };
 }

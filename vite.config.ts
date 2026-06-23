@@ -15,6 +15,7 @@ const CLIENT_ENV_PREFIXES = [
   'VITE_SUPABASE_',
   'VITE_TELEGRAM_',
   'VITE_TOSS_',
+  'VITE_WORKER_',
 ] as const;
 
 export default defineConfig(({ mode }) => {

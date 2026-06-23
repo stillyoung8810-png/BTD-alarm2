@@ -25,6 +25,7 @@ declare global {
     readonly VITE_FIREBASE_VAPID_KEY?: string;
 
     readonly VITE_TELEGRAM_BOT_USERNAME?: string;
+    readonly VITE_WORKER_BFF_URL?: string;
     readonly VITE_RAILWAY_BFF_URL?: string;
     readonly VITE_BENEFIT_TAB_ENABLED?: BooleanEnvFlag;
     readonly VITE_TOSS_PROMOTION_APPROVED?: BooleanEnvFlag;
@@ -37,6 +38,7 @@ declare global {
     readonly VITE_BACKTEST_MULTI_URL?: string;
     readonly VITE_BACKTEST_NO_STOP_MULTI_URL?: string;
 
+    readonly VITE_TOSS_NOTIFICATION_AGREEMENT_TEMPLATE_CODE?: string;
     readonly VITE_TOSS_INTERSTITIAL_USE_TEST?: BooleanEnvFlag;
   }
 

@@ -1,6 +1,6 @@
 /**
- * 토스 로그인: SDK appLogin으로 인증 코드 획득 → Railway BFF를 통해 세션 발급.
- * 모든 토스 서버 간 통신은 BFF(Railway)를 거칩니다.
+ * 토스 로그인: SDK appLogin으로 인증 코드 획득 → BFF를 통해 세션 발급.
+ * 모든 토스 서버 간 통신은 mTLS BFF를 거칩니다.
  */
 
 import { appLogin } from '@apps-in-toss/web-framework';
@@ -11,10 +11,13 @@ import {
   readString,
   wrapBridgeCall,
 } from '../serviceUtils';
-import { readTrimmedViteEnv } from '../../utils/viteImportMetaEnv';
+import { readFirstTrimmedViteEnv } from '../../utils/viteImportMetaEnv';
 import { isTossApp } from './tossBridge';
 
-const BFF_URL = readTrimmedViteEnv('VITE_RAILWAY_BFF_URL');
+const BFF_URL = readFirstTrimmedViteEnv([
+  'VITE_WORKER_BFF_URL',
+  'VITE_RAILWAY_BFF_URL',
+]);
 
 export interface TossAuthSuccessResult {
   success: true;
@@ -41,7 +44,9 @@ export async function loginWithToss(): Promise<TossAuthResult> {
   }
 
   if (!BFF_URL?.trim()) {
-    console.error('[TossAuth] VITE_RAILWAY_BFF_URL이 설정되지 않았습니다.');
+    console.error(
+      '[TossAuth] VITE_WORKER_BFF_URL 또는 VITE_RAILWAY_BFF_URL이 설정되지 않았습니다.',
+    );
     return { success: false, error: '서버 설정이 올바르지 않습니다.' };
   }
 

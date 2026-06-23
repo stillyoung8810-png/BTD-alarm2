@@ -312,6 +312,7 @@ const shouldSendTossPush = hasTossUserKey;
 
 환경 변수:
 
+- `WORKER_BFF_URL`
 - `RAILWAY_BFF_URL`
 - `INTERNAL_ALARM_SECRET`
 

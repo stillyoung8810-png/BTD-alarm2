@@ -24,6 +24,7 @@ vi.mock('../components/tds-adapter/showErrorToast', () => ({
 }));
 
 vi.mock('../utils/viteImportMetaEnv', () => ({
+  readFirstTrimmedViteEnv: vi.fn(() => 'https://mock-bff.local'),
   readTrimmedViteEnv: vi.fn(() => 'https://mock-bff.local'),
 }));
 

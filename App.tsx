@@ -54,6 +54,10 @@ import {
   PORTFOLIO_MUTATION_ERROR_CODES,
 } from './constants/portfolioMutationErrors';
 import { APP_SHELL_MESSAGES } from './constants/appShellMessages';
+import {
+  getAlarmMessages,
+  type AlarmMessageSet,
+} from './constants/messages/alarmMessages';
 import { getDashboardMessages } from './constants/messages/dashboardMessages';
 import { 
   LayoutDashboard, 
@@ -95,6 +99,12 @@ import {
   BENEFIT_ATTENDANCE_BANNER_LIVE_AD_GROUP_ID,
 } from './services/ads/adPlacements';
 import { shouldExposeBenefitTab } from './services/benefits/benefitRewardPolicy';
+import {
+  resolveAlarmNotificationAgreementForSave,
+  type AlarmNotificationAgreementBlockReason,
+} from './services/alarmNotificationAgreementSavePolicy';
+import { requestTossNotificationAgreement } from './services/tossNotificationAgreementService';
+import { readTossNotificationAgreementTemplateCode } from './utils/viteImportMetaEnv';
 
 const BOOTSTRAP_AD_USER_TIER: UserTier = 'free';
 const INTERSTITIAL_GLOBAL_COOLDOWN_MS = 60_000;
@@ -129,6 +139,24 @@ const BENEFIT_REQUIRED_AD_GROUP_IDS = [
   BENEFIT_QUIZ_REWARD_LIVE_AD_GROUP_ID,
   BENEFIT_REWARD_LIVE_AD_GROUP_ID,
 ] as const;
+
+function getAlarmNotificationAgreementBlockToast(
+  copy: AlarmMessageSet,
+  reason: AlarmNotificationAgreementBlockReason,
+): string {
+  switch (reason) {
+    case 'agreementRejected':
+      return copy.notificationAgreementRejectedToast;
+    case 'sdkError':
+      return copy.notificationAgreementFailedToast;
+    case 'unsupportedEnvironment':
+      return copy.notificationAgreementUnsupportedToast;
+    default: {
+      const exhaustiveCheck: never = reason;
+      return exhaustiveCheck;
+    }
+  }
+}
 
 const PRO_TIER_ICON_PROPS = {
   fill: 'currentColor',
@@ -1187,9 +1215,28 @@ const App: React.FC = () => {
       };
 
       try {
+        const agreementDecision = await resolveAlarmNotificationAgreementForSave({
+          currentConfig: portfolio.alarmconfig,
+          nextConfig,
+          isInTossApp,
+          templateCode: readTossNotificationAgreementTemplateCode(),
+          requestAgreement: requestTossNotificationAgreement,
+          nowIso: () => new Date().toISOString(),
+        });
+
+        if (agreementDecision.type === 'block') {
+          showErrorToast(
+            getAlarmNotificationAgreementBlockToast(
+              getAlarmMessages(lang),
+              agreementDecision.reason,
+            ),
+          );
+          return;
+        }
+
         await executeUpdatePortfolio({
           ...portfolio,
-          alarmconfig: nextConfig,
+          alarmconfig: agreementDecision.config,
         });
         handleCloseModal();
         scheduleInterstitialAd(INTERSTITIAL_PLACEMENT_KEYS.ALARM_SAVE);
@@ -1197,7 +1244,13 @@ const App: React.FC = () => {
         console.error('[Alarm] save failed:', error);
       }
     },
-    [executeUpdatePortfolio, handleCloseModal, scheduleInterstitialAd],
+    [
+      executeUpdatePortfolio,
+      handleCloseModal,
+      isInTossApp,
+      lang,
+      scheduleInterstitialAd,
+    ],
   );
 
   const handleSaveAiTrades = useCallback(

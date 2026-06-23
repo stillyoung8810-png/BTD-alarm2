@@ -33,6 +33,91 @@ function shouldSendTelegram(profile: UserProfileRow | null): boolean {
 
 const TELEGRAM_MAX_MESSAGE_LENGTH = 4096;
 const TELEGRAM_MAX_ERROR_STORAGE = 500;
+const SEND_ALARM_WORKER_TEST_ROUTE = "/send-alarm-worker-test";
+const WORKER_BFF_HEALTH_PATH = "/worker-health";
+const WORKER_BFF_HEALTH_TIMEOUT_MS = 5_000;
+const WORKER_BFF_HEALTH_BODY_LIMIT = 500;
+
+interface ResolvedBffBase {
+  readonly baseUrl: string;
+  readonly requiredEnvName: "WORKER_BFF_URL" | "RAILWAY_BFF_URL";
+}
+
+function readTrimmedDenoEnv(...keys: readonly string[]): string {
+  for (const key of keys) {
+    const value = Deno.env.get(key)?.trim() ?? "";
+    if (value.length > 0) {
+      return value;
+    }
+  }
+
+  return "";
+}
+
+function isWorkerBffTestRequest(req: Request): boolean {
+  return new URL(req.url).pathname.includes(SEND_ALARM_WORKER_TEST_ROUTE);
+}
+
+function resolveBffBase(): ResolvedBffBase {
+  const workerBffUrl = readTrimmedDenoEnv("WORKER_BFF_URL", "worker_bff_url");
+  if (workerBffUrl.length > 0) {
+    return { baseUrl: workerBffUrl, requiredEnvName: "WORKER_BFF_URL" };
+  }
+
+  return {
+    baseUrl: readTrimmedDenoEnv("RAILWAY_BFF_URL", "railway_bff_url"),
+    requiredEnvName: "RAILWAY_BFF_URL",
+  };
+}
+
+function isWorkerBffHealthProbe(req: Request): boolean {
+  const pathName = new URL(req.url).pathname;
+  return (
+    isWorkerBffTestRequest(req) &&
+    pathName.endsWith(WORKER_BFF_HEALTH_PATH)
+  );
+}
+
+async function handleWorkerBffHealthProbe(headers: HeadersInit): Promise<Response> {
+  const workerBffUrl = readTrimmedDenoEnv("WORKER_BFF_URL", "worker_bff_url");
+  if (workerBffUrl.length === 0) {
+    return new Response(
+      JSON.stringify({ success: false, error: "WORKER_BFF_URL not set" }),
+      { status: 500, headers },
+    );
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, WORKER_BFF_HEALTH_TIMEOUT_MS);
+
+  try {
+    const workerHealthUrl = `${workerBffUrl.replace(/\/+$/, "")}/health`;
+    const response = await fetch(workerHealthUrl, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    const body = await response.text();
+
+    return new Response(
+      JSON.stringify({
+        success: response.ok,
+        workerStatus: response.status,
+        workerBody: body.slice(0, WORKER_BFF_HEALTH_BODY_LIMIT),
+      }),
+      { status: response.ok ? 200 : 502, headers },
+    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "worker_health_failed";
+    return new Response(
+      JSON.stringify({ success: false, error: message }),
+      { status: 502, headers },
+    );
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 /** 알람용 텔레그램 메시지 포맷 (길이 제한 적용) */
 function formatTelegramAlarmMessage(
@@ -292,6 +377,10 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  if (isWorkerBffHealthProbe(req)) {
+    return await handleWorkerBffHealthProbe(jsonHeaders);
+  }
+
   // 내부 호출 전용: INTERNAL_ALARM_SECRET 이 있으면 헤더 검사 (JWT 없이 배포 시 401 방지)
   // Dashboard에서 internal_alarm_secret 으로 넣어도 동작하도록 둘 다 확인
   const internalSecret = (Deno.env.get("INTERNAL_ALARM_SECRET") ?? Deno.env.get("internal_alarm_secret"))?.trim() || "";
@@ -385,7 +474,7 @@ serve(async (req) => {
     const preferredLang: 'ko' | 'en' =
       profileRow?.preferred_language === 'en' ? 'en' : 'ko';
     const telegramBotToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
-    const bffBase = (Deno.env.get("RAILWAY_BFF_URL") ?? Deno.env.get("railway_bff_url"))?.trim() || "";
+    const bffConfig = resolveBffBase();
 
     const dailyExecutionText: string | null = payload?.summary_text ?? null;
     const tokens: string[] = Array.isArray(payload?.fcm_tokens)
@@ -425,15 +514,15 @@ serve(async (req) => {
       : null;
 
     if (shouldSendTossPush) {
-      if (!bffBase) {
-        tossPushError = "RAILWAY_BFF_URL not set";
+      if (!bffConfig.baseUrl) {
+        tossPushError = `${bffConfig.requiredEnvName} not set`;
         console.warn(`Toss push skipped for user ${user_id}:`, tossPushError);
       } else if (!internalSecret) {
         tossPushError = "INTERNAL_ALARM_SECRET not set";
         console.warn(`Toss push skipped for user ${user_id}:`, tossPushError);
       } else {
         const tossResult = await sendTossSmartMessage(
-          bffBase,
+          bffConfig.baseUrl,
           internalSecret,
           user_id,
           tossMessageContext!,

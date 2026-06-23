@@ -27,10 +27,10 @@ const SUPABASE_SERVICE_ROLE_KEY =
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const TOSS_BENEFIT_PROMOTION_CODE =
   Deno.env.get("TOSS_BENEFIT_PROMOTION_CODE") ?? "MOCK_BENEFIT_PROMOTION_CODE";
-const RAILWAY_BFF_URL = Deno.env.get("RAILWAY_BFF_URL")?.trim() ?? "";
 const BENEFIT_BFF_INTERNAL_SECRET =
   Deno.env.get("BENEFIT_BFF_INTERNAL_SECRET")?.trim() ?? "";
 
+const BENEFITS_WORKER_TEST_ROUTE = "/benefits-worker-test";
 const MISSION_KINDS = new Set<MissionKind>([
   "price_prediction",
   "stock_quiz",
@@ -48,6 +48,80 @@ const QUIZ_QUESTION_QUERY_LIMIT = 500;
 const QUIZ_ATTEMPT_HISTORY_LIMIT = 1_000;
 const BENEFIT_BFF_PROMOTION_TIMEOUT_MS = 15_000;
 const BENEFIT_BFF_PROMOTION_PATH = "/benefits/toss-point/execute-promotion";
+const BENEFITS_ROUTE_PREFIXES = [BENEFITS_WORKER_TEST_ROUTE, "/benefits"] as const;
+const WORKER_BFF_HEALTH_PATH = "/worker-health";
+const WORKER_BFF_HEALTH_TIMEOUT_MS = 5_000;
+const WORKER_BFF_HEALTH_BODY_LIMIT = 500;
+
+function readTrimmedDenoEnv(...keys: readonly string[]): string {
+  for (const key of keys) {
+    const value = Deno.env.get(key)?.trim() ?? "";
+    if (value.length > 0) {
+      return value;
+    }
+  }
+
+  return "";
+}
+
+function isWorkerBffTestRequest(req: Request): boolean {
+  return new URL(req.url).pathname.includes(BENEFITS_WORKER_TEST_ROUTE);
+}
+
+function resolveBenefitBffUrl(): string {
+  return readTrimmedDenoEnv(
+    "WORKER_BFF_URL",
+    "worker_bff_url",
+    "RAILWAY_BFF_URL",
+    "railway_bff_url",
+  );
+}
+
+function isWorkerBffHealthProbe(req: Request): boolean {
+  const pathName = new URL(req.url).pathname;
+  return (
+    isWorkerBffTestRequest(req) &&
+    pathName.endsWith(WORKER_BFF_HEALTH_PATH)
+  );
+}
+
+async function handleWorkerBffHealthProbe(req: Request): Promise<Response> {
+  const workerBffUrl = readTrimmedDenoEnv("WORKER_BFF_URL", "worker_bff_url");
+  if (workerBffUrl.length === 0) {
+    return jsonResponse(req, 500, {
+      success: false,
+      error: "WORKER_BFF_URL not set",
+    });
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, WORKER_BFF_HEALTH_TIMEOUT_MS);
+
+  try {
+    const workerHealthUrl = `${workerBffUrl.replace(/\/+$/, "")}/health`;
+    const response = await fetch(workerHealthUrl, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    const body = await response.text();
+
+    return jsonResponse(req, response.ok ? 200 : 502, {
+      success: response.ok,
+      workerStatus: response.status,
+      workerBody: body.slice(0, WORKER_BFF_HEALTH_BODY_LIMIT),
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "worker_health_failed";
+    return jsonResponse(req, 502, {
+      success: false,
+      error: message,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 interface BenefitWalletRow {
   readonly money_balance: number;
@@ -310,13 +384,14 @@ function readMissionKind(body: JsonObject): MissionKind {
 
 function normalizeRoutePath(req: Request): string {
   const pathName = new URL(req.url).pathname;
-  const marker = "/benefits";
-  const markerIndex = pathName.indexOf(marker);
-  if (markerIndex < 0) {
-    return "/";
+  for (const routePrefix of BENEFITS_ROUTE_PREFIXES) {
+    const markerIndex = pathName.indexOf(routePrefix);
+    if (markerIndex >= 0) {
+      return pathName.slice(markerIndex + routePrefix.length) || "/";
+    }
   }
 
-  return pathName.slice(markerIndex + marker.length) || "/";
+  return "/";
 }
 
 function parseRedeemRpcResult(data: unknown): BenefitRedeemRpcResult {
@@ -337,15 +412,16 @@ function parseRedeemRpcResult(data: unknown): BenefitRedeemRpcResult {
   };
 }
 
-function resolveBenefitBffPromotionUrl(): string | null {
+function resolveBenefitBffPromotionUrl(req: Request): string | null {
+  const benefitBffUrl = resolveBenefitBffUrl();
   if (
-    RAILWAY_BFF_URL.trim() === "" ||
+    benefitBffUrl.trim() === "" ||
     BENEFIT_BFF_INTERNAL_SECRET.trim() === ""
   ) {
     return null;
   }
 
-  return `${RAILWAY_BFF_URL.replace(/\/+$/, "")}${BENEFIT_BFF_PROMOTION_PATH}`;
+  return `${benefitBffUrl.replace(/\/+$/, "")}${BENEFIT_BFF_PROMOTION_PATH}`;
 }
 
 async function executePromotionViaBff(
@@ -354,7 +430,7 @@ async function executePromotionViaBff(
   redeemRequestId: string,
   redeemResult: BenefitRedeemRpcResult,
 ): Promise<JsonObject> {
-  const promotionUrl = resolveBenefitBffPromotionUrl();
+  const promotionUrl = resolveBenefitBffPromotionUrl(req);
   if (promotionUrl == null) {
     return {
       success: false,
@@ -1220,6 +1296,10 @@ serve(async (req: Request) => {
 
   if (req.method !== "POST") {
     return jsonResponse(req, 405, { error: "method_not_allowed" });
+  }
+
+  if (isWorkerBffHealthProbe(req)) {
+    return await handleWorkerBffHealthProbe(req);
   }
 
   try {

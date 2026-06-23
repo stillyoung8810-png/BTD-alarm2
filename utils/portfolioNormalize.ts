@@ -11,6 +11,7 @@ import type {
   VrBandStrategyParams,
   VrSnapshot,
 } from '../types';
+import { isNotificationAgreementSuccessStatus } from '../types';
 import { STRATEGY_DEFAULTS } from '../constants/domain/financeRules';
 import {
   DEFAULT_FEE_RATE,
@@ -38,12 +39,23 @@ function coerceAlarmConfig(raw: unknown): AlarmConfig | undefined {
   if (typeof raw.enabled !== 'boolean') return undefined;
   if (!Array.isArray(raw.selectedHours)) return undefined;
   const selectedHours = raw.selectedHours.filter((h): h is string => typeof h === 'string');
-  const timezone = raw.timezone;
-  const base: AlarmConfig = { enabled: raw.enabled, selectedHours };
-  if (typeof timezone === 'string') {
-    return { ...base, timezone };
+  const config: AlarmConfig = { enabled: raw.enabled, selectedHours };
+
+  if (typeof raw.timezone === 'string') {
+    config.timezone = raw.timezone;
   }
-  return base;
+  // 동의 메타데이터는 유효한 타입일 때만 복원해 손상된 DB 값으로 상태가 오염되지 않게 한다.
+  if (typeof raw.notificationAgreementTemplateCode === 'string') {
+    config.notificationAgreementTemplateCode = raw.notificationAgreementTemplateCode;
+  }
+  if (isNotificationAgreementSuccessStatus(raw.notificationAgreementStatus)) {
+    config.notificationAgreementStatus = raw.notificationAgreementStatus;
+  }
+  if (typeof raw.notificationAgreementAgreedAt === 'string') {
+    config.notificationAgreementAgreedAt = raw.notificationAgreementAgreedAt;
+  }
+
+  return config;
 }
 
 export function normalizePortfolioData(data: unknown[]): Portfolio[] {

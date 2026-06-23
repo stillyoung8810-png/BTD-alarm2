@@ -5,7 +5,6 @@ import {
   type SupabaseClient,
 } from "https://esm.sh/@supabase/supabase-js@2";
 import {
-  getEffectiveSubscriptionState,
   type SubscriptionProfileSnapshot,
 } from "../../../server/src/services/paymentFulfillment.ts";
 import type {
@@ -41,6 +40,7 @@ import {
 } from "../_shared/noStopMultiSplitShared.ts";
 import { roundMoney } from "../_shared/financialMath.ts";
 import { mapWithConcurrency } from "../_shared/asyncBatch.ts";
+import { shouldSendTelegram } from "../_shared/telegramEligibility.ts";
 
 interface Holdings {
   stock: string;
@@ -118,17 +118,6 @@ function getCurrentKSTDateString(): string {
 
 function normalizeLang(value?: string | null): Lang {
   return value === "en" ? "en" : "ko";
-}
-
-function shouldSendTelegram(profile: UserProfileRow | null): boolean {
-  if (!profile) return false;
-  const effective = getEffectiveSubscriptionState(profile);
-  if (effective.tier !== "pro" && effective.tier !== "premium") return false;
-  if (!effective.isActive || effective.isExpired) return false;
-  if (profile.telegram_enabled !== true) return false;
-  const chatId = profile.telegram_chat_id;
-  if (!chatId || String(chatId).trim() === "") return false;
-  return true;
 }
 
 function normalizeTickerSymbol(symbol: string): string {
@@ -1063,7 +1052,6 @@ serve(async (_req) => {
     const { data: profiles, error: profileError } = await supabase
       .from("user_profiles")
       .select("id, subscription_tier, subscription_status, subscription_expires_at, pending_plan, pending_plan_effective_at, telegram_enabled, telegram_chat_id, preferred_language")
-      .in("subscription_tier", ["pro", "premium"])
       .eq("telegram_enabled", true)
       .not("telegram_chat_id", "is", null);
 

@@ -3,13 +3,13 @@
 import { serve } from "std/http/server";
 import { createClient } from "@supabase/supabase-js";
 import { SignJWT, importPKCS8 } from "jose";
-import { getEffectiveSubscriptionState } from "../../../server/src/services/paymentFulfillment.ts";
 import {
   BTD_TOSS_SMART_MESSAGE_TEMPLATE_CODE,
   buildBtdTossSmartMessageContext,
   type TossSmartMessageContext,
 } from "../../../server/src/toss/smartMessage.ts";
 import { getCorsHeaders, getJsonCorsHeaders } from "../_shared/cors.ts";
+import { shouldSendTelegram } from "../_shared/telegramEligibility.ts";
 import type { UserProfileRow } from "../_shared/types.ts";
 
 interface AlarmRequest {
@@ -17,18 +17,6 @@ interface AlarmRequest {
   title: string;
   body: string;
   data?: Record<string, string>;
-}
-
-/** 유료 구독 + 텔레그램 연결 시에만 텔레그램 발송 */
-function shouldSendTelegram(profile: UserProfileRow | null): boolean {
-  if (!profile) return false;
-  const effective = getEffectiveSubscriptionState(profile);
-  if (effective.tier !== "pro" && effective.tier !== "premium") return false;
-  if (!effective.isActive || effective.isExpired) return false;
-  if (profile.telegram_enabled !== true) return false;
-  const chatId = profile.telegram_chat_id;
-  if (!chatId || String(chatId).trim() === "") return false;
-  return true;
 }
 
 const TELEGRAM_MAX_MESSAGE_LENGTH = 4096;
@@ -590,7 +578,7 @@ serve(async (req) => {
       console.log(`Skipping FCM for user ${user_id} because toss_user_key is present`);
     }
 
-    // 텔레그램 발송 (Pro/Premium + telegram_enabled + chat_id 있을 때만)
+    // 텔레그램 발송 (연결 + 알림 ON 사용자)
     let telegramSent = false;
     if (sendTelegram && telegramBotToken && profileRow?.telegram_chat_id) {
       const telegramText = formatTelegramAlarmMessage(

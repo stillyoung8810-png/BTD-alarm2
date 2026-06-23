@@ -167,65 +167,63 @@ function ProfileView({
       {error && <p className="text-xs font-bold text-rose-500 bg-rose-500/10 border border-rose-500/30 rounded-2xl px-4 py-3">{error}</p>}
       {info && <p className="text-xs font-bold text-emerald-400 bg-emerald-500/5 border border-emerald-500/30 rounded-2xl px-4 py-3">{info}</p>}
 
-      {paidTier !== 'free' && (
-        <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-2xl border border-slate-200 dark:border-white/5 space-y-3">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-            {copy.profile.telegramSectionTitle}
-          </p>
-          {telegramConnectedAt ? (
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-bold text-emerald-500 dark:text-emerald-400">
-                {copy.profile.telegramConnected}
-                <span className="text-slate-500 dark:text-slate-400 font-normal ml-1">
-                  (
-                  {new Date(telegramConnectedAt).toLocaleDateString(
-                    PROFILE_DATE_LOCALE[lang],
-                  )}
-                  )
-                </span>
-              </p>
-              <Toggle
-                checked={telegramAlertsEnabled}
-                onChange={(v) => onTelegramAlertsEnabledChange?.(v)}
-                disabled={isProfileActionDisabled}
-                aria-label={copy.profile.telegramAlertsAriaLabel}
-              />
-            </div>
-          ) : telegramLinkToken ? (
-            <div className="space-y-2 text-left">
-              <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                {copy.profile.telegramLinkInstruction}
-              </p>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                {telegramBotSearchMessage}
-              </p>
-              <p className="font-mono text-sm font-black bg-slate-800 text-emerald-400 px-3 py-2 rounded-xl break-all">/start {telegramLinkToken}</p>
-              {telegramBotUsername ? (
-                <a href={`https://t.me/${telegramBotUsername}?start=${telegramLinkToken}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 bg-[#0088cc] text-white rounded-xl text-sm font-bold hover:opacity-90">
-                  <Send size={16} /> {copy.action.openInTelegram}
-                </a>
-              ) : null}
-              <p className="text-[10px] text-slate-500">
-                {copy.profile.reopenProfileHint}
-              </p>
-            </div>
-          ) : isInTossApp ? (
-            <TDSButton variant="tertiary" fullWidth disabled={!currentUserId || telegramLinkLoading || isLogoutPending} loading={telegramLinkLoading} onClick={handleConnectTelegramClick} className="flex items-center justify-center gap-2 text-[#0088cc] border-[#0088cc]/30">
-              <Send size={18} />
-              {telegramLinkLoading
-                ? copy.action.processing
-                : copy.action.connectTelegram}
-            </TDSButton>
-          ) : (
-            <button type="button" disabled={!currentUserId || telegramLinkLoading || isLogoutPending} onClick={handleConnectTelegramClick} className="w-full py-4 bg-[#0088cc]/10 text-[#0088cc] dark:text-[#54a9eb] rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 border border-[#0088cc]/30 hover:bg-[#0088cc]/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
-              <Send size={18} />
-              {telegramLinkLoading
-                ? copy.action.processing
-                : copy.action.connectTelegram}
-            </button>
-          )}
-        </div>
-      )}
+      <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-2xl border border-slate-200 dark:border-white/5 space-y-3">
+        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+          {copy.profile.telegramSectionTitle}
+        </p>
+        {telegramConnectedAt ? (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-bold text-emerald-500 dark:text-emerald-400">
+              {copy.profile.telegramConnected}
+              <span className="text-slate-500 dark:text-slate-400 font-normal ml-1">
+                (
+                {new Date(telegramConnectedAt).toLocaleDateString(
+                  PROFILE_DATE_LOCALE[lang],
+                )}
+                )
+              </span>
+            </p>
+            <Toggle
+              checked={telegramAlertsEnabled}
+              onChange={(v) => onTelegramAlertsEnabledChange?.(v)}
+              disabled={isProfileActionDisabled}
+              aria-label={copy.profile.telegramAlertsAriaLabel}
+            />
+          </div>
+        ) : telegramLinkToken ? (
+          <div className="space-y-2 text-left">
+            <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
+              {copy.profile.telegramLinkInstruction}
+            </p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+              {telegramBotSearchMessage}
+            </p>
+            <p className="font-mono text-sm font-black bg-slate-800 text-emerald-400 px-3 py-2 rounded-xl break-all">/start {telegramLinkToken}</p>
+            {telegramBotUsername ? (
+              <a href={`https://t.me/${telegramBotUsername}?start=${telegramLinkToken}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 bg-[#0088cc] text-white rounded-xl text-sm font-bold hover:opacity-90">
+                <Send size={16} /> {copy.action.openInTelegram}
+              </a>
+            ) : null}
+            <p className="text-[10px] text-slate-500">
+              {copy.profile.reopenProfileHint}
+            </p>
+          </div>
+        ) : isInTossApp ? (
+          <TDSButton variant="tertiary" fullWidth disabled={!currentUserId || telegramLinkLoading || isLogoutPending} loading={telegramLinkLoading} onClick={handleConnectTelegramClick} className="flex items-center justify-center gap-2 text-[#0088cc] border-[#0088cc]/30">
+            <Send size={18} />
+            {telegramLinkLoading
+              ? copy.action.processing
+              : copy.action.connectTelegram}
+          </TDSButton>
+        ) : (
+          <button type="button" disabled={!currentUserId || telegramLinkLoading || isLogoutPending} onClick={handleConnectTelegramClick} className="w-full py-4 bg-[#0088cc]/10 text-[#0088cc] dark:text-[#54a9eb] rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 border border-[#0088cc]/30 hover:bg-[#0088cc]/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
+            <Send size={18} />
+            {telegramLinkLoading
+              ? copy.action.processing
+              : copy.action.connectTelegram}
+          </button>
+        )}
+      </div>
 
       {canUpgrade && (
         <div className="space-y-3">

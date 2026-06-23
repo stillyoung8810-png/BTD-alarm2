@@ -56,7 +56,7 @@
 
 [send-alarm]
     → user_profiles 조회 (get_alarm_payload RPC)
-    → **Pro/Premium** + telegram_enabled + telegram_chat_id 있으면 텔레그램 발송
+    → telegram_enabled + telegram_chat_id 있으면 텔레그램 발송
     → FCM(푸시)은 별도 조건
 ```
 
@@ -70,13 +70,12 @@
 | 2 | 포트폴리오 알람 설정 | `portfolios.alarm_config.enabled = true`, `alarm_config.selectedHours`에 **KST 기준 HH:mm** (예: `["15:00"]`) 포함 |
 | 3 | 알람 시간·중복 방지 | 함수가 **과거 10분 구간**의 HH:mm을 검사하고, **sent_alarms**로 오늘 이미 보낸 (user, time_kst)는 제외. 크론이 몇 초 어긋나도 같은 10분 안에 다시 돌면 알람을 놓치지 않음. |
 | 4 | 평일만 발송 | `check-and-trigger-alarms`는 **KST 기준 토·일요일에는 호출돼도 발송 스킵** |
-| 5 | **유료 구독(Pro/Premium)** | `user_profiles.subscription_tier`가 `pro` 또는 `premium` 이어야 텔레그램 발송. **free 티어는 텔레그램 미발송** (코드: `send-alarm` → `shouldSendTelegram`) |
-| 6 | 프로필 텔레그램 연결 | `user_profiles.telegram_enabled = true`, `telegram_chat_id` 값 있음 |
+| 5 | 프로필 텔레그램 연결 | `user_profiles.telegram_enabled = true`, `telegram_chat_id` 값 있음 |
 
-- 프로필에 "텔레그램 연결됨"이 보이는 건 **6번**이 된 상태입니다.
+- 프로필에 "텔레그램 연결됨"이 보이는 건 **5번**이 된 상태입니다.
 - **토글 OFF 시**: 앱 프로필에서 "텔레그램 알림 사용" 토글을 끄면 `user_profiles.telegram_enabled`가 `false`로 저장됩니다. 크론이 깨우는 **check-and-trigger-alarms → send-alarm** 흐름에서 **반드시** 이 값을 읽어 발송 여부를 결정합니다(아래 "텔레그램 비활성화 시 크론 반영" 참고).
-- **1번(cron)** 이 없으면, 2~6이 다 맞아도 알람이 한 번도 가지 않습니다.
-- **5번**: free 사용자는 앱에서 텔레그램 블록 자체가 안 보이므로, "연결됨"이 보인다면 현재는 Pro/Premium으로 간주됩니다.
+- **1번(cron)** 이 없으면, 2~5가 다 맞아도 알람이 한 번도 가지 않습니다.
+- Free / Pro / Premium 모두 텔레그램 연결과 발송이 가능합니다.
 
 ---
 
@@ -90,11 +89,11 @@
 - Supabase 대시보드에서 **Integrations → Cron Jobs**로 Edge Function 호출을 스케줄하거나, **pg_cron + pg_net**으로 매 분(또는 5분)마다 `check-and-trigger-alarms` URL을 POST 하도록 설정해야 합니다.
 - cron을 한 번도 설정하지 않았다면, **알람이 오지 않는 것이 정상**입니다.
 
-### (2) 텔레그램은 Pro/Premium만 발송
+### (2) 텔레그램 연결 또는 토글 상태가 DB에 반영되지 않음
 
-- `send-alarm` 내부에서 `shouldSendTelegram()`이 **subscription_tier === 'pro' | 'premium'** 일 때만 텔레그램 발송을 허용합니다.
-- `user_profiles.subscription_tier`가 `free`이면, `telegram_enabled`/`telegram_chat_id`가 있어도 **텔레그램으로는 발송하지 않습니다.**
-- 앱 프로필 화면에서 텔레그램 블록(연결하기/연결됨)은 **Pro/Premium일 때만** 노출되므로, "연결됨"이 보인다면 보통은 Pro/Premium입니다. DB에서 한 번만 확인해 보면 됩니다.
+- `send-alarm` 내부의 `shouldSendTelegram()`은 **티어와 무관하게** `telegram_enabled = true` 와 `telegram_chat_id` 존재 여부를 확인합니다.
+- `telegram_enabled`가 `false`이거나 `telegram_chat_id`가 비어 있으면 Free / Pro / Premium 모두 텔레그램으로는 발송하지 않습니다.
+- 앱에서 "연결됨"이 보이는데도 발송되지 않으면 DB에서 `telegram_enabled`, `telegram_chat_id`, `telegram_last_error`를 확인해 주세요.
 
 ---
 
@@ -200,9 +199,8 @@ if (profile.telegram_enabled !== true) return false;
 1. [ ] **Cron 등록 여부**: Dashboard 또는 SQL로 `check-and-trigger-alarms`가 **10분마다(`*/10 * * * *`)** 호출되도록 되어 있는가?
 2. [ ] **포트폴리오 알람**: 해당 포트폴리오에 `alarm_config.enabled = true`, `selectedHours`에 원하는 KST 시간(예: `"15:00"`)이 들어 있는가?
 3. [ ] **프로필**: `user_profiles.telegram_enabled = true`, `telegram_chat_id`가 비어 있지 않은가?
-4. [ ] **구독**: 텔레그램 수신을 원하면 `user_profiles.subscription_tier`가 `pro` 또는 `premium`인가?
-5. [ ] **요일**: 테스트 시 KST 기준 평일인가? (토·일은 의도적으로 스킵됨)
-6. [ ] **시간**: 테스트 시각의 KST HH:mm이 `selectedHours`와 정확히 일치하는가?
+4. [ ] **요일**: 테스트 시 KST 기준 평일인가? (토·일은 의도적으로 스킵됨)
+5. [ ] **시간**: 테스트 시각의 KST HH:mm이 `selectedHours`와 정확히 일치하는가?
 
 ---
 
@@ -303,7 +301,7 @@ if (profile.telegram_enabled !== true) return false;
    ```
 
 4. **주의**
-   - 해당 사용자는 **Pro/Premium**이고 **텔레그램 연결**(`telegram_chat_id` 있음)되어 있어야 텔레그램으로 발송됩니다.
+   - 해당 사용자는 **텔레그램 연결**(`telegram_chat_id` 있음)되어 있고 `telegram_enabled = true`여야 텔레그램으로 발송됩니다.
    - 1회 호출이므로 **sent_alarms**에는 기록되지 않습니다. 평일 크론 흐름과 동일한 메시지 형식으로만 테스트할 수 있습니다.
 
 ---
@@ -314,7 +312,7 @@ if (profile.telegram_enabled !== true) return false;
 |-----------|-------------------------|
 | **Cron 등록** | Dashboard → **Integrations** → **Cron Jobs** (또는 Database → Extensions에서 `pg_cron` 활성화 여부). `check-and-trigger-alarms`가 **10분마다** 호출되는지 확인. |
 | **포트폴리오 alarm_config** | **Table Editor** → `portfolios` → 해당 행의 `alarm_config` 컬럼. `{"enabled": true, "selectedHours": ["14:30"]}` 처럼 **24시간 형식 HH:mm** (오후 2:30 → `"14:30"`)인지 확인. |
-| **프로필 텔레그램** | **Table Editor** → `user_profiles` → 해당 사용자 행. `telegram_enabled = true`, `telegram_chat_id` 값 있음, `subscription_tier`가 `pro` 또는 `premium`인지 확인. |
+| **프로필 텔레그램** | **Table Editor** → `user_profiles` → 해당 사용자 행. `telegram_enabled = true`, `telegram_chat_id` 값 있음, `telegram_last_error` 확인. |
 | **Edge Function 로그** | **Edge Functions** → `check-and-trigger-alarms` → **Logs**. 실행 시 "Current KST time:", "window" 로그로 KST 시간과 검사 구간이 맞는지 확인. |
 
 ---
@@ -361,19 +359,17 @@ if (profile.telegram_enabled !== true) return false;
 ## 9. 버튼/UI 정리
 
 - **새 버튼을 만들 필요는 없습니다.**  
-  - 텔레그램 연결: 프로필(모달) → **「텔레그램 연결하기」** 로 연결. Free 티어는 버튼이 비활성화되어 있으며, 툴팁으로 유료 회원만 이용 가능하다고 안내됩니다.  
+  - 텔레그램 연결: 프로필(모달) → **「텔레그램 연결하기」** 로 연결. Free / Pro / Premium 모두 같은 블록에서 연결할 수 있습니다.  
   - 알람 시간: 각 포트폴리오 카드 → **알람(벨) 아이콘** → 시간 선택 후 저장.
 - 연결이 완료되면 같은 블록에 **「연결됨」** 이 표시됩니다.  
-  이 상태에서도 알람이 안 온다면, 위 조건(특히 **cron**과 **Pro/Premium**, **selectedHours 일치**)을 확인하면 됩니다.
+  이 상태에서도 알람이 안 온다면, 위 조건(특히 **cron**, **telegram_enabled**, **selectedHours 일치**)을 확인하면 됩니다.
 
 ---
 
-## 10. Free 사용자도 텔레그램 수신하게 하려면
+## 10. Free 사용자 텔레그램 정책
 
-현재는 `send-alarm` → `shouldSendTelegram()`에서 **Pro/Premium만** 텔레그램 발송을 허용합니다.  
-Free에서도 텔레그램 발송을 허용하려면:
+현재는 Free / Pro / Premium 모두 텔레그램 연결과 수신이 가능합니다.
 
-- `supabase/functions/send-alarm/index.ts` 의 `shouldSendTelegram()` 안에서  
-  `subscription_tier`가 `pro`/`premium`이어야 한다는 조건을 제거하거나,  
-  `telegram_enabled === true && telegram_chat_id` 있으면 발송하도록 조건을 완화하면 됩니다.  
-  (이때 앱에서 Free 사용자에게도 텔레그램 블록을 보이려면 `AuthModals.tsx`의 `currentTier === 'pro' || currentTier === 'premium'` 체크를 수정해야 합니다.)
+- 발송 자격은 `supabase/functions/_shared/telegramEligibility.ts`의 `shouldSendTelegram()`에서 관리합니다.
+- 조건은 `telegram_enabled === true` 이고 `telegram_chat_id`가 비어 있지 않은 것입니다.
+- Daily Execution 요약 생성도 `generate-daily-execution-summaries`에서 티어와 무관하게 텔레그램 연결 사용자를 대상으로 합니다.

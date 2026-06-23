@@ -11,8 +11,8 @@
 | **최대 포트폴리오 수** | 2개 | 4개 | 4개 |
 | **최대 알람 수** | 2개 | 4개 | 4개 |
 | **사용 가능 종목** | 기본 종목만 (SPY, QQQ, TQQQ 등 13종) | 기본 + PRO 전용 종목 (TSLA, NVDA, MSTR, FNGU 등 **17종** 추가) | Pro와 동일 |
-| **텔레그램 연결·알림** | 불가 (UI 비노출) | 가능 (연결 + 알림 발송) | Pro와 동일 |
-| **텔레그램 알람 수신** | 발송 안 함 | 발송함 (연결 시) | Pro와 동일 |
+| **텔레그램 연결·알림** | 가능 (연결 + 알림 발송) | 가능 (연결 + 알림 발송) | Pro와 동일 |
+| **텔레그램 알람 수신** | 발송함 (연결 시) | 발송함 (연결 시) | Pro와 동일 |
 | **광고 노출** | 노출 (유료 아님) | 유료 활성·미만료 시 비노출 | Pro와 동일 |
 
 ※ Pro와 Premium은 **기능·한도가 동일**하게 적용됩니다. UI에서 티어명·스타일(뱃지, 색상)만 다르게 보입니다.
@@ -54,13 +54,10 @@
 
 ## 3. 텔레그램 연결·알림
 
-- **Free**  
-  - 프로필 모달에 **텔레그램 블록 자체가 안 보임** (`currentTier === 'pro' || currentTier === 'premium'` 일 때만 표시).  
-  - `send-alarm` Edge Function에서도 **Pro/Premium이 아니면 텔레그램 발송 안 함** (`shouldSendTelegram` → `subscription_tier`가 `pro` 또는 `premium`일 때만 발송).
-
-- **Pro / Premium**  
+- **Free / Pro / Premium**  
   - 프로필에서 텔레그램 연결하기 버튼·연결 상태·알림 사용 토글 표시.  
   - 연결 후 `telegram_enabled = true` 이고 `telegram_chat_id`가 있으면, 알람 시간에 **텔레그램으로 알림 발송**.
+  - Daily Execution 요약도 티어와 무관하게 텔레그램 연결 사용자 대상으로 생성됩니다.
 
 ---
 
@@ -80,7 +77,7 @@
   - `App.tsx`에서 프로필 조회 시 `subscription_tier`, `max_portfolios`, `max_alarms`, `telegram_enabled` 등 사용.
 
 - **백엔드 (send-alarm)**  
-  - `user_profiles`의 `subscription_tier`로 텔레그램 발송 여부 결정 (`shouldSendTelegram`).
+  - `telegram_enabled`와 `telegram_chat_id`로 텔레그램 발송 여부 결정 (`shouldSendTelegram`).
 
 - **유료 티어 목록**  
   - `subscriptionUtils.ts`: `PAID_TIERS = ['pro', 'premium', 'enterprise']`.  
@@ -96,6 +93,6 @@
 | Free 기본값 설정 | `App.tsx` (신규 프로필: `max_portfolios: 2`, `max_alarms: 2`) |
 | 포트폴리오 개수 제한 | `App.tsx` (새 포트폴리오 생성 시 `maxPortfolios` 체크) |
 | PRO 전용 종목 | `constants.tsx` (`PAID_STOCKS`), `Markets.tsx`, `StrategyCreator.tsx` 등 |
-| 텔레그램 UI 노출 | `components/AuthModals.tsx` (`currentTier === 'pro' \|\| currentTier === 'premium'`) |
-| 텔레그램 발송 여부 | `supabase/functions/send-alarm/index.ts` (`shouldSendTelegram`) |
+| 텔레그램 UI 노출 | `components/auth/ProfileView.tsx` |
+| 텔레그램 발송 여부 | `supabase/functions/_shared/telegramEligibility.ts` (`shouldSendTelegram`) |
 | 광고 노출 여부 | `utils/subscriptionUtils.ts` (`shouldShowAds`) |

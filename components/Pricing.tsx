@@ -62,7 +62,7 @@ const AI_PREVIEW_STACK_MASK_IMAGE_STYLES: CSSProperties = {
 };
 
 const SHOULD_SHOW_MEMBERSHIP_PRICING_CARDS = false;
-const SHOULD_SHOW_PRICING_TELEGRAM_SECTION = false;
+const SHOULD_SHOW_PRICING_TELEGRAM_SECTION = true;
 
 interface PricingProps {
   lang: AppLang;

@@ -40,8 +40,8 @@ export interface AlarmMessageSet {
 
 export const ALARM_MESSAGES: Record<AppLang, AlarmMessageSet> = {
   ko: {
-    title: '알람 설정',
-    slotSystem: (maxAlarms: number) => `${maxAlarms} 슬롯 시스템`,
+    title: '알람 설정(텔레그램)',
+    slotSystem: (_maxAlarms: number) => '프로필에서 텔레그램을 연결해 주세요',
     statusLabel: '알람 상태',
     enabledDescription: '실시간 매매 알림 활성화됨',
     configuredTimes: '설정된 시간',
@@ -81,8 +81,8 @@ export const ALARM_MESSAGES: Record<AppLang, AlarmMessageSet> = {
     },
   },
   en: {
-    title: 'Alarm Settings',
-    slotSystem: (maxAlarms: number) => `${maxAlarms} slot system`,
+    title: 'Alarm Settings (Telegram)',
+    slotSystem: (_maxAlarms: number) => 'Connect Telegram in your profile',
     statusLabel: 'Alarm status',
     enabledDescription: 'Real-time trading notifications enabled',
     configuredTimes: 'Configured times',

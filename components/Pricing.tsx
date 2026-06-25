@@ -675,7 +675,7 @@ const PricingTelegramSection = React.memo(function PricingTelegramSection({
   return (
     <section className="mt-40 mb-20">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-        <div className="relative flex justify-center lg:justify-start">
+        <div className="order-2 lg:order-1 relative flex justify-center lg:justify-start">
           {hasPreviewCards ? (
             <PricingImagePreviewStack
               previewCards={copy.previewCards}
@@ -687,7 +687,7 @@ const PricingTelegramSection = React.memo(function PricingTelegramSection({
           ) : null}
         </div>
 
-        <div className="space-y-8">
+        <div className="order-1 lg:order-2 space-y-8">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-300 text-[10px] font-black uppercase tracking-widest">
             <Bell size={14} />
             <span>{copy.eyebrowLabel}</span>

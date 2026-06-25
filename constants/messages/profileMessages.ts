@@ -8,7 +8,6 @@ export interface ProfileMessageSet {
   telegramConnected: string;
   telegramAlertsAriaLabel: string;
   telegramLinkInstruction: string;
-  openInTelegram: string;
   reopenProfileHint: string;
   connectTelegram: string;
   paidOnly: string;
@@ -31,7 +30,6 @@ export const PROFILE_MESSAGES: Record<AppLang, ProfileMessageSet> = {
     telegramAlertsAriaLabel: '텔레그램 알림 사용',
     telegramLinkInstruction:
       '아래 링크를 클릭하거나, 텔레그램에서 봇에게 다음을 보내주세요:',
-    openInTelegram: '텔레그램에서 열기',
     reopenProfileHint: '연결 후 앱을 다시 열거나 재로그인하면 상태가 반영돼요.',
     connectTelegram: '텔레그램 연결하기',
     paidOnly: '유료 회원만 이용 가능합니다.',
@@ -53,7 +51,6 @@ export const PROFILE_MESSAGES: Record<AppLang, ProfileMessageSet> = {
     telegramAlertsAriaLabel: 'Telegram alerts',
     telegramLinkInstruction:
       'Click the link below or send the following to the bot on Telegram:',
-    openInTelegram: 'Open in Telegram',
     reopenProfileHint:
       'After linking, reopen the app or sign in again to refresh state.',
     connectTelegram: 'Connect Telegram',
@@ -122,19 +119,6 @@ export function getDeleteConfirmInstruction(lang: AppLang): string {
   }
 
   return `Type "${deleteConfirmValue}" below to confirm.`;
-}
-
-export function getTelegramBotSearchMessage(
-  lang: AppLang,
-  botUsername?: string,
-): string {
-  const resolvedBotUsername = botUsername?.trim() || 'btd_alarm_bot';
-
-  if (lang === 'ko') {
-    return `봇 유저네임(@${resolvedBotUsername}) 을 검색하세요.`;
-  }
-
-  return `Search for the bot username (@${resolvedBotUsername}).`;
 }
 
 export function getAccountDeletionFailedMessage(

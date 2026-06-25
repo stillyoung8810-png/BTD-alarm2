@@ -100,7 +100,7 @@ export const BENEFIT_MESSAGES: Record<AppLang, BenefitMessages> = {
   ko: {
     navLabel: '혜택',
     pageTitle: '혜택',
-    pageSubtitle: '출석, 예측, 퀴즈로 머니를 모으고 토스 포인트 받기를 준비합니다.',
+    pageSubtitle: '출석·예측·퀴즈 이벤트는 7월 6일까지 진행됩니다.',
     actionLoadingLabel: '처리 중',
     retryCta: '다시 시도',
     moneyUnit: '머니',
@@ -196,7 +196,7 @@ export const BENEFIT_MESSAGES: Record<AppLang, BenefitMessages> = {
   en: {
     navLabel: 'Benefits',
     pageTitle: 'Benefits',
-    pageSubtitle: 'Collect money through attendance, predictions, and quizzes.',
+    pageSubtitle: 'Attendance, prediction, and quiz events run through July 6.',
     actionLoadingLabel: 'Processing',
     retryCta: 'Retry',
     moneyUnit: 'money',

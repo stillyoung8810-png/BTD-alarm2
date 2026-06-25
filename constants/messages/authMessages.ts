@@ -24,7 +24,6 @@ export interface AuthModalMessageSet {
     deleteAccount: string;
     cancelDelete: string;
     deleteForever: string;
-    openInTelegram: string;
   };
   field: {
     emailLabel: string;
@@ -63,6 +62,12 @@ export interface AuthModalMessageSet {
     telegramLinkInstruction: string;
     telegramTokenCreateFailed: string;
     reopenProfileHint: string;
+    telegramBotSearchPrefix: string;
+    telegramBotSearchSuffix: string;
+    copyTelegramUsername: string;
+    copyTelegramStartCommand: string;
+    copiedToClipboard: string;
+    clipboardCopyFailed: string;
     paidOnly: string;
     deleteWarning: string;
     deleteInstruction: string;
@@ -171,7 +176,6 @@ export const AUTH_MODAL_MESSAGES: Record<AppLang, AuthModalMessageSet> = {
       deleteAccount: '회원 탈퇴',
       cancelDelete: '취소',
       deleteForever: '영구 삭제',
-      openInTelegram: '텔레그램에서 열기',
     },
     field: {
       emailLabel: '이메일',
@@ -211,6 +215,12 @@ export const AUTH_MODAL_MESSAGES: Record<AppLang, AuthModalMessageSet> = {
         '아래 명령어를 텔레그램 봇에 전송해 연결을 완료하세요.',
       telegramTokenCreateFailed: '텔레그램 연결 토큰 생성에 실패했습니다.',
       reopenProfileHint: '연결 후 앱을 다시 열거나 재로그인하면 상태가 반영돼요.',
+      telegramBotSearchPrefix: '봇 유저네임',
+      telegramBotSearchSuffix: '을 검색하세요.',
+      copyTelegramUsername: '유저네임 복사',
+      copyTelegramStartCommand: '명령어 복사',
+      copiedToClipboard: '클립보드에 복사했습니다.',
+      clipboardCopyFailed: '복사에 실패했습니다. 직접 선택해 복사해 주세요.',
       paidOnly: '유료 멤버십에서만 사용할 수 있습니다.',
       deleteWarning: '회원 탈퇴 후 데이터는 복구할 수 없습니다.',
       deleteInstruction: '확인을 위해 DELETE 를 입력해주세요.',
@@ -286,7 +296,6 @@ export const AUTH_MODAL_MESSAGES: Record<AppLang, AuthModalMessageSet> = {
       deleteAccount: 'Delete Account',
       cancelDelete: 'Cancel',
       deleteForever: 'Delete Forever',
-      openInTelegram: 'Open in Telegram',
     },
     field: {
       emailLabel: 'Email',
@@ -329,6 +338,12 @@ export const AUTH_MODAL_MESSAGES: Record<AppLang, AuthModalMessageSet> = {
       telegramTokenCreateFailed: 'Failed to create Telegram link token.',
       reopenProfileHint:
         'After linking, reopen the app or sign in again to refresh state.',
+      telegramBotSearchPrefix: 'Search for the bot username',
+      telegramBotSearchSuffix: '.',
+      copyTelegramUsername: 'Copy username',
+      copyTelegramStartCommand: 'Copy command',
+      copiedToClipboard: 'Copied to clipboard.',
+      clipboardCopyFailed: 'Copy failed. Please select and copy it manually.',
       paidOnly: 'This feature is available for paid members only.',
       deleteWarning: 'Your data cannot be restored after account deletion.',
       deleteInstruction: 'Type DELETE to confirm.',

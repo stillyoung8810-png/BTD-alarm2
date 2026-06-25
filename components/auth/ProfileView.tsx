@@ -1,10 +1,7 @@
 import React from 'react';
-import { UserCheck, Key, LogOut, Send, Sparkles } from 'lucide-react';
+import { Copy, UserCheck, Key, LogOut, Send, Sparkles } from 'lucide-react';
 import type { AppLang } from '../../types';
-import {
-  getMembershipMemberBadge,
-  getTelegramBotSearchMessage,
-} from '../../constants/messages/profileMessages';
+import { getMembershipMemberBadge } from '../../constants/messages/profileMessages';
 import Toggle from '../Toggle';
 import { TDSButton } from '../tds';
 import { resolvePaidTier, type PaidTier } from '../../utils/appEntryHelpers';
@@ -31,6 +28,10 @@ const PROFILE_DATE_LOCALE: Record<AppLang, string> = {
   en: 'en-US',
 };
 
+const DEFAULT_TELEGRAM_BOT_USERNAME = 'btd_alarm_bot';
+const TELEGRAM_COPY_BUTTON_CLASS_NAME =
+  'inline-flex items-center justify-center gap-2 rounded-xl border border-[#0088cc]/30 bg-[#0088cc]/10 px-3 py-2 text-xs font-black text-[#0088cc] transition-colors hover:bg-[#0088cc]/20 disabled:cursor-not-allowed disabled:opacity-60 dark:text-[#54a9eb]';
+
 function getProfileErrorMessage(
   prefix: string,
   error: unknown,
@@ -46,6 +47,54 @@ function getProfileErrorMessage(
   }
 
   return prefix;
+}
+
+function getResolvedTelegramBotUsername(username: string | undefined): string {
+  const normalized = username?.trim().replace(/^@+/, '') ?? '';
+  if (normalized.length > 0) {
+    return normalized;
+  }
+
+  return DEFAULT_TELEGRAM_BOT_USERNAME;
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  if (text.trim().length === 0) {
+    return false;
+  }
+
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // WebView나 권한 정책에서 Clipboard API가 막히면 textarea 방식으로 재시도합니다.
+    }
+  }
+
+  if (typeof document === 'undefined') {
+    return false;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.top = '0';
+  textarea.style.left = '0';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, text.length);
+
+  try {
+    return document.execCommand('copy');
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+  }
 }
 
 function ProfileView({
@@ -66,6 +115,7 @@ function ProfileView({
   loading,
   setLoading,
   setError,
+  setInfo,
   telegramLinkToken,
   setTelegramLinkToken,
   telegramLinkLoading,
@@ -83,25 +133,21 @@ function ProfileView({
   const deleteConfirmValue = copy.field.deleteConfirmPlaceholder;
   const isProfileActionDisabled = loading || isLogoutPending;
   const telegramBotUsername = import.meta.env.VITE_TELEGRAM_BOT_USERNAME?.trim();
-  const telegramBotSearchMessage = getTelegramBotSearchMessage(
-    lang,
-    telegramBotUsername,
-  );
+  const resolvedTelegramBotUsername =
+    getResolvedTelegramBotUsername(telegramBotUsername);
+  const telegramBotUsernameForCopy = `@${resolvedTelegramBotUsername}`;
+  const telegramStartCommand = telegramLinkToken
+    ? `/start ${telegramLinkToken}`
+    : '';
 
   const handleConnectTelegramClick = async () => {
     if (!currentUserId || isLogoutPending) return;
     setTelegramLinkLoading(true);
     setError(null);
+    setInfo(null);
     try {
       const token = await onConnectTelegram();
       setTelegramLinkToken(token);
-      if (telegramBotUsername) {
-        window.open(
-          `https://t.me/${telegramBotUsername}?start=${token}`,
-          '_blank',
-          'noopener,noreferrer',
-        );
-      }
     } catch (e: unknown) {
       const msg =
         e && typeof e === 'object' && 'message' in e
@@ -111,6 +157,26 @@ function ProfileView({
     } finally {
       setTelegramLinkLoading(false);
     }
+  };
+
+  const handleCopyTelegramText = async (text: string): Promise<void> => {
+    setError(null);
+    setInfo(null);
+    const didCopy = await copyTextToClipboard(text);
+    if (didCopy) {
+      setInfo(copy.profile.copiedToClipboard);
+      return;
+    }
+
+    setError(copy.profile.clipboardCopyFailed);
+  };
+
+  const handleCopyTelegramUsername = (): void => {
+    void handleCopyTelegramText(telegramBotUsernameForCopy);
+  };
+
+  const handleCopyTelegramStartCommand = (): void => {
+    void handleCopyTelegramText(telegramStartCommand);
   };
 
   const handleDeleteAccountClick = async () => {
@@ -135,6 +201,100 @@ function ProfileView({
     if (!canUpgrade || !onUpgradePlan) return;
     const nextPlan: 'pro' | 'premium' = paidTier === 'free' ? 'pro' : 'premium';
     onUpgradePlan(nextPlan);
+  };
+
+  const renderTelegramContent = (): React.ReactNode => {
+    if (telegramConnectedAt) {
+      return (
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-bold text-emerald-500 dark:text-emerald-400">
+            {copy.profile.telegramConnected}
+            <span className="text-slate-500 dark:text-slate-400 font-normal ml-1">
+              (
+              {new Date(telegramConnectedAt).toLocaleDateString(
+                PROFILE_DATE_LOCALE[lang],
+              )}
+              )
+            </span>
+          </p>
+          <Toggle
+            checked={telegramAlertsEnabled}
+            onChange={(v) => onTelegramAlertsEnabledChange?.(v)}
+            disabled={isProfileActionDisabled}
+            aria-label={copy.profile.telegramAlertsAriaLabel}
+          />
+        </div>
+      );
+    }
+
+    if (telegramLinkToken) {
+      return (
+        <div className="space-y-3 text-left">
+          <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
+            {copy.profile.telegramLinkInstruction}
+          </p>
+          <div className="space-y-2 rounded-2xl border border-[#0088cc]/20 bg-white p-3 dark:bg-slate-950/40">
+            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">
+              {copy.profile.telegramBotSearchPrefix}{' '}
+              <span className="whitespace-nowrap">
+                (
+                <span className="font-black text-[#0088cc] dark:text-[#54a9eb]">
+                  {telegramBotUsernameForCopy}
+                </span>
+                )
+              </span>
+              {copy.profile.telegramBotSearchSuffix}
+            </p>
+            <button
+              type="button"
+              onClick={handleCopyTelegramUsername}
+              className={TELEGRAM_COPY_BUTTON_CLASS_NAME}
+              aria-label={copy.profile.copyTelegramUsername}
+            >
+              <Copy size={14} />
+              {copy.profile.copyTelegramUsername}
+            </button>
+          </div>
+          <div className="space-y-2">
+            <p className="font-mono text-sm font-black bg-slate-800 text-emerald-400 px-3 py-2 rounded-xl break-all">
+              {telegramStartCommand}
+            </p>
+            <button
+              type="button"
+              onClick={handleCopyTelegramStartCommand}
+              className={TELEGRAM_COPY_BUTTON_CLASS_NAME}
+              aria-label={copy.profile.copyTelegramStartCommand}
+            >
+              <Copy size={14} />
+              {copy.profile.copyTelegramStartCommand}
+            </button>
+          </div>
+          <p className="text-[10px] text-slate-500">
+            {copy.profile.reopenProfileHint}
+          </p>
+        </div>
+      );
+    }
+
+    if (isInTossApp) {
+      return (
+        <TDSButton variant="tertiary" fullWidth disabled={!currentUserId || telegramLinkLoading || isLogoutPending} loading={telegramLinkLoading} onClick={handleConnectTelegramClick} className="flex items-center justify-center gap-2 text-[#0088cc] border-[#0088cc]/30">
+          <Send size={18} />
+          {telegramLinkLoading
+            ? copy.action.processing
+            : copy.action.connectTelegram}
+        </TDSButton>
+      );
+    }
+
+    return (
+      <button type="button" disabled={!currentUserId || telegramLinkLoading || isLogoutPending} onClick={handleConnectTelegramClick} className="w-full py-4 bg-[#0088cc]/10 text-[#0088cc] dark:text-[#54a9eb] rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 border border-[#0088cc]/30 hover:bg-[#0088cc]/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
+        <Send size={18} />
+        {telegramLinkLoading
+          ? copy.action.processing
+          : copy.action.connectTelegram}
+      </button>
+    );
   };
 
   return (
@@ -171,58 +331,7 @@ function ProfileView({
         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
           {copy.profile.telegramSectionTitle}
         </p>
-        {telegramConnectedAt ? (
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-bold text-emerald-500 dark:text-emerald-400">
-              {copy.profile.telegramConnected}
-              <span className="text-slate-500 dark:text-slate-400 font-normal ml-1">
-                (
-                {new Date(telegramConnectedAt).toLocaleDateString(
-                  PROFILE_DATE_LOCALE[lang],
-                )}
-                )
-              </span>
-            </p>
-            <Toggle
-              checked={telegramAlertsEnabled}
-              onChange={(v) => onTelegramAlertsEnabledChange?.(v)}
-              disabled={isProfileActionDisabled}
-              aria-label={copy.profile.telegramAlertsAriaLabel}
-            />
-          </div>
-        ) : telegramLinkToken ? (
-          <div className="space-y-2 text-left">
-            <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
-              {copy.profile.telegramLinkInstruction}
-            </p>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-              {telegramBotSearchMessage}
-            </p>
-            <p className="font-mono text-sm font-black bg-slate-800 text-emerald-400 px-3 py-2 rounded-xl break-all">/start {telegramLinkToken}</p>
-            {telegramBotUsername ? (
-              <a href={`https://t.me/${telegramBotUsername}?start=${telegramLinkToken}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2 bg-[#0088cc] text-white rounded-xl text-sm font-bold hover:opacity-90">
-                <Send size={16} /> {copy.action.openInTelegram}
-              </a>
-            ) : null}
-            <p className="text-[10px] text-slate-500">
-              {copy.profile.reopenProfileHint}
-            </p>
-          </div>
-        ) : isInTossApp ? (
-          <TDSButton variant="tertiary" fullWidth disabled={!currentUserId || telegramLinkLoading || isLogoutPending} loading={telegramLinkLoading} onClick={handleConnectTelegramClick} className="flex items-center justify-center gap-2 text-[#0088cc] border-[#0088cc]/30">
-            <Send size={18} />
-            {telegramLinkLoading
-              ? copy.action.processing
-              : copy.action.connectTelegram}
-          </TDSButton>
-        ) : (
-          <button type="button" disabled={!currentUserId || telegramLinkLoading || isLogoutPending} onClick={handleConnectTelegramClick} className="w-full py-4 bg-[#0088cc]/10 text-[#0088cc] dark:text-[#54a9eb] rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 border border-[#0088cc]/30 hover:bg-[#0088cc]/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
-            <Send size={18} />
-            {telegramLinkLoading
-              ? copy.action.processing
-              : copy.action.connectTelegram}
-          </button>
-        )}
+        {renderTelegramContent()}
       </div>
 
       {canUpgrade && (

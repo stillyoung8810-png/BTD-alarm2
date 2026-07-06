@@ -83,7 +83,7 @@ export function AlarmModalView({
                 <h2 className="text-xl font-black text-slate-900 dark:text-white">
                   {controller.copy.title}
                 </h2>
-                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-300">
+                <p className="mt-1 text-sm font-bold text-red-500 dark:text-red-400">
                   {controller.copy.slotSystem(maxAlarms)}
                 </p>
               </div>
